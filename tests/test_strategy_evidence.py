@@ -29,6 +29,10 @@ from reports.provider_market_data_imbalance_release_decision import (
     verify_provider_market_data_imbalance_release_decision,
     write_provider_market_data_imbalance_release_decision,
 )
+from reports.provider_market_data_imbalance_live_dryrun_handoff import (
+    verify_provider_market_data_imbalance_live_dryrun_handoff,
+    write_provider_market_data_imbalance_live_dryrun_handoff,
+)
 
 
 def _manifest_input_paths(value):
@@ -1689,6 +1693,32 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     certificate_dir.mkdir()
     certificate_artifact = certificate_dir / "certificate.csv"
     certificate_artifact.write_text("ready\ntrue\n", encoding="utf-8")
+    certificate_json = (
+        certificate_dir
+        / "provider_market_data_imbalance_broker_rehearsal_certificate.json"
+    )
+    certificate_json.write_text(
+        json.dumps(
+            {
+                "certificate_sha256": "a" * 64,
+                "payload": {
+                    "identity": {
+                        "provider": "arrow_money",
+                        "transport": "websocket",
+                        "exchange": "NSE",
+                        "adapter": "arrow_ws",
+                        "strategy": "imbalance",
+                        "market": "india_nse_index_derivatives",
+                        "target_mode": "live_dryrun",
+                    }
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         certificate_dir,
         run_type="provider_market_data_imbalance_broker_rehearsal_certificate",
@@ -2288,6 +2318,274 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
         approved_decision_dir
     ).verified
 
+    controls_dir = tmp_path / "live_dryrun_controls"
+    controls_dir.mkdir()
+    rollback_runbook_path = controls_dir / "rollback.md"
+    rollback_runbook_path.write_text(
+        "# Controlled live dry-run rollback\n\nStop the runtime and reconcile outputs.\n",
+        encoding="utf-8",
+    )
+    runtime_controls = {
+        "contract_version": "provider_live_dryrun_runtime_controls/v1",
+        "decision_id": str(approved_decision_summary["decision_id"]),
+        "decision_sha256": str(
+            approved_decision_summary["decision_sha256"]
+        ),
+        "provider_session": {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "exchange": "NSE",
+            "adapter": "arrow_ws",
+            "session_id": "nse-live-dryrun-20260714",
+            "trading_date": "2026-07-14",
+            "timezone": "Asia/Kolkata",
+            "open_local": "09:15",
+            "close_local": "15:30",
+        },
+        "limits": {
+            "max_orders_per_session": 100,
+            "max_notional_per_session": 1_000_000.0,
+            "max_open_orders": 10,
+            "max_position_lots": 5,
+        },
+        "kill_switch": {
+            "enabled": True,
+            "trigger_on_limit_breach": True,
+            "stop_new_orders": True,
+            "cancel_open_orders": True,
+            "owner": "risk_operator",
+        },
+        "rollback": {
+            "procedure_id": "rollback-v1",
+            "owner": "ops",
+            "runbook_path": rollback_runbook_path.name,
+            "runbook_sha256": file_sha256(rollback_runbook_path),
+        },
+        "safety": {
+            "dry_run_only": True,
+            "submission_enabled": False,
+            "broker_api_called": False,
+            "authorizes_submission": False,
+        },
+    }
+    runtime_controls_path = controls_dir / "runtime_controls.json"
+    runtime_controls_path.write_text(
+        json.dumps(runtime_controls, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    handoff_dir = tmp_path / "live_dryrun_handoff"
+    assert (
+        main(
+            [
+                "prepare-provider-market-data-imbalance-live-dryrun-handoff",
+                "--release-decision",
+                str(approved_decision_dir),
+                "--runtime-controls",
+                str(runtime_controls_path),
+                "--out",
+                str(handoff_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    handoff_plan_path = (
+        handoff_dir
+        / "provider_market_data_imbalance_live_dryrun_handoff_plan.json"
+    )
+    handoff_plan = json.loads(handoff_plan_path.read_text(encoding="utf-8"))
+    assert handoff_plan["identity"]["provider"] == "arrow_money"
+    assert handoff_plan["identity"]["session_id"] == (
+        "nse-live-dryrun-20260714"
+    )
+    assert handoff_plan["limits"]["max_orders_per_session"] == 100
+    assert handoff_plan["limits"]["max_notional_per_session"] == 1_000_000.0
+    assert handoff_plan["safety"]["execution_enabled"] is False
+    assert handoff_plan["safety"]["dry_run_only"] is True
+    assert handoff_plan["safety"]["submission_enabled"] is False
+    assert handoff_plan["safety"]["broker_api_called"] is False
+    assert handoff_plan["safety"]["authorizes_submission"] is False
+    assert handoff_plan["safety"]["credential_values_stored"] is False
+    assert handoff_plan["safety"]["requires_separate_runtime_launcher"] is True
+    handoff_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_handoff(handoff_dir)
+    )
+    assert handoff_verification.verified
+    assert handoff_verification.ready
+    assert handoff_verification.manifest_current
+    assert handoff_verification.release_decision_current
+    assert handoff_verification.runtime_controls_current
+    assert handoff_verification.rollback_runbook_current
+    assert handoff_verification.artifacts_consistent
+    assert handoff_verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-live-dryrun-handoff",
+                "--handoff",
+                str(handoff_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    handoff_catalog = catalog_experiment_runs([handoff_dir])
+    handoff_catalog_row = handoff_catalog.catalog.iloc[0]
+    assert bool(handoff_catalog_row["summary_status"])
+    assert bool(
+        handoff_catalog_row[
+            "provider_live_dryrun_handoff_verification_verified"
+        ]
+    )
+    assert bool(
+        handoff_catalog_row[
+            "provider_live_dryrun_handoff_verification_ready"
+        ]
+    )
+    assert int(
+        handoff_catalog.summary.iloc[0][
+            "provider_live_dryrun_handoff_verification_ready_runs"
+        ]
+    ) == 1
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_provider_market_data_imbalance_live_dryrun_handoff(
+            approved_decision_dir,
+            runtime_controls_path,
+            handoff_dir,
+        )
+    with pytest.raises(ValueError, match="verified approved release decision"):
+        write_provider_market_data_imbalance_live_dryrun_handoff(
+            rejected_decision_dir,
+            runtime_controls_path,
+            tmp_path / "handoff_from_rejected_decision",
+        )
+
+    invalid_controls = json.loads(json.dumps(runtime_controls))
+    invalid_controls["provider_session"]["provider"] = "wrong_provider"
+    invalid_controls_path = controls_dir / "invalid_provider_controls.json"
+    invalid_controls_path.write_text(
+        json.dumps(invalid_controls, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="provider_session_provider_matches_certificate",
+    ):
+        write_provider_market_data_imbalance_live_dryrun_handoff(
+            approved_decision_dir,
+            invalid_controls_path,
+            tmp_path / "handoff_invalid_provider",
+        )
+    credential_controls = json.loads(json.dumps(runtime_controls))
+    credential_controls["provider_session"]["api_token"] = "must-not-be-stored"
+    credential_controls_path = controls_dir / "credential_controls.json"
+    credential_controls_path.write_text(
+        json.dumps(credential_controls, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="controls_credential_free"):
+        write_provider_market_data_imbalance_live_dryrun_handoff(
+            approved_decision_dir,
+            credential_controls_path,
+            tmp_path / "handoff_with_credential",
+        )
+    fractional_controls = json.loads(json.dumps(runtime_controls))
+    fractional_controls["limits"]["max_orders_per_session"] = 100.5
+    fractional_controls_path = controls_dir / "fractional_controls.json"
+    fractional_controls_path.write_text(
+        json.dumps(fractional_controls, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="max_orders_positive"):
+        write_provider_market_data_imbalance_live_dryrun_handoff(
+            approved_decision_dir,
+            fractional_controls_path,
+            tmp_path / "handoff_fractional_limit",
+        )
+
+    handoff_manifest_path = handoff_dir / "manifest.json"
+    handoff_manifest = json.loads(
+        handoff_manifest_path.read_text(encoding="utf-8")
+    )
+    original_handoff_plan_text = handoff_plan_path.read_text(encoding="utf-8")
+    tampered_handoff_plan = json.loads(original_handoff_plan_text)
+    tampered_handoff_plan["safety"]["authorizes_submission"] = True
+    handoff_plan_path.write_text(
+        json.dumps(tampered_handoff_plan, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        handoff_dir,
+        run_type="provider_market_data_imbalance_live_dryrun_handoff",
+        parameters=handoff_manifest["parameters"],
+        inputs=_manifest_input_paths(handoff_manifest["inputs"]),
+        extra=handoff_manifest["extra"],
+    )
+    assert verify_experiment_manifest(
+        handoff_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_handoff"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    tampered_handoff_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_handoff(handoff_dir)
+    )
+    assert not tampered_handoff_verification.verified
+    assert tampered_handoff_verification.manifest_current
+    assert not tampered_handoff_verification.artifacts_consistent
+    assert not tampered_handoff_verification.non_authorizing
+    tampered_handoff_catalog = catalog_experiment_runs([handoff_dir])
+    assert not bool(tampered_handoff_catalog.catalog.iloc[0]["summary_status"])
+    handoff_plan_path.write_text(
+        original_handoff_plan_text,
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        handoff_dir,
+        run_type="provider_market_data_imbalance_live_dryrun_handoff",
+        parameters=handoff_manifest["parameters"],
+        inputs=_manifest_input_paths(handoff_manifest["inputs"]),
+        extra=handoff_manifest["extra"],
+    )
+    assert verify_provider_market_data_imbalance_live_dryrun_handoff(
+        handoff_dir
+    ).verified
+
+    original_runtime_controls_text = runtime_controls_path.read_text(
+        encoding="utf-8"
+    )
+    runtime_controls_path.write_text(
+        original_runtime_controls_text.replace(
+            "nse-live-dryrun-20260714",
+            "changed-session",
+        ),
+        encoding="utf-8",
+    )
+    controls_drift_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_handoff(handoff_dir)
+    )
+    assert not controls_drift_verification.verified
+    assert not controls_drift_verification.runtime_controls_current
+    runtime_controls_path.write_text(
+        original_runtime_controls_text,
+        encoding="utf-8",
+    )
+    original_rollback_text = rollback_runbook_path.read_text(encoding="utf-8")
+    rollback_runbook_path.write_text(
+        original_rollback_text + "Unexpected drift.\n",
+        encoding="utf-8",
+    )
+    rollback_drift_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_handoff(handoff_dir)
+    )
+    assert not rollback_drift_verification.verified
+    assert not rollback_drift_verification.rollback_runbook_current
+    rollback_runbook_path.write_text(original_rollback_text, encoding="utf-8")
+    assert verify_provider_market_data_imbalance_live_dryrun_handoff(
+        handoff_dir
+    ).verified
+
     certificate_source.write_text(
         "source\nchanged_after_release_review\n",
         encoding="utf-8",
@@ -2317,6 +2615,18 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     )
     assert not stale_decision_verification.verified
     assert not stale_decision_verification.release_review_current
+    stale_handoff_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_handoff(handoff_dir)
+    )
+    assert not stale_handoff_verification.verified
+    assert not stale_handoff_verification.release_decision_current
+    assert not verify_experiment_manifest(
+        handoff_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_handoff"
+        ),
+        require_input_fingerprints=True,
+    ).passed
     assert not verify_experiment_manifest(
         approved_decision_manifest_path,
         expected_run_type=(
@@ -2367,6 +2677,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert verify_provider_market_data_imbalance_release_decision(
         approved_decision_dir
+    ).verified
+    assert verify_provider_market_data_imbalance_live_dryrun_handoff(
+        handoff_dir
     ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
@@ -2429,6 +2742,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert not verify_provider_market_data_imbalance_release_decision(
         approved_decision_dir
+    ).verified
+    assert not verify_provider_market_data_imbalance_live_dryrun_handoff(
+        handoff_dir
     ).verified
     assert not verify_experiment_manifest(
         release_manifest_path,

@@ -3017,6 +3017,27 @@
   drift pass in both retained-proof variants (`2 passed`); the complete affected
   strategy-evidence, manifest, and experiment-catalog gate passes (`127
   passed`).
+- A verified approved release decision can now advance into a write-once,
+  controlled live-dry-run handoff through
+  `prepare-provider-market-data-imbalance-live-dryrun-handoff`. A separate,
+  credential-free runtime-controls JSON must bind the exact decision ID/SHA,
+  retained rehearsal-certificate provider/transport/exchange/adapter identity,
+  India trading session, finite integer order/position limits, notional cap,
+  armed kill-switch behavior, rollback owner/procedure, and a current rollback
+  runbook SHA. The emitted deterministic plan contains only ordered action
+  labels: execution, broker API calls, submission, authorization, and stored
+  credential values remain explicitly disabled, and a separate future runtime
+  launcher is required. The handoff manifest fingerprints the approved
+  decision, controls, rollback file, and complete recursive retained proof
+  graph. `verify-provider-market-data-imbalance-live-dryrun-handoff`
+  reconstructs every artifact and rejects source drift or a freshly
+  re-manifested authorization claim; experiment-catalog ingestion invokes the
+  same verifier and suppresses stale readiness. This slice does not contact a
+  provider, inspect credential values, launch a session, or claim that the
+  earlier operator decision attested the exact later controls file. Both
+  retained-proof variants pass the focused approved/rejected, identity,
+  credential-key, limit, write-once, semantic-tamper, controls/rollback drift,
+  and recursive-source-drift gate (`2 passed`).
 
 ## Test Gate
 
@@ -3052,6 +3073,13 @@ re-manifested decision authorization tamper, operator-file drift, and direct
 plus recursive retained-proof drift pass in both provider evidence variants
 (`2 passed`). The full affected evidence/manifest/catalog surface passes
 together (`127 passed`).
+
+Latest controlled live-dry-run handoff gate: approved-decision-only creation,
+exact provider/session/risk/kill-switch/rollback bindings, credential-bearing
+key rejection, finite exact-integer limit enforcement, write-once output, CLI
+verification, catalog status/counts, re-manifested authorization tamper,
+controls and rollback drift, and direct plus recursive retained-proof drift pass
+in both provider evidence variants (`2 passed`).
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3228,10 +3256,10 @@ the last completed full-suite green baseline rather than claiming the current
 
 ## Next Build Targets
 
-1. Add a non-submitting controlled live-dry-run handoff bundle that consumes
-   only a verified approved release decision, binds the exact runtime risk-limit
-   configuration, kill-switch policy, rollback procedure, and provider session
-   identity, and emits an execution plan without broker submission capability.
+1. Add a credential-safe controlled live-dry-run runtime preflight that consumes
+   only a verified handoff, validates configured credential environment-variable
+   presence and provider connectivity without storing values or permitting
+   submission, and emits a non-submitting launch receipt.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

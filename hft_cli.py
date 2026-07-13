@@ -245,6 +245,11 @@ from reports.provider_market_data_imbalance_release_decision import (
     verify_provider_market_data_imbalance_release_decision,
     write_provider_market_data_imbalance_release_decision,
 )
+from reports.provider_market_data_imbalance_live_dryrun_handoff import (
+    ProviderMarketDataImbalanceLiveDryrunHandoffConfig,
+    verify_provider_market_data_imbalance_live_dryrun_handoff,
+    write_provider_market_data_imbalance_live_dryrun_handoff,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2206,6 +2211,52 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_market_data_imbalance_release_decision_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+
+    provider_market_data_imbalance_live_dryrun_handoff = sub.add_parser(
+        "prepare-provider-market-data-imbalance-live-dryrun-handoff",
+        help=(
+            "Prepare a non-submitting controlled live-dry-run handoff from "
+            "an approved release decision and credential-free runtime controls."
+        ),
+    )
+    provider_market_data_imbalance_live_dryrun_handoff.add_argument(
+        "--release-decision",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_handoff.add_argument(
+        "--runtime-controls",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_handoff.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_handoff.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=4096,
+    )
+    provider_market_data_imbalance_live_dryrun_handoff.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    verify_provider_market_data_imbalance_live_dryrun_handoff_parser = (
+        sub.add_parser(
+            "verify-provider-market-data-imbalance-live-dryrun-handoff",
+            help=(
+                "Reopen a controlled live-dry-run handoff and its complete "
+                "approved-decision, controls, rollback, and retained proof graph."
+            ),
+        )
+    )
+    verify_provider_market_data_imbalance_live_dryrun_handoff_parser.add_argument(
+        "--handoff",
+        required=True,
+    )
+    verify_provider_market_data_imbalance_live_dryrun_handoff_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -6039,6 +6090,60 @@ def main(argv: list[str] | None = None) -> int:
                         ""
                         if result.operator_decision_path is None
                         else str(result.operator_decision_path)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "prepare-provider-market-data-imbalance-live-dryrun-handoff"
+    ):
+        result = write_provider_market_data_imbalance_live_dryrun_handoff(
+            args.release_decision,
+            args.runtime_controls,
+            args.out,
+            config=ProviderMarketDataImbalanceLiveDryrunHandoffConfig(
+                max_dependency_count=args.max_dependencies,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-live-dryrun-handoff"
+    ):
+        result = verify_provider_market_data_imbalance_live_dryrun_handoff(
+            args.handoff
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "release_decision_current": result.release_decision_current,
+                    "runtime_controls_current": result.runtime_controls_current,
+                    "rollback_runbook_current": result.rollback_runbook_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "non_authorizing": result.non_authorizing,
+                    "handoff_dir": str(result.output_dir),
+                    "release_decision_dir": (
+                        ""
+                        if result.release_decision_dir is None
+                        else str(result.release_decision_dir)
+                    ),
+                    "runtime_controls_path": (
+                        ""
+                        if result.runtime_controls_path is None
+                        else str(result.runtime_controls_path)
+                    ),
+                    "rollback_runbook_path": (
+                        ""
+                        if result.rollback_runbook_path is None
+                        else str(result.rollback_runbook_path)
                     ),
                     "error": result.error,
                 },
