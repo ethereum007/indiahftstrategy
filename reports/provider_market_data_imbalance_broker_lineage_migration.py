@@ -136,6 +136,137 @@ class ProviderBrokerLineageMigrationAuditVerification:
     matched_inventory: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class ProviderBrokerLineageStrictRefreshPlan:
+    bundle_path: Path
+    bundle_type: str
+    run_type: str
+    manifest_current: bool
+    artifacts_current: bool
+    input_drift_only: bool
+    ready: bool
+    output_path: Path | None
+    command: str
+    reason: str
+
+
+def provider_broker_lineage_strict_refresh_plan(
+    bundle_dir: str | Path,
+) -> ProviderBrokerLineageStrictRefreshPlan:
+    bundle = Path(bundle_dir).resolve()
+    manifest_path = bundle / "manifest.json"
+    manifest = _read_json(manifest_path)
+    run_type = _text(manifest.get("run_type"))
+    target = TARGETS.get(run_type)
+    if target is None:
+        return ProviderBrokerLineageStrictRefreshPlan(
+            bundle_path=bundle,
+            bundle_type="",
+            run_type=run_type,
+            manifest_current=False,
+            artifacts_current=False,
+            input_drift_only=False,
+            ready=False,
+            output_path=None,
+            command="",
+            reason="provider proof run type is missing or unsupported",
+        )
+
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=run_type,
+        require_input_fingerprints=True,
+    )
+    artifact_paths = {
+        _text(item.get("path")).replace("\\", "/")
+        for item in manifest.get("artifacts", [])
+        if isinstance(item, Mapping)
+    }
+    required_artifacts_recorded = {
+        str(target["summary"]),
+        str(target["config"]),
+    }.issubset(artifact_paths)
+    artifacts_current = bool(
+        integrity.readable
+        and integrity.run_type_matches
+        and integrity.artifact_count > 0
+        and integrity.artifact_match_count == integrity.artifact_count
+        and required_artifacts_recorded
+    )
+    input_drift_only = bool(
+        artifacts_current
+        and not integrity.passed
+        and integrity.error == "input_drift"
+    )
+    manifest_state_refreshable = bool(integrity.passed or input_drift_only)
+    summary = _read_csv(bundle / str(target["summary"]))
+    config = _read_json(bundle / str(target["config"]))
+    summary_row = (
+        summary.iloc[0] if len(summary) == 1 else pd.Series(dtype=object)
+    )
+    manifest_extra = _mapping(manifest.get("extra"))
+    non_authorizing = bool(
+        "authorizes_submission" in manifest_extra
+        and not _bool(manifest_extra.get("authorizes_submission"))
+    )
+    source_paths_present = _refresh_source_paths_present(
+        str(target["bundle_type"]),
+        summary_row,
+        config,
+    )
+    policy_parameters_present = bool(_migration_parameters(config, bundle))
+    ready = bool(
+        artifacts_current
+        and manifest_state_refreshable
+        and len(summary) == 1
+        and config
+        and policy_parameters_present
+        and non_authorizing
+        and source_paths_present
+    )
+    output_path = _strict_output_path(bundle) if ready else None
+    command = (
+        _regeneration_command(
+            str(target["bundle_type"]),
+            bundle,
+            summary_row,
+            config,
+        )
+        if ready
+        else ""
+    )
+    if not artifacts_current:
+        reason = "provider proof artifacts are missing or drifted"
+    elif not manifest_state_refreshable:
+        reason = "provider proof manifest failure is not limited to input drift"
+    elif len(summary) != 1:
+        reason = "provider proof summary must contain exactly one row"
+    elif not config:
+        reason = "provider proof config is missing or unreadable"
+    elif not policy_parameters_present:
+        reason = "provider proof policy parameters are missing"
+    elif not non_authorizing:
+        reason = "provider proof must explicitly prohibit broker submission"
+    elif not source_paths_present:
+        reason = "provider proof is missing required refresh source paths"
+    elif input_drift_only:
+        reason = "recorded artifacts are current; refresh removes stale input lineage"
+    else:
+        reason = "recorded policy can be reissued as strict lineage proof"
+    return ProviderBrokerLineageStrictRefreshPlan(
+        bundle_path=bundle,
+        bundle_type=str(target["bundle_type"]),
+        run_type=run_type,
+        manifest_current=bool(integrity.passed),
+        artifacts_current=artifacts_current,
+        input_drift_only=input_drift_only,
+        ready=ready,
+        output_path=output_path,
+        command=command,
+        reason=reason,
+    )
+
+
 def provider_broker_lineage_migration_audit_inputs(
     audit_dir: str | Path | None,
 ) -> dict[str, Any]:
@@ -1181,6 +1312,35 @@ def _regeneration_command(
     return " ".join(parts)
 
 
+def _refresh_source_paths_present(
+    bundle_type: str,
+    row: pd.Series,
+    config: Mapping[str, Any],
+) -> bool:
+    if row.empty:
+        return False
+    if bundle_type == "provider_ack":
+        return bool(
+            _refresh_path_exists(row.get("provider_broker_dispatch_send_dir"))
+            and _refresh_path_exists(row.get("acks_path"))
+        )
+    if bundle_type == "provider_roundtrip":
+        return _refresh_path_exists(
+            row.get("provider_broker_dispatch_ack_dir")
+        )
+    payload = _mapping(config.get("payload"))
+    source_payload = _mapping(payload.get("source"))
+    source = _text(row.get("source_roundtrip_dir")) or _text(
+        source_payload.get("path")
+    )
+    return _refresh_path_exists(source)
+
+
+def _refresh_path_exists(value: Any) -> bool:
+    path = _path(value)
+    return bool(path is not None and path.exists())
+
+
 def _migration_parameters(config: Mapping[str, Any], bundle: Path) -> dict[str, Any]:
     parameters = _mapping(config.get("parameters"))
     if parameters:
@@ -1201,7 +1361,11 @@ def _strict_dependency_path(source: Path | None, run_type: str) -> str:
 
 
 def _strict_output_path(bundle: Path) -> Path:
-    candidate = bundle.parent / f"{bundle.name}_strict"
+    candidate = (
+        bundle
+        if bundle.name.endswith("_strict")
+        else bundle.parent / f"{bundle.name}_strict"
+    )
     if not candidate.exists():
         return candidate
     rebuilt = bundle.parent / f"{bundle.name}_strict_rebuilt"

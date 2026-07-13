@@ -2755,13 +2755,20 @@
   audit or strict-replacement drift, migration audits attached to already-strict
   proof, and summary/config/manifest evidence disagreement. Every accepted audit
   is reverified for its exact source at scan time. The report writes a
-  catalog-visible inventory, checks, zero-tolerance summary, blocked remediation
-  queue, config, and runbook; remains explicitly non-authorizing; and seals every
-  reviewed bundle, proof manifest, and recursive dependency so later drift also
-  invalidates the aggregate review. Strict archive, unaudited legacy/CLI exit,
-  current audited legacy, post-acceptance drift, aggregate-manifest drift, and
-  re-manifested evidence-disagreement paths pass with the complete lineage
-  migration surface (`24 passed`).
+  catalog-visible inventory, checks, zero-tolerance summary, dependency-ordered
+  refresh queue, config, and runbook. Refreshable rows preserve recorded policy
+  in strict CLI commands, omit the legacy audit, predict strict upstream
+  dependencies, and target fresh non-overwriting siblings. Input-only drift is
+  refreshable when every recorded artifact remains current; artifact drift,
+  unsealed policy artifacts, missing input fingerprints or source paths,
+  unsupported proof, or absent/authorizing non-submission metadata remain
+  blocked without a command. The review remains explicitly non-authorizing and
+  seals every reviewed bundle, proof manifest, and recursive dependency so later
+  drift also invalidates the aggregate artifact. Strict archive, unaudited
+  legacy/CLI exit, ordered non-overwriting refresh, current audited legacy,
+  post-acceptance drift, aggregate-manifest drift, re-manifested evidence
+  disagreement, and artifact-corruption paths pass with the complete lineage
+  migration surface (`25 passed`).
 
 ## Test Gate
 
@@ -2771,7 +2778,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1585 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1586 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2909,7 +2916,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1585-test collection is fully green.
+1586-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2918,6 +2925,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Integrate the lineage audit-usage gate into proof-refresh planning so stale
-   accepted legacy consumers are regenerated in acknowledgement -> round-trip ->
-   certificate order without overwriting retained evidence.
+4. Add a post-refresh convergence verifier that binds each planned command to
+   its generated strict sibling and proves the refreshed acknowledgement ->
+   round-trip -> certificate chain closes the original audit-usage blockers.

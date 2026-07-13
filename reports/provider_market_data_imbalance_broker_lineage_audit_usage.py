@@ -14,6 +14,7 @@ from reports.manifest import (
 )
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     provider_broker_lineage_migration_audit_evidence,
+    provider_broker_lineage_strict_refresh_plan,
 )
 
 
@@ -100,6 +101,10 @@ INVENTORY_COLUMNS = (
     "current_evidence_matches_stored",
     "usage_status",
     "reason",
+    "refresh_ready",
+    "refresh_output_path",
+    "refresh_command",
+    "refresh_reason",
 )
 ACTION_COLUMNS = (
     "priority",
@@ -108,6 +113,8 @@ ACTION_COLUMNS = (
     "bundle_path",
     "usage_status",
     "action",
+    "refresh_output_path",
+    "command",
     "reason",
 )
 
@@ -219,6 +226,8 @@ def write_provider_broker_lineage_audit_usage_review(
             "audited_legacy_ready_bundles": int(summary.iloc[0]["audited_legacy_ready_bundles"]),
             "unaudited_legacy_bundles": int(summary.iloc[0]["unaudited_legacy_bundles"]),
             "drifted_audit_bundles": int(summary.iloc[0]["drifted_audit_bundles"]),
+            "ready_action_count": int(summary.iloc[0]["ready_action_count"]),
+            "blocked_action_count": int(summary.iloc[0]["blocked_action_count"]),
         },
     )
     return ProviderBrokerLineageAuditUsageReport(
@@ -339,6 +348,11 @@ def _inventory_row(manifest_path: Path) -> dict[str, Any]:
     else:
         status = "audited_legacy_ready"
         reason = "legacy lineage proof retains a current exact-source migration audit"
+    refresh_plan = (
+        provider_broker_lineage_strict_refresh_plan(bundle)
+        if status not in READY_STATUSES
+        else None
+    )
     evidence = (
         current_evidence
         or summary_evidence
@@ -371,6 +385,14 @@ def _inventory_row(manifest_path: Path) -> dict[str, Any]:
         "current_evidence_matches_stored": current_matches,
         "usage_status": status,
         "reason": reason,
+        "refresh_ready": bool(refresh_plan and refresh_plan.ready),
+        "refresh_output_path": (
+            ""
+            if refresh_plan is None or refresh_plan.output_path is None
+            else str(refresh_plan.output_path)
+        ),
+        "refresh_command": "" if refresh_plan is None else refresh_plan.command,
+        "refresh_reason": "" if refresh_plan is None else refresh_plan.reason,
     }
 
 
@@ -488,6 +510,9 @@ def _summary(
                 "strict_with_audit_bundles": _status_count(inventory, "strict_with_audit"),
                 "failed_checks": failed_checks,
                 "action_queue_count": len(action_queue),
+                "ready_action_count": int(
+                    action_queue.get("queue_status", pd.Series(dtype=str)).astype(str).eq("ready").sum()
+                ),
                 "blocked_action_count": int(
                     action_queue.get("queue_status", pd.Series(dtype=str)).astype(str).eq("blocked").sum()
                 ),
@@ -506,7 +531,20 @@ def _summary(
 def _action_queue(inventory: pd.DataFrame) -> pd.DataFrame:
     if inventory.empty:
         return pd.DataFrame(columns=ACTION_COLUMNS)
-    pending = inventory.loc[~inventory["usage_status"].isin(READY_STATUSES)]
+    pending = inventory.loc[
+        ~inventory["usage_status"].isin(READY_STATUSES)
+    ].copy()
+    pending["stage_order"] = pending["bundle_type"].map(
+        {
+            "provider_ack": 1,
+            "provider_roundtrip": 2,
+            "rehearsal_certificate": 3,
+        }
+    ).fillna(99)
+    pending = pending.sort_values(
+        ["stage_order", "bundle_path"],
+        kind="stable",
+    )
     rows = []
     for priority, (_, row) in enumerate(pending.iterrows(), start=1):
         status = _text(row["usage_status"])
@@ -516,15 +554,22 @@ def _action_queue(inventory: pd.DataFrame) -> pd.DataFrame:
             "proof_manifest_drifted": "regenerate_current_provider_proof",
             "strict_with_audit": "remove_legacy_audit_from_strict_proof",
         }.get(status, "review_provider_lineage_proof")
+        refresh_ready = _bool(row.get("refresh_ready"))
+        if refresh_ready:
+            action = "regenerate_as_strict_lineage_proof"
         rows.append(
             {
                 "priority": priority,
-                "queue_status": "blocked",
+                "queue_status": "ready" if refresh_ready else "blocked",
                 "bundle_type": row["bundle_type"],
                 "bundle_path": row["bundle_path"],
                 "usage_status": status,
                 "action": action,
-                "reason": row["reason"],
+                "refresh_output_path": row.get("refresh_output_path", ""),
+                "command": row.get("refresh_command", ""),
+                "reason": (
+                    f"{row['reason']}; {row.get('refresh_reason', '')}".rstrip("; ")
+                ),
             }
         )
     return pd.DataFrame(rows, columns=ACTION_COLUMNS)
@@ -554,6 +599,8 @@ def _runbook(
         f"- Unaudited legacy: {int(summary['unaudited_legacy_bundles'])}",
         f"- Drifted audit/proof: {int(summary['drifted_audit_bundles'])}",
         f"- Strict proofs carrying an audit: {int(summary['strict_with_audit_bundles'])}",
+        f"- Ready refresh actions: {int(summary['ready_action_count'])}",
+        f"- Blocked refresh actions: {int(summary['blocked_action_count'])}",
         "- Authorizes broker submission: no",
         "",
         "## Proofs",
@@ -575,6 +622,9 @@ def _runbook(
             lines.append(
                 f"- [{row['queue_status']}] `{row['bundle_path']}`: {row['action']} - {row['reason']}"
             )
+            command = _text(row.get("command"))
+            if command:
+                lines.append(f"  `{command}`")
     return "\n".join(lines) + "\n"
 
 

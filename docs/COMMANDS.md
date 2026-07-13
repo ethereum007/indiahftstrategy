@@ -6609,6 +6609,20 @@ The defaults permit no unaudited legacy proof, no drift, and no migration audit
 attached to an already-strict proof. `--no-recursive` limits discovery to roots
 that directly contain a target manifest.
 
+Every non-ready proof also receives a provider-specific refresh assessment. If
+the recorded proof artifacts are byte-current, the action queue emits a strict
+CLI regeneration command with the original policy thresholds and target mode,
+omits the legacy audit option, and selects a new `_strict`,
+`_strict_rebuilt`, or numbered sibling without creating or overwriting it.
+Actions are ordered acknowledgement -> round-trip -> certificate, and
+downstream commands predict the fresh strict dependency path selected by the
+earlier action. Input-only drift can therefore be repaired from intact recorded
+policy. Missing or changed proof artifacts, unreadable policy, missing source
+paths, unsealed summary/config files, missing input fingerprints, unsupported
+run types, and absent or authorizing non-submission metadata remain `blocked`
+and do not receive a command. `--fail-on-breach` enforces the lineage policy;
+`--fail-on-blocked-actions` separately enforces refresh-plan executability.
+
 Outputs:
 
 ```text

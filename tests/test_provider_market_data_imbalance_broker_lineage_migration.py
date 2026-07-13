@@ -554,6 +554,8 @@ def test_lineage_audit_usage_review_blocks_unaudited_legacy_and_cli_exits(
     tmp_path,
 ):
     chain = _write_provider_chain(tmp_path / "legacy_archive", strict=False)
+    reserved_strict_ack = chain["ack"].with_name(f"{chain['ack'].name}_strict")
+    reserved_strict_ack.mkdir()
     output = tmp_path / "legacy_usage_review"
 
     report = write_provider_broker_lineage_audit_usage_review(
@@ -565,7 +567,33 @@ def test_lineage_audit_usage_review_blocks_unaudited_legacy_and_cli_exits(
     assert set(report.inventory["usage_status"]) == {"unaudited_legacy"}
     assert int(report.summary.iloc[0]["unaudited_legacy_bundles"]) == 3
     assert len(report.action_queue) == 3
-    assert set(report.action_queue["queue_status"]) == {"blocked"}
+    assert list(report.action_queue["bundle_type"]) == [
+        "provider_ack",
+        "provider_roundtrip",
+        "rehearsal_certificate",
+    ]
+    assert set(report.action_queue["queue_status"]) == {"ready"}
+    assert int(report.summary.iloc[0]["ready_action_count"]) == 3
+    assert int(report.summary.iloc[0]["blocked_action_count"]) == 0
+    commands = dict(
+        zip(
+            report.action_queue["bundle_type"],
+            report.action_queue["command"],
+        )
+    )
+    assert "--require-send-packet" in commands["provider_ack"]
+    assert "01_provider_ack_strict_rebuilt" in commands["provider_ack"]
+    assert "--allow-rejections" in commands["provider_ack"]
+    assert "--max-unmatched-acks 2" in commands["provider_ack"]
+    assert "--require-ack-lineage" in commands["provider_roundtrip"]
+    assert "01_provider_ack_strict_rebuilt" in commands["provider_roundtrip"]
+    assert "--target-mode shadow" in commands["provider_roundtrip"]
+    assert "--require-ack-lineage" in commands["rehearsal_certificate"]
+    assert "02_provider_roundtrip_strict" in commands["rehearsal_certificate"]
+    assert "--max-manifests 96" in commands["rehearsal_certificate"]
+    assert not chain["ack"].with_name(
+        f"{chain['ack'].name}_strict_rebuilt"
+    ).exists()
     assert (
         main(
             [
@@ -644,6 +672,8 @@ def test_lineage_audit_usage_review_detects_post_acceptance_drift(tmp_path):
     }
     assert int(report.summary.iloc[0]["drifted_audit_bundles"]) == 3
     assert len(report.action_queue) == 3
+    assert set(report.action_queue["queue_status"]) == {"ready"}
+    assert report.action_queue["command"].astype(str).str.len().gt(0).all()
 
 
 def test_lineage_audit_usage_review_detects_stored_evidence_disagreement(
@@ -682,6 +712,52 @@ def test_lineage_audit_usage_review_detects_stored_evidence_disagreement(
     assert not bool(row["stored_evidence_consistent"])
     assert not bool(row["current_evidence_matches_stored"])
     assert "disagrees" in row["reason"]
+    assert bool(row["refresh_ready"])
+    assert report.action_queue.iloc[0]["queue_status"] == "ready"
+
+
+def test_lineage_audit_usage_refresh_blocks_artifact_drift(tmp_path):
+    _, _, outputs = _write_audited_legacy_provider_outputs(tmp_path)
+    bundle = outputs["ack"]
+    manifest_path = bundle / "manifest.json"
+    original_manifest = manifest_path.read_text(encoding="utf-8")
+    manifest = json.loads(original_manifest)
+    manifest["inputs"] = {}
+    _write_json(manifest_path, manifest)
+
+    missing_inputs = write_provider_broker_lineage_audit_usage_review(
+        [bundle],
+        tmp_path / "missing_inputs_usage_review",
+    )
+
+    missing_inputs_row = missing_inputs.inventory.iloc[0]
+    missing_inputs_action = missing_inputs.action_queue.iloc[0]
+    assert not bool(missing_inputs_row["refresh_ready"])
+    assert "not limited to input drift" in missing_inputs_row["refresh_reason"]
+    assert missing_inputs_action["queue_status"] == "blocked"
+    assert missing_inputs_action["command"] == ""
+
+    manifest_path.write_text(original_manifest, encoding="utf-8")
+    summary_path = (
+        bundle
+        / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    )
+    summary_path.write_text("passed\nfalse\n", encoding="utf-8")
+
+    report = write_provider_broker_lineage_audit_usage_review(
+        [bundle],
+        tmp_path / "artifact_drift_usage_review",
+    )
+
+    row = report.inventory.iloc[0]
+    action = report.action_queue.iloc[0]
+    assert not report.ready
+    assert row["usage_status"] == "audited_legacy_drifted"
+    assert not bool(row["refresh_ready"])
+    assert "artifacts" in row["refresh_reason"]
+    assert action["queue_status"] == "blocked"
+    assert action["command"] == ""
+    assert int(report.summary.iloc[0]["blocked_action_count"]) == 1
 
 
 @pytest.mark.parametrize(
