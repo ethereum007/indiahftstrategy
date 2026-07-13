@@ -23,6 +23,10 @@ from reports.provider_market_data_imbalance_release_review import (
     RUN_TYPE as PROVIDER_RELEASE_REVIEW_RUN_TYPE,
     verify_provider_market_data_imbalance_release_review,
 )
+from reports.provider_market_data_imbalance_release_decision import (
+    RUN_TYPE as PROVIDER_RELEASE_DECISION_RUN_TYPE,
+    verify_provider_market_data_imbalance_release_decision,
+)
 
 
 SUMMARY_FILES = [
@@ -112,6 +116,7 @@ SUMMARY_FILES = [
     "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
     "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv",
     "provider_market_data_imbalance_release_review_summary.csv",
+    "provider_market_data_imbalance_release_decision_summary.csv",
     "provider_broker_lineage_migration_summary.csv",
     "provider_broker_lineage_audit_usage_summary.csv",
     "provider_broker_lineage_refresh_convergence_summary.csv",
@@ -340,6 +345,12 @@ def _catalog_row(
             str(manifest.get("run_type", "")),
         )
     )
+    provider_release_decision_verification = (
+        _provider_release_decision_verification_fields(
+            run_dir,
+            str(manifest.get("run_type", "")),
+        )
+    )
     if (
         strategy_evidence_verification[
             "strategy_evidence_verification_required"
@@ -359,6 +370,16 @@ def _catalog_row(
         ]
     ):
         status_column = "provider_release_review_verification"
+        status = False
+    if (
+        provider_release_decision_verification[
+            "provider_release_decision_verification_required"
+        ]
+        and not provider_release_decision_verification[
+            "provider_release_decision_verification_verified"
+        ]
+    ):
+        status_column = "provider_release_decision_verification"
         status = False
     inputs = manifest.get("inputs", {}) or {}
     input_stats = _input_stats(inputs)
@@ -380,6 +401,7 @@ def _catalog_row(
         "inputs_json": json.dumps(inputs, sort_keys=True),
         **strategy_evidence_verification,
         **provider_release_review_verification,
+        **provider_release_decision_verification,
         **_provider_lineage_selection_fields(
             run_dir,
             str(manifest.get("run_type", "")),
@@ -543,6 +565,83 @@ def _provider_release_review_verification_fields(
                 verification.operator_approval_pending
             ),
             "provider_release_review_verification_error": verification.error,
+        }
+    )
+    return fields
+
+
+def _provider_release_decision_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == PROVIDER_RELEASE_DECISION_RUN_TYPE
+    fields: dict[str, Any] = {
+        "provider_release_decision_verification_required": required,
+        "provider_release_decision_verification_status": (
+            "verification_required" if required else "not_applicable"
+        ),
+        "provider_release_decision_verification_verified": False,
+        "provider_release_decision_verification_sealed": False,
+        "provider_release_decision_verification_approved": False,
+        "provider_release_decision_verification_ready": False,
+        "provider_release_decision_verification_manifest_current": False,
+        "provider_release_decision_verification_release_review_current": False,
+        "provider_release_decision_verification_operator_decision_current": False,
+        "provider_release_decision_verification_artifacts_consistent": False,
+        "provider_release_decision_verification_non_authorizing": False,
+        "provider_release_decision_verification_error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = verify_provider_market_data_imbalance_release_decision(
+            run_dir
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields["provider_release_decision_verification_status"] = (
+            "verification_error"
+        )
+        fields["provider_release_decision_verification_error"] = str(exc)
+        return fields
+    fields.update(
+        {
+            "provider_release_decision_verification_status": (
+                "verified_approved"
+                if verification.verified and verification.approved
+                else (
+                    "verified_rejected"
+                    if verification.verified
+                    else "stale_or_inconsistent"
+                )
+            ),
+            "provider_release_decision_verification_verified": (
+                verification.verified
+            ),
+            "provider_release_decision_verification_sealed": (
+                verification.sealed
+            ),
+            "provider_release_decision_verification_approved": (
+                verification.approved
+            ),
+            "provider_release_decision_verification_ready": (
+                verification.ready
+            ),
+            "provider_release_decision_verification_manifest_current": (
+                verification.manifest_current
+            ),
+            "provider_release_decision_verification_release_review_current": (
+                verification.release_review_current
+            ),
+            "provider_release_decision_verification_operator_decision_current": (
+                verification.operator_decision_current
+            ),
+            "provider_release_decision_verification_artifacts_consistent": (
+                verification.artifacts_consistent
+            ),
+            "provider_release_decision_verification_non_authorizing": (
+                verification.non_authorizing
+            ),
+            "provider_release_decision_verification_error": verification.error,
         }
     )
     return fields
@@ -884,6 +983,9 @@ def _catalog_summary(
     provider_release_review_verification_counts = (
         _provider_release_review_verification_counts(catalog)
     )
+    provider_release_decision_verification_counts = (
+        _provider_release_decision_verification_counts(catalog)
+    )
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -909,6 +1011,7 @@ def _catalog_summary(
                     **provider_lineage_selection_counts,
                     **strategy_evidence_verification_counts,
                     **provider_release_review_verification_counts,
+                    **provider_release_decision_verification_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -939,6 +1042,7 @@ def _catalog_summary(
                 **provider_lineage_selection_counts,
                 **strategy_evidence_verification_counts,
                 **provider_release_review_verification_counts,
+                **provider_release_decision_verification_counts,
                 **action_counts,
                 **hygiene_counts,
             }
@@ -1013,6 +1117,58 @@ def _provider_release_review_verification_counts(
                 (required & ready).sum()
             ),
             "provider_release_review_verification_stale_runs": int(
+                (required & ~verified).sum()
+            ),
+        }
+    )
+    return counts
+
+
+def _provider_release_decision_verification_counts(
+    catalog: pd.DataFrame,
+) -> dict[str, int]:
+    counts = {
+        "provider_release_decision_verification_required_runs": 0,
+        "provider_release_decision_verification_verified_runs": 0,
+        "provider_release_decision_verification_sealed_runs": 0,
+        "provider_release_decision_verification_approved_runs": 0,
+        "provider_release_decision_verification_ready_runs": 0,
+        "provider_release_decision_verification_stale_runs": 0,
+    }
+    required_column = "provider_release_decision_verification_required"
+    if catalog.empty or required_column not in catalog.columns:
+        return counts
+    required = catalog[required_column].map(_to_bool)
+    verified = catalog[
+        "provider_release_decision_verification_verified"
+    ].map(_to_bool)
+    sealed = catalog[
+        "provider_release_decision_verification_sealed"
+    ].map(_to_bool)
+    approved = catalog[
+        "provider_release_decision_verification_approved"
+    ].map(_to_bool)
+    ready = catalog[
+        "provider_release_decision_verification_ready"
+    ].map(_to_bool)
+    counts.update(
+        {
+            "provider_release_decision_verification_required_runs": int(
+                required.sum()
+            ),
+            "provider_release_decision_verification_verified_runs": int(
+                (required & verified).sum()
+            ),
+            "provider_release_decision_verification_sealed_runs": int(
+                (required & sealed).sum()
+            ),
+            "provider_release_decision_verification_approved_runs": int(
+                (required & verified & approved).sum()
+            ),
+            "provider_release_decision_verification_ready_runs": int(
+                (required & ready).sum()
+            ),
+            "provider_release_decision_verification_stale_runs": int(
                 (required & ~verified).sum()
             ),
         }

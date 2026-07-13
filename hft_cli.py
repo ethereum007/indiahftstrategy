@@ -240,6 +240,11 @@ from reports.provider_market_data_imbalance_release_review import (
     verify_provider_market_data_imbalance_release_review,
     write_provider_market_data_imbalance_release_review,
 )
+from reports.provider_market_data_imbalance_release_decision import (
+    ProviderMarketDataImbalanceReleaseDecisionConfig,
+    verify_provider_market_data_imbalance_release_decision,
+    write_provider_market_data_imbalance_release_decision,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2156,6 +2161,51 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_market_data_imbalance_release_review_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_release_decision = sub.add_parser(
+        "finalize-provider-market-data-imbalance-release-decision",
+        help=(
+            "Seal a separate operator decision against a current provider "
+            "live-dry-run release-review packet."
+        ),
+    )
+    provider_market_data_imbalance_release_decision.add_argument(
+        "--release-review",
+        required=True,
+    )
+    provider_market_data_imbalance_release_decision.add_argument(
+        "--operator-decision",
+        required=True,
+    )
+    provider_market_data_imbalance_release_decision.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_release_decision.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=2048,
+    )
+    provider_market_data_imbalance_release_decision.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    verify_provider_market_data_imbalance_release_decision_parser = (
+        sub.add_parser(
+            "verify-provider-market-data-imbalance-release-decision",
+            help=(
+                "Reopen a sealed provider release decision, its operator "
+                "record, and the complete retained release-review proof graph."
+            ),
+        )
+    )
+    verify_provider_market_data_imbalance_release_decision_parser.add_argument(
+        "--release-decision",
+        required=True,
+    )
+    verify_provider_market_data_imbalance_release_decision_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -5935,6 +5985,60 @@ def main(argv: list[str] | None = None) -> int:
                         ""
                         if result.strategy_evidence_dir is None
                         else str(result.strategy_evidence_dir)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "finalize-provider-market-data-imbalance-release-decision"
+    ):
+        result = write_provider_market_data_imbalance_release_decision(
+            args.release_review,
+            args.operator_decision,
+            args.out,
+            config=ProviderMarketDataImbalanceReleaseDecisionConfig(
+                max_dependency_count=args.max_dependencies,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-release-decision"
+    ):
+        result = verify_provider_market_data_imbalance_release_decision(
+            args.release_decision
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "sealed": result.sealed,
+                    "approved": result.approved,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "release_review_current": (
+                        result.release_review_current
+                    ),
+                    "operator_decision_current": (
+                        result.operator_decision_current
+                    ),
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "non_authorizing": result.non_authorizing,
+                    "release_decision_dir": str(result.output_dir),
+                    "release_review_dir": (
+                        ""
+                        if result.release_review_dir is None
+                        else str(result.release_review_dir)
+                    ),
+                    "operator_decision_path": (
+                        ""
+                        if result.operator_decision_path is None
+                        else str(result.operator_decision_path)
                     ),
                     "error": result.error,
                 },

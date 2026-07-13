@@ -25,6 +25,10 @@ from reports.provider_market_data_imbalance_release_review import (
     verify_provider_market_data_imbalance_release_review,
     write_provider_market_data_imbalance_release_review,
 )
+from reports.provider_market_data_imbalance_release_decision import (
+    verify_provider_market_data_imbalance_release_decision,
+    write_provider_market_data_imbalance_release_decision,
+)
 
 
 def _manifest_input_paths(value):
@@ -1863,6 +1867,7 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert not bool(release_summary["broker_api_called"])
     assert not bool(release_summary["authorizes_submission"])
     assert operator_approval["decision"] == "pending"
+    assert operator_approval["packet_sha256"] == release_packet["packet_sha256"]
     assert not bool(operator_approval["risk_limits_acknowledged"])
     assert not bool(operator_approval["authorizes_submission"])
     assert release_packet["status"] == "ready_for_operator_review"
@@ -2005,6 +2010,284 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
         release_dir
     ).verified
 
+    approved_operator_decision_values = operator_approval.to_dict()
+    approved_operator_decision_values.update(
+        {
+            "decision": "approved",
+            "operator_id": "ops-reviewer-1",
+            "operator_role": "risk_operator",
+            "reviewed_at_utc": "2026-07-13T15:15:00+00:00",
+            "risk_limits_acknowledged": True,
+            "kill_switch_acknowledged": True,
+            "rollback_plan_acknowledged": True,
+            "notes": "approved for controlled live dry run",
+            "authorizes_submission": False,
+        }
+    )
+    approved_operator_decision = pd.DataFrame(
+        [approved_operator_decision_values]
+    )
+    approved_operator_decision_path = (
+        tmp_path / "approved_operator_decision.csv"
+    )
+    approved_operator_decision.to_csv(
+        approved_operator_decision_path,
+        index=False,
+    )
+    approved_decision_dir = tmp_path / "approved_release_decision"
+    assert (
+        main(
+            [
+                "finalize-provider-market-data-imbalance-release-decision",
+                "--release-review",
+                str(release_dir),
+                "--operator-decision",
+                str(approved_operator_decision_path),
+                "--out",
+                str(approved_decision_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    approved_decision_summary = pd.read_csv(
+        approved_decision_dir
+        / "provider_market_data_imbalance_release_decision_summary.csv"
+    ).iloc[0]
+    sealed_decision = json.loads(
+        (
+            approved_decision_dir
+            / "provider_market_data_imbalance_release_decision.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert bool(approved_decision_summary["sealed"])
+    assert bool(
+        approved_decision_summary["approved_for_live_dryrun"]
+    )
+    assert approved_decision_summary["decision"] == "approved"
+    assert not bool(approved_decision_summary["submission_enabled"])
+    assert not bool(approved_decision_summary["broker_api_called"])
+    assert not bool(approved_decision_summary["authorizes_submission"])
+    assert sealed_decision["sealed"] is True
+    assert sealed_decision["approved_for_live_dryrun"] is True
+    assert sealed_decision["safety"] == {
+        "authorizes_submission": False,
+        "broker_api_called": False,
+        "dry_run_only": True,
+        "submission_enabled": False,
+    }
+    approved_decision_verification = (
+        verify_provider_market_data_imbalance_release_decision(
+            approved_decision_dir
+        )
+    )
+    assert approved_decision_verification.verified
+    assert approved_decision_verification.sealed
+    assert approved_decision_verification.approved
+    assert approved_decision_verification.ready
+    assert approved_decision_verification.manifest_current
+    assert approved_decision_verification.release_review_current
+    assert approved_decision_verification.operator_decision_current
+    assert approved_decision_verification.artifacts_consistent
+    assert approved_decision_verification.non_authorizing
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_provider_market_data_imbalance_release_decision(
+            release_dir,
+            approved_operator_decision_path,
+            approved_decision_dir,
+        )
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-release-decision",
+                "--release-decision",
+                str(approved_decision_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    approved_decision_catalog = catalog_experiment_runs(
+        [approved_decision_dir]
+    )
+    approved_decision_catalog_row = (
+        approved_decision_catalog.catalog.iloc[0]
+    )
+    assert bool(approved_decision_catalog_row["summary_status"])
+    assert bool(
+        approved_decision_catalog_row[
+            "provider_release_decision_verification_verified"
+        ]
+    )
+    assert bool(
+        approved_decision_catalog_row[
+            "provider_release_decision_verification_approved"
+        ]
+    )
+    assert int(
+        approved_decision_catalog.summary.iloc[0][
+            "provider_release_decision_verification_ready_runs"
+        ]
+    ) == 1
+
+    rejected_operator_decision = approved_operator_decision.copy()
+    rejected_operator_decision.loc[0, "decision"] = "rejected"
+    rejected_operator_decision.loc[0, "notes"] = (
+        "rollback owner unavailable"
+    )
+    rejected_operator_decision_path = (
+        tmp_path / "rejected_operator_decision.csv"
+    )
+    rejected_operator_decision.to_csv(
+        rejected_operator_decision_path,
+        index=False,
+    )
+    rejected_decision_dir = tmp_path / "rejected_release_decision"
+    rejected_report = write_provider_market_data_imbalance_release_decision(
+        release_dir,
+        rejected_operator_decision_path,
+        rejected_decision_dir,
+    )
+    assert rejected_report.sealed
+    assert not rejected_report.ready
+    rejected_verification = (
+        verify_provider_market_data_imbalance_release_decision(
+            rejected_decision_dir
+        )
+    )
+    assert rejected_verification.verified
+    assert rejected_verification.sealed
+    assert not rejected_verification.approved
+    assert not rejected_verification.ready
+    assert rejected_verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-release-decision",
+                "--release-decision",
+                str(rejected_decision_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+    rejected_catalog = catalog_experiment_runs([rejected_decision_dir])
+    assert bool(rejected_catalog.catalog.iloc[0]["summary_status"])
+    assert (
+        rejected_catalog.catalog.iloc[0][
+            "provider_release_decision_verification_status"
+        ]
+        == "verified_rejected"
+    )
+
+    missing_attestation = approved_operator_decision.copy()
+    missing_attestation.loc[0, "kill_switch_acknowledged"] = False
+    missing_attestation_path = tmp_path / "missing_attestation.csv"
+    missing_attestation.to_csv(missing_attestation_path, index=False)
+    missing_attestation_dir = tmp_path / "missing_attestation_decision"
+    with pytest.raises(
+        ValueError,
+        match="kill_switch_acknowledged",
+    ):
+        write_provider_market_data_imbalance_release_decision(
+            release_dir,
+            missing_attestation_path,
+            missing_attestation_dir,
+        )
+    assert not missing_attestation_dir.exists()
+
+    approved_decision_manifest_path = (
+        approved_decision_dir / "manifest.json"
+    )
+    original_sealed_decision_text = (
+        approved_decision_dir
+        / "provider_market_data_imbalance_release_decision.json"
+    ).read_text(encoding="utf-8")
+    tampered_sealed_decision = json.loads(original_sealed_decision_text)
+    tampered_sealed_decision["safety"]["authorizes_submission"] = True
+    (
+        approved_decision_dir
+        / "provider_market_data_imbalance_release_decision.json"
+    ).write_text(
+        json.dumps(tampered_sealed_decision, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    approved_decision_manifest = json.loads(
+        approved_decision_manifest_path.read_text(encoding="utf-8")
+    )
+    write_experiment_manifest(
+        approved_decision_dir,
+        run_type=(
+            "provider_market_data_imbalance_release_decision"
+        ),
+        parameters=approved_decision_manifest["parameters"],
+        inputs=_manifest_input_paths(approved_decision_manifest["inputs"]),
+        extra=approved_decision_manifest["extra"],
+    )
+    assert verify_experiment_manifest(
+        approved_decision_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_decision"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    tampered_decision_verification = (
+        verify_provider_market_data_imbalance_release_decision(
+            approved_decision_dir
+        )
+    )
+    assert not tampered_decision_verification.verified
+    assert tampered_decision_verification.manifest_current
+    assert not tampered_decision_verification.artifacts_consistent
+    assert not tampered_decision_verification.non_authorizing
+    tampered_decision_catalog = catalog_experiment_runs(
+        [approved_decision_dir]
+    )
+    assert not bool(
+        tampered_decision_catalog.catalog.iloc[0]["summary_status"]
+    )
+    (
+        approved_decision_dir
+        / "provider_market_data_imbalance_release_decision.json"
+    ).write_text(original_sealed_decision_text, encoding="utf-8")
+    write_experiment_manifest(
+        approved_decision_dir,
+        run_type=(
+            "provider_market_data_imbalance_release_decision"
+        ),
+        parameters=approved_decision_manifest["parameters"],
+        inputs=_manifest_input_paths(approved_decision_manifest["inputs"]),
+        extra=approved_decision_manifest["extra"],
+    )
+    assert verify_provider_market_data_imbalance_release_decision(
+        approved_decision_dir
+    ).verified
+
+    original_operator_decision_text = approved_operator_decision_path.read_text(
+        encoding="utf-8"
+    )
+    approved_operator_decision_path.write_text(
+        original_operator_decision_text.replace(
+            "risk_operator",
+            "changed_role",
+        ),
+        encoding="utf-8",
+    )
+    operator_drift_verification = (
+        verify_provider_market_data_imbalance_release_decision(
+            approved_decision_dir
+        )
+    )
+    assert not operator_drift_verification.verified
+    assert not operator_drift_verification.operator_decision_current
+    approved_operator_decision_path.write_text(
+        original_operator_decision_text,
+        encoding="utf-8",
+    )
+    assert verify_provider_market_data_imbalance_release_decision(
+        approved_decision_dir
+    ).verified
+
     certificate_source.write_text(
         "source\nchanged_after_release_review\n",
         encoding="utf-8",
@@ -2027,6 +2310,20 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert not stale_release_verification.verified
     assert not stale_release_verification.ready
     assert not stale_release_verification.source_current
+    stale_decision_verification = (
+        verify_provider_market_data_imbalance_release_decision(
+            approved_decision_dir
+        )
+    )
+    assert not stale_decision_verification.verified
+    assert not stale_decision_verification.release_review_current
+    assert not verify_experiment_manifest(
+        approved_decision_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_decision"
+        ),
+        require_input_fingerprints=True,
+    ).passed
     assert (
         main(
             [
@@ -2067,6 +2364,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).passed
     assert verify_provider_market_data_imbalance_release_review(
         release_dir
+    ).verified
+    assert verify_provider_market_data_imbalance_release_decision(
+        approved_decision_dir
     ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
@@ -2126,6 +2426,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).passed
     assert not verify_provider_market_data_imbalance_release_review(
         release_dir
+    ).verified
+    assert not verify_provider_market_data_imbalance_release_decision(
+        approved_decision_dir
     ).verified
     assert not verify_experiment_manifest(
         release_manifest_path,

@@ -75,6 +75,7 @@ ACTION_COLUMNS = (
 )
 OPERATOR_APPROVAL_COLUMNS = (
     "release_review_id",
+    "packet_sha256",
     "strategy",
     "market",
     "target_mode",
@@ -277,6 +278,7 @@ def write_provider_market_data_imbalance_release_review(
     )
     operator_approval = _operator_approval_template(
         release_review_id=release_review_id,
+        packet_sha256=packet_sha256,
         strategy=strategy,
         market=market,
         target_mode=target_mode,
@@ -600,6 +602,7 @@ def verify_provider_market_data_imbalance_release_review(
         )
         expected_operator_approval = _operator_approval_template(
             release_review_id=release_review_id,
+            packet_sha256=packet_sha256,
             strategy=strategy,
             market=market,
             target_mode=target_mode,
@@ -789,6 +792,8 @@ def verify_provider_market_data_imbalance_release_review(
             ]
             and _text(operator_approval.get("release_review_id"))
             == release_review_id
+            and _text(operator_approval.get("packet_sha256"))
+            == packet_sha256
             and _normalize_strategy(operator_approval.get("strategy"))
             == _normalize_strategy(strategy)
             and _identity(operator_approval.get("market"))
@@ -1272,6 +1277,7 @@ def _proof_rows(
 def _operator_approval_template(
     *,
     release_review_id: str,
+    packet_sha256: str,
     strategy: str,
     market: str,
     target_mode: str,
@@ -1282,6 +1288,7 @@ def _operator_approval_template(
         [
             {
                 "release_review_id": release_review_id,
+                "packet_sha256": packet_sha256,
                 "strategy": strategy,
                 "market": market,
                 "target_mode": target_mode,

@@ -2995,6 +2995,28 @@
   authorization claim. Experiment-catalog ingestion uses that verifier and
   suppresses stale release-review readiness. The strategy-evidence, manifest,
   and experiment-catalog affected surface passes together (`127 passed`).
+- A current release-review packet can now be finalized against a separately
+  retained operator decision with
+  `finalize-provider-market-data-imbalance-release-decision`. The release
+  template carries the full deterministic packet SHA, and finalization requires
+  exact review/packet/strategy/market/evidence/catalog/audit/certificate
+  bindings, a non-empty operator identity and role, a UTC review timestamp, and
+  explicit risk-limit, kill-switch, rollback-plan, and non-authorization
+  attestations. Approved and rejected decisions are both sealed and
+  semantically verifiable; only approval sets
+  `approved_for_live_dryrun=true`. Generic `release_approved`, broker
+  submission, and broker API flags remain false in both outcomes. Decision
+  directories are write-once, fingerprint the separate operator file and the
+  complete recursive release-review dependency graph, and emit deterministic
+  checks, proof inventory, JSON/config, summary, runbook, and manifest
+  artifacts. `verify-provider-market-data-imbalance-release-decision`
+  reconstructs every artifact from current sources, while experiment-catalog
+  ingestion distinguishes verified approval, verified rejection, and stale or
+  inconsistent seals. Focused approval/rejection, missing-attestation,
+  re-manifested authorization tamper, operator-file drift, and recursive source
+  drift pass in both retained-proof variants (`2 passed`); the complete affected
+  strategy-evidence, manifest, and experiment-catalog gate passes (`127
+  passed`).
 
 ## Test Gate
 
@@ -3022,6 +3044,14 @@ CLI verification, catalog recognition, exact retained hashes, pending approval,
 non-submitting safety fields, direct audit/certificate drift, an out-of-tree
 recursive certificate dependency change that leaves the top evidence manifest
 current, and a fresh re-manifest after an injected authorization claim.
+
+Latest provider release-decision gate: approved and rejected seals, exact
+packet/proof/operator binding, strict UTC and risk/kill-switch/rollback
+attestations, write-once output, CLI verification, catalog status/counts,
+re-manifested decision authorization tamper, operator-file drift, and direct
+plus recursive retained-proof drift pass in both provider evidence variants
+(`2 passed`). The full affected evidence/manifest/catalog surface passes
+together (`127 passed`).
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3198,10 +3228,10 @@ the last completed full-suite green baseline rather than claiming the current
 
 ## Next Build Targets
 
-1. Add release-review finalization that consumes a current packet plus a
-   separately completed operator decision, requires exact identity/hash,
-   risk-limit, kill-switch, and rollback attestations, and emits a sealed but
-   still non-submitting live-dry-run decision artifact.
+1. Add a non-submitting controlled live-dry-run handoff bundle that consumes
+   only a verified approved release decision, binds the exact runtime risk-limit
+   configuration, kill-switch policy, rollback procedure, and provider session
+   identity, and emits an execution plan without broker submission capability.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
