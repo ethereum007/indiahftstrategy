@@ -32103,6 +32103,11 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_ready_
             encoding="utf-8"
         )
     )
+    check_index = report.checks.set_index("check")
+    expected_lineage_contract = _provider_lineage_selection_contract()
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_runbook.md").read_text(
+        encoding="utf-8"
+    )
     assert report.passed
     assert bool(summary.loc[0, "provider_broker_dispatch_ack_passed"])
     assert bool(summary.loc[0, "broker_dispatch_roundtrip_passed"])
@@ -32134,6 +32139,59 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_ready_
     assert (
         manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
         == 0
+    )
+    assert bool(
+        check_index.loc[
+            "provider_broker_dispatch_ack_route_readiness_provider_lineage_selection_contract",
+            "passed",
+        ]
+    )
+    assert bool(
+        check_index.loc[
+            "provider_broker_dispatch_ack_route_readiness_provider_lineage_selection_contract_matches_artifacts",
+            "passed",
+        ]
+    )
+    assert config["provider_lineage_selection_contract"] == expected_lineage_contract
+    assert (
+        manifest["extra"]["provider_lineage_selection_contract"]
+        == expected_lineage_contract
+    )
+    assert (
+        f"Provider lineage contract: `{expected_lineage_contract['sha256']}`"
+        in runbook
+    )
+
+
+def test_provider_market_data_imbalance_broker_dispatch_roundtrip_blocks_ack_lineage_contract_drift(
+    tmp_path,
+):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+    _mutate_json(
+        provider_ack.output_dir
+        / "provider_market_data_imbalance_broker_dispatch_ack_config.json",
+        lambda payload: payload["provider_lineage_selection_contract"].update(
+            {"sha256": "b" * 64}
+        ),
+    )
+
+    report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_roundtrip_lineage_contract_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.passed
+    assert (
+        "provider_broker_dispatch_ack_route_readiness_provider_lineage_selection_contract_matches_artifacts"
+        in failed
+    )
+    assert report.action_queue.loc[0, "component"] == "provider_route_readiness"
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert (
+        report.action_queue.loc[0, "next_gate"]
+        == "review-provider-market-data-imbalance-route-readiness"
     )
 
 
