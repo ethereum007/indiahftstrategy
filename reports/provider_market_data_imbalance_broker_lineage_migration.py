@@ -267,6 +267,32 @@ def provider_broker_lineage_strict_refresh_plan(
     )
 
 
+def provider_broker_lineage_proof_evidence(
+    bundle_dir: str | Path,
+) -> dict[str, Any]:
+    bundle = Path(bundle_dir).resolve()
+    manifest_path = bundle / "manifest.json"
+    manifest = _read_json(manifest_path)
+    run_type = _text(manifest.get("run_type"))
+    if run_type not in TARGETS:
+        return {
+            "bundle_path": str(bundle),
+            "manifest_path": str(manifest_path),
+            "run_type": run_type,
+            "bundle_type": "",
+            "manifest_current": False,
+            "bundle_passed": False,
+            "strict_lineage_required": False,
+            "strict_lineage_current": False,
+            "source_manifest_current": False,
+            "policy_sha256": "",
+            "evidence_identity_sha256": "",
+            "migration_status": "unsupported",
+            "reason": "provider proof run type is missing or unsupported",
+        }
+    return _inventory_row(manifest_path)
+
+
 def provider_broker_lineage_migration_audit_inputs(
     audit_dir: str | Path | None,
 ) -> dict[str, Any]:

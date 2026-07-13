@@ -239,6 +239,9 @@ from reports.provider_market_data_imbalance_broker_lineage_audit_usage import (
     ProviderBrokerLineageAuditUsageConfig,
     write_provider_broker_lineage_audit_usage_review,
 )
+from reports.provider_market_data_imbalance_broker_lineage_refresh_convergence import (
+    write_provider_broker_lineage_refresh_convergence,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -2176,6 +2179,34 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     provider_broker_lineage_audit_usage.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
+
+    provider_broker_lineage_refresh_convergence = sub.add_parser(
+        "verify-provider-market-data-imbalance-broker-lineage-refresh",
+        help=(
+            "Verify that planned provider strict-lineage refresh outputs "
+            "converge and close their audit-usage blockers."
+        ),
+    )
+    provider_broker_lineage_refresh_convergence.add_argument(
+        "--audit-usage",
+        required=True,
+    )
+    provider_broker_lineage_refresh_convergence.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_broker_lineage_refresh_convergence.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_broker_lineage_refresh_convergence.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_broker_lineage_refresh_convergence.add_argument(
         "--fail-on-actions",
         action="store_true",
     )
@@ -5766,6 +5797,31 @@ def main(argv: list[str] | None = None) -> int:
                     result.action_queue["queue_status"].astype(str)
                     == "blocked"
                 ).sum()
+            )
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-broker-lineage-refresh"
+    ):
+        result = write_provider_broker_lineage_refresh_convergence(
+            args.audit_usage,
+            args.out,
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                result.action_queue["queue_status"]
+                .astype(str)
+                .eq("blocked")
+                .sum()
             )
         if args.fail_on_breach and not result.ready:
             return 2

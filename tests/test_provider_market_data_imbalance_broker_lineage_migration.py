@@ -37,6 +37,9 @@ from reports.provider_market_data_imbalance_broker_lineage_migration import (
 from reports.provider_market_data_imbalance_broker_lineage_audit_usage import (
     write_provider_broker_lineage_audit_usage_review,
 )
+from reports.provider_market_data_imbalance_broker_lineage_refresh_convergence import (
+    write_provider_broker_lineage_refresh_convergence,
+)
 from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
@@ -758,6 +761,210 @@ def test_lineage_audit_usage_refresh_blocks_artifact_drift(tmp_path):
     assert action["queue_status"] == "blocked"
     assert action["command"] == ""
     assert int(report.summary.iloc[0]["blocked_action_count"]) == 1
+
+
+def test_lineage_refresh_convergence_exposes_missing_output_commands(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+
+    report = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    assert not report.ready
+    assert len(report.inventory) == 3
+    assert set(report.inventory["convergence_status"]) == {"output_missing"}
+    assert int(report.summary.iloc[0]["missing_output_count"]) == 3
+    assert int(report.summary.iloc[0]["unresolved_action_count"]) == 3
+    assert set(report.action_queue["queue_status"]) == {"ready"}
+    assert report.action_queue["command"].astype(str).str.len().gt(0).all()
+    assert not bool(report.summary.iloc[0]["authorizes_submission"])
+    assert verify_experiment_manifest(
+        report.output_dir / "manifest.json",
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_refresh_convergence"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-broker-lineage-refresh",
+                "--audit-usage",
+                str(usage.output_dir),
+                "--out",
+                str(tmp_path / "convergence_cli"),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+
+def test_lineage_refresh_convergence_accepts_noop_strict_review(tmp_path):
+    strict = _write_provider_chain(tmp_path / "strict_archive", strict=True)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [strict["root"]],
+        tmp_path / "usage_review",
+    )
+
+    report = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    assert usage.ready
+    assert report.ready
+    assert report.inventory.empty
+    assert report.action_queue.empty
+    assert not bool(report.summary.iloc[0]["refresh_required"])
+    assert report.summary.iloc[0]["recommendation"] == "no_refresh_required"
+
+
+def test_lineage_refresh_convergence_accepts_exact_strict_siblings_and_catalogs(
+    tmp_path,
+):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    strict = _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+
+    report = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    assert report.ready
+    assert len(report.inventory) == 3
+    assert set(report.inventory["convergence_status"]) == {"converged"}
+    for field in (
+        "plan_record_consistent",
+        "output_manifest_current",
+        "output_bundle_passed",
+        "output_strict_lineage_required",
+        "output_strict_lineage_current",
+        "output_source_manifest_current",
+        "output_non_authorizing",
+        "policy_matches",
+        "evidence_identity_matches",
+        "command_output_matches",
+        "command_source_matches",
+        "command_requires_strict",
+        "command_omits_legacy_audit",
+    ):
+        assert report.inventory[field].astype(bool).all()
+    assert not report.inventory["output_audit_provided"].astype(bool).any()
+    assert report.action_queue.empty
+    manifest_path = report.output_dir / "manifest.json"
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_refresh_convergence"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    catalog = catalog_experiment_runs([report.output_dir]).catalog.iloc[0]
+    assert bool(catalog["summary_status"])
+    assert int(catalog["summary_converged_action_count"]) == 3
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-broker-lineage-refresh",
+                "--audit-usage",
+                str(usage.output_dir),
+                "--out",
+                str(tmp_path / "convergence_cli"),
+                "--fail-on-breach",
+                "--fail-on-blocked-actions",
+                "--fail-on-actions",
+            ]
+        )
+        == 0
+    )
+
+    (strict["ack"] / "proof_after_convergence.txt").write_text(
+        "drift\n",
+        encoding="utf-8",
+    )
+    assert not verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_refresh_convergence"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+
+
+def test_lineage_refresh_convergence_rejects_policy_mismatched_output(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+        ack_parameter_overrides={"allow_rejections": False},
+    )
+
+    report = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    assert not report.ready
+    ack = report.inventory.loc[
+        report.inventory["bundle_type"] == "provider_ack"
+    ].iloc[0]
+    assert ack["convergence_status"] == "output_invalid"
+    assert not bool(ack["policy_matches"])
+    action = report.action_queue.loc[
+        report.action_queue["bundle_type"] == "provider_ack"
+    ].iloc[0]
+    assert action["queue_status"] == "blocked"
+    assert action["command"] == ""
+    assert action["action"] == "rerun_audit_usage_review_for_fresh_target"
+
+
+def test_lineage_refresh_convergence_rejects_drifted_usage_review(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    actions_path = (
+        usage.output_dir
+        / "provider_broker_lineage_audit_usage_action_queue.csv"
+    )
+    actions = pd.read_csv(actions_path)
+    actions.loc[0, "command"] = "python -m hft_cli tampered"
+    actions.to_csv(actions_path, index=False)
+
+    report = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    assert not report.ready
+    assert not bool(report.summary.iloc[0]["audit_usage_review_current"])
+    assert len(report.action_queue) == 1
+    action = report.action_queue.iloc[0]
+    assert action["queue_status"] == "blocked"
+    assert action["convergence_status"] == "source_review_invalid"
+    assert action["command"] == ""
 
 
 @pytest.mark.parametrize(

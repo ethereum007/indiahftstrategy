@@ -145,6 +145,17 @@ class ProviderBrokerLineageAuditUsageReport:
         )
 
 
+def provider_broker_lineage_audit_usage_record(
+    bundle_dir: str | Path,
+) -> dict[str, Any]:
+    bundle = Path(bundle_dir).resolve()
+    manifest = _read_json(bundle / "manifest.json")
+    run_type = _text(manifest.get("run_type"))
+    if run_type not in PROOF_TARGETS:
+        raise ValueError("provider proof run type is missing or unsupported")
+    return _inventory_row(bundle / "manifest.json")
+
+
 def write_provider_broker_lineage_audit_usage_review(
     roots: list[str | Path] | tuple[str | Path, ...],
     output_dir: str | Path,

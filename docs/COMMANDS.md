@@ -6640,6 +6640,52 @@ recursively manifested dependency. Later provider-source, accepted-audit, or
 strict-replacement drift invalidates the review artifact. The report and all of
 its actions remain non-authorizing.
 
+After executing the ready strict-refresh commands, prove that their generated
+siblings close the sealed audit-usage plan:
+
+```powershell
+python -m hft_cli verify-provider-market-data-imbalance-broker-lineage-refresh `
+  --audit-usage runs\provider_broker_lineage_audit_usage\2026_07_13 `
+  --out runs\provider_broker_lineage_refresh_convergence\2026_07_13 `
+  --fail-on-blocked-actions `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The convergence gate first verifies the complete audit-usage review and rejects
+cross-artifact disagreement, drift, or any authorizing claim before trusting a
+recorded command. For each planned action, the generated output must occupy the
+exact sealed sibling path; have a current, passed, non-authorizing manifest;
+require current strict acknowledgement lineage; omit migration-audit evidence;
+preserve the original non-lineage policy and normalized source identity; consume
+the source path named by the command; include the correct strict flag; and omit
+all legacy override options. Zero unresolved actions is fixed policy and cannot
+be relaxed.
+
+A missing output remains a ready action carrying the original sealed command.
+An occupied but invalid output is blocked with no command because refresh proof
+is never overwritten; rerun the audit-usage review to allocate the next fresh
+`_strict_rebuilt*` sibling. If the source review is stale or inconsistent, all
+recorded commands are suppressed. A source review with no refresh actions is a
+valid no-op convergence.
+
+Outputs:
+
+```text
+provider_broker_lineage_refresh_convergence_inventory.csv
+provider_broker_lineage_refresh_convergence_checks.csv
+provider_broker_lineage_refresh_convergence_summary.csv
+provider_broker_lineage_refresh_convergence_action_queue.csv
+provider_broker_lineage_refresh_convergence_config.json
+provider_broker_lineage_refresh_convergence_runbook.md
+manifest.json
+```
+
+The convergence manifest seals the audit-usage review, every existing refreshed
+bundle and manifest, and all recursive dependencies. Any later refreshed-proof
+or source-review drift invalidates the convergence artifact. It remains
+non-authorizing and cannot enable or submit broker orders.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

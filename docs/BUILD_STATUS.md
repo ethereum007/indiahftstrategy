@@ -2769,6 +2769,23 @@
   post-acceptance drift, aggregate-manifest drift, re-manifested evidence
   disagreement, and artifact-corruption paths pass with the complete lineage
   migration surface (`25 passed`).
+- Planned strict lineage refreshes can now be closed with
+  `verify-provider-market-data-imbalance-broker-lineage-refresh`. The verifier
+  trusts commands only from a current, cross-artifact-consistent,
+  non-authorizing audit-usage review, then binds every action to its exact output
+  sibling and command source. Generated acknowledgement, round-trip, and
+  certificate proofs must be current, passed, strict, audit-free,
+  non-authorizing, policy-equivalent, evidence-identity-equivalent, and sourced
+  from the command-recorded dependency. Missing outputs retain the sealed ready
+  command; occupied invalid outputs are blocked and require replanning to a fresh
+  sibling; stale source reviews suppress all commands. Zero unresolved actions
+  is fixed policy, while an already-strict source review converges as a valid
+  no-op. The catalog-visible convergence summary, inventory, checks, action
+  queue, config, runbook, and manifest seal the source review plus every existing
+  refreshed proof and recursive dependency. Missing-output/CLI failure, no-op,
+  exact three-stage convergence/CLI success/catalog, post-convergence drift,
+  policy mismatch, and source-review drift pass with the complete lineage suite
+  (`30 passed`).
 
 ## Test Gate
 
@@ -2778,7 +2795,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1586 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1591 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2916,7 +2933,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1586-test collection is fully green.
+1591-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2925,6 +2942,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add a post-refresh convergence verifier that binds each planned command to
-   its generated strict sibling and proves the refreshed acknowledgement ->
-   round-trip -> certificate chain closes the original audit-usage blockers.
+4. Add an active-lineage retirement index that marks converged strict siblings
+   as selectable and their legacy originals as retained-only, preventing
+   downstream catalogs from choosing archived compatibility proof.
