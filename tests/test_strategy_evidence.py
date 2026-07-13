@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from hft_cli import main
+from reports.catalog import catalog_experiment_runs
 from reports.evidence import (
     EVIDENCE_PROFILE_RUN_TYPES,
     PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES,
@@ -12,6 +13,7 @@ from reports.evidence import (
     EvidenceThresholds,
     evidence_profile_run_types,
     evaluate_strategy_evidence,
+    verify_strategy_evidence_review,
     write_strategy_evidence_review,
 )
 from reports.manifest import (
@@ -1632,6 +1634,24 @@ def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "strategy_evidence_summary.csv").exists()
     assert (out_dir / "strategy_evidence_provider_lineage_selection.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    verification = verify_strategy_evidence_review(out_dir)
+    assert verification.verified
+    assert verification.ready
+    assert verification.manifest_current
+    assert verification.source_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-strategy-evidence",
+                "--evidence",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
 
 
 @pytest.mark.parametrize("drift_target", ["audit", "certificate"])
@@ -1781,6 +1801,58 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
         expected_run_type="strategy_evidence_review",
         require_input_fingerprints=True,
     ).passed
+    verification = verify_strategy_evidence_review(out_dir)
+    assert verification.verified
+    assert verification.ready
+    assert verification.provider_retained_proofs_current
+    assert verification.manifest_input_contract_current
+    assert verification.non_authorizing
+    cataloged = catalog_experiment_runs([out_dir])
+    cataloged_row = cataloged.catalog.iloc[0]
+    assert bool(cataloged_row["summary_status"])
+    assert bool(
+        cataloged_row["strategy_evidence_verification_required"]
+    )
+    assert bool(
+        cataloged_row["strategy_evidence_verification_verified"]
+    )
+    assert (
+        cataloged_row["strategy_evidence_verification_status"]
+        == "verified_current"
+    )
+    assert int(
+        cataloged.summary.iloc[0][
+            "strategy_evidence_verification_verified_runs"
+        ]
+    ) == 1
+    manifest_path = out_dir / "manifest.json"
+    original_manifest_text = manifest_path.read_text(encoding="utf-8")
+    tampered_manifest = json.loads(original_manifest_text)
+    tampered_manifest["extra"]["source_catalog_manifest_required"] = False
+    manifest_path.write_text(
+        json.dumps(tampered_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    metadata_tamper = verify_strategy_evidence_review(out_dir)
+    assert not metadata_tamper.verified
+    assert metadata_tamper.manifest_current
+    assert not metadata_tamper.artifacts_consistent
+    summary_path = out_dir / "strategy_evidence_summary.csv"
+    original_summary_text = summary_path.read_text(encoding="utf-8")
+    tampered_summary = pd.read_csv(summary_path)
+    tampered_summary.loc[0, "evidence_profile"] = "default"
+    tampered_summary.to_csv(summary_path, index=False)
+    bypass_catalog = catalog_experiment_runs([out_dir])
+    bypass_row = bypass_catalog.catalog.iloc[0]
+    assert bool(
+        bypass_row["strategy_evidence_verification_required"]
+    )
+    assert not bool(bypass_row["summary_status"])
+    assert not bool(
+        bypass_row["strategy_evidence_verification_verified"]
+    )
+    summary_path.write_text(original_summary_text, encoding="utf-8")
+    manifest_path.write_text(original_manifest_text, encoding="utf-8")
 
     drifted_artifact = (
         audit_artifact if drift_target == "audit" else certificate_artifact
@@ -1791,6 +1863,37 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
         expected_run_type="strategy_evidence_review",
         require_input_fingerprints=True,
     ).passed
+    stale_verification = verify_strategy_evidence_review(out_dir)
+    assert not stale_verification.verified
+    assert not stale_verification.ready
+    assert not stale_verification.manifest_current
+    assert not stale_verification.source_current
+    assert (
+        main(
+            [
+                "verify-strategy-evidence",
+                "--evidence",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+    stale_catalog = catalog_experiment_runs([out_dir])
+    stale_row = stale_catalog.catalog.iloc[0]
+    assert not bool(stale_row["summary_status"])
+    assert not bool(
+        stale_row["strategy_evidence_verification_verified"]
+    )
+    assert (
+        stale_row["strategy_evidence_verification_status"]
+        == "stale_or_inconsistent"
+    )
+    assert int(
+        stale_catalog.summary.iloc[0][
+            "strategy_evidence_verification_stale_runs"
+        ]
+    ) == 1
 
     replay = write_strategy_evidence_review(
         catalog_path,

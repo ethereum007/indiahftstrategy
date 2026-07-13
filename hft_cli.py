@@ -49,7 +49,12 @@ from reports.data_readiness_comparison import (
     write_data_readiness_comparison,
 )
 from reports.data_readiness import DataReadinessThresholds, write_data_readiness_report
-from reports.evidence import EvidenceThresholds, evidence_profile_run_types, write_strategy_evidence_review
+from reports.evidence import (
+    EvidenceThresholds,
+    evidence_profile_run_types,
+    verify_strategy_evidence_review,
+    write_strategy_evidence_review,
+)
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
@@ -2676,6 +2681,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     evidence.set_defaults(require_provider_lineage_selection=None)
     evidence.add_argument("--fail-on-breach", action="store_true")
+
+    verify_evidence = sub.add_parser(
+        "verify-strategy-evidence",
+        help=(
+            "Reopen a completed strategy-evidence review and verify its "
+            "manifest-bound sources and retained provider proofs."
+        ),
+    )
+    verify_evidence.add_argument("--evidence", required=True)
+    verify_evidence.add_argument("--fail-on-breach", action="store_true")
 
     scorecard = sub.add_parser(
         "score-strategy-readiness",
@@ -6521,6 +6536,33 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "verify-strategy-evidence":
+        result = verify_strategy_evidence_review(args.evidence)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "source_current": result.source_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "manifest_input_contract_current": (
+                        result.manifest_input_contract_current
+                    ),
+                    "provider_retained_proofs_current": (
+                        result.provider_retained_proofs_current
+                    ),
+                    "non_authorizing": result.non_authorizing,
+                    "evidence_dir": str(result.output_dir),
+                    "catalog_path": (
+                        "" if result.catalog_path is None else str(result.catalog_path)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
         return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "score-strategy-readiness":
         result = write_strategy_scorecard(

@@ -8,6 +8,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from reports.evidence import (
+    PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE,
+    verify_strategy_evidence_review,
+)
 from reports.manifest import MANIFEST_NAME, file_sha256, write_experiment_manifest
 from reports.provider_market_data_imbalance_broker_active_lineage import (
     verified_provider_broker_active_lineage_records,
@@ -319,6 +323,22 @@ def _catalog_row(
     run_dir = manifest_path.parent
     summary_file, summary_row = _summary_row(run_dir)
     status_column, status = _summary_status(summary_row)
+    strategy_evidence_verification = _strategy_evidence_verification_fields(
+        run_dir,
+        str(manifest.get("run_type", "")),
+        manifest,
+        summary_row,
+    )
+    if (
+        strategy_evidence_verification[
+            "strategy_evidence_verification_required"
+        ]
+        and not strategy_evidence_verification[
+            "strategy_evidence_verification_verified"
+        ]
+    ):
+        status_column = "strategy_evidence_verification"
+        status = False
     inputs = manifest.get("inputs", {}) or {}
     input_stats = _input_stats(inputs)
     row = {
@@ -337,6 +357,7 @@ def _catalog_row(
         "summary_status": status,
         "parameters_json": json.dumps(manifest.get("parameters", {}), sort_keys=True),
         "inputs_json": json.dumps(inputs, sort_keys=True),
+        **strategy_evidence_verification,
         **_provider_lineage_selection_fields(
             run_dir,
             str(manifest.get("run_type", "")),
@@ -351,6 +372,95 @@ def _catalog_row(
         else:
             row[key] = value
     return row
+
+
+def _strategy_evidence_verification_fields(
+    run_dir: Path,
+    run_type: str,
+    manifest: dict[str, Any],
+    summary_row: dict[str, Any],
+) -> dict[str, Any]:
+    extra_value = manifest.get("extra", {})
+    extra = extra_value if isinstance(extra_value, dict) else {}
+    parameters_value = manifest.get("parameters", {})
+    parameters = (
+        parameters_value if isinstance(parameters_value, dict) else {}
+    )
+    thresholds_value = parameters.get("thresholds", {})
+    thresholds = (
+        thresholds_value if isinstance(thresholds_value, dict) else {}
+    )
+    required_run_types = thresholds.get("required_run_types", ())
+    provider_contract_declared = bool(
+        isinstance(required_run_types, (list, tuple))
+        and PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE
+        in {str(value) for value in required_run_types}
+    )
+    required = bool(
+        run_type == "strategy_evidence_review"
+        and (
+            str(summary_row.get("evidence_profile", "")).strip().lower()
+            == "provider_imbalance_ops_launch"
+            or _to_bool(extra.get("source_catalog_manifest_required"))
+            or provider_contract_declared
+        )
+    )
+    fields: dict[str, Any] = {
+        "strategy_evidence_verification_required": required,
+        "strategy_evidence_verification_status": (
+            "verification_required" if required else "not_applicable"
+        ),
+        "strategy_evidence_verification_verified": False,
+        "strategy_evidence_verification_ready": False,
+        "strategy_evidence_verification_manifest_current": False,
+        "strategy_evidence_verification_source_current": False,
+        "strategy_evidence_verification_artifacts_consistent": False,
+        "strategy_evidence_verification_manifest_input_contract_current": False,
+        "strategy_evidence_verification_provider_retained_proofs_current": False,
+        "strategy_evidence_verification_non_authorizing": False,
+        "strategy_evidence_verification_error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = verify_strategy_evidence_review(run_dir)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields["strategy_evidence_verification_status"] = (
+            "verification_error"
+        )
+        fields["strategy_evidence_verification_error"] = str(exc)
+        return fields
+    fields.update(
+        {
+            "strategy_evidence_verification_status": (
+                "verified_current"
+                if verification.verified
+                else "stale_or_inconsistent"
+            ),
+            "strategy_evidence_verification_verified": verification.verified,
+            "strategy_evidence_verification_ready": verification.ready,
+            "strategy_evidence_verification_manifest_current": (
+                verification.manifest_current
+            ),
+            "strategy_evidence_verification_source_current": (
+                verification.source_current
+            ),
+            "strategy_evidence_verification_artifacts_consistent": (
+                verification.artifacts_consistent
+            ),
+            "strategy_evidence_verification_manifest_input_contract_current": (
+                verification.manifest_input_contract_current
+            ),
+            "strategy_evidence_verification_provider_retained_proofs_current": (
+                verification.provider_retained_proofs_current
+            ),
+            "strategy_evidence_verification_non_authorizing": (
+                verification.non_authorizing
+            ),
+            "strategy_evidence_verification_error": verification.error,
+        }
+    )
+    return fields
 
 
 def _provider_lineage_selection_fields(
@@ -683,6 +793,9 @@ def _catalog_summary(
     provider_lineage_selection_counts = _provider_lineage_selection_counts(
         catalog
     )
+    strategy_evidence_verification_counts = (
+        _strategy_evidence_verification_counts(catalog)
+    )
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -706,6 +819,7 @@ def _catalog_summary(
                     **provider_broker_roundtrip_sidecar_counts,
                     **placeholder_schema_counts,
                     **provider_lineage_selection_counts,
+                    **strategy_evidence_verification_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -734,11 +848,48 @@ def _catalog_summary(
                 **provider_broker_roundtrip_sidecar_counts,
                 **placeholder_schema_counts,
                 **provider_lineage_selection_counts,
+                **strategy_evidence_verification_counts,
                 **action_counts,
                 **hygiene_counts,
             }
         ]
     )
+
+
+def _strategy_evidence_verification_counts(
+    catalog: pd.DataFrame,
+) -> dict[str, int]:
+    counts = {
+        "strategy_evidence_verification_required_runs": 0,
+        "strategy_evidence_verification_verified_runs": 0,
+        "strategy_evidence_verification_ready_runs": 0,
+        "strategy_evidence_verification_stale_runs": 0,
+    }
+    required_column = "strategy_evidence_verification_required"
+    if catalog.empty or required_column not in catalog.columns:
+        return counts
+    required = catalog[required_column].map(_to_bool)
+    verified = catalog[
+        "strategy_evidence_verification_verified"
+    ].map(_to_bool)
+    ready = catalog["strategy_evidence_verification_ready"].map(_to_bool)
+    counts.update(
+        {
+            "strategy_evidence_verification_required_runs": int(
+                required.sum()
+            ),
+            "strategy_evidence_verification_verified_runs": int(
+                (required & verified).sum()
+            ),
+            "strategy_evidence_verification_ready_runs": int(
+                (required & ready).sum()
+            ),
+            "strategy_evidence_verification_stale_runs": int(
+                (required & ~verified).sum()
+            ),
+        }
+    )
+    return counts
 
 
 def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:

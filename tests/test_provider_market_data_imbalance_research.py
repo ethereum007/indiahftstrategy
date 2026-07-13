@@ -11,6 +11,7 @@ from reports.catalog import catalog_experiment_runs, write_experiment_catalog
 from reports.evidence import (
     EvidenceThresholds,
     evaluate_strategy_evidence,
+    verify_strategy_evidence_review,
     write_strategy_evidence_review,
 )
 from reports.manifest import verify_experiment_manifest
@@ -32648,6 +32649,17 @@ def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_de
         expected_run_type="strategy_evidence_review",
         require_input_fingerprints=True,
     ).passed
+    final_evidence_verification = verify_strategy_evidence_review(
+        final_evidence.output_dir
+    )
+    assert final_evidence_verification.verified
+    assert not final_evidence_verification.ready
+    assert final_evidence_verification.manifest_current
+    assert final_evidence_verification.source_current
+    assert final_evidence_verification.artifacts_consistent
+    assert (
+        final_evidence_verification.error == "strategy_evidence_not_ready"
+    )
 
     cli_out = tmp_path / "provider_imbalance_active_lineage_chain_audit_cli"
     assert (
@@ -32682,6 +32694,23 @@ def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_de
     )
     assert not drifted_verification.ready
     assert not drifted_verification.manifest_current
+    assert verify_experiment_manifest(
+        final_evidence.output_dir / "manifest.json",
+        expected_run_type="strategy_evidence_review",
+        require_input_fingerprints=True,
+    ).passed
+    drifted_evidence_verification = verify_strategy_evidence_review(
+        final_evidence.output_dir
+    )
+    assert not drifted_evidence_verification.verified
+    assert not drifted_evidence_verification.ready
+    assert drifted_evidence_verification.manifest_current
+    assert not drifted_evidence_verification.source_current
+    assert not drifted_evidence_verification.artifacts_consistent
+    assert (
+        drifted_evidence_verification.error
+        == "strategy_evidence_sources_not_current"
+    )
     replayed_evidence = write_strategy_evidence_review(
         catalog_report.output_dir,
         output_dir=tmp_path / "provider_imbalance_chain_replayed_evidence",

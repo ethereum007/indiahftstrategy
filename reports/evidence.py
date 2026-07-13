@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -109,6 +110,27 @@ PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES = {
     PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE: "rehearsal_certificate",
 }
 PROVIDER_LINEAGE_SELECTION_ARTIFACT = "strategy_evidence_provider_lineage_selection.csv"
+STRATEGY_EVIDENCE_ARTIFACTS = (
+    "strategy_evidence_items.csv",
+    "strategy_evidence_checks.csv",
+    "strategy_evidence_summary.csv",
+    PROVIDER_LINEAGE_SELECTION_ARTIFACT,
+)
+PROVIDER_RETAINED_PROOF_MANIFEST_INPUTS = (
+    "catalog",
+    "source_catalog_manifest",
+    "selected_provider_active_lineage_chain_audit",
+    "selected_provider_active_lineage_chain_audit_manifest",
+    "selected_provider_broker_rehearsal_certificate",
+    "selected_provider_broker_rehearsal_certificate_manifest",
+)
+PROVIDER_RETAINED_PROOF_CHECKS = (
+    "source_catalog_manifest_current",
+    "selected_provider_active_lineage_chain_audit_current",
+    "selected_provider_broker_rehearsal_certificate_current",
+    "provider_retained_proof_catalog_binding_current",
+    "provider_retained_proof_contract_binding_current",
+)
 PROVIDER_LINEAGE_SELECTION_CONTRACT_VERSION = "provider_active_lineage_selection/v1"
 PROVIDER_LINEAGE_SELECTION_COLUMNS = (
     "priority",
@@ -216,6 +238,25 @@ class _ProviderRetainedProofVerification:
     manifest_inputs: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class StrategyEvidenceVerification:
+    verified: bool
+    ready: bool
+    manifest_current: bool
+    source_current: bool
+    artifacts_consistent: bool
+    manifest_input_contract_current: bool
+    provider_retained_proofs_current: bool
+    non_authorizing: bool
+    output_dir: Path
+    catalog_path: Path | None
+    evidence: pd.DataFrame
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    provider_lineage_selection: pd.DataFrame
+    error: str = ""
+
+
 def evaluate_strategy_evidence(
     catalog: pd.DataFrame,
     *,
@@ -270,6 +311,7 @@ def write_strategy_evidence_review(
             **retained_proofs.manifest_inputs,
         },
         extra={
+            "authorizes_submission": False,
             "source_catalog_manifest_required": retained_proofs.required,
             "provider_retained_proof_verification": (
                 retained_proofs.summary_fields
@@ -285,6 +327,217 @@ def write_strategy_evidence_review(
     )
 
 
+def verify_strategy_evidence_review(
+    evidence_dir: str | Path,
+) -> StrategyEvidenceVerification:
+    candidate = Path(evidence_dir)
+    root = candidate.parent if candidate.is_file() else candidate
+    root = root.resolve()
+    manifest_path = root / MANIFEST_NAME
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="strategy_evidence_review",
+        required_artifacts=STRATEGY_EVIDENCE_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    manifest, manifest_error = _read_json_mapping(manifest_path)
+    evidence, evidence_error = _read_csv_frame(
+        root / STRATEGY_EVIDENCE_ARTIFACTS[0]
+    )
+    checks, checks_error = _read_csv_frame(
+        root / STRATEGY_EVIDENCE_ARTIFACTS[1]
+    )
+    summary, summary_error = _read_csv_frame(
+        root / STRATEGY_EVIDENCE_ARTIFACTS[2]
+    )
+    provider_lineage_selection, selection_error = _read_csv_frame(
+        root / STRATEGY_EVIDENCE_ARTIFACTS[3]
+    )
+    thresholds, thresholds_error = _manifest_evidence_thresholds(manifest)
+    catalog_path = _manifest_input_path(manifest, "catalog")
+    catalog_error = "" if catalog_path is not None else "catalog_input_missing"
+
+    expected_review: StrategyEvidenceReview | None = None
+    retained_proofs: _ProviderRetainedProofVerification | None = None
+    recompute_error = ""
+    if not any(
+        (
+            manifest_error,
+            evidence_error,
+            checks_error,
+            summary_error,
+            selection_error,
+            thresholds_error,
+            catalog_error,
+        )
+    ):
+        try:
+            catalog = pd.read_csv(catalog_path)
+            expected_review = evaluate_strategy_evidence(
+                catalog,
+                thresholds=thresholds,
+            )
+            retained_proofs = _verify_provider_retained_proofs(
+                catalog_path,
+                expected_review,
+                thresholds,
+            )
+            expected_review = _apply_provider_retained_proof_verification(
+                expected_review,
+                retained_proofs,
+            )
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            pd.errors.ParserError,
+            pd.errors.EmptyDataError,
+        ) as exc:
+            recompute_error = f"strategy_evidence_recompute_failed:{exc}"
+
+    manifest_extra = _mapping(manifest.get("extra"))
+    manifest_metadata_consistent = bool(
+        retained_proofs is not None
+        and _to_bool(
+            manifest_extra.get("source_catalog_manifest_required", False)
+        )
+        == retained_proofs.required
+        and _mapping(
+            manifest_extra.get("provider_retained_proof_verification")
+        )
+        == retained_proofs.summary_fields
+    )
+    artifacts_consistent = bool(
+        expected_review is not None
+        and _dataframe_records_equal(evidence, expected_review.evidence)
+        and _dataframe_records_equal(checks, expected_review.checks)
+        and _dataframe_records_equal(summary, expected_review.summary)
+        and _dataframe_records_equal(
+            provider_lineage_selection,
+            expected_review.provider_lineage_selection,
+        )
+        and manifest_metadata_consistent
+    )
+    retained_required = bool(
+        retained_proofs.required
+        if retained_proofs is not None
+        else _to_bool(
+            manifest_extra.get(
+                "source_catalog_manifest_required",
+                False,
+            )
+        )
+    )
+    provider_retained_proofs_current = bool(
+        not retained_required
+        or (
+            expected_review is not None
+            and _named_checks_passed(
+                expected_review.checks,
+                PROVIDER_RETAINED_PROOF_CHECKS,
+            )
+        )
+    )
+    source_current = bool(
+        expected_review is not None
+        and not recompute_error
+        and provider_retained_proofs_current
+    )
+    manifest_inputs = _mapping(manifest.get("inputs"))
+    required_inputs = (
+        PROVIDER_RETAINED_PROOF_MANIFEST_INPUTS
+        if retained_required
+        else ("catalog",)
+    )
+    manifest_input_contract_current = bool(
+        all(
+            _manifest_input_is_fingerprint(manifest_inputs.get(name))
+            for name in required_inputs
+        )
+    )
+    summary_non_authorizing = bool(
+        len(summary) == 1
+        and "authorizes_submission" in summary.columns
+        and not _to_bool(summary.iloc[0].get("authorizes_submission"))
+    )
+    non_authorizing = bool(
+        manifest_extra.get("authorizes_submission") is False
+        and summary_non_authorizing
+    )
+    read_error = next(
+        (
+            error
+            for error in (
+                manifest_error,
+                evidence_error,
+                checks_error,
+                summary_error,
+                selection_error,
+                thresholds_error,
+                catalog_error,
+                recompute_error,
+            )
+            if error
+        ),
+        "",
+    )
+    verified = bool(
+        not read_error
+        and integrity.passed
+        and source_current
+        and artifacts_consistent
+        and manifest_input_contract_current
+        and non_authorizing
+    )
+    summary_ready = bool(
+        len(summary) == 1 and _to_bool(summary.iloc[0].get("ready"))
+    )
+    ready = bool(verified and summary_ready)
+    error = (
+        read_error
+        or integrity.error
+        or (
+            "strategy_evidence_manifest_input_contract_invalid"
+            if not manifest_input_contract_current
+            else ""
+        )
+        or (
+            "strategy_evidence_sources_not_current"
+            if not source_current
+            else ""
+        )
+        or (
+            "strategy_evidence_artifacts_disagree_with_sources"
+            if not artifacts_consistent
+            else ""
+        )
+        or (
+            "strategy_evidence_authorization_claim_invalid"
+            if not non_authorizing
+            else ""
+        )
+        or ("strategy_evidence_not_ready" if not summary_ready else "")
+    )
+    return StrategyEvidenceVerification(
+        verified=verified,
+        ready=ready,
+        manifest_current=bool(integrity.passed),
+        source_current=source_current,
+        artifacts_consistent=artifacts_consistent,
+        manifest_input_contract_current=manifest_input_contract_current,
+        provider_retained_proofs_current=provider_retained_proofs_current,
+        non_authorizing=non_authorizing,
+        output_dir=root,
+        catalog_path=catalog_path,
+        evidence=evidence,
+        checks=checks,
+        summary=summary,
+        provider_lineage_selection=provider_lineage_selection,
+        error=error,
+    )
+
+
 def _verify_provider_retained_proofs(
     catalog_file: Path,
     review: StrategyEvidenceReview,
@@ -297,6 +550,7 @@ def _verify_provider_retained_proofs(
     )
     catalog_manifest = catalog_file.parent / MANIFEST_NAME
     summary_fields: dict[str, Any] = {
+        "authorizes_submission": False,
         "source_catalog_manifest_required": required,
         "source_catalog_manifest_path": (
             str(catalog_manifest.resolve()) if required else ""
@@ -2136,6 +2390,137 @@ def _normalize_identity(value: str | None) -> str:
     if value is None:
         return ""
     return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _read_json_mapping(path: Path) -> tuple[dict[str, Any], str]:
+    if not path.is_file():
+        return {}, "manifest_missing"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}, "manifest_unreadable"
+    if not isinstance(value, dict):
+        return {}, "manifest_not_object"
+    return value, ""
+
+
+def _read_csv_frame(path: Path) -> tuple[pd.DataFrame, str]:
+    if not path.is_file():
+        return pd.DataFrame(), f"artifact_missing:{path.name}"
+    try:
+        return pd.read_csv(path), ""
+    except (
+        OSError,
+        UnicodeError,
+        pd.errors.ParserError,
+        pd.errors.EmptyDataError,
+    ):
+        return pd.DataFrame(), f"artifact_unreadable:{path.name}"
+
+
+def _manifest_evidence_thresholds(
+    manifest: Mapping[str, Any],
+) -> tuple[EvidenceThresholds | None, str]:
+    parameters = _mapping(manifest.get("parameters"))
+    raw = _mapping(parameters.get("thresholds"))
+    if not raw:
+        return None, "evidence_thresholds_missing"
+    field_names = {item.name for item in fields(EvidenceThresholds)}
+    values = {key: value for key, value in raw.items() if key in field_names}
+    required_run_types = values.get("required_run_types")
+    if not isinstance(required_run_types, (list, tuple)):
+        return None, "evidence_required_run_types_invalid"
+    values["required_run_types"] = tuple(str(item) for item in required_run_types)
+    try:
+        thresholds = EvidenceThresholds(**values)
+        _validate_thresholds(thresholds)
+    except (TypeError, ValueError):
+        return None, "evidence_thresholds_invalid"
+    return thresholds, ""
+
+
+def _manifest_input_path(
+    manifest: Mapping[str, Any],
+    name: str,
+) -> Path | None:
+    value = _mapping(_mapping(manifest.get("inputs")).get(name))
+    if not _manifest_input_is_fingerprint(value):
+        return None
+    return Path(str(value.get("path"))).resolve()
+
+
+def _manifest_input_is_fingerprint(value: Any) -> bool:
+    item = _mapping(value)
+    return bool(
+        item.get("kind") in {"file", "directory"}
+        and str(item.get("path", "")).strip()
+    )
+
+
+def _named_checks_passed(
+    checks: pd.DataFrame,
+    names: tuple[str, ...],
+) -> bool:
+    if checks.empty or not {"check", "passed"} <= set(checks.columns):
+        return False
+    matched = checks.loc[checks["check"].astype(str).isin(names)]
+    return bool(
+        len(matched) == len(names)
+        and set(matched["check"].astype(str)) == set(names)
+        and matched["passed"].map(_to_bool).all()
+    )
+
+
+def _dataframe_records_equal(
+    actual: pd.DataFrame,
+    expected: pd.DataFrame,
+) -> bool:
+    if list(actual.columns) != list(expected.columns) or len(actual) != len(expected):
+        return False
+    for actual_row, expected_row in zip(
+        actual.itertuples(index=False, name=None),
+        expected.itertuples(index=False, name=None),
+    ):
+        if any(
+            not _artifact_values_equal(actual_value, expected_value)
+            for actual_value, expected_value in zip(actual_row, expected_row)
+        ):
+            return False
+    return True
+
+
+def _artifact_values_equal(left: Any, right: Any) -> bool:
+    left_missing = _artifact_value_missing(left)
+    right_missing = _artifact_value_missing(right)
+    if left_missing or right_missing:
+        return left_missing and right_missing
+    if isinstance(left, (bool, np.bool_)) or isinstance(right, (bool, np.bool_)):
+        return bool(left) == bool(right) and isinstance(
+            left,
+            (bool, np.bool_),
+        ) == isinstance(right, (bool, np.bool_))
+    if isinstance(left, (int, float, np.integer, np.floating)) and isinstance(
+        right,
+        (int, float, np.integer, np.floating),
+    ):
+        return float(left) == float(right)
+    return str(left) == str(right)
+
+
+def _artifact_value_missing(value: Any) -> bool:
+    if value is None or (
+        isinstance(value, str)
+        and value.strip().lower() in {"", "nan"}
+    ):
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _catalog_path(path: str | Path) -> Path:

@@ -2961,6 +2961,21 @@
   backward compatible. Strategy-evidence, shared-manifest, and experiment-
   catalog suites pass together (`127 passed`); the real 13-stage clean/deep-
   drift path passes separately (`1 passed`).
+- Completed provider strategy-evidence roots now have a semantic read-side
+  verifier and CLI (`verify-strategy-evidence`) for downstream release review.
+  The verifier reopens the exact manifest-bound catalog, recomputes all four
+  evidence tables, reruns the retained catalog/audit/certificate proof checks,
+  requires the six-input fingerprint contract, and validates the explicit
+  non-authorizing manifest metadata. Direct retained-proof drift fails manifest
+  integrity; recursively re-manifested upstream drift still fails the semantic
+  source comparison. Experiment-catalog ingestion invokes this verifier for the
+  provider launch profile and suppresses stale or inconsistent evidence instead
+  of preserving its recorded ready status. Legacy and audit-only evidence stay
+  backward compatible. The strategy-evidence, manifest, and experiment-catalog
+  affected surface passes together (`127 passed`), including CLI, metadata-only
+  tamper, provider-profile relabel bypass, direct retained-proof drift, stale-
+  catalog replay, and catalog status suppression paths. The real 13-stage
+  clean/deep-drift replay also passes (`1 passed`).
 
 ## Test Gate
 
@@ -2972,6 +2987,15 @@ pytest
 
 Current collected suite: 1627 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest completed strategy-evidence read-verification gate: strategy evidence,
+shared manifests, and experiment catalog pass together (`127 passed`). It
+recomputes completed evidence from retained sources, validates all persisted
+tables and manifest metadata, exposes strict CLI status, and prevents a stale
+provider evidence root from remaining ready when recataloged. The provider
+threshold contract keeps this gate mandatory even if mutable profile/metadata
+labels are changed together. The real 13-stage clean/deep-drift replay passes
+separately (`1 passed`).
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3148,10 +3172,10 @@ the last completed full-suite green baseline rather than claiming the current
 
 ## Next Build Targets
 
-1. Add a read-side verifier for completed strategy-evidence roots that reopens
-   the source catalog plus selected provider audit/certificate proofs, then use
-   it at the first downstream release-review boundary so recursive chain drift
-   after evidence generation cannot be mistaken for a current decision.
+1. Add a non-authorizing provider live-dry-run release-review packet that
+   consumes only a verified and ready final strategy-evidence root, preserves
+   the catalog/audit/certificate hashes, and emits operator approval and runbook
+   artifacts without permitting broker submission.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
