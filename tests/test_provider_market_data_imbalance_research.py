@@ -19868,6 +19868,11 @@ def test_provider_market_data_imbalance_route_enable_accepts_ready_cutover(tmp_p
     route_summary = pd.read_csv(out_dir / "route_enable" / "route_enable_summary.csv")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     config = json.loads((out_dir / "provider_market_data_imbalance_route_enable_config.json").read_text(encoding="utf-8"))
+    checks = report.checks.set_index("check")
+    expected_lineage_contract = _provider_lineage_selection_contract()
+    runbook = (out_dir / "provider_market_data_imbalance_route_enable_runbook.md").read_text(
+        encoding="utf-8"
+    )
     assert report.ready
     assert bool(summary.loc[0, "provider_cutover_ready"])
     assert bool(summary.loc[0, "route_enable_ready"])
@@ -19885,11 +19890,64 @@ def test_provider_market_data_imbalance_route_enable_accepts_ready_cutover(tmp_p
         manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
         == 0
     )
+    assert bool(
+        checks.loc[
+            "provider_cutover_route_readiness_provider_lineage_selection_contract",
+            "passed",
+        ]
+    )
+    assert bool(
+        checks.loc[
+            "provider_cutover_route_readiness_provider_lineage_selection_contract_matches_artifacts",
+            "passed",
+        ]
+    )
+    assert config["provider_lineage_selection_contract"] == expected_lineage_contract
+    assert (
+        manifest["extra"]["provider_lineage_selection_contract"]
+        == expected_lineage_contract
+    )
+    assert (
+        f"Provider lineage contract: `{expected_lineage_contract['sha256']}`"
+        in runbook
+    )
     assert "provider_cutover_dir" in manifest["inputs"]
     assert "route_enable" in manifest["inputs"]
     assert "cutover" in manifest["inputs"]
     assert "upload_pack" in manifest["inputs"]
     assert "order_export" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_route_enable_blocks_cutover_lineage_contract_drift(
+    tmp_path,
+):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    _mutate_json(
+        provider_cutover.output_dir
+        / "provider_market_data_imbalance_cutover_config.json",
+        lambda payload: payload["provider_lineage_selection_contract"].update(
+            {"sha256": "b" * 64}
+        ),
+    )
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable_lineage_contract_drift",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert (
+        "provider_cutover_route_readiness_provider_lineage_selection_contract_matches_artifacts"
+        in failed
+    )
+    assert report.action_queue.loc[0, "component"] == "provider_route_readiness"
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert (
+        report.action_queue.loc[0, "next_gate"]
+        == "review-provider-market-data-imbalance-route-readiness"
+    )
 
 
 def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_provenance(tmp_path):
@@ -22692,6 +22750,11 @@ def test_provider_market_data_imbalance_broker_dispatch_accepts_ready_route_enab
     config = json.loads(
         (out_dir / "provider_market_data_imbalance_broker_dispatch_config.json").read_text(encoding="utf-8")
     )
+    checks = report.checks.set_index("check")
+    expected_lineage_contract = _provider_lineage_selection_contract()
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_runbook.md").read_text(
+        encoding="utf-8"
+    )
     assert report.ready
     assert bool(summary.loc[0, "provider_route_enable_ready"])
     assert bool(summary.loc[0, "broker_dispatch_ready"])
@@ -22722,6 +22785,59 @@ def test_provider_market_data_imbalance_broker_dispatch_accepts_ready_route_enab
     assert (
         manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
         == 0
+    )
+    assert bool(
+        checks.loc[
+            "provider_route_enable_route_readiness_provider_lineage_selection_contract",
+            "passed",
+        ]
+    )
+    assert bool(
+        checks.loc[
+            "provider_route_enable_route_readiness_provider_lineage_selection_contract_matches_artifacts",
+            "passed",
+        ]
+    )
+    assert config["provider_lineage_selection_contract"] == expected_lineage_contract
+    assert (
+        manifest["extra"]["provider_lineage_selection_contract"]
+        == expected_lineage_contract
+    )
+    assert (
+        f"Provider lineage contract: `{expected_lineage_contract['sha256']}`"
+        in runbook
+    )
+
+
+def test_provider_market_data_imbalance_broker_dispatch_blocks_route_enable_lineage_contract_drift(
+    tmp_path,
+):
+    provider_route_enable = _write_ready_provider_imbalance_route_enable(tmp_path)
+    _mutate_json(
+        provider_route_enable.output_dir
+        / "provider_market_data_imbalance_route_enable_config.json",
+        lambda payload: payload["provider_lineage_selection_contract"].update(
+            {"sha256": "b" * 64}
+        ),
+    )
+
+    report = write_provider_market_data_imbalance_broker_dispatch(
+        provider_route_enable.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_lineage_contract_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert (
+        "provider_route_enable_route_readiness_provider_lineage_selection_contract_matches_artifacts"
+        in failed
+    )
+    assert report.action_queue.loc[0, "component"] == "provider_route_readiness"
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert (
+        report.action_queue.loc[0, "next_gate"]
+        == "review-provider-market-data-imbalance-route-readiness"
     )
 
 
