@@ -2841,6 +2841,16 @@
   provider route-readiness review. Clean propagation, missing-contract,
   cross-artifact tamper, canonical sidecar precedence, and sidecar-breach paths
   pass across the focused scale-up/runtime batches (`15 passed`).
+- Provider broker readiness and cutover now continue that exact active-lineage
+  seal across both pre-route broker boundaries. Each boundary validates the
+  route-bound source summary/config/manifest copies with the shared strict
+  parser, preserves the normalized contract in its summary, config, runbook,
+  and manifest, and routes missing or edited proof back to provider
+  route-readiness review. Route-less broker research remains compatible. The
+  focused broker-readiness and cutover ready, cross-artifact drift,
+  sidecar-breach, explicit-zero, and route-less paths pass (`9 passed`), the
+  downstream ready route-enable smoke passes (`1 passed`), and the shared
+  validator suite passes (`3 passed`).
 
 ## Test Gate
 
@@ -2850,7 +2860,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1612 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1616 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -2863,6 +2873,11 @@ provider runtime telemetry/guard/session preserve one exact three-stage
 contract; ready, absent, edited-summary, edited-config, edited-manifest,
 sidecar-precedence, and sidecar-breach paths pass across focused batches (`15
 passed`).
+
+Latest provider active-lineage broker-boundary gate: broker readiness and
+cutover preserve and verify the same exact contract; focused ready, route-less,
+cross-artifact drift, sidecar-breach, and explicit-zero paths pass (`9 passed`).
+The downstream route-enable ready path also passes (`1 passed`).
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
@@ -2999,7 +3014,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
- 1612-test collection is fully green.
+ 1616-test collection is fully green.
 
 ## Next Build Targets
 
@@ -3008,7 +3023,7 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Carry the sealed provider active-lineage selection contract from runtime
-   session through broker readiness, cutover, route enable, dispatch,
-   send/acknowledgement, final round-trip review, and rehearsal certificate so
-   the exact proof chain remains traceable at every broker-facing boundary.
+4. Carry the sealed provider active-lineage selection contract from cutover
+   through route enable, dispatch, send/acknowledgement, final round-trip
+   review, and rehearsal certificate so the exact proof chain remains
+   traceable at every remaining broker-facing boundary.
