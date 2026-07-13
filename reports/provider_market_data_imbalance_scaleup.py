@@ -9,6 +9,10 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.provider_lineage_selection import (
+    provider_lineage_selection_contract_from_summary,
+    provider_lineage_selection_contract_valid,
+)
 from reports.scaleup import ScaleUpPlanReport, ScaleUpThresholds, write_scaleup_plan
 
 
@@ -298,6 +302,9 @@ def write_provider_market_data_imbalance_scaleup_plan(
             "synthetic_sidecar_proof_ready": bool(summary_row["synthetic_sidecar_proof_ready"]),
             "synthetic_sidecar_count": int(summary_row["synthetic_sidecar_count"]),
             "synthetic_sidecar_readable_count": int(summary_row["synthetic_sidecar_readable_count"]),
+            "provider_lineage_selection_contract": provider_lineage_selection_contract_from_summary(
+                summary_row
+            ),
             "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
             "adapter_contract_provider_profile_sha256": str(summary_row["adapter_contract_provider_profile_sha256"]),
             "adapter_contract_provider_profile_matches_evidence": bool(
@@ -614,6 +621,13 @@ def _checks(
         or _first_bool(scaleup_summary, "route_readiness_ops_launch_controls_present")
         or route_sidecar_breach_pairs > 0
     )
+    route_lineage_contract = provider_lineage_selection_contract_from_summary(
+        scaleup_summary
+    )
+    route_lineage_contract_sha256 = str(route_lineage_contract["sha256"])
+    route_lineage_contract_ready = provider_lineage_selection_contract_valid(
+        route_lineage_contract
+    )
     rows.append(
         _check(
             "scaleup_plan_runnable",
@@ -632,6 +646,16 @@ def _checks(
             0,
             route_sidecar_breach_pairs <= 0 if route_sidecar_gate_active else True,
             "provider route readiness has breached broker round-trip synthetic sidecar proof",
+        )
+    )
+    rows.append(
+        _check(
+            "route_readiness_provider_lineage_selection_contract",
+            route_lineage_contract_sha256,
+            "is",
+            "three_stage_sha256_contract",
+            route_lineage_contract_ready if route_sidecar_gate_active else True,
+            "provider route readiness does not carry a complete active-lineage selection contract",
         )
     )
     rows.append(
@@ -1120,6 +1144,38 @@ def _summary(
                         "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
                     )
                 ),
+                "route_readiness_ops_provider_lineage_selected_run_count": int(
+                    _first_number(
+                        scaleup_summary,
+                        "route_readiness_ops_provider_lineage_selected_run_count",
+                    )
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_count": int(
+                    _first_number(
+                        scaleup_summary,
+                        "route_readiness_ops_provider_lineage_selected_pair_count",
+                    )
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_ids": _first_text(
+                    scaleup_summary,
+                    "route_readiness_ops_provider_lineage_selected_pair_ids",
+                ),
+                "route_readiness_ops_provider_lineage_selected_run_dirs": _first_text(
+                    scaleup_summary,
+                    "route_readiness_ops_provider_lineage_selected_run_dirs",
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_version": _first_text(
+                    scaleup_summary,
+                    "route_readiness_ops_provider_lineage_selection_contract_version",
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_sha256": _first_text(
+                    scaleup_summary,
+                    "route_readiness_ops_provider_lineage_selection_contract_sha256",
+                ),
+                "route_readiness_ops_provider_lineage_selection_artifact": _first_text(
+                    scaleup_summary,
+                    "route_readiness_ops_provider_lineage_selection_artifact",
+                ),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
@@ -1221,6 +1277,9 @@ def _config(
             scorecard_config.get("adapter_receipt_proof")
         ),
         "synthetic_sidecar_proof": _mapping(scorecard_config.get("synthetic_sidecar_proof")),
+        "provider_lineage_selection_contract": provider_lineage_selection_contract_from_summary(
+            summary
+        ),
         "capture_bundle": _provider_capture_bundle(summary, scorecard_config),
         "scorecard": _first_record(scorecard_summary),
         "provider_scorecard_config": _jsonable(scorecard_config),
@@ -1306,7 +1365,7 @@ def _next_gate_for_check(check: str) -> str:
         return "pipeline-provider-market-data-imbalance-launch"
     if check.startswith("strategy_evidence") or check in {"strategy_identity_imbalance", "market_identity_consistent"}:
         return "review-provider-market-data-imbalance-launch-evidence"
-    if check.startswith("route_readiness_provider_sidecar"):
+    if check.startswith("route_readiness_provider_"):
         return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("shadow_comparison"):
         return "compare-shadow-sessions"
@@ -1352,7 +1411,7 @@ def _repair_action(check: str) -> str:
         return "review_full_provider_imbalance_launch_evidence"
     if check.startswith("provider_launch") or check.startswith("launch_pipeline"):
         return "rebuild_provider_imbalance_launch_packet"
-    if check.startswith("route_readiness_provider_sidecar"):
+    if check.startswith("route_readiness_provider_"):
         return "review_provider_imbalance_route_readiness"
     if check.startswith("shadow_comparison"):
         return "rerun_provider_imbalance_shadow_comparison"
@@ -1364,6 +1423,8 @@ def _repair_action(check: str) -> str:
 def _reason_for_check(check: str, scaleup: ScaleUpPlanReport | None) -> str:
     if check == "scaleup_plan_ready":
         return _scaleup_failure_reason(scaleup) or "generic scale-up plan is not ready"
+    if check.startswith("route_readiness_provider_lineage"):
+        return "provider route readiness is missing a complete active-lineage selection contract"
     if check.startswith("route_readiness_provider_sidecar"):
         return "provider route readiness has breached broker round-trip synthetic sidecar proof"
     return check.replace("_", " ")
@@ -1390,6 +1451,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Adapter receipt proof: {'ready' if bool(summary['adapter_receipt_proof_ready']) else 'blocked'} ({summary['adapter_receipt_fingerprint_match_count']}/{summary['adapter_receipt_required_count']} sealed; scorecard manifest match: {'yes' if bool(summary['adapter_receipt_proof_matches_manifest']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
+        f"- Provider lineage contract: `{summary['route_readiness_ops_provider_lineage_selection_contract_sha256']}`",
         "",
         "## Checks",
         "",

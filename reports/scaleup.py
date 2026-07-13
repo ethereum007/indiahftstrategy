@@ -2384,6 +2384,55 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not route_readiness.empty
                 else 0,
+                "route_readiness_ops_provider_lineage_selected_run_count": int(
+                    _number(
+                        route_readiness,
+                        "ops_provider_lineage_selected_run_count",
+                        0.0,
+                    )
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_ops_provider_lineage_selected_pair_count": int(
+                    _number(
+                        route_readiness,
+                        "ops_provider_lineage_selected_pair_count",
+                        0.0,
+                    )
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_ops_provider_lineage_selected_pair_ids": str(
+                    route_readiness.get("ops_provider_lineage_selected_pair_ids", "")
+                )
+                if not route_readiness.empty
+                else "",
+                "route_readiness_ops_provider_lineage_selected_run_dirs": str(
+                    route_readiness.get("ops_provider_lineage_selected_run_dirs", "")
+                )
+                if not route_readiness.empty
+                else "",
+                "route_readiness_ops_provider_lineage_selection_contract_version": str(
+                    route_readiness.get(
+                        "ops_provider_lineage_selection_contract_version",
+                        "",
+                    )
+                )
+                if not route_readiness.empty
+                else "",
+                "route_readiness_ops_provider_lineage_selection_contract_sha256": str(
+                    route_readiness.get(
+                        "ops_provider_lineage_selection_contract_sha256",
+                        "",
+                    )
+                )
+                if not route_readiness.empty
+                else "",
+                "route_readiness_ops_provider_lineage_selection_artifact": str(
+                    route_readiness.get("ops_provider_lineage_selection_artifact", "")
+                )
+                if not route_readiness.empty
+                else "",
                 "broker_readiness_provided": not broker_readiness.empty,
                 "broker_readiness_ready": _to_bool(broker_readiness.get("ready", False))
                 if not broker_readiness.empty
@@ -3052,6 +3101,31 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                     plan_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
                 ),
+                "route_readiness_ops_provider_lineage_selected_run_count": int(
+                    plan_row["route_readiness_ops_provider_lineage_selected_run_count"]
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_count": int(
+                    plan_row["route_readiness_ops_provider_lineage_selected_pair_count"]
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_ids": str(
+                    plan_row["route_readiness_ops_provider_lineage_selected_pair_ids"]
+                ),
+                "route_readiness_ops_provider_lineage_selected_run_dirs": str(
+                    plan_row["route_readiness_ops_provider_lineage_selected_run_dirs"]
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_version": str(
+                    plan_row[
+                        "route_readiness_ops_provider_lineage_selection_contract_version"
+                    ]
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_sha256": str(
+                    plan_row[
+                        "route_readiness_ops_provider_lineage_selection_contract_sha256"
+                    ]
+                ),
+                "route_readiness_ops_provider_lineage_selection_artifact": str(
+                    plan_row["route_readiness_ops_provider_lineage_selection_artifact"]
+                ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
@@ -3590,6 +3664,31 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             ),
             "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                 plan_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+            ),
+            "ops_provider_lineage_selected_run_count": int(
+                plan_row["route_readiness_ops_provider_lineage_selected_run_count"]
+            ),
+            "ops_provider_lineage_selected_pair_count": int(
+                plan_row["route_readiness_ops_provider_lineage_selected_pair_count"]
+            ),
+            "ops_provider_lineage_selected_pair_ids": str(
+                plan_row["route_readiness_ops_provider_lineage_selected_pair_ids"]
+            ),
+            "ops_provider_lineage_selected_run_dirs": str(
+                plan_row["route_readiness_ops_provider_lineage_selected_run_dirs"]
+            ),
+            "ops_provider_lineage_selection_contract_version": str(
+                plan_row[
+                    "route_readiness_ops_provider_lineage_selection_contract_version"
+                ]
+            ),
+            "ops_provider_lineage_selection_contract_sha256": str(
+                plan_row[
+                    "route_readiness_ops_provider_lineage_selection_contract_sha256"
+                ]
+            ),
+            "ops_provider_lineage_selection_artifact": str(
+                plan_row["route_readiness_ops_provider_lineage_selection_artifact"]
             ),
             "recommendation": _text(plan_row["route_readiness_recommendation"]),
         },

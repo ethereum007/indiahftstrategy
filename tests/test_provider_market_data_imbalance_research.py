@@ -594,6 +594,29 @@ def _write_ready_ops_launch_evidence(
     return out_dir
 
 
+def _provider_lineage_selection_contract():
+    return {
+        "version": "provider_active_lineage_selection/v1",
+        "sha256": "a" * 64,
+        "selected_run_count": 3,
+        "selected_pair_count": 3,
+        "selected_pair_ids": ";".join(("1" * 64, "2" * 64, "3" * 64)),
+        "selected_run_dirs": "runs/provider_ack;runs/provider_roundtrip;runs/provider_certificate",
+        "artifact": "strategy_evidence_provider_lineage_selection.csv",
+    }
+
+
+def _set_provider_lineage_selection_summary(frame):
+    contract = _provider_lineage_selection_contract()
+    frame["route_readiness_ops_provider_lineage_selection_contract_version"] = contract["version"]
+    frame["route_readiness_ops_provider_lineage_selection_contract_sha256"] = contract["sha256"]
+    frame["route_readiness_ops_provider_lineage_selected_run_count"] = contract["selected_run_count"]
+    frame["route_readiness_ops_provider_lineage_selected_pair_count"] = contract["selected_pair_count"]
+    frame["route_readiness_ops_provider_lineage_selected_pair_ids"] = contract["selected_pair_ids"]
+    frame["route_readiness_ops_provider_lineage_selected_run_dirs"] = contract["selected_run_dirs"]
+    frame["route_readiness_ops_provider_lineage_selection_artifact"] = contract["artifact"]
+
+
 def _write_ready_provider_imbalance_runtime_telemetry(tmp_path, *, snapshot_ts_ns=1_000_000):
     launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
     scorecard = write_provider_market_data_imbalance_scorecard(
@@ -647,16 +670,7 @@ def _write_ready_provider_imbalance_runtime_session(
     )
 
 
-def _write_ready_provider_imbalance_broker_readiness(tmp_path):
-    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
-    return write_provider_market_data_imbalance_broker_readiness(
-        runtime_session.output_dir,
-        tmp_path / "provider_imbalance_broker_readiness",
-        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
-    )
-
-
-def _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path):
+def _write_ready_provider_imbalance_runtime_chain_with_route_proof(tmp_path):
     launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
     ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
     route_readiness = write_provider_market_data_imbalance_route_readiness(
@@ -694,6 +708,22 @@ def _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path):
         tmp_path / "provider_imbalance_runtime_session_with_route",
         as_of_ts_ns=1_000_000,
         config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    return scaleup, telemetry, guard, session
+
+
+def _write_ready_provider_imbalance_broker_readiness(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    return write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+
+
+def _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path):
+    _, _, _, session = _write_ready_provider_imbalance_runtime_chain_with_route_proof(
+        tmp_path
     )
     broker_readiness = write_provider_market_data_imbalance_broker_readiness(
         session.output_dir,
@@ -4650,7 +4680,168 @@ def test_provider_market_data_imbalance_scaleup_accepts_provider_route_readiness
     )
     assert config["route_readiness_inputs"]["route_readiness_dir"] == str(nested_route_dir)
     assert config["route_readiness_inputs"]["provider_route_readiness_wrapper_dir"] == str(route_readiness.output_dir)
+    assert config["provider_lineage_selection_contract"] == _provider_lineage_selection_contract()
+    assert (
+        manifest["extra"]["provider_lineage_selection_contract"]
+        == _provider_lineage_selection_contract()
+    )
+    assert (
+        summary.loc[0, "route_readiness_ops_provider_lineage_selection_contract_sha256"]
+        == "a" * 64
+    )
+    assert (
+        scaleup_summary.loc[0, "route_readiness_ops_provider_lineage_selection_contract_sha256"]
+        == "a" * 64
+    )
     assert "provider_route_readiness_wrapper" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_scaleup_blocks_missing_route_lineage_selection_contract(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness_missing_lineage",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    route_summary_path = route_readiness.output_dir / "route_readiness" / "route_readiness_summary.csv"
+    route_summary = pd.read_csv(route_summary_path)
+    route_summary.loc[0, "ops_provider_lineage_selected_run_count"] = 0
+    route_summary.loc[0, "ops_provider_lineage_selected_pair_count"] = 0
+    route_summary.loc[0, "ops_provider_lineage_selected_pair_ids"] = ""
+    route_summary.loc[0, "ops_provider_lineage_selected_run_dirs"] = ""
+    route_summary.loc[0, "ops_provider_lineage_selection_contract_version"] = ""
+    route_summary.loc[0, "ops_provider_lineage_selection_contract_sha256"] = ""
+    route_summary.loc[0, "ops_provider_lineage_selection_artifact"] = ""
+    route_summary.to_csv(route_summary_path, index=False)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard_missing_lineage",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+
+    report = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup_missing_lineage",
+        route_readiness_dir=route_readiness.output_dir,
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "route_readiness_provider_lineage_selection_contract" in failed
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
+
+
+def test_provider_market_data_imbalance_runtime_chain_carries_route_lineage_selection_contract(tmp_path):
+    scaleup, telemetry, guard, session = _write_ready_provider_imbalance_runtime_chain_with_route_proof(
+        tmp_path
+    )
+    artifacts = (
+        (
+            scaleup,
+            "provider_market_data_imbalance_scaleup_summary.csv",
+            "provider_market_data_imbalance_scaleup_config.json",
+        ),
+        (
+            telemetry,
+            "provider_market_data_imbalance_runtime_telemetry_summary.csv",
+            "provider_market_data_imbalance_runtime_telemetry_config.json",
+        ),
+        (
+            guard,
+            "provider_market_data_imbalance_runtime_guard_summary.csv",
+            "provider_market_data_imbalance_runtime_guard_config.json",
+        ),
+        (
+            session,
+            "provider_market_data_imbalance_runtime_session_summary.csv",
+            "provider_market_data_imbalance_runtime_session_config.json",
+        ),
+    )
+
+    for report, summary_name, config_name in artifacts:
+        summary = pd.read_csv(report.output_dir / summary_name)
+        config = json.loads((report.output_dir / config_name).read_text(encoding="utf-8"))
+        manifest = json.loads((report.output_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert report.ready
+        assert (
+            summary.loc[0, "route_readiness_ops_provider_lineage_selection_contract_sha256"]
+            == "a" * 64
+        )
+        assert int(summary.loc[0, "route_readiness_ops_provider_lineage_selected_pair_count"]) == 3
+        assert config["provider_lineage_selection_contract"] == _provider_lineage_selection_contract()
+        assert (
+            manifest["extra"]["provider_lineage_selection_contract"]
+            == _provider_lineage_selection_contract()
+        )
+
+
+def test_provider_market_data_imbalance_runtime_chain_blocks_route_lineage_contract_drift(tmp_path):
+    scaleup, telemetry, guard, _ = _write_ready_provider_imbalance_runtime_chain_with_route_proof(
+        tmp_path
+    )
+
+    _mutate_json(
+        scaleup.output_dir / "provider_market_data_imbalance_scaleup_config.json",
+        lambda payload: payload["provider_lineage_selection_contract"].__setitem__("sha256", "b" * 64),
+    )
+    telemetry_drift = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry_lineage_drift",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    telemetry_failed = set(
+        telemetry_drift.checks.loc[~telemetry_drift.checks["passed"].astype(bool), "check"]
+    )
+    assert not telemetry_drift.ready
+    assert (
+        "provider_scaleup_route_readiness_provider_lineage_selection_contract_matches_artifacts"
+        in telemetry_failed
+    )
+
+    def tamper_telemetry_manifest(payload):
+        payload["extra"]["provider_lineage_selection_contract"]["selected_pair_ids"] = ";".join(
+            ("1" * 64, "2" * 64, "4" * 64)
+        )
+
+    _mutate_json(telemetry.output_dir / "manifest.json", tamper_telemetry_manifest)
+    guard_drift = write_provider_market_data_imbalance_runtime_guard(
+        telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard_lineage_drift",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+    guard_failed = set(guard_drift.checks.loc[~guard_drift.checks["passed"].astype(bool), "check"])
+    assert not guard_drift.ready
+    assert (
+        "provider_runtime_telemetry_route_readiness_provider_lineage_selection_contract_matches_artifacts"
+        in guard_failed
+    )
+
+    guard_summary_path = guard.output_dir / "provider_market_data_imbalance_runtime_guard_summary.csv"
+    guard_summary = pd.read_csv(guard_summary_path)
+    guard_summary.loc[0, "route_readiness_ops_provider_lineage_selection_contract_sha256"] = ""
+    guard_summary.to_csv(guard_summary_path, index=False)
+    session_drift = write_provider_market_data_imbalance_runtime_session(
+        guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session_lineage_drift",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    session_failed = set(
+        session_drift.checks.loc[~session_drift.checks["passed"].astype(bool), "check"]
+    )
+    assert not session_drift.ready
+    assert "provider_runtime_guard_route_readiness_provider_lineage_selection_contract" in session_failed
+    assert (
+        "provider_runtime_guard_route_readiness_provider_lineage_selection_contract_matches_artifacts"
+        in session_failed
+    )
 
 
 def test_cli_provider_market_data_imbalance_scaleup_accepts_clean_route_readiness_over_stale_sidecar_breach(
@@ -5566,9 +5757,11 @@ def test_provider_market_data_imbalance_runtime_telemetry_prefers_explicit_scale
         0,
         "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
     ] = 0
+    _set_provider_lineage_selection_summary(scaleup_summary)
     scaleup_summary.to_csv(scaleup_summary_path, index=False)
 
     def add_stale_route_sidecar_config(payload):
+        payload["provider_lineage_selection_contract"] = _provider_lineage_selection_contract()
         payload["route_readiness_provided"] = True
         payload["route_readiness_ops_launch_controls_present"] = True
         payload["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
@@ -5590,6 +5783,13 @@ def test_provider_market_data_imbalance_runtime_telemetry_prefers_explicit_scale
     _mutate_json(
         scaleup.output_dir / "provider_market_data_imbalance_scaleup_config.json",
         add_stale_route_sidecar_config,
+    )
+    _mutate_json(
+        scaleup.output_dir / "manifest.json",
+        lambda payload: payload.setdefault("extra", {}).__setitem__(
+            "provider_lineage_selection_contract",
+            _provider_lineage_selection_contract(),
+        ),
     )
     out_dir = tmp_path / "provider_imbalance_runtime_telemetry_route_sidecar_explicit_zero"
 
@@ -6381,9 +6581,11 @@ def test_provider_market_data_imbalance_runtime_guard_prefers_explicit_telemetry
         0,
         "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
     ] = 0
+    _set_provider_lineage_selection_summary(provider_summary)
     provider_summary.to_csv(summary_path, index=False)
 
     def add_stale_route_sidecar_config(payload):
+        payload["provider_lineage_selection_contract"] = _provider_lineage_selection_contract()
         payload["route_readiness_provided"] = True
         payload["route_readiness_ops_launch_controls_present"] = True
         payload["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
@@ -6401,6 +6603,13 @@ def test_provider_market_data_imbalance_runtime_guard_prefers_explicit_telemetry
     _mutate_json(
         runtime_telemetry.output_dir / "provider_market_data_imbalance_runtime_telemetry_config.json",
         add_stale_route_sidecar_config,
+    )
+    _mutate_json(
+        runtime_telemetry.output_dir / "manifest.json",
+        lambda payload: payload.setdefault("extra", {}).__setitem__(
+            "provider_lineage_selection_contract",
+            _provider_lineage_selection_contract(),
+        ),
     )
     out_dir = tmp_path / "provider_imbalance_runtime_guard_route_sidecar_explicit_zero"
 
@@ -7254,9 +7463,11 @@ def test_provider_market_data_imbalance_runtime_session_prefers_explicit_guard_r
         0,
         "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
     ] = 0
+    _set_provider_lineage_selection_summary(guard_summary)
     guard_summary.to_csv(summary_path, index=False)
 
     def add_stale_route_sidecar_config(payload):
+        payload["provider_lineage_selection_contract"] = _provider_lineage_selection_contract()
         payload["route_readiness_provided"] = True
         payload["route_readiness_ops_launch_controls_present"] = True
         payload["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
@@ -7274,6 +7485,13 @@ def test_provider_market_data_imbalance_runtime_session_prefers_explicit_guard_r
     _mutate_json(
         runtime_guard.output_dir / "provider_market_data_imbalance_runtime_guard_config.json",
         add_stale_route_sidecar_config,
+    )
+    _mutate_json(
+        runtime_guard.output_dir / "manifest.json",
+        lambda payload: payload.setdefault("extra", {}).__setitem__(
+            "provider_lineage_selection_contract",
+            _provider_lineage_selection_contract(),
+        ),
     )
     out_dir = tmp_path / "provider_imbalance_runtime_session_route_sidecar_explicit_zero"
 
