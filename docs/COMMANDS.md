@@ -170,6 +170,18 @@ not retain a ready/readable proof, and
 `--require-provider-broker-roundtrip-synthetic-sidecar-ready` when the catalog
 must contain at least one final provider broker round-trip with ready synthetic
 sidecar proof.
+When cataloging provider acknowledgement, round-trip, or rehearsal-certificate
+archives, pass a current retirement index with
+`--provider-broker-active-lineage-index <index_dir>`. Covered strict siblings
+are marked `selectable`; covered legacy originals remain catalog-visible as
+`retained_only` but have `provider_lineage_selection_eligible=false`.
+Supported provider proofs absent from a supplied index are fail-closed as
+`unindexed`; supported proofs cataloged without any index are
+`index_not_provided` and are also ineligible. The catalog summary reports
+indexed, selectable, retained-only, unindexed/missing-index, and total
+selection-blocked counts. Use
+`--fail-on-provider-lineage-selection-blocks` for candidate catalogs that must
+contain no retained-only or unindexed provider proof.
 Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
 summary status, missing summaries, dirty git state, or unfingerprinted inputs.
 When that gate fails, inspect `experiment_catalog_hygiene_gaps.csv` first.
@@ -6685,6 +6697,60 @@ The convergence manifest seals the audit-usage review, every existing refreshed
 bundle and manifest, and all recursive dependencies. Any later refreshed-proof
 or source-review drift invalidates the convergence artifact. It remains
 non-authorizing and cannot enable or submit broker orders.
+
+Once convergence passes, publish the active selection and retirement contract:
+
+```powershell
+python -m hft_cli index-provider-market-data-imbalance-broker-active-lineage `
+  --convergence runs\provider_broker_lineage_refresh_convergence\2026_07_13 `
+  --out runs\provider_broker_active_lineage\2026_07_13 `
+  --fail-on-blocked-actions `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The index independently revalidates every convergence pair. Each pair must
+still contain a current, passed, non-authorizing original and a current,
+passed, strict, audit-free, non-authorizing sibling with identical non-lineage
+policy and normalized source-evidence identity. Exactly one `active_strict`
+entry is marked `selectable`; exactly one `legacy_original` entry is marked
+`retained_only`. Retirement is logical and non-destructive: the legacy bundle
+stays available for audit and reproducibility but the verified resolver and
+index-aware catalog never treat it as a selectable proof.
+
+The resolver requires an original path when more than one archive has a
+selectable bundle of the same type, preventing path-order or newest-directory
+heuristics from silently choosing a different lineage family. An unready,
+stale, edited, ambiguous, or inconsistent index is rejected. A successful
+strict no-op convergence produces a valid empty index.
+
+Outputs:
+
+```text
+provider_broker_active_lineage_index.csv
+provider_broker_active_lineage_checks.csv
+provider_broker_active_lineage_summary.csv
+provider_broker_active_lineage_action_queue.csv
+provider_broker_active_lineage_config.json
+provider_broker_active_lineage_runbook.md
+manifest.json
+```
+
+The manifest seals the convergence proof, both members of every lineage pair,
+their manifests, and recursive dependencies. Any later source or sibling drift
+invalidates both direct resolution and index-aware catalog construction. The
+index explicitly sets `authorizes_submission=false`.
+
+Use the verified index when building a provider-proof candidate catalog:
+
+```powershell
+python -m hft_cli catalog-runs `
+  --roots runs\provider_broker_archive `
+  --provider-broker-active-lineage-index `
+    runs\provider_broker_active_lineage\2026_07_13 `
+  --out runs\catalog\provider_broker_active `
+  --fail-on-provider-lineage-selection-blocks
+```
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

@@ -2785,7 +2785,24 @@
   refreshed proof and recursive dependency. Missing-output/CLI failure, no-op,
   exact three-stage convergence/CLI success/catalog, post-convergence drift,
   policy mismatch, and source-review drift pass with the complete lineage suite
-  (`30 passed`).
+  (`36 passed`).
+- Converged provider proofs now have a sealed active-lineage retirement contract
+  via `index-provider-market-data-imbalance-broker-active-lineage`. The index
+  independently revalidates each exact original/strict pair, marks only the
+  current strict, audit-free, policy/evidence-equivalent sibling as
+  `selectable`, and keeps the legacy original visible as `retained_only` for
+  audit and reproducibility. Its verifier reconstructs expected rows from the
+  sealed convergence source, while its resolver rejects stale, edited,
+  ambiguous, or unready indexes and requires original-path disambiguation when
+  multiple archives contain the same bundle type. Experiment catalogs can now
+  consume the verified index, expose per-run selection status and eligibility,
+  fail closed on supported proofs when the index is missing or does not cover
+  them, and return exit `2` for retained/unindexed candidate sets with
+  `--fail-on-provider-lineage-selection-blocks`. The index and catalog remain
+  non-authorizing and preserve every retired proof. Exact three-pair retirement,
+  no-op, pre-convergence refusal/CLI failure, strict-proof drift, two-archive
+  ambiguity, cross-artifact edit rejection, resolver, CLI, and catalog
+  selection gates pass (`6 passed`).
 
 ## Test Gate
 
@@ -2795,7 +2812,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1591 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1597 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2933,7 +2950,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1591-test collection is fully green.
+1597-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2942,6 +2959,7 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add an active-lineage retirement index that marks converged strict siblings
-   as selectable and their legacy originals as retained-only, preventing
-   downstream catalogs from choosing archived compatibility proof.
+4. Require the verified active-lineage selection contract in downstream
+   provider evidence and broker-rehearsal candidate selection, closing the
+   remaining non-catalog paths that can still accept an archived compatibility
+   proof directly.

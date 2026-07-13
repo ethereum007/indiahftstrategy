@@ -9,6 +9,9 @@ import numpy as np
 import pandas as pd
 
 from reports.manifest import MANIFEST_NAME, write_experiment_manifest
+from reports.provider_market_data_imbalance_broker_active_lineage import (
+    verified_provider_broker_active_lineage_records,
+)
 
 
 SUMMARY_FILES = [
@@ -100,6 +103,7 @@ SUMMARY_FILES = [
     "provider_broker_lineage_migration_summary.csv",
     "provider_broker_lineage_audit_usage_summary.csv",
     "provider_broker_lineage_refresh_convergence_summary.csv",
+    "provider_broker_active_lineage_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",
@@ -134,6 +138,16 @@ STATUS_COLUMNS = [
     "all_required_present",
 ]
 
+PROVIDER_BROKER_LINEAGE_RUN_TYPES = {
+    "provider_market_data_imbalance_broker_dispatch_ack": "provider_ack",
+    "provider_market_data_imbalance_broker_dispatch_roundtrip": (
+        "provider_roundtrip"
+    ),
+    "provider_market_data_imbalance_broker_rehearsal_certificate": (
+        "rehearsal_certificate"
+    ),
+}
+
 
 @dataclass(frozen=True)
 class ExperimentCatalog:
@@ -148,11 +162,22 @@ class ExperimentCatalog:
         return int(len(self.catalog))
 
 
-def catalog_experiment_runs(roots: list[str | Path]) -> ExperimentCatalog:
+def catalog_experiment_runs(
+    roots: list[str | Path],
+    *,
+    provider_broker_active_lineage_index: str | Path | None = None,
+) -> ExperimentCatalog:
     if not roots:
         raise ValueError("at least one experiment root is required")
     manifests = _manifest_paths(roots)
-    rows = [_catalog_row(path) for path in manifests]
+    lineage_records = (
+        None
+        if provider_broker_active_lineage_index is None
+        else verified_provider_broker_active_lineage_records(
+            provider_broker_active_lineage_index
+        )
+    )
+    rows = [_catalog_row(path, lineage_records=lineage_records) for path in manifests]
     catalog = pd.DataFrame(rows)
     action_queue = _catalog_action_queue(catalog)
     hygiene_gaps = _catalog_hygiene_gaps(catalog)
@@ -169,8 +194,14 @@ def write_experiment_catalog(
     roots: list[str | Path],
     *,
     output_dir: str | Path,
+    provider_broker_active_lineage_index: str | Path | None = None,
 ) -> ExperimentCatalog:
-    report = catalog_experiment_runs(roots)
+    report = catalog_experiment_runs(
+        roots,
+        provider_broker_active_lineage_index=(
+            provider_broker_active_lineage_index
+        ),
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.catalog.to_csv(out / "experiment_catalog.csv", index=False)
@@ -195,8 +226,26 @@ def write_experiment_catalog(
     write_experiment_manifest(
         out,
         run_type="experiment_catalog",
-        parameters={"roots": [str(Path(root)) for root in roots]},
-        inputs={"roots": [Path(root) for root in roots]},
+        parameters={
+            "roots": [str(Path(root)) for root in roots],
+            "provider_broker_active_lineage_index": (
+                ""
+                if provider_broker_active_lineage_index is None
+                else str(Path(provider_broker_active_lineage_index).resolve())
+            ),
+        },
+        inputs={
+            "roots": [Path(root) for root in roots],
+            **(
+                {}
+                if provider_broker_active_lineage_index is None
+                else {
+                    "provider_broker_active_lineage_index": Path(
+                        provider_broker_active_lineage_index
+                    ).resolve()
+                }
+            ),
+        },
     )
     return ExperimentCatalog(report.catalog, report.summary, out, action_queue, hygiene_gaps)
 
@@ -220,7 +269,11 @@ def _manifest_paths(roots: list[str | Path]) -> list[Path]:
     return sorted(paths)
 
 
-def _catalog_row(manifest_path: Path) -> dict[str, Any]:
+def _catalog_row(
+    manifest_path: Path,
+    *,
+    lineage_records: pd.DataFrame | None = None,
+) -> dict[str, Any]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     run_dir = manifest_path.parent
     summary_file, summary_row = _summary_row(run_dir)
@@ -243,10 +296,83 @@ def _catalog_row(manifest_path: Path) -> dict[str, Any]:
         "summary_status": status,
         "parameters_json": json.dumps(manifest.get("parameters", {}), sort_keys=True),
         "inputs_json": json.dumps(inputs, sort_keys=True),
+        **_provider_lineage_selection_fields(
+            run_dir,
+            str(manifest.get("run_type", "")),
+            lineage_records,
+        ),
     }
     for column, value in summary_row.items():
         row[f"summary_{column}"] = value
     return row
+
+
+def _provider_lineage_selection_fields(
+    run_dir: Path,
+    run_type: str,
+    lineage_records: pd.DataFrame | None,
+) -> dict[str, Any]:
+    index_provided = lineage_records is not None
+    bundle_type = PROVIDER_BROKER_LINEAGE_RUN_TYPES.get(run_type, "")
+    if not index_provided:
+        return {
+            "provider_lineage_index_provided": False,
+            "provider_lineage_bundle_type": bundle_type,
+            "provider_lineage_pair_id": "",
+            "provider_lineage_role": "unindexed" if bundle_type else "",
+            "provider_lineage_selection_status": (
+                "index_not_provided" if bundle_type else "not_applicable"
+            ),
+            "provider_lineage_selection_eligible": not bool(bundle_type),
+            "provider_lineage_counterpart_path": "",
+        }
+    if not bundle_type:
+        return {
+            "provider_lineage_index_provided": True,
+            "provider_lineage_bundle_type": "",
+            "provider_lineage_pair_id": "",
+            "provider_lineage_role": "",
+            "provider_lineage_selection_status": "not_applicable",
+            "provider_lineage_selection_eligible": True,
+            "provider_lineage_counterpart_path": "",
+        }
+    matches = lineage_records.loc[
+        lineage_records["bundle_path"].map(_resolved_path_text).eq(
+            str(run_dir.resolve())
+        )
+        & lineage_records["bundle_type"].astype(str).eq(bundle_type)
+    ]
+    if len(matches) != 1:
+        return {
+            "provider_lineage_index_provided": True,
+            "provider_lineage_bundle_type": bundle_type,
+            "provider_lineage_pair_id": "",
+            "provider_lineage_role": "unindexed",
+            "provider_lineage_selection_status": "unindexed",
+            "provider_lineage_selection_eligible": False,
+            "provider_lineage_counterpart_path": "",
+        }
+    match = matches.iloc[0]
+    return {
+        "provider_lineage_index_provided": True,
+        "provider_lineage_bundle_type": bundle_type,
+        "provider_lineage_pair_id": str(match.get("lineage_pair_id", "")),
+        "provider_lineage_role": str(match.get("lineage_role", "")),
+        "provider_lineage_selection_status": str(
+            match.get("selection_status", "")
+        ),
+        "provider_lineage_selection_eligible": _to_bool(
+            match.get("catalog_selectable")
+        ),
+        "provider_lineage_counterpart_path": str(
+            match.get("counterpart_bundle_path", "")
+        ),
+    }
+
+
+def _resolved_path_text(value: Any) -> str:
+    text = "" if value is None else str(value).strip()
+    return str(Path(text).resolve()) if text else ""
 
 
 def _summary_row(run_dir: Path) -> tuple[str, dict[str, Any]]:
@@ -277,6 +403,34 @@ def _summary_status(row: dict[str, Any]) -> tuple[str, bool | None]:
     return "", None
 
 
+def _provider_lineage_selection_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    counts = {
+        "provider_lineage_indexed_runs": 0,
+        "provider_lineage_selectable_runs": 0,
+        "provider_lineage_retained_only_runs": 0,
+        "provider_lineage_unindexed_runs": 0,
+        "provider_lineage_selection_blocked_runs": 0,
+    }
+    if catalog.empty or "provider_lineage_selection_status" not in catalog:
+        return counts
+    statuses = catalog["provider_lineage_selection_status"].astype(str)
+    selectable = statuses.eq("selectable")
+    retained = statuses.eq("retained_only")
+    unindexed = statuses.isin(["unindexed", "index_not_provided"])
+    counts.update(
+        {
+            "provider_lineage_indexed_runs": int((selectable | retained).sum()),
+            "provider_lineage_selectable_runs": int(selectable.sum()),
+            "provider_lineage_retained_only_runs": int(retained.sum()),
+            "provider_lineage_unindexed_runs": int(unindexed.sum()),
+            "provider_lineage_selection_blocked_runs": int(
+                (retained | unindexed).sum()
+            ),
+        }
+    )
+    return counts
+
+
 def _catalog_summary(
     catalog: pd.DataFrame,
     action_queue: pd.DataFrame | None = None,
@@ -288,6 +442,9 @@ def _catalog_summary(
     broker_roundtrip_resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
     provider_broker_roundtrip_sidecar_counts = _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)
     placeholder_schema_counts = _placeholder_schema_counts(catalog)
+    provider_lineage_selection_counts = _provider_lineage_selection_counts(
+        catalog
+    )
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -310,6 +467,7 @@ def _catalog_summary(
                     **broker_roundtrip_resume_route_counts,
                     **provider_broker_roundtrip_sidecar_counts,
                     **placeholder_schema_counts,
+                    **provider_lineage_selection_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -337,6 +495,7 @@ def _catalog_summary(
                 **broker_roundtrip_resume_route_counts,
                 **provider_broker_roundtrip_sidecar_counts,
                 **placeholder_schema_counts,
+                **provider_lineage_selection_counts,
                 **action_counts,
                 **hygiene_counts,
             }

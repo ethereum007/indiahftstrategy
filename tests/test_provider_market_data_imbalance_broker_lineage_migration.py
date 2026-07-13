@@ -40,6 +40,11 @@ from reports.provider_market_data_imbalance_broker_lineage_audit_usage import (
 from reports.provider_market_data_imbalance_broker_lineage_refresh_convergence import (
     write_provider_broker_lineage_refresh_convergence,
 )
+from reports.provider_market_data_imbalance_broker_active_lineage import (
+    resolve_provider_broker_active_lineage_bundle,
+    verify_provider_broker_active_lineage_index,
+    write_provider_broker_active_lineage_index,
+)
 from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
@@ -965,6 +970,408 @@ def test_lineage_refresh_convergence_rejects_drifted_usage_review(tmp_path):
     assert action["queue_status"] == "blocked"
     assert action["convergence_status"] == "source_review_invalid"
     assert action["command"] == ""
+
+
+def test_active_lineage_index_retires_exact_converged_originals(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    strict = _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    convergence = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    report = write_provider_broker_active_lineage_index(
+        convergence.output_dir,
+        tmp_path / "active_lineage",
+    )
+
+    assert report.ready
+    assert len(report.inventory) == 6
+    assert int(report.summary.iloc[0]["lineage_pair_count"]) == 3
+    assert int(report.summary.iloc[0]["selectable_bundle_count"]) == 3
+    assert int(report.summary.iloc[0]["retained_only_bundle_count"]) == 3
+    assert set(report.inventory["selection_status"]) == {
+        "selectable",
+        "retained_only",
+    }
+    for _, pair in report.inventory.groupby("lineage_pair_id"):
+        assert set(pair["lineage_role"]) == {
+            "active_strict",
+            "legacy_original",
+        }
+        assert int(pair["catalog_selectable"].astype(bool).sum()) == 1
+        assert int(pair["retained_only"].astype(bool).sum()) == 1
+        assert pair["pair_valid"].astype(bool).all()
+    expected = {
+        "provider_ack": strict["ack"],
+        "provider_roundtrip": strict["roundtrip"],
+        "rehearsal_certificate": strict["certificate"],
+    }
+    originals = {
+        "provider_ack": legacy["ack"],
+        "provider_roundtrip": legacy["roundtrip"],
+        "rehearsal_certificate": legacy["certificate"],
+    }
+    for bundle_type, path in expected.items():
+        assert resolve_provider_broker_active_lineage_bundle(
+            report.output_dir,
+            bundle_type=bundle_type,
+            original_bundle_path=originals[bundle_type],
+        ) == path.resolve()
+    verification = verify_provider_broker_active_lineage_index(
+        report.output_dir
+    )
+    assert verification.ready
+    assert verification.manifest_current
+    assert verification.source_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert verify_experiment_manifest(
+        report.output_dir / "manifest.json",
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_active_lineage_index"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    index_catalog = catalog_experiment_runs([report.output_dir]).catalog.iloc[0]
+    assert index_catalog["run_type"] == (
+        "provider_market_data_imbalance_broker_active_lineage_index"
+    )
+    assert bool(index_catalog["summary_status"])
+    assert not bool(index_catalog["summary_authorizes_submission"])
+    catalog = catalog_experiment_runs(
+        [legacy["root"]],
+        provider_broker_active_lineage_index=report.output_dir,
+    )
+    provider_rows = catalog.catalog.loc[
+        catalog.catalog["provider_lineage_bundle_type"].astype(str).ne("")
+    ]
+    assert len(provider_rows) == 6
+    assert set(provider_rows["provider_lineage_selection_status"]) == {
+        "selectable",
+        "retained_only",
+    }
+    selectable = provider_rows.loc[
+        provider_rows["provider_lineage_selection_status"] == "selectable"
+    ]
+    retained = provider_rows.loc[
+        provider_rows["provider_lineage_selection_status"] == "retained_only"
+    ]
+    assert selectable["provider_lineage_selection_eligible"].astype(bool).all()
+    assert not retained[
+        "provider_lineage_selection_eligible"
+    ].astype(bool).any()
+    assert int(catalog.summary.iloc[0]["provider_lineage_selectable_runs"]) == 3
+    assert int(
+        catalog.summary.iloc[0]["provider_lineage_retained_only_runs"]
+    ) == 3
+    assert int(catalog.summary.iloc[0]["provider_lineage_unindexed_runs"]) == 0
+    unindexed_ack = _write_component(
+        tmp_path / "unindexed_provider_ack",
+        ACK_RUN_TYPE,
+    )
+    unindexed_catalog = catalog_experiment_runs(
+        [unindexed_ack],
+        provider_broker_active_lineage_index=report.output_dir,
+    )
+    unindexed_row = unindexed_catalog.catalog.iloc[0]
+    assert unindexed_row["provider_lineage_selection_status"] == "unindexed"
+    assert not bool(unindexed_row["provider_lineage_selection_eligible"])
+    assert int(
+        unindexed_catalog.summary.iloc[0]["provider_lineage_unindexed_runs"]
+    ) == 1
+    no_index_catalog = catalog_experiment_runs([strict["ack"]])
+    no_index_row = no_index_catalog.catalog.iloc[0]
+    assert no_index_row["provider_lineage_selection_status"] == (
+        "index_not_provided"
+    )
+    assert not bool(no_index_row["provider_lineage_selection_eligible"])
+    assert int(
+        no_index_catalog.summary.iloc[0][
+            "provider_lineage_selection_blocked_runs"
+        ]
+    ) == 1
+    assert (
+        main(
+            [
+                "index-provider-market-data-imbalance-broker-active-lineage",
+                "--convergence",
+                str(convergence.output_dir),
+                "--out",
+                str(tmp_path / "active_lineage_cli"),
+                "--fail-on-breach",
+                "--fail-on-blocked-actions",
+                "--fail-on-actions",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "catalog-runs",
+                "--roots",
+                str(strict["ack"]),
+                str(strict["roundtrip"]),
+                str(strict["certificate"]),
+                "--out",
+                str(tmp_path / "strict_catalog"),
+                "--provider-broker-active-lineage-index",
+                str(report.output_dir),
+                "--fail-on-provider-lineage-selection-blocks",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "catalog-runs",
+                "--roots",
+                str(legacy["ack"]),
+                "--out",
+                str(tmp_path / "legacy_catalog"),
+                "--provider-broker-active-lineage-index",
+                str(report.output_dir),
+                "--fail-on-provider-lineage-selection-blocks",
+            ]
+        )
+        == 2
+    )
+    assert (
+        main(
+            [
+                "catalog-runs",
+                "--roots",
+                str(strict["ack"]),
+                "--out",
+                str(tmp_path / "missing_index_catalog"),
+                "--fail-on-provider-lineage-selection-blocks",
+            ]
+        )
+        == 2
+    )
+
+
+def test_active_lineage_index_accepts_noop_strict_convergence(tmp_path):
+    strict = _write_provider_chain(tmp_path / "strict_archive", strict=True)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [strict["root"]],
+        tmp_path / "usage_review",
+    )
+    convergence = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    report = write_provider_broker_active_lineage_index(
+        convergence.output_dir,
+        tmp_path / "active_lineage",
+    )
+
+    assert report.ready
+    assert report.inventory.empty
+    assert report.action_queue.empty
+    assert report.summary.iloc[0]["recommendation"] == (
+        "no_retirements_required"
+    )
+    assert verify_provider_broker_active_lineage_index(
+        report.output_dir
+    ).ready
+    with pytest.raises(ValueError, match="exactly one selectable"):
+        resolve_provider_broker_active_lineage_bundle(
+            report.output_dir,
+            bundle_type="provider_ack",
+        )
+
+
+def test_active_lineage_index_blocks_before_refresh_convergence(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    convergence = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+
+    report = write_provider_broker_active_lineage_index(
+        convergence.output_dir,
+        tmp_path / "active_lineage",
+    )
+
+    assert not report.ready
+    assert report.inventory.empty
+    assert len(report.action_queue) == 1
+    action = report.action_queue.iloc[0]
+    assert action["queue_status"] == "blocked"
+    assert action["action"] == "regenerate_current_refresh_convergence"
+    assert action["command"] == ""
+    verification = verify_provider_broker_active_lineage_index(
+        report.output_dir
+    )
+    assert not verification.ready
+    assert verification.artifacts_consistent
+    assert (
+        main(
+            [
+                "index-provider-market-data-imbalance-broker-active-lineage",
+                "--convergence",
+                str(convergence.output_dir),
+                "--out",
+                str(tmp_path / "active_lineage_cli"),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+    with pytest.raises(ValueError, match="index is not trusted"):
+        resolve_provider_broker_active_lineage_bundle(
+            report.output_dir,
+            bundle_type="provider_ack",
+        )
+
+
+def test_active_lineage_index_invalidates_after_strict_bundle_drift(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    strict = _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    convergence = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+    report = write_provider_broker_active_lineage_index(
+        convergence.output_dir,
+        tmp_path / "active_lineage",
+    )
+
+    (strict["ack"] / "post_index_drift.txt").write_text(
+        "drift\n",
+        encoding="utf-8",
+    )
+
+    verification = verify_provider_broker_active_lineage_index(
+        report.output_dir
+    )
+    assert not verification.ready
+    assert not verification.manifest_current
+    assert not verification.source_current
+    with pytest.raises(ValueError, match="index is not trusted"):
+        catalog_experiment_runs(
+            [legacy["root"]],
+            provider_broker_active_lineage_index=report.output_dir,
+        )
+    with pytest.raises(ValueError, match="index is not trusted"):
+        resolve_provider_broker_active_lineage_bundle(
+            report.output_dir,
+            bundle_type="provider_ack",
+            original_bundle_path=legacy["ack"],
+        )
+
+
+def test_active_lineage_index_rejects_edited_retirement_record(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [legacy["root"]],
+        tmp_path / "usage_review",
+    )
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    convergence = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+    report = write_provider_broker_active_lineage_index(
+        convergence.output_dir,
+        tmp_path / "active_lineage",
+    )
+    index_path = report.output_dir / "provider_broker_active_lineage_index.csv"
+    index = pd.read_csv(index_path)
+    original = index["lineage_role"].astype(str).eq("legacy_original")
+    index.loc[original, "selection_status"] = "selectable"
+    index.loc[original, "catalog_selectable"] = True
+    index.loc[original, "retained_only"] = False
+    index.to_csv(index_path, index=False)
+
+    verification = verify_provider_broker_active_lineage_index(
+        report.output_dir
+    )
+
+    assert not verification.ready
+    assert not verification.manifest_current
+    assert not verification.artifacts_consistent
+    with pytest.raises(ValueError, match="index is not trusted"):
+        resolve_provider_broker_active_lineage_bundle(
+            report.output_dir,
+            bundle_type="provider_ack",
+            original_bundle_path=legacy["ack"],
+        )
+
+
+def test_active_lineage_resolver_requires_original_when_type_is_ambiguous(
+    tmp_path,
+):
+    first = _write_provider_chain(tmp_path / "first_archive", strict=False)
+    second = _write_provider_chain(tmp_path / "second_archive", strict=False)
+    usage = write_provider_broker_lineage_audit_usage_review(
+        [first["root"], second["root"]],
+        tmp_path / "usage_review",
+    )
+    first_strict = _write_provider_chain(
+        first["root"],
+        strict=True,
+        suffix="_strict",
+        shared=first,
+    )
+    _write_provider_chain(
+        second["root"],
+        strict=True,
+        suffix="_strict",
+        shared=second,
+    )
+    convergence = write_provider_broker_lineage_refresh_convergence(
+        usage.output_dir,
+        tmp_path / "convergence",
+    )
+    report = write_provider_broker_active_lineage_index(
+        convergence.output_dir,
+        tmp_path / "active_lineage",
+    )
+
+    assert report.ready
+    assert int(report.summary.iloc[0]["lineage_pair_count"]) == 6
+    with pytest.raises(ValueError, match="found 2"):
+        resolve_provider_broker_active_lineage_bundle(
+            report.output_dir,
+            bundle_type="provider_ack",
+        )
+    assert resolve_provider_broker_active_lineage_bundle(
+        report.output_dir,
+        bundle_type="provider_ack",
+        original_bundle_path=first["ack"],
+    ) == first_strict["ack"].resolve()
 
 
 @pytest.mark.parametrize(

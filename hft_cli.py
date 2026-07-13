@@ -242,6 +242,9 @@ from reports.provider_market_data_imbalance_broker_lineage_audit_usage import (
 from reports.provider_market_data_imbalance_broker_lineage_refresh_convergence import (
     write_provider_broker_lineage_refresh_convergence,
 )
+from reports.provider_market_data_imbalance_broker_active_lineage import (
+    write_provider_broker_active_lineage_index,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -418,6 +421,7 @@ def _catalog_exit_code(
     require_broker_roundtrip_resume_route_ready: bool,
     fail_on_provider_broker_roundtrip_synthetic_sidecar_breach: bool,
     require_provider_broker_roundtrip_synthetic_sidecar_ready: bool,
+    fail_on_provider_lineage_selection_blocks: bool,
 ) -> int:
     if fail_on_catalog_gaps and _catalog_gap_count(result) > 0:
         return 2
@@ -462,6 +466,14 @@ def _catalog_exit_code(
     ):
         return 2
     if fail_on_placeholder_schema and _catalog_summary_metric(result, "placeholder_schema_active_runs") > 0:
+        return 2
+    if (
+        fail_on_provider_lineage_selection_blocks
+        and _catalog_summary_metric(
+            result, "provider_lineage_selection_blocked_runs"
+        )
+        > 0
+    ):
         return 2
     if (
         fail_on_blocked_placeholder_schema
@@ -2211,6 +2223,31 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
 
+    provider_broker_active_lineage = sub.add_parser(
+        "index-provider-market-data-imbalance-broker-active-lineage",
+        help=(
+            "Index converged strict provider proofs as selectable and retain "
+            "their legacy originals for audit only."
+        ),
+    )
+    provider_broker_active_lineage.add_argument(
+        "--convergence",
+        required=True,
+    )
+    provider_broker_active_lineage.add_argument("--out", required=True)
+    provider_broker_active_lineage.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_broker_active_lineage.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_broker_active_lineage.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
+
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
         help="Review a provider-captured normalized CSV against a provider client packet.",
@@ -2539,6 +2576,7 @@ def main(argv: list[str] | None = None) -> int:
     catalog = sub.add_parser("catalog-runs", help="Build an experiment catalog from manifest-bearing run folders.")
     catalog.add_argument("--roots", nargs="+", required=True)
     catalog.add_argument("--out", required=True)
+    catalog.add_argument("--provider-broker-active-lineage-index")
     catalog.add_argument("--fail-on-actions", action="store_true")
     catalog.add_argument("--fail-on-blocked-actions", action="store_true")
     catalog.add_argument("--fail-on-catalog-gaps", action="store_true")
@@ -2552,6 +2590,10 @@ def main(argv: list[str] | None = None) -> int:
     catalog.add_argument("--require-broker-roundtrip-resume-route-ready", action="store_true")
     catalog.add_argument("--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach", action="store_true")
     catalog.add_argument("--require-provider-broker-roundtrip-synthetic-sidecar-ready", action="store_true")
+    catalog.add_argument(
+        "--fail-on-provider-lineage-selection-blocks",
+        action="store_true",
+    )
 
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
@@ -5830,6 +5872,31 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if (
+        args.command
+        == "index-provider-market-data-imbalance-broker-active-lineage"
+    ):
+        result = write_provider_broker_active_lineage_index(
+            args.convergence,
+            args.out,
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                result.action_queue["queue_status"]
+                .astype(str)
+                .eq("blocked")
+                .sum()
+            )
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "review-provider-market-data-capture":
         result = write_provider_market_data_capture_review(
             args.client_packet,
@@ -6274,7 +6341,13 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "catalog-runs":
-        result = write_experiment_catalog(args.roots, output_dir=args.out)
+        result = write_experiment_catalog(
+            args.roots,
+            output_dir=args.out,
+            provider_broker_active_lineage_index=(
+                args.provider_broker_active_lineage_index
+            ),
+        )
         print(result.summary.to_string(index=False))
         return _catalog_exit_code(
             result,
@@ -6298,6 +6371,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             require_provider_broker_roundtrip_synthetic_sidecar_ready=(
                 args.require_provider_broker_roundtrip_synthetic_sidecar_ready
+            ),
+            fail_on_provider_lineage_selection_blocks=(
+                args.fail_on_provider_lineage_selection_blocks
             ),
         )
     if args.command == "review-strategy-evidence":
