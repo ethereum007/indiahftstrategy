@@ -373,6 +373,18 @@ requires the non-authorizing broker rehearsal certificate, so a catalog with
 round-trip evidence but no sealed manifest-chain sign-off remains incomplete.
 That certificate must be a passed `live_dryrun` artifact, must retain a
 64-character certificate SHA-256, and must not claim submission authority.
+Acknowledgement, provider round-trip, and rehearsal-certificate evidence also
+default to the verified active-lineage selection contract. Build the catalog
+with `--provider-broker-active-lineage-index <index_dir>`; each required stage
+must have enough passed rows marked both
+`provider_lineage_selection_status=selectable` and
+`provider_lineage_selection_eligible=true`. Retained originals may remain in
+the same catalog for audit and reproduction, but they are not counted as
+launch candidates. Missing-index, unindexed, retained-only, or internally
+inconsistent selection fields fail closed. Use
+`--allow-ineligible-provider-lineage-for-audit` only to render a historical
+review: the resulting evidence is explicitly `audit_only`, remains
+`ready=false`, and cannot satisfy route readiness.
 Use `--allow-non-file-inputs` only for legacy exploratory catalogs, or
 `--require-file-inputs` to apply the same fail-closed provenance rule to a
 custom evidence set.
@@ -397,7 +409,11 @@ portfolio concentration OK/breach counts, plus broker resume-route ready and
 breach counts when the catalog contains them. Provider ops-launch evidence also
 records provider broker round-trip synthetic sidecar proof, ready, and breach
 counts plus broker rehearsal certificate passed, live-dry-run, authorizing,
-and SHA-256-backed counts.
+and SHA-256-backed counts. It also records the effective provider-lineage
+policy, required and covered lineage run-type counts, selectable passed rows,
+and blocked retained/unindexed rows. Strategy scorecards carry those fields,
+and route readiness independently rejects provider ops evidence that omits or
+disables the selection contract.
 
 Outputs:
 

@@ -19,6 +19,7 @@ def evidence_summary(
     resume_route_breach: bool = False,
     sidecar_breach: bool = False,
     include_provider_sidecar_controls: bool = True,
+    include_provider_lineage_controls: bool = True,
     input_directory_count: int = 0,
     input_other_count: int = 0,
     input_unfingerprinted_count: int = 0,
@@ -81,6 +82,17 @@ def evidence_summary(
                 "provider_broker_roundtrip_synthetic_sidecar_proof_runs": 1,
                 "provider_broker_roundtrip_synthetic_sidecar_ready_runs": 0 if sidecar_breach else 1,
                 "provider_broker_roundtrip_synthetic_sidecar_breach_runs": 1 if sidecar_breach else 0,
+            }
+        )
+    if profile == "provider_imbalance_ops_launch" and include_provider_lineage_controls:
+        row.update(
+            {
+                "require_provider_lineage_selection": True,
+                "provider_lineage_selection_policy": "required",
+                "provider_lineage_required_run_type_count": 3,
+                "provider_lineage_covered_run_type_count": 3,
+                "provider_lineage_selectable_runs": 3,
+                "provider_lineage_selection_blocked_runs": 0,
             }
         )
     return pd.DataFrame(
@@ -211,6 +223,33 @@ def test_route_readiness_blocks_provider_ops_evidence_with_sidecar_breach():
     assert "provider_broker_roundtrip_synthetic_sidecar_breach_runs" in str(
         review.action_queue.loc[0, "ops_launch_control_failures"]
     )
+
+
+def test_route_readiness_blocks_provider_ops_evidence_without_lineage_contract():
+    review = build_route_readiness_review(
+        provider_ops_portability_config(),
+        strategy_evidence_summaries=evidence_summary(profile="imbalance"),
+        ops_evidence_summaries=evidence_summary(
+            profile="provider_imbalance_ops_launch",
+            require_file_inputs=True,
+            include_provider_lineage_controls=False,
+        ),
+    )
+
+    row = review.pairs.iloc[0]
+    failures = set(str(row["ops_launch_control_failures"]).split(";"))
+    assert not review.ready
+    assert not bool(row["route_ready"])
+    assert row["status"] == "ops_launch_controls_not_gated"
+    assert {
+        "require_provider_lineage_selection",
+        "provider_lineage_selection_policy",
+        "provider_lineage_required_run_type_count",
+        "provider_lineage_covered_run_type_count",
+        "provider_lineage_selectable_runs",
+    }.issubset(failures)
+    assert review.config["ready_action_count"] == 0
+    assert review.config["blocked_action_count"] == 1
 
 
 def test_route_readiness_blocks_ops_evidence_without_file_input_gate():

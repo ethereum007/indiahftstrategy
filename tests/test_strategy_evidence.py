@@ -5,6 +5,7 @@ import pandas as pd
 from hft_cli import main
 from reports.evidence import (
     EVIDENCE_PROFILE_RUN_TYPES,
+    PROVIDER_ACTIVE_LINEAGE_RUN_TYPES,
     EvidenceThresholds,
     evidence_profile_run_types,
     evaluate_strategy_evidence,
@@ -548,6 +549,9 @@ def provider_imbalance_ops_launch_catalog_rows(
             "summary_market": market,
             "parameters_json": parameters,
         }
+        if run_type in PROVIDER_ACTIVE_LINEAGE_RUN_TYPES:
+            row["provider_lineage_selection_status"] = "selectable"
+            row["provider_lineage_selection_eligible"] = True
         if run_type == "provider_market_data_imbalance_broker_dispatch_roundtrip":
             row["summary_dispatch_total_notional"] = 1500.0
             row["summary_strategy_portfolio_provided"] = True
@@ -1057,6 +1061,92 @@ def test_provider_imbalance_ops_launch_profile_requires_provider_chain_identity(
     assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
     assert review.summary.iloc[0]["evidence_profile"] == "provider_imbalance_ops_launch"
     assert review.summary.iloc[0]["recommendation"] == "eligible_for_live_dryrun_route_review"
+    assert bool(review.summary.iloc[0]["require_provider_lineage_selection"])
+    assert review.summary.iloc[0]["provider_lineage_selection_policy"] == "required"
+    assert int(review.summary.iloc[0]["provider_lineage_required_run_type_count"]) == 3
+    assert int(review.summary.iloc[0]["provider_lineage_covered_run_type_count"]) == 3
+    assert int(review.summary.iloc[0]["provider_lineage_selectable_runs"]) == 3
+
+
+def test_provider_imbalance_ops_launch_rejects_retained_only_rehearsal_candidate():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    mask = (
+        catalog["run_type"]
+        == "provider_market_data_imbalance_broker_rehearsal_certificate"
+    )
+    catalog.loc[mask, "provider_lineage_selection_status"] = "retained_only"
+    catalog.loc[mask, "provider_lineage_selection_eligible"] = False
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types(
+                "provider_imbalance_ops_launch"
+            ),
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert (
+        "provider_lineage_selectable:"
+        "provider_market_data_imbalance_broker_rehearsal_certificate"
+        in failed
+    )
+    assert int(review.summary.iloc[0]["provider_lineage_covered_run_type_count"]) == 2
+    assert int(review.summary.iloc[0]["provider_lineage_retained_only_runs"]) == 1
+    assert int(review.summary.iloc[0]["provider_lineage_selection_blocked_runs"]) == 1
+
+
+def test_provider_imbalance_ops_launch_selects_strict_siblings_alongside_archive():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    retained = catalog.loc[
+        catalog["run_type"].isin(PROVIDER_ACTIVE_LINEAGE_RUN_TYPES)
+    ].copy()
+    retained["run_dir"] = retained["run_dir"].astype(str) + "_retained"
+    retained["generated_at_utc"] = "2026-06-10T10:00:00Z"
+    retained["provider_lineage_selection_status"] = "retained_only"
+    retained["provider_lineage_selection_eligible"] = False
+
+    review = evaluate_strategy_evidence(
+        pd.concat([catalog, retained], ignore_index=True),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types(
+                "provider_imbalance_ops_launch"
+            ),
+        ),
+    )
+
+    assert review.ready
+    assert int(review.summary.iloc[0]["provider_lineage_selectable_runs"]) == 3
+    assert int(review.summary.iloc[0]["provider_lineage_retained_only_runs"]) == 3
+    assert int(review.summary.iloc[0]["provider_lineage_selection_blocked_runs"]) == 3
+
+
+def test_provider_lineage_audit_override_remains_non_candidate():
+    catalog = provider_imbalance_ops_launch_catalog_rows().drop(
+        columns=[
+            "provider_lineage_selection_status",
+            "provider_lineage_selection_eligible",
+        ]
+    )
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types(
+                "provider_imbalance_ops_launch"
+            ),
+            require_provider_lineage_selection=False,
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert failed == {"provider_lineage_selection_audit_only"}
+    assert review.summary.iloc[0]["provider_lineage_selection_policy"] == "audit_only"
+    assert bool(review.summary.iloc[0]["provider_lineage_selection_audit_only"])
+    assert review.summary.iloc[0]["recommendation"] == "provider_lineage_audit_only"
 
 
 def test_provider_imbalance_ops_launch_profile_fails_without_provider_roundtrip():
@@ -1661,6 +1751,45 @@ def test_cli_strategy_evidence_provider_ops_launch_profile(tmp_path):
     assert int(summary.loc[0, "broker_roundtrip_resume_route_ready_runs"]) == 1
     assert int(summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
     assert int(summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+    assert bool(summary.loc[0, "require_provider_lineage_selection"])
+    assert summary.loc[0, "provider_lineage_selection_policy"] == "required"
+    assert int(summary.loc[0, "provider_lineage_covered_run_type_count"]) == 3
+
+
+def test_cli_strategy_evidence_provider_lineage_audit_override_is_non_candidate(
+    tmp_path,
+):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "provider_ops_launch_lineage_audit"
+    catalog = provider_imbalance_ops_launch_catalog_rows().drop(
+        columns=[
+            "provider_lineage_selection_status",
+            "provider_lineage_selection_eligible",
+        ]
+    )
+    catalog.to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "provider_market_data_imbalance_ops_launch",
+            "--allow-ineligible-provider-lineage-for-audit",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "strategy_evidence_checks.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 0
+    assert not bool(summary.loc[0, "ready"])
+    assert failed == {"provider_lineage_selection_audit_only"}
+    assert summary.loc[0, "provider_lineage_selection_policy"] == "audit_only"
+    assert summary.loc[0, "recommendation"] == "provider_lineage_audit_only"
 
 
 def test_cli_strategy_evidence_provider_ops_launch_profile_blocks_sidecar_breach(tmp_path):

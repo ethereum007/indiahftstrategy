@@ -2803,6 +2803,17 @@
   no-op, pre-convergence refusal/CLI failure, strict-proof drift, two-archive
   ambiguity, cross-artifact edit rejection, resolver, CLI, and catalog
   selection gates pass (`6 passed`).
+- Provider launch candidate selection now consumes that retirement contract
+  end to end. Strategy evidence automatically requires a passed `selectable`
+  acknowledgement, provider round-trip, and rehearsal certificate whenever
+  those proof types are required; retained originals can coexist for audit but
+  never satisfy coverage. The strategy scorecard carries selection coverage
+  and blocked-row diagnostics, while route readiness independently rejects old
+  summaries that omit or disable the contract. The explicit
+  `--allow-ineligible-provider-lineage-for-audit` escape produces a sealed,
+  non-ready `audit_only` review and cannot authorize a route. Direct evidence,
+  CLI, scorecard, generic route-readiness, and real provider wrapper paths pass
+  together (`87 passed`).
 
 ## Test Gate
 
@@ -2812,8 +2823,13 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1597 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1603 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest active-lineage downstream affected-surface gate: strategy evidence,
+strategy scorecard, generic route readiness, real provider route wrapper,
+experiment catalog, complete lineage migration/convergence/index, and rehearsal
+certificate suites pass together (`194 passed`).
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
@@ -2959,7 +2975,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Require the verified active-lineage selection contract in downstream
-   provider evidence and broker-rehearsal candidate selection, closing the
-   remaining non-catalog paths that can still accept an archived compatibility
-   proof directly.
+4. Carry selected active-lineage pair IDs into provider route-readiness and
+   broker-dispatch handoffs so operators can trace the exact active proof chain
+   without reopening the source catalog.

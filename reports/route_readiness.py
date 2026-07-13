@@ -529,6 +529,44 @@ def _ops_launch_control_failures(row: dict[str, Any]) -> list[str]:
                 ),
             ]
         )
+    if _provider_lineage_controls_active(row):
+        required_types = int(
+            _number(row.get("provider_lineage_required_run_type_count", 0))
+        )
+        covered_types = int(
+            _number(row.get("provider_lineage_covered_run_type_count", 0))
+        )
+        checks.extend(
+            [
+                (
+                    "require_provider_lineage_selection",
+                    _to_bool(row.get("require_provider_lineage_selection", False)),
+                ),
+                (
+                    "provider_lineage_selection_policy",
+                    _normalize_identity(
+                        row.get("provider_lineage_selection_policy", "")
+                    )
+                    == "required",
+                ),
+                (
+                    "provider_lineage_required_run_type_count",
+                    required_types > 0,
+                ),
+                (
+                    "provider_lineage_covered_run_type_count",
+                    required_types > 0 and covered_types >= required_types,
+                ),
+                (
+                    "provider_lineage_selectable_runs",
+                    required_types > 0
+                    and int(
+                        _number(row.get("provider_lineage_selectable_runs", 0))
+                    )
+                    >= required_types,
+                ),
+            ]
+        )
     return [name for name, passed in checks if not passed]
 
 
@@ -538,6 +576,16 @@ def _provider_sidecar_controls_active(row: dict[str, Any]) -> bool:
         or _to_bool(row.get("require_provider_broker_roundtrip_synthetic_sidecar_ready", False))
         or _to_bool(row.get("fail_on_provider_broker_roundtrip_synthetic_sidecar_breach", False))
         or int(_number(row.get("provider_broker_roundtrip_synthetic_sidecar_proof_runs", 0))) > 0
+    )
+
+
+def _provider_lineage_controls_active(row: dict[str, Any]) -> bool:
+    return (
+        _normalize_identity(row.get("evidence_profile", ""))
+        == "provider_imbalance_ops_launch"
+        or _to_bool(row.get("require_provider_lineage_selection", False))
+        or int(_number(row.get("provider_lineage_required_run_type_count", 0)))
+        > 0
     )
 
 

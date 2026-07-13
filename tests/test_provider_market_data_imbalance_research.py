@@ -539,6 +539,24 @@ def _write_ready_ops_launch_evidence(
                 "provider_broker_roundtrip_synthetic_sidecar_breach_runs": (
                     1 if sidecar_breach and evidence_profile == "provider_imbalance_ops_launch" else 0
                 ),
+                "require_provider_lineage_selection": (
+                    evidence_profile == "provider_imbalance_ops_launch"
+                ),
+                "provider_lineage_selection_policy": (
+                    "required"
+                    if evidence_profile == "provider_imbalance_ops_launch"
+                    else "not_applicable"
+                ),
+                "provider_lineage_required_run_type_count": (
+                    3 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_lineage_covered_run_type_count": (
+                    3 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_lineage_selectable_runs": (
+                    3 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_lineage_selection_blocked_runs": 0,
             }
         ]
     ).to_csv(out_dir / "strategy_evidence_summary.csv", index=False)

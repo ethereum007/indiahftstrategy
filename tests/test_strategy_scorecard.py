@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.evidence import PROVIDER_ACTIVE_LINEAGE_RUN_TYPES
 from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 from reports.strategy_scorecard import (
     StrategyScorecardThresholds,
@@ -265,6 +266,9 @@ def complete_provider_imbalance_ops_launch_rows(
         for index, (run_type, summary_file) in enumerate(run_types)
     ]
     for item in rows:
+        if item["run_type"] in PROVIDER_ACTIVE_LINEAGE_RUN_TYPES:
+            item["provider_lineage_selection_status"] = "selectable"
+            item["provider_lineage_selection_eligible"] = True
         if item["run_type"] == "provider_market_data_imbalance_broker_rehearsal_certificate":
             item["summary_target_mode"] = "live_dryrun"
             item["summary_authorizes_submission"] = False
@@ -854,6 +858,12 @@ def test_strategy_scorecard_scores_provider_imbalance_ops_launch_profile():
     assert int(score["provider_broker_rehearsal_certificate_authorizing_runs"]) == 0
     assert int(score["provider_broker_rehearsal_certificate_non_authorizing_runs"]) == 1
     assert int(score["provider_broker_rehearsal_certificate_hashed_runs"]) == 1
+    assert bool(score["require_provider_lineage_selection"])
+    assert score["provider_lineage_selection_policy"] == "required"
+    assert int(score["provider_lineage_required_run_type_count"]) == 3
+    assert int(score["provider_lineage_covered_run_type_count"]) == 3
+    assert int(score["provider_lineage_selectable_runs"]) == 3
+    assert int(score["provider_lineage_selection_blocked_runs"]) == 0
     assert score["evidence_failed_checks"] == ""
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.config["ready_actions"][0]["profile"] == "provider_imbalance_ops_launch"
@@ -862,6 +872,40 @@ def test_strategy_scorecard_scores_provider_imbalance_ops_launch_profile():
     assert report.config["ready_actions"][0][
         "provider_broker_rehearsal_certificate_live_dryrun_runs"
     ] == 1
+
+
+def test_strategy_scorecard_blocks_retained_only_provider_rehearsal_candidate():
+    rows = complete_provider_imbalance_ops_launch_rows()
+    for item in rows:
+        if (
+            item["run_type"]
+            == "provider_market_data_imbalance_broker_rehearsal_certificate"
+        ):
+            item["provider_lineage_selection_status"] = "retained_only"
+            item["provider_lineage_selection_eligible"] = False
+
+    report = evaluate_strategy_scorecard(
+        pd.DataFrame(rows),
+        thresholds=StrategyScorecardThresholds(
+            profiles=("provider_market_data_imbalance_ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    assert not report.ready
+    assert not bool(score["ready"])
+    assert (
+        "provider_lineage_selectable:"
+        "provider_market_data_imbalance_broker_rehearsal_certificate"
+        in str(score["evidence_failed_checks"])
+    )
+    assert int(score["provider_lineage_covered_run_type_count"]) == 2
+    assert int(score["provider_lineage_selectable_runs"]) == 2
+    assert int(score["provider_lineage_selection_blocked_runs"]) == 1
+    assert report.config["ready_action_count"] == 0
+    assert report.config["blocked_action_count"] == 1
 
 
 def test_strategy_scorecard_provider_imbalance_ops_launch_blocks_sidecar_breach():

@@ -2619,6 +2619,26 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--require-broker-roundtrip-resume-route-ready", action="store_true")
     evidence.add_argument("--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach", action="store_true")
     evidence.add_argument("--require-provider-broker-roundtrip-synthetic-sidecar-ready", action="store_true")
+    provider_lineage_selection = evidence.add_mutually_exclusive_group()
+    provider_lineage_selection.add_argument(
+        "--require-provider-lineage-selection",
+        dest="require_provider_lineage_selection",
+        action="store_true",
+        help=(
+            "Require passed selectable active-lineage proofs for provider "
+            "acknowledgement, round-trip, and certificate evidence."
+        ),
+    )
+    provider_lineage_selection.add_argument(
+        "--allow-ineligible-provider-lineage-for-audit",
+        dest="require_provider_lineage_selection",
+        action="store_false",
+        help=(
+            "Audit/reproduction only: inspect retained or unindexed provider "
+            "lineage without producing launch-ready evidence."
+        ),
+    )
+    evidence.set_defaults(require_provider_lineage_selection=None)
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     scorecard = sub.add_parser(
@@ -6427,6 +6447,9 @@ def main(argv: list[str] | None = None) -> int:
                 fail_on_provider_broker_roundtrip_synthetic_sidecar_breach=(
                     args.fail_on_provider_broker_roundtrip_synthetic_sidecar_breach
                     or is_provider_imbalance_ops_launch_profile
+                ),
+                require_provider_lineage_selection=(
+                    args.require_provider_lineage_selection
                 ),
             ),
         )

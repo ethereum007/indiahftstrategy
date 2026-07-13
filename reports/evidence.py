@@ -88,6 +88,11 @@ PROVIDER_IMBALANCE_OPS_LAUNCH_REQUIRED_RUN_TYPES = (
 PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE = (
     "provider_market_data_imbalance_broker_rehearsal_certificate"
 )
+PROVIDER_ACTIVE_LINEAGE_RUN_TYPES = (
+    "provider_market_data_imbalance_broker_dispatch_ack",
+    "provider_market_data_imbalance_broker_dispatch_roundtrip",
+    PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE,
+)
 PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
@@ -155,6 +160,7 @@ class EvidenceThresholds:
     fail_on_broker_roundtrip_resume_route_breach: bool = False
     require_provider_broker_roundtrip_synthetic_sidecar_ready: bool = False
     fail_on_provider_broker_roundtrip_synthetic_sidecar_breach: bool = False
+    require_provider_lineage_selection: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -474,6 +480,32 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "catalog contains provider broker round-trip proof with missing or unreadable synthetic sidecars",
             )
         )
+    lineage_policy = _provider_lineage_selection_policy(thresholds)
+    if lineage_policy == "required":
+        selectable_by_type = _provider_lineage_selectable_counts(catalog, thresholds)
+        for run_type in _required_provider_lineage_run_types(thresholds):
+            selectable_runs = selectable_by_type.get(run_type, 0)
+            rows.append(
+                _check(
+                    f"provider_lineage_selectable:{run_type}",
+                    selectable_runs,
+                    ">=",
+                    thresholds.min_passed_per_type,
+                    selectable_runs >= thresholds.min_passed_per_type,
+                    f"{run_type} does not have enough passed active-lineage selectable proofs",
+                )
+            )
+    elif lineage_policy == "audit_only":
+        rows.append(
+            _check(
+                "provider_lineage_selection_audit_only",
+                True,
+                "is",
+                False,
+                False,
+                "audit-only provider lineage review cannot authorize launch candidate selection",
+            )
+        )
     if PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE in thresholds.required_run_types:
         certificate_counts = _provider_broker_rehearsal_certificate_counts(catalog)
         rows.extend(
@@ -550,12 +582,18 @@ def _summary(
     resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
     provider_sidecar_counts = _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)
     provider_certificate_counts = _provider_broker_rehearsal_certificate_counts(catalog)
+    provider_lineage_counts = _provider_lineage_selection_counts(catalog, thresholds)
+    provider_lineage_policy = _provider_lineage_selection_policy(thresholds)
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "failed_checks": failed,
-                "recommendation": _recommendation(profile, ready),
+                "recommendation": _recommendation(
+                    profile,
+                    ready,
+                    provider_lineage_policy=provider_lineage_policy,
+                ),
                 "evidence_profile": profile,
                 "run_count": int(len(catalog)),
                 "required_run_types": ";".join(thresholds.required_run_types),
@@ -603,6 +641,9 @@ def _summary(
                 "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach": bool(
                     thresholds.fail_on_provider_broker_roundtrip_synthetic_sidecar_breach
                 ),
+                "require_provider_lineage_selection": provider_lineage_policy == "required",
+                "provider_lineage_selection_policy": provider_lineage_policy,
+                "provider_lineage_selection_audit_only": provider_lineage_policy == "audit_only",
                 "placeholder_schema_active_runs": placeholder_active,
                 "placeholder_schema_blocked_runs": placeholder_blocked,
                 "broker_roundtrip_portfolio_safe_runs": roundtrip_safe,
@@ -613,6 +654,7 @@ def _summary(
                 **resume_route_counts,
                 **provider_sidecar_counts,
                 **provider_certificate_counts,
+                **provider_lineage_counts,
                 "input_file_count": input_file_count,
                 "input_directory_count": input_directory_count,
                 "input_other_count": input_other_count,
@@ -630,7 +672,14 @@ def _profile_identity(required_run_types: tuple[str, ...]) -> str:
     return "custom"
 
 
-def _recommendation(profile: str, ready: bool) -> str:
+def _recommendation(
+    profile: str,
+    ready: bool,
+    *,
+    provider_lineage_policy: str = "not_applicable",
+) -> str:
+    if provider_lineage_policy == "audit_only":
+        return "provider_lineage_audit_only"
     if profile in {"ops_launch", "provider_imbalance_ops_launch"}:
         return "eligible_for_live_dryrun_route_review" if ready else "ops_launch_evidence_incomplete"
     return "eligible_for_shadow_scaleup_review" if ready else "evidence_incomplete"
@@ -651,9 +700,11 @@ def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
         "input_other_count",
         "input_unfingerprinted_count",
         "input_hashed_count",
+        "provider_lineage_selection_status",
+        "provider_lineage_selection_eligible",
     ]:
         if column not in frame.columns:
-            frame[column] = np.nan
+            frame[column] = False if column == "provider_lineage_selection_eligible" else np.nan
     for column in (
         "input_count",
         "input_file_count",
@@ -664,6 +715,104 @@ def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
     ):
         frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(0)
     return frame
+
+
+def _required_provider_lineage_run_types(
+    thresholds: EvidenceThresholds,
+) -> tuple[str, ...]:
+    supported = set(PROVIDER_ACTIVE_LINEAGE_RUN_TYPES)
+    return tuple(
+        run_type
+        for run_type in thresholds.required_run_types
+        if run_type in supported
+    )
+
+
+def _provider_lineage_selection_policy(thresholds: EvidenceThresholds) -> str:
+    if not _required_provider_lineage_run_types(thresholds):
+        return "not_applicable"
+    if thresholds.require_provider_lineage_selection is False:
+        return "audit_only"
+    return "required"
+
+
+def _provider_lineage_candidate_rows(
+    catalog: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> pd.DataFrame:
+    required = set(_required_provider_lineage_run_types(thresholds))
+    if catalog.empty or not required:
+        return catalog.iloc[0:0].copy()
+    passed = _bool_column(catalog, "summary_status")
+    return catalog.loc[
+        catalog["run_type"].astype(str).isin(required) & passed
+    ].copy()
+
+
+def _provider_lineage_selectable_mask(frame: pd.DataFrame) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=bool)
+    statuses = (
+        frame["provider_lineage_selection_status"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+    return statuses.eq("selectable") & _bool_column(
+        frame,
+        "provider_lineage_selection_eligible",
+    )
+
+
+def _provider_lineage_selectable_counts(
+    catalog: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> dict[str, int]:
+    frame = _provider_lineage_candidate_rows(catalog, thresholds)
+    selectable = _provider_lineage_selectable_mask(frame)
+    return {
+        run_type: int(
+            (
+                frame["run_type"].astype(str).eq(run_type)
+                & selectable
+            ).sum()
+        )
+        for run_type in _required_provider_lineage_run_types(thresholds)
+    }
+
+
+def _provider_lineage_selection_counts(
+    catalog: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> dict[str, int]:
+    required = _required_provider_lineage_run_types(thresholds)
+    frame = _provider_lineage_candidate_rows(catalog, thresholds)
+    selectable = _provider_lineage_selectable_mask(frame)
+    statuses = (
+        frame["provider_lineage_selection_status"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+    selectable_by_type = _provider_lineage_selectable_counts(catalog, thresholds)
+    covered = sum(
+        count >= thresholds.min_passed_per_type
+        for count in selectable_by_type.values()
+    )
+    return {
+        "provider_lineage_required_run_type_count": int(len(required)),
+        "provider_lineage_covered_run_type_count": int(covered),
+        "provider_lineage_missing_run_type_count": int(len(required) - covered),
+        "provider_lineage_candidate_passed_runs": int(len(frame)),
+        "provider_lineage_selectable_runs": int(selectable.sum()),
+        "provider_lineage_retained_only_runs": int(statuses.eq("retained_only").sum()),
+        "provider_lineage_unindexed_runs": int(
+            statuses.isin(["unindexed", "index_not_provided"]).sum()
+        ),
+        "provider_lineage_selection_blocked_runs": int((~selectable).sum()),
+    }
 
 
 def _latest_row(frame: pd.DataFrame) -> pd.Series:

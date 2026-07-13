@@ -879,6 +879,24 @@ def _scorecard_row(
         "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
             _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
         ),
+        "require_provider_lineage_selection": bool(
+            summary.get("require_provider_lineage_selection", False)
+        ),
+        "provider_lineage_selection_policy": str(
+            summary.get("provider_lineage_selection_policy", "not_applicable")
+        ),
+        "provider_lineage_required_run_type_count": int(
+            _numeric(summary.get("provider_lineage_required_run_type_count", 0))
+        ),
+        "provider_lineage_covered_run_type_count": int(
+            _numeric(summary.get("provider_lineage_covered_run_type_count", 0))
+        ),
+        "provider_lineage_selectable_runs": int(
+            _numeric(summary.get("provider_lineage_selectable_runs", 0))
+        ),
+        "provider_lineage_selection_blocked_runs": int(
+            _numeric(summary.get("provider_lineage_selection_blocked_runs", 0))
+        ),
         "provider_broker_rehearsal_certificate_runs": int(
             _numeric(summary.get("provider_broker_rehearsal_certificate_runs", 0))
         ),
