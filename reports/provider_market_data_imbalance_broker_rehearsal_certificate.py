@@ -13,6 +13,13 @@ from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
     empty_broker_dispatch_ack_lineage,
 )
+from reports.provider_lineage_selection import (
+    provider_lineage_selection_contract_from_config,
+    provider_lineage_selection_contract_from_manifest,
+    provider_lineage_selection_contract_from_summary,
+    provider_lineage_selection_contract_valid,
+    provider_lineage_selection_contracts_match,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     provider_broker_lineage_migration_audit_check,
     provider_broker_lineage_migration_audit_evidence,
@@ -288,6 +295,9 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
             "broker_dispatch_ack_lineage": certificate["payload"][
                 "broker_dispatch_ack_lineage"
             ],
+            "provider_lineage_selection_contract": certificate["payload"][
+                "provider_lineage_selection_contract"
+            ],
             "lineage_migration_audit": lineage_migration_audit,
             "digitally_signed": False,
             "cycle_id": certificate["cycle_id"],
@@ -336,6 +346,45 @@ def _certificate_checks(
 ) -> pd.DataFrame:
     source_row = source_summary.iloc[0] if not source_summary.empty else pd.Series(dtype=object)
     nested_row = nested_summary.iloc[0] if not nested_summary.empty else pd.Series(dtype=object)
+    source_lineage_contract = provider_lineage_selection_contract_from_summary(
+        source_summary
+    )
+    config_lineage_contract = provider_lineage_selection_contract_from_config(
+        source_config
+    )
+    manifest_lineage_contract = provider_lineage_selection_contract_from_manifest(
+        source_manifest
+    )
+    route_lineage_gate_active = bool(
+        _bool(source_row.get("route_readiness_provided", False))
+        or _bool(
+            source_row.get("route_readiness_ops_launch_controls_present", False)
+        )
+        or _integer(
+            source_row.get(
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                0,
+            )
+        )
+        > 0
+        or any(
+            bool(value)
+            for contract in (
+                source_lineage_contract,
+                config_lineage_contract,
+                manifest_lineage_contract,
+            )
+            for value in contract.values()
+        )
+    )
+    route_lineage_contract_ready = provider_lineage_selection_contract_valid(
+        source_lineage_contract
+    )
+    route_lineage_contract_matches = provider_lineage_selection_contracts_match(
+        source_lineage_contract,
+        config_lineage_contract,
+        manifest_lineage_contract,
+    )
     rows: list[dict[str, Any]] = []
 
     rows.extend(
@@ -347,6 +396,30 @@ def _certificate_checks(
             _check("nested_roundtrip_summary_readable", not nested_summary_error, "is", True, "roundtrip", nested_summary_error),
             _check("nested_roundtrip_checks_readable", not nested_checks_error, "is", True, "roundtrip", nested_checks_error),
             _check("nested_roundtrip_manifest_readable", not nested_manifest_error, "is", True, "roundtrip", nested_manifest_error),
+        ]
+    )
+    rows.extend(
+        [
+            _check_result(
+                "provider_lineage_selection_contract",
+                source_lineage_contract["sha256"],
+                "is",
+                "three_stage_sha256_contract",
+                route_lineage_contract_ready,
+                "route_readiness",
+                "final provider roundtrip does not carry a complete active-lineage selection contract",
+                required=route_lineage_gate_active,
+            ),
+            _check_result(
+                "provider_lineage_selection_contract_matches_source_artifacts",
+                "match" if route_lineage_contract_matches else "mismatch",
+                "is",
+                "match",
+                route_lineage_contract_matches,
+                "route_readiness",
+                "final provider roundtrip lineage selection contract differs across summary, config, and manifest",
+                required=route_lineage_gate_active,
+            ),
         ]
     )
 
@@ -1159,6 +1232,9 @@ def _certificate_payload(
             "unmatched_acks": _integer(source_row.get("unmatched_acks", 0)),
         },
         "broker_dispatch_ack_lineage": _ack_lineage_record(source_row),
+        "provider_lineage_selection_contract": provider_lineage_selection_contract_from_summary(
+            source_row
+        ),
         "lineage_migration_audit": _jsonable(lineage_migration_audit),
         "provider_receipts": {
             "required": _bool(
@@ -1237,6 +1313,7 @@ def _summary(
     payload = _mapping(certificate.get("payload"))
     receipts = _mapping(payload.get("provider_receipts"))
     ack_lineage = _mapping(payload.get("broker_dispatch_ack_lineage"))
+    provider_lineage = _mapping(payload.get("provider_lineage_selection_contract"))
     return pd.DataFrame(
         [
             {
@@ -1279,6 +1356,27 @@ def _summary(
                 ),
                 "broker_dispatch_ack_lineage_gate_passed": _bool(
                     ack_lineage.get("broker_dispatch_ack_lineage_gate_passed", False)
+                ),
+                "route_readiness_ops_provider_lineage_selected_run_count": _integer(
+                    provider_lineage.get("selected_run_count", 0)
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_count": _integer(
+                    provider_lineage.get("selected_pair_count", 0)
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_ids": _text_value(
+                    provider_lineage.get("selected_pair_ids", "")
+                ),
+                "route_readiness_ops_provider_lineage_selected_run_dirs": _text_value(
+                    provider_lineage.get("selected_run_dirs", "")
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_version": _text_value(
+                    provider_lineage.get("version", "")
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_sha256": _text_value(
+                    provider_lineage.get("sha256", "")
+                ),
+                "route_readiness_ops_provider_lineage_selection_artifact": _text_value(
+                    provider_lineage.get("artifact", "")
                 ),
                 "provider_receipts_required": _bool(receipts.get("required", False)),
                 "provider_receipt_required_count": _integer(receipts.get("required_count", 0)),
@@ -1328,7 +1426,7 @@ def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
                 "actual": check.get("value"),
                 "operator": check.get("operator"),
                 "expected": check.get("threshold"),
-                "action": "repair_and_reissue_broker_rehearsal_certificate",
+                "action": _action_for_check(name),
                 "reason": str(check.get("reason", "")),
                 "recommendation": _recommendation_for_check(name),
                 "next_gate": gate,
@@ -1378,6 +1476,7 @@ def _runbook_markdown(
         f"- Acknowledgements: {int(summary['acked_orders'])}/{int(summary['send_requests'])} accepted",
         "- Acknowledgement lineage: "
         f"{'current' if bool(summary['broker_dispatch_ack_lineage_gate_passed']) else 'not required or blocked'}",
+        f"- Provider lineage contract: `{summary['route_readiness_ops_provider_lineage_selection_contract_sha256']}`",
         lineage_audit_line,
         f"- Manifest chain: {int(summary['manifest_count'])} manifests, {int(summary['fingerprint_match_count'])}/{int(summary['fingerprint_count'])} fingerprints current",
         f"- Next gate: `{summary['next_gate']}`",
@@ -1451,6 +1550,8 @@ def _blocked_next_gate(checks: pd.DataFrame) -> str:
 
 
 def _next_gate_for_check(check: str) -> str:
+    if check.startswith("provider_lineage_selection_contract"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if "submission" in check or "send_ready" in check or "dry_run" in check:
         return "prepare-provider-market-data-imbalance-broker-dispatch-send"
     if any(token in check for token in ("ack", "rejected", "duplicate", "unmatched")):
@@ -1460,7 +1561,15 @@ def _next_gate_for_check(check: str) -> str:
     return REPAIR_ROUNDTRIP_GATE
 
 
+def _action_for_check(check: str) -> str:
+    if check.startswith("provider_lineage_selection_contract"):
+        return "review_provider_imbalance_route_readiness"
+    return "repair_and_reissue_broker_rehearsal_certificate"
+
+
 def _recommendation_for_check(check: str) -> str:
+    if check.startswith("provider_lineage_selection_contract"):
+        return "review_provider_lineage_selection_contract_before_rehearsal_certification"
     if "fingerprint" in check or "manifest" in check or "git_state" in check:
         return "restore immutable inputs and rerun the final provider broker roundtrip from clean code provenance"
     if "receipt" in check:

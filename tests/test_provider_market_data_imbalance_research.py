@@ -32293,6 +32293,43 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_requires_ack_l
     assert certificate.certificate["payload"]["broker_dispatch_ack_lineage"][
         "broker_dispatch_ack_lineage_gate_passed"
     ]
+    expected_lineage_contract = _provider_lineage_selection_contract()
+    certificate_checks = certificate.checks.set_index("check")
+    certificate_manifest = json.loads(
+        (certificate.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    certificate_runbook = (
+        certificate.output_dir
+        / "provider_market_data_imbalance_broker_rehearsal_certificate_runbook.md"
+    ).read_text(encoding="utf-8")
+    assert bool(
+        certificate_checks.loc["provider_lineage_selection_contract", "passed"]
+    )
+    assert bool(
+        certificate_checks.loc[
+            "provider_lineage_selection_contract_matches_source_artifacts",
+            "passed",
+        ]
+    )
+    assert (
+        certificate.certificate["payload"]["provider_lineage_selection_contract"]
+        == expected_lineage_contract
+    )
+    assert (
+        certificate_manifest["extra"]["provider_lineage_selection_contract"]
+        == expected_lineage_contract
+    )
+    assert (
+        certificate.summary.loc[
+            0,
+            "route_readiness_ops_provider_lineage_selection_contract_sha256",
+        ]
+        == expected_lineage_contract["sha256"]
+    )
+    assert (
+        f"Provider lineage contract: `{expected_lineage_contract['sha256']}`"
+        in certificate_runbook
+    )
 
     generic_ack_summary_path = (
         generic_ack_dir / "broker_dispatch_ack_summary.csv"
@@ -32324,6 +32361,44 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_requires_ack_l
         "broker_dispatch_ack_manifest_current",
         "broker_dispatch_ack_lineage_gate_passed",
     } <= failed
+
+
+def test_provider_market_data_imbalance_broker_rehearsal_certificate_blocks_roundtrip_lineage_contract_drift(
+    tmp_path,
+):
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(
+        tmp_path
+    )
+    _mutate_json(
+        provider_roundtrip.output_dir
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json",
+        lambda payload: payload["provider_lineage_selection_contract"].update(
+            {"sha256": "b" * 64}
+        ),
+    )
+
+    report = write_provider_market_data_imbalance_broker_rehearsal_certificate(
+        provider_roundtrip.output_dir,
+        tmp_path / "provider_imbalance_broker_rehearsal_certificate_lineage_contract_drift",
+        config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+            require_clean_recorded_git=False,
+            max_manifest_count=128,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_lineage_selection_contract_matches_source_artifacts" in failed
+    lineage_action = report.action_queue.loc[
+        report.action_queue["check"]
+        == "provider_lineage_selection_contract_matches_source_artifacts"
+    ].iloc[0]
+    assert lineage_action["component"] == "route_readiness"
+    assert lineage_action["action"] == "review_provider_imbalance_route_readiness"
+    assert (
+        lineage_action["next_gate"]
+        == "review-provider-market-data-imbalance-route-readiness"
+    )
 
 
 def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_capture_bundle_provenance(tmp_path):

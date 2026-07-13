@@ -2896,6 +2896,17 @@
   acknowledgement-lineage path carries the sealed final review into rehearsal
   certificate generation and recursive nested-ack drift rejection (`1
   passed`), and the shared validator suite remains green (`3 passed`).
+- Provider rehearsal certification now independently validates the final
+  round-trip active-lineage contract across its source summary, config, and
+  manifest before issuing evidence. The normalized three-stage contract is
+  bound into the certificate's hashed payload, flattened into its summary,
+  repeated in the output manifest, and shown in the operator runbook. Route-less
+  archives remain compatible, while any route-bound or partially present
+  contract activates strict validation and routes disagreement back to provider
+  route-readiness review. The real strict ready chain and final-config tamper
+  rejection pass together (`2 passed`), all legacy certificate safety and
+  archive paths remain green (`8 passed`), and the shared validator suite passes
+  (`3 passed`).
 
 ## Test Gate
 
@@ -2905,7 +2916,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1621 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1622 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -2931,8 +2942,10 @@ acknowledgement boundary now preserves and verifies the contract too; focused
 ready, cross-artifact drift, sidecar-breach, and unready paths pass (`4
 passed`). Final round-trip review now preserves and verifies the contract too;
 focused ready, cross-artifact drift, sidecar-breach, and unready paths pass (`4
-passed`). The strict downstream rehearsal-certificate path also passes (`1
-passed`).
+passed`). Rehearsal certification now independently reopens the final review,
+requires exact summary/config/manifest contract agreement, and binds the
+normalized seal into its hashed evidence; the strict ready and contract-drift
+paths pass (`2 passed`) alongside all legacy certificate paths (`8 passed`).
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
@@ -3069,7 +3082,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
- 1621-test collection is fully green.
+1622-test collection is fully green.
 
 ## Next Build Targets
 
@@ -3078,6 +3091,7 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Carry the sealed provider active-lineage selection contract into the
-   rehearsal certificate so the exact proof chain is independently validated
-   and traceable at the final broker-readiness evidence boundary.
+4. Add one operator-facing active-lineage audit over the complete route
+   readiness -> runtime -> broker readiness -> cutover -> route enable ->
+   dispatch -> send -> acknowledgement -> final review -> certificate chain,
+   verifying exact contract equality and recursive manifest currency end to end.
