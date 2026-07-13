@@ -2976,6 +2976,25 @@
   tamper, provider-profile relabel bypass, direct retained-proof drift, stale-
   catalog replay, and catalog status suppression paths. The real 13-stage
   clean/deep-drift replay also passes (`1 passed`).
+- Verified and ready provider strategy evidence can now advance to a local-only
+  live-dry-run release-review packet through
+  `prepare-provider-market-data-imbalance-release-review`. The packet preserves
+  the exact evidence, catalog, active-lineage audit, chain, lineage-contract,
+  rehearsal-certificate manifest, and certificate-payload hashes; its manifest
+  additionally fingerprints the complete recursive evidence dependency graph.
+  It emits checks, proof inventory, config, deterministic packet identity,
+  action queue, runbook, and an immutable pending operator-approval template.
+  Every surface records `submission_enabled=false`, `broker_api_called=false`,
+  and `authorizes_submission=false`; no broker command, credential, or order
+  payload is produced. Preparation fails before packet creation unless the
+  source is semantically `verified && ready`, resolves to one strategy and one
+  market, and selects a passed non-authorizing `live_dryrun` certificate.
+  `verify-provider-market-data-imbalance-release-review` reopens both packet and
+  source evidence, recomputes the deterministic proof contract, and rejects
+  direct drift, out-of-tree recursive drift, or a freshly re-manifested
+  authorization claim. Experiment-catalog ingestion uses that verifier and
+  suppresses stale release-review readiness. The strategy-evidence, manifest,
+  and experiment-catalog affected surface passes together (`127 passed`).
 
 ## Test Gate
 
@@ -2996,6 +3015,13 @@ provider evidence root from remaining ready when recataloged. The provider
 threshold contract keeps this gate mandatory even if mutable profile/metadata
 labels are changed together. The real 13-stage clean/deep-drift replay passes
 separately (`1 passed`).
+
+Latest provider release-review gate: strategy evidence, shared manifests, and
+experiment catalog pass together (`127 passed`). It covers packet preparation,
+CLI verification, catalog recognition, exact retained hashes, pending approval,
+non-submitting safety fields, direct audit/certificate drift, an out-of-tree
+recursive certificate dependency change that leaves the top evidence manifest
+current, and a fresh re-manifest after an injected authorization claim.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3172,10 +3198,10 @@ the last completed full-suite green baseline rather than claiming the current
 
 ## Next Build Targets
 
-1. Add a non-authorizing provider live-dry-run release-review packet that
-   consumes only a verified and ready final strategy-evidence root, preserves
-   the catalog/audit/certificate hashes, and emits operator approval and runbook
-   artifacts without permitting broker submission.
+1. Add release-review finalization that consumes a current packet plus a
+   separately completed operator decision, requires exact identity/hash,
+   risk-limit, kill-switch, and rollback attestations, and emits a sealed but
+   still non-submitting live-dry-run decision artifact.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

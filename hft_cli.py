@@ -235,6 +235,11 @@ from reports.provider_market_data_imbalance_broker_rehearsal_certificate import 
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
 )
+from reports.provider_market_data_imbalance_release_review import (
+    ProviderMarketDataImbalanceReleaseReviewConfig,
+    verify_provider_market_data_imbalance_release_review,
+    write_provider_market_data_imbalance_release_review,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2106,6 +2111,52 @@ def main(argv: list[str] | None = None) -> int:
     )
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
         "--fail-on-actions",
+        action="store_true",
+    )
+
+    provider_market_data_imbalance_release_review = sub.add_parser(
+        "prepare-provider-market-data-imbalance-release-review",
+        help=(
+            "Prepare a non-submitting live-dry-run operator review packet "
+            "from verified provider strategy evidence."
+        ),
+    )
+    provider_market_data_imbalance_release_review.add_argument(
+        "--strategy-evidence",
+        required=True,
+    )
+    provider_market_data_imbalance_release_review.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_release_review.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=1024,
+    )
+    provider_market_data_imbalance_release_review.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_release_review.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
+    verify_provider_market_data_imbalance_release_review_parser = (
+        sub.add_parser(
+            "verify-provider-market-data-imbalance-release-review",
+            help=(
+                "Reopen a provider release-review packet and its verified "
+                "strategy-evidence source."
+            ),
+        )
+    )
+    verify_provider_market_data_imbalance_release_review_parser.add_argument(
+        "--release-review",
+        required=True,
+    )
+    verify_provider_market_data_imbalance_release_review_parser.add_argument(
+        "--fail-on-breach",
         action="store_true",
     )
 
@@ -5849,6 +5900,48 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "prepare-provider-market-data-imbalance-release-review":
+        result = write_provider_market_data_imbalance_release_review(
+            args.strategy_evidence,
+            args.out,
+            config=ProviderMarketDataImbalanceReleaseReviewConfig(
+                max_dependency_count=args.max_dependencies,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_actions and not result.action_queue.empty:
+            return 2
+        return 0
+    if args.command == "verify-provider-market-data-imbalance-release-review":
+        result = verify_provider_market_data_imbalance_release_review(
+            args.release_review
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "source_current": result.source_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "non_authorizing": result.non_authorizing,
+                    "operator_approval_pending": (
+                        result.operator_approval_pending
+                    ),
+                    "release_review_dir": str(result.output_dir),
+                    "strategy_evidence_dir": (
+                        ""
+                        if result.strategy_evidence_dir is None
+                        else str(result.strategy_evidence_dir)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.ready else 0
     if (
         args.command
         == "audit-provider-market-data-imbalance-broker-lineage-migration"

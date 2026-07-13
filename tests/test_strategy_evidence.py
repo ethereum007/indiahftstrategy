@@ -21,6 +21,23 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
+from reports.provider_market_data_imbalance_release_review import (
+    verify_provider_market_data_imbalance_release_review,
+    write_provider_market_data_imbalance_release_review,
+)
+
+
+def _manifest_input_paths(value):
+    if isinstance(value, dict):
+        if value.get("kind") in {"file", "directory"} and value.get("path"):
+            return value["path"]
+        return {
+            key: _manifest_input_paths(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_manifest_input_paths(item) for item in value]
+    return value
 
 
 def catalog_rows(*, dirty=False, commit="abc123", strategy="leadlag", market="india_nse_index_derivatives"):
@@ -1807,6 +1824,250 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert verification.provider_retained_proofs_current
     assert verification.manifest_input_contract_current
     assert verification.non_authorizing
+    release_dir = tmp_path / "release_review"
+    assert (
+        main(
+            [
+                "prepare-provider-market-data-imbalance-release-review",
+                "--strategy-evidence",
+                str(out_dir),
+                "--out",
+                str(release_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    release_summary = pd.read_csv(
+        release_dir
+        / "provider_market_data_imbalance_release_review_summary.csv"
+    ).iloc[0]
+    operator_approval = pd.read_csv(
+        release_dir
+        / "provider_market_data_imbalance_release_review_operator_approval_template.csv"
+    ).iloc[0]
+    release_packet = json.loads(
+        (
+            release_dir
+            / "provider_market_data_imbalance_release_review_packet.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert bool(release_summary["ready_for_operator_review"])
+    assert bool(release_summary["strategy_evidence_verified"])
+    assert bool(release_summary["strategy_evidence_ready"])
+    assert release_summary["target_mode"] == "live_dryrun"
+    assert release_summary["operator_approval_status"] == "pending"
+    assert not bool(release_summary["operator_approved"])
+    assert not bool(release_summary["release_approved"])
+    assert not bool(release_summary["submission_enabled"])
+    assert not bool(release_summary["broker_api_called"])
+    assert not bool(release_summary["authorizes_submission"])
+    assert operator_approval["decision"] == "pending"
+    assert not bool(operator_approval["risk_limits_acknowledged"])
+    assert not bool(operator_approval["authorizes_submission"])
+    assert release_packet["status"] == "ready_for_operator_review"
+    assert release_packet["safety"] == {
+        "authorizes_submission": False,
+        "broker_api_called": False,
+        "dry_run_only": True,
+        "submission_enabled": False,
+    }
+    release_manifest_path = release_dir / "manifest.json"
+    assert verify_experiment_manifest(
+        release_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_review"
+        ),
+        required_artifacts=(
+            "provider_market_data_imbalance_release_review_summary.csv",
+            "provider_market_data_imbalance_release_review_operator_approval_template.csv",
+            "provider_market_data_imbalance_release_review_packet.json",
+            "provider_market_data_imbalance_release_review_runbook.md",
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    release_verification = (
+        verify_provider_market_data_imbalance_release_review(release_dir)
+    )
+    assert release_verification.verified
+    assert release_verification.ready
+    assert release_verification.manifest_current
+    assert release_verification.source_current
+    assert release_verification.artifacts_consistent
+    assert release_verification.non_authorizing
+    assert release_verification.operator_approval_pending
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-release-review",
+                "--release-review",
+                str(release_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    release_catalog = catalog_experiment_runs([release_dir]).catalog.iloc[0]
+    assert release_catalog["run_type"] == (
+        "provider_market_data_imbalance_release_review"
+    )
+    assert bool(release_catalog["summary_status"])
+    assert not bool(release_catalog["summary_authorizes_submission"])
+    assert bool(
+        release_catalog[
+            "provider_release_review_verification_verified"
+        ]
+    )
+
+    original_release_packet_text = (
+        release_dir
+        / "provider_market_data_imbalance_release_review_packet.json"
+    ).read_text(encoding="utf-8")
+    tampered_release_packet = json.loads(original_release_packet_text)
+    tampered_release_packet["safety"]["authorizes_submission"] = True
+    (
+        release_dir
+        / "provider_market_data_imbalance_release_review_packet.json"
+    ).write_text(
+        json.dumps(tampered_release_packet, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    release_manifest = json.loads(
+        release_manifest_path.read_text(encoding="utf-8")
+    )
+    write_experiment_manifest(
+        release_dir,
+        run_type="provider_market_data_imbalance_release_review",
+        parameters=release_manifest["parameters"],
+        inputs=_manifest_input_paths(release_manifest["inputs"]),
+        extra=release_manifest["extra"],
+    )
+    assert verify_experiment_manifest(
+        release_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    tampered_release_verification = (
+        verify_provider_market_data_imbalance_release_review(release_dir)
+    )
+    assert not tampered_release_verification.verified
+    assert tampered_release_verification.manifest_current
+    assert not tampered_release_verification.artifacts_consistent
+    assert not tampered_release_verification.non_authorizing
+    tampered_release_catalog = catalog_experiment_runs([release_dir])
+    assert not bool(tampered_release_catalog.catalog.iloc[0]["summary_status"])
+    (
+        release_dir
+        / "provider_market_data_imbalance_release_review_packet.json"
+    ).write_text(original_release_packet_text, encoding="utf-8")
+    write_experiment_manifest(
+        release_dir,
+        run_type="provider_market_data_imbalance_release_review",
+        parameters=release_manifest["parameters"],
+        inputs=_manifest_input_paths(release_manifest["inputs"]),
+        extra=release_manifest["extra"],
+    )
+    assert verify_provider_market_data_imbalance_release_review(
+        release_dir
+    ).verified
+
+    original_release_manifest_text = release_manifest_path.read_text(
+        encoding="utf-8"
+    )
+    tampered_release_manifest = json.loads(original_release_manifest_text)
+    tampered_release_manifest["extra"][
+        "operator_approval_required"
+    ] = False
+    release_manifest_path.write_text(
+        json.dumps(tampered_release_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert verify_experiment_manifest(
+        release_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    metadata_tampered_release_verification = (
+        verify_provider_market_data_imbalance_release_review(release_dir)
+    )
+    assert not metadata_tampered_release_verification.verified
+    assert metadata_tampered_release_verification.manifest_current
+    assert not metadata_tampered_release_verification.artifacts_consistent
+    release_manifest_path.write_text(
+        original_release_manifest_text,
+        encoding="utf-8",
+    )
+    assert verify_provider_market_data_imbalance_release_review(
+        release_dir
+    ).verified
+
+    certificate_source.write_text(
+        "source\nchanged_after_release_review\n",
+        encoding="utf-8",
+    )
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="strategy_evidence_review",
+        require_input_fingerprints=True,
+    ).passed
+    assert not verify_experiment_manifest(
+        release_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    stale_release_verification = (
+        verify_provider_market_data_imbalance_release_review(release_dir)
+    )
+    assert not stale_release_verification.verified
+    assert not stale_release_verification.ready
+    assert not stale_release_verification.source_current
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-release-review",
+                "--release-review",
+                str(release_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+    stale_release_catalog = catalog_experiment_runs([release_dir])
+    stale_release_row = stale_release_catalog.catalog.iloc[0]
+    assert not bool(stale_release_row["summary_status"])
+    assert not bool(
+        stale_release_row[
+            "provider_release_review_verification_verified"
+        ]
+    )
+    assert int(
+        stale_release_catalog.summary.iloc[0][
+            "provider_release_review_verification_stale_runs"
+        ]
+    ) == 1
+    with pytest.raises(ValueError, match="verified and ready"):
+        write_provider_market_data_imbalance_release_review(
+            out_dir,
+            tmp_path / "release_review_after_recursive_drift",
+        )
+    assert not (tmp_path / "release_review_after_recursive_drift").exists()
+    certificate_source.write_text("source\nready\n", encoding="utf-8")
+    assert verify_experiment_manifest(
+        release_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    assert verify_provider_market_data_imbalance_release_review(
+        release_dir
+    ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
     assert bool(cataloged_row["summary_status"])
@@ -1861,6 +2122,16 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert not verify_experiment_manifest(
         out_dir / "manifest.json",
         expected_run_type="strategy_evidence_review",
+        require_input_fingerprints=True,
+    ).passed
+    assert not verify_provider_market_data_imbalance_release_review(
+        release_dir
+    ).verified
+    assert not verify_experiment_manifest(
+        release_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_release_review"
+        ),
         require_input_fingerprints=True,
     ).passed
     stale_verification = verify_strategy_evidence_review(out_dir)
