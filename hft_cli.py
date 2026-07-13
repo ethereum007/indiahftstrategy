@@ -2608,6 +2608,11 @@ def main(argv: list[str] | None = None) -> int:
     catalog.add_argument("--roots", nargs="+", required=True)
     catalog.add_argument("--out", required=True)
     catalog.add_argument("--provider-broker-active-lineage-index")
+    catalog.add_argument(
+        "--provider-active-lineage-chain-audit",
+        action="append",
+        dest="provider_active_lineage_chain_audits",
+    )
     catalog.add_argument("--fail-on-actions", action="store_true")
     catalog.add_argument("--fail-on-blocked-actions", action="store_true")
     catalog.add_argument("--fail-on-catalog-gaps", action="store_true")
@@ -6425,6 +6430,9 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             provider_broker_active_lineage_index=(
                 args.provider_broker_active_lineage_index
+            ),
+            provider_active_lineage_chain_audits=(
+                args.provider_active_lineage_chain_audits
             ),
         )
         print(result.summary.to_string(index=False))

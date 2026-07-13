@@ -41,6 +41,18 @@ CHAIN_ARTIFACTS = (
     "provider_market_data_imbalance_active_lineage_chain_runbook.md",
 )
 
+AUDIT_RECORD_COLUMNS = (
+    "audit_dir",
+    "audit_manifest_path",
+    "audit_manifest_sha256",
+    "audit_generated_at_utc",
+    "certificate_dir",
+    "certificate_manifest_path",
+    "certificate_manifest_sha256",
+    "chain_digest_sha256",
+    "provider_lineage_selection_contract_sha256",
+)
+
 
 @dataclass(frozen=True)
 class _BoundarySpec:
@@ -255,6 +267,25 @@ class ProviderMarketDataImbalanceActiveLineageChainReport:
         return bool(not self.summary.empty and self.summary.iloc[0]["ready"])
 
 
+@dataclass(frozen=True)
+class ProviderMarketDataImbalanceActiveLineageChainVerification:
+    ready: bool
+    manifest_current: bool
+    source_current: bool
+    artifacts_consistent: bool
+    non_authorizing: bool
+    audit_dir: Path
+    certificate_dir: Path | None
+    certificate_manifest_sha256: str
+    chain_digest_sha256: str
+    provider_lineage_selection_contract: dict[str, Any]
+    chain: pd.DataFrame
+    manifest_inventory: pd.DataFrame
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    error: str = ""
+
+
 def write_provider_market_data_imbalance_active_lineage_chain_audit(
     certificate_dir: str | Path,
     output_dir: str | Path,
@@ -378,6 +409,536 @@ def write_provider_market_data_imbalance_active_lineage_chain_audit(
         action_queue=action_queue,
         config=config_payload,
         output_dir=out,
+    )
+
+
+def verify_provider_market_data_imbalance_active_lineage_chain_audit(
+    audit_dir: str | Path,
+) -> ProviderMarketDataImbalanceActiveLineageChainVerification:
+    root = Path(audit_dir).resolve()
+    manifest_path = root / "manifest.json"
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=RUN_TYPE,
+        required_artifacts=CHAIN_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    manifest, manifest_error = _read_json(manifest_path)
+    chain, chain_error = _read_csv_table(root / CHAIN_ARTIFACTS[0])
+    inventory, inventory_error = _read_csv_table(root / CHAIN_ARTIFACTS[1])
+    checks, checks_error = _read_csv_table(root / CHAIN_ARTIFACTS[2])
+    summary, summary_error = _read_csv(root / CHAIN_ARTIFACTS[3])
+    actions, actions_error = _read_csv_table(root / CHAIN_ARTIFACTS[4])
+    config, config_error = _read_json(root / CHAIN_ARTIFACTS[5])
+
+    certificate_text = _text(config.get("certificate_dir"))
+    certificate_root = (
+        Path(certificate_text).resolve() if certificate_text else None
+    )
+    certificate_manifest = (
+        certificate_root / "manifest.json" if certificate_root else None
+    )
+    certificate_integrity = verify_experiment_manifest(
+        certificate_manifest or root / "missing_certificate" / "manifest.json",
+        expected_run_type=CERTIFICATE_RUN_TYPE,
+        require_input_fingerprints=True,
+    )
+    certificate_payload, certificate_error = _read_json(
+        None
+        if certificate_root is None
+        else certificate_root / BOUNDARIES[-1].config_file
+    )
+    payload_current, cycle_current = _certificate_integrity(certificate_payload)
+    certificate_manifest_sha256 = (
+        file_sha256(certificate_manifest)
+        if certificate_manifest is not None and certificate_manifest.is_file()
+        else ""
+    )
+    contract = normalize_provider_lineage_selection_contract(
+        _mapping(config.get("provider_lineage_selection_contract"))
+    )
+    recomputed_matches = False
+    max_manifest_count = _integer(
+        _mapping(config.get("parameters")).get("max_manifest_count")
+    )
+    if (
+        certificate_root is not None
+        and certificate_manifest is not None
+        and certificate_manifest.is_file()
+        and max_manifest_count >= len(BOUNDARIES)
+    ):
+        try:
+            (
+                rebuilt_inventory,
+                rebuilt_payloads,
+                rebuilt_dependencies,
+                rebuilt_truncated,
+            ) = _discover_manifests(
+                certificate_manifest,
+                max_manifest_count=max_manifest_count,
+            )
+            rebuilt_chain, rebuilt_contract = _build_chain(
+                rebuilt_inventory,
+                rebuilt_payloads,
+                rebuilt_dependencies,
+            )
+            rebuilt_checks = _checks(
+                certificate_root,
+                rebuilt_chain,
+                rebuilt_inventory,
+                rebuilt_contract,
+                truncated=rebuilt_truncated,
+            )
+            recomputed_matches = _verified_audit_recomputation_matches(
+                chain,
+                inventory,
+                checks,
+                contract,
+                rebuilt_chain,
+                rebuilt_inventory,
+                rebuilt_checks,
+                rebuilt_contract,
+                truncated=rebuilt_truncated,
+            )
+        except (OSError, ValueError, KeyError, TypeError):
+            recomputed_matches = False
+    read_error = next(
+        (
+            error
+            for error in (
+                manifest_error,
+                chain_error,
+                inventory_error,
+                checks_error,
+                summary_error,
+                actions_error,
+                config_error,
+                certificate_error,
+            )
+            if error
+        ),
+        "",
+    )
+    non_authorizing = _verified_audit_non_authorizing(
+        manifest,
+        chain,
+        summary,
+        config,
+        certificate_payload,
+    )
+    artifacts_consistent = bool(
+        not read_error
+        and _verified_audit_artifacts_consistent(
+            root,
+            manifest,
+            chain,
+            inventory,
+            checks,
+            summary,
+            actions,
+            config,
+            certificate_root,
+            certificate_manifest_sha256,
+            contract,
+        )
+        and recomputed_matches
+    )
+    source_current = bool(
+        certificate_integrity.passed
+        and payload_current
+        and cycle_current
+        and recomputed_matches
+    )
+    summary_ready = bool(
+        len(summary) == 1 and _bool(summary.iloc[0].get("ready"))
+    )
+    ready = bool(
+        integrity.passed
+        and source_current
+        and artifacts_consistent
+        and non_authorizing
+        and summary_ready
+    )
+    error = (
+        read_error
+        or integrity.error
+        or (
+            "certificate_not_current"
+            if not certificate_integrity.passed
+            else ""
+        )
+        or (
+            "certificate_payload_or_cycle_stale"
+            if not payload_current or not cycle_current
+            else ""
+        )
+        or (
+            "active_lineage_chain_authorization_claim_invalid"
+            if not non_authorizing
+            else ""
+        )
+        or (
+            "active_lineage_chain_artifacts_disagree"
+            if not artifacts_consistent
+            else ""
+        )
+        or ("active_lineage_chain_not_ready" if not summary_ready else "")
+    )
+    return ProviderMarketDataImbalanceActiveLineageChainVerification(
+        ready=ready,
+        manifest_current=bool(integrity.passed),
+        source_current=source_current,
+        artifacts_consistent=artifacts_consistent,
+        non_authorizing=non_authorizing,
+        audit_dir=root,
+        certificate_dir=certificate_root,
+        certificate_manifest_sha256=certificate_manifest_sha256,
+        chain_digest_sha256=_text(config.get("chain_digest_sha256")),
+        provider_lineage_selection_contract=contract,
+        chain=chain,
+        manifest_inventory=inventory,
+        checks=checks,
+        summary=summary,
+        error=error,
+    )
+
+
+def verified_provider_market_data_imbalance_active_lineage_chain_audit_records(
+    audit_dirs: Iterable[str | Path] | str | Path,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    seen_audits: set[Path] = set()
+    covered_certificates: set[Path] = set()
+    values = (
+        [audit_dirs]
+        if isinstance(audit_dirs, (str, Path))
+        else audit_dirs
+    )
+    for value in values:
+        audit_root = Path(value).resolve()
+        if audit_root in seen_audits:
+            continue
+        seen_audits.add(audit_root)
+        verification = (
+            verify_provider_market_data_imbalance_active_lineage_chain_audit(
+                audit_root
+            )
+        )
+        if not verification.ready or verification.certificate_dir is None:
+            raise ValueError(
+                "provider active-lineage chain audit is not trusted: "
+                f"{verification.error or 'verification_failed'}"
+            )
+        if verification.certificate_dir in covered_certificates:
+            raise ValueError(
+                "multiple provider active-lineage chain audits cover certificate: "
+                f"{verification.certificate_dir}"
+            )
+        covered_certificates.add(verification.certificate_dir)
+        manifest_path = audit_root / "manifest.json"
+        manifest, _ = _read_json(manifest_path)
+        rows.append(
+            {
+                "audit_dir": str(audit_root),
+                "audit_manifest_path": str(manifest_path),
+                "audit_manifest_sha256": file_sha256(manifest_path),
+                "audit_generated_at_utc": _text(
+                    manifest.get("generated_at_utc")
+                ),
+                "certificate_dir": str(verification.certificate_dir),
+                "certificate_manifest_path": str(
+                    verification.certificate_dir / "manifest.json"
+                ),
+                "certificate_manifest_sha256": (
+                    verification.certificate_manifest_sha256
+                ),
+                "chain_digest_sha256": verification.chain_digest_sha256,
+                "provider_lineage_selection_contract_sha256": _text(
+                    verification.provider_lineage_selection_contract.get(
+                        "sha256"
+                    )
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=AUDIT_RECORD_COLUMNS)
+
+
+def _verified_audit_non_authorizing(
+    manifest: Mapping[str, Any],
+    chain: pd.DataFrame,
+    summary: pd.DataFrame,
+    config: Mapping[str, Any],
+    certificate: Mapping[str, Any],
+) -> bool:
+    extra = _mapping(manifest.get("extra"))
+    if len(summary) != 1:
+        return False
+    summary_row = summary.iloc[0]
+    required_false = (
+        "authorizes_submission" in summary_row
+        and "authorizes_submission" in config
+        and "authorizes_submission" in extra
+        and not _bool(summary_row.get("authorizes_submission"))
+        and not _bool(config.get("authorizes_submission"))
+        and not _bool(extra.get("authorizes_submission"))
+    )
+    return bool(
+        required_false
+        and not chain.empty
+        and "authorizing_claim_count" in chain
+        and "non_authorizing" in chain
+        and int(
+            pd.to_numeric(
+                chain["authorizing_claim_count"], errors="coerce"
+            ).fillna(0).sum()
+        )
+        == 0
+        and chain["non_authorizing"].map(_bool).all()
+        and _authorizing_claim_count(manifest, config, certificate) == 0
+    )
+
+
+def _verified_audit_recomputation_matches(
+    chain: pd.DataFrame,
+    inventory: pd.DataFrame,
+    checks: pd.DataFrame,
+    contract: Mapping[str, Any],
+    rebuilt_chain: pd.DataFrame,
+    rebuilt_inventory: pd.DataFrame,
+    rebuilt_checks: pd.DataFrame,
+    rebuilt_contract: Mapping[str, Any],
+    *,
+    truncated: bool,
+) -> bool:
+    if (
+        truncated
+        or not provider_lineage_selection_contracts_match(
+            contract,
+            rebuilt_contract,
+        )
+        or _chain_digest(chain) != _chain_digest(rebuilt_chain)
+        or rebuilt_checks.empty
+        or not rebuilt_checks["passed"].map(_bool).all()
+    ):
+        return False
+    chain_fields = (
+        "run_type",
+        "manifest_sha256",
+        "contract_sha256",
+        "manifest_current",
+        "stage_ready",
+        "summary_contract_valid",
+        "config_contract_valid",
+        "manifest_contract_valid",
+        "contract_surfaces_match",
+        "canonical_contract_match",
+        "direct_predecessor_bound",
+        "non_authorizing",
+        "certificate_payload_sha256_current",
+        "certificate_cycle_id_current",
+        "passed",
+    )
+    if not _keyed_frame_values_match(
+        chain,
+        rebuilt_chain,
+        key="stage",
+        fields=chain_fields,
+    ):
+        return False
+    inventory_fields = (
+        "run_type",
+        "manifest_sha256",
+        "readable",
+        "current",
+        "artifact_count",
+        "artifact_match_count",
+        "input_fingerprint_count",
+        "input_fingerprint_match_count",
+        "direct_manifest_dependency_count",
+    )
+    if not _keyed_frame_values_match(
+        inventory,
+        rebuilt_inventory,
+        key="manifest_path",
+        fields=inventory_fields,
+    ):
+        return False
+    return _keyed_frame_values_match(
+        checks,
+        rebuilt_checks,
+        key="check",
+        fields=("component", "operator", "threshold", "passed"),
+    )
+
+
+def _keyed_frame_values_match(
+    first: pd.DataFrame,
+    second: pd.DataFrame,
+    *,
+    key: str,
+    fields: Iterable[str],
+) -> bool:
+    required = {key, *fields}
+    if (
+        not required.issubset(first.columns)
+        or not required.issubset(second.columns)
+        or len(first) != len(second)
+        or first[key].astype(str).duplicated().any()
+        or second[key].astype(str).duplicated().any()
+    ):
+        return False
+    first_rows = {
+        _text(row.get(key)): tuple(_text(row.get(field)) for field in fields)
+        for _, row in first.iterrows()
+    }
+    second_rows = {
+        _text(row.get(key)): tuple(_text(row.get(field)) for field in fields)
+        for _, row in second.iterrows()
+    }
+    return first_rows == second_rows
+
+
+def _verified_audit_artifacts_consistent(
+    root: Path,
+    manifest: Mapping[str, Any],
+    chain: pd.DataFrame,
+    inventory: pd.DataFrame,
+    checks: pd.DataFrame,
+    summary: pd.DataFrame,
+    actions: pd.DataFrame,
+    config: Mapping[str, Any],
+    certificate_root: Path | None,
+    certificate_manifest_sha256: str,
+    contract: Mapping[str, Any],
+) -> bool:
+    if (
+        not set(CHAIN_COLUMNS).issubset(chain.columns)
+        or not set(MANIFEST_INVENTORY_COLUMNS).issubset(inventory.columns)
+        or not set(CHECK_COLUMNS).issubset(checks.columns)
+        or not set(ACTION_COLUMNS).issubset(actions.columns)
+        or len(summary) != 1
+        or certificate_root is None
+    ):
+        return False
+    expected_stages = [item.stage for item in BOUNDARIES]
+    expected_run_types = [item.run_type for item in BOUNDARIES]
+    ordered = chain.sort_values("sequence", kind="stable").reset_index(drop=True)
+    if (
+        len(ordered) != len(BOUNDARIES)
+        or ordered["stage"].astype(str).tolist() != expected_stages
+        or ordered["run_type"].astype(str).tolist() != expected_run_types
+        or [_integer(value) for value in ordered["sequence"]]
+        != list(range(1, len(BOUNDARIES) + 1))
+        or not ordered["passed"].map(_bool).all()
+        or inventory.empty
+        or not inventory["readable"].map(_bool).all()
+        or not inventory["current"].map(_bool).all()
+        or checks.empty
+        or checks["check"].astype(str).duplicated().any()
+        or not checks["passed"].map(_bool).all()
+        or not actions.empty
+    ):
+        return False
+
+    summary_row = summary.iloc[0]
+    extra = _mapping(manifest.get("extra"))
+    config_summary = _mapping(config.get("summary"))
+    config_checks = config.get("checks")
+    config_chain = config.get("chain")
+    config_actions = config.get("actions")
+    chain_digest = _chain_digest(ordered)
+    summary_contract = provider_lineage_selection_contract_from_summary(
+        summary_row
+    )
+    manifest_contract = provider_lineage_selection_contract_from_manifest(
+        manifest
+    )
+    if (
+        _integer(config.get("schema_version")) != 1
+        or not _bool(config.get("ready"))
+        or not _bool(summary_row.get("ready"))
+        or not _bool(extra.get("ready"))
+        or _text(config.get("certificate_dir"))
+        != str(certificate_root)
+        or _text(summary_row.get("certificate_dir"))
+        != str(certificate_root)
+        or not provider_lineage_selection_contracts_match(
+            contract,
+            summary_contract,
+            manifest_contract,
+        )
+        or not provider_lineage_selection_contract_valid(contract)
+        or _text(config.get("chain_digest_sha256")) != chain_digest
+        or _text(summary_row.get("chain_digest_sha256")) != chain_digest
+        or _text(extra.get("chain_digest_sha256")) != chain_digest
+        or _integer(summary_row.get("expected_stage_count"))
+        != len(BOUNDARIES)
+        or _integer(summary_row.get("discovered_stage_count"))
+        != len(BOUNDARIES)
+        or _integer(summary_row.get("unique_stage_count")) != len(BOUNDARIES)
+        or _integer(summary_row.get("passed_stage_count")) != len(BOUNDARIES)
+        or _integer(summary_row.get("recursive_manifest_count"))
+        != len(inventory)
+        or _integer(summary_row.get("current_recursive_manifest_count"))
+        != len(inventory)
+        or _integer(summary_row.get("failed_checks")) != 0
+        or _integer(summary_row.get("action_queue_count")) != 0
+        or _integer(extra.get("expected_stage_count")) != len(BOUNDARIES)
+        or _integer(extra.get("passed_stage_count")) != len(BOUNDARIES)
+        or _integer(extra.get("recursive_manifest_count")) != len(inventory)
+        or _integer(extra.get("current_recursive_manifest_count"))
+        != len(inventory)
+        or not isinstance(config_checks, list)
+        or len(config_checks) != len(checks)
+        or not all(_bool(_mapping(item).get("passed")) for item in config_checks)
+        or not isinstance(config_chain, list)
+        or len(config_chain) != len(ordered)
+        or not all(_bool(_mapping(item).get("passed")) for item in config_chain)
+        or not isinstance(config_actions, list)
+        or config_actions
+    ):
+        return False
+
+    for field in (
+        "certificate_dir",
+        "expected_stage_count",
+        "passed_stage_count",
+        "recursive_manifest_count",
+        "current_recursive_manifest_count",
+        "chain_digest_sha256",
+    ):
+        if _text(config_summary.get(field)) != _text(summary_row.get(field)):
+            return False
+
+    certificate_row = ordered.loc[
+        ordered["stage"].astype(str).eq("rehearsal_certificate")
+    ]
+    if len(certificate_row) != 1:
+        return False
+    certificate_item = certificate_row.iloc[0]
+    certificate_manifest = certificate_root / "manifest.json"
+    if (
+        Path(_text(certificate_item.get("bundle_path"))).resolve()
+        != certificate_root
+        or Path(_text(certificate_item.get("manifest_path"))).resolve()
+        != certificate_manifest
+        or _text(certificate_item.get("manifest_sha256"))
+        != certificate_manifest_sha256
+        or _text(certificate_item.get("contract_sha256"))
+        != _text(contract.get("sha256"))
+    ):
+        return False
+    inventory_certificate = inventory.loc[
+        inventory["manifest_path"].astype(str).map(
+            lambda value: Path(value).resolve() == certificate_manifest
+        )
+    ]
+    return bool(
+        len(inventory_certificate) == 1
+        and _text(inventory_certificate.iloc[0].get("manifest_sha256"))
+        == certificate_manifest_sha256
+        and root != certificate_root
+        and certificate_root not in root.parents
     )
 
 
@@ -1189,6 +1750,15 @@ def _read_csv(path: Path | None) -> tuple[pd.DataFrame, str]:
     if len(frame) != 1:
         return frame, "csv_must_have_one_row"
     return frame, ""
+
+
+def _read_csv_table(path: Path | None) -> tuple[pd.DataFrame, str]:
+    if path is None or not path.is_file():
+        return pd.DataFrame(), "csv_missing"
+    try:
+        return pd.read_csv(path), ""
+    except (OSError, ValueError, pd.errors.ParserError, pd.errors.EmptyDataError):
+        return pd.DataFrame(), "csv_unreadable"
 
 
 def _mapping(value: Any) -> dict[str, Any]:

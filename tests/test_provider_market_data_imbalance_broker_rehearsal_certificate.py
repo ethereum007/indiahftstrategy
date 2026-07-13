@@ -72,7 +72,8 @@ def test_broker_rehearsal_certificate_seals_manifest_chain_and_is_deterministic(
 
     catalog = catalog_experiment_runs([first.output_dir]).catalog.iloc[0]
     assert catalog["run_type"] == "provider_market_data_imbalance_broker_rehearsal_certificate"
-    assert bool(catalog["summary_status"])
+    assert catalog["summary_status"] == True  # noqa: E712
+    assert catalog["summary_reported_status"] == "valid"
     assert not bool(catalog["summary_authorizes_submission"])
 
 

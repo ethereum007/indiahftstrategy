@@ -8,9 +8,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import MANIFEST_NAME, write_experiment_manifest
+from reports.manifest import MANIFEST_NAME, file_sha256, write_experiment_manifest
 from reports.provider_market_data_imbalance_broker_active_lineage import (
     verified_provider_broker_active_lineage_records,
+)
+from reports.provider_market_data_imbalance_active_lineage_chain import (
+    verified_provider_market_data_imbalance_active_lineage_chain_audit_records,
 )
 
 
@@ -166,6 +169,7 @@ def catalog_experiment_runs(
     roots: list[str | Path],
     *,
     provider_broker_active_lineage_index: str | Path | None = None,
+    provider_active_lineage_chain_audits: list[str | Path] | None = None,
 ) -> ExperimentCatalog:
     if not roots:
         raise ValueError("at least one experiment root is required")
@@ -177,7 +181,21 @@ def catalog_experiment_runs(
             provider_broker_active_lineage_index
         )
     )
-    rows = [_catalog_row(path, lineage_records=lineage_records) for path in manifests]
+    chain_audit_records = (
+        None
+        if provider_active_lineage_chain_audits is None
+        else verified_provider_market_data_imbalance_active_lineage_chain_audit_records(
+            provider_active_lineage_chain_audits
+        )
+    )
+    rows = [
+        _catalog_row(
+            path,
+            lineage_records=lineage_records,
+            chain_audit_records=chain_audit_records,
+        )
+        for path in manifests
+    ]
     catalog = pd.DataFrame(rows)
     action_queue = _catalog_action_queue(catalog)
     hygiene_gaps = _catalog_hygiene_gaps(catalog)
@@ -195,11 +213,15 @@ def write_experiment_catalog(
     *,
     output_dir: str | Path,
     provider_broker_active_lineage_index: str | Path | None = None,
+    provider_active_lineage_chain_audits: list[str | Path] | None = None,
 ) -> ExperimentCatalog:
     report = catalog_experiment_runs(
         roots,
         provider_broker_active_lineage_index=(
             provider_broker_active_lineage_index
+        ),
+        provider_active_lineage_chain_audits=(
+            provider_active_lineage_chain_audits
         ),
     )
     out = Path(output_dir)
@@ -233,6 +255,10 @@ def write_experiment_catalog(
                 if provider_broker_active_lineage_index is None
                 else str(Path(provider_broker_active_lineage_index).resolve())
             ),
+            "provider_active_lineage_chain_audits": [
+                str(Path(path).resolve())
+                for path in (provider_active_lineage_chain_audits or [])
+            ],
         },
         inputs={
             "roots": [Path(root) for root in roots],
@@ -243,6 +269,20 @@ def write_experiment_catalog(
                     "provider_broker_active_lineage_index": Path(
                         provider_broker_active_lineage_index
                     ).resolve()
+                }
+            ),
+            **(
+                {}
+                if provider_active_lineage_chain_audits is None
+                else {
+                    "provider_active_lineage_chain_audits": [
+                        Path(path).resolve()
+                        for path in provider_active_lineage_chain_audits
+                    ],
+                    "provider_active_lineage_chain_audit_manifests": [
+                        Path(path).resolve() / MANIFEST_NAME
+                        for path in provider_active_lineage_chain_audits
+                    ],
                 }
             ),
         },
@@ -273,6 +313,7 @@ def _catalog_row(
     manifest_path: Path,
     *,
     lineage_records: pd.DataFrame | None = None,
+    chain_audit_records: pd.DataFrame | None = None,
 ) -> dict[str, Any]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     run_dir = manifest_path.parent
@@ -300,10 +341,15 @@ def _catalog_row(
             run_dir,
             str(manifest.get("run_type", "")),
             lineage_records,
+            chain_audit_records,
         ),
     }
     for column, value in summary_row.items():
-        row[f"summary_{column}"] = value
+        key = f"summary_{column}"
+        if key in row:
+            row[f"summary_reported_{column}"] = value
+        else:
+            row[key] = value
     return row
 
 
@@ -311,31 +357,42 @@ def _provider_lineage_selection_fields(
     run_dir: Path,
     run_type: str,
     lineage_records: pd.DataFrame | None,
+    chain_audit_records: pd.DataFrame | None,
 ) -> dict[str, Any]:
     index_provided = lineage_records is not None
     bundle_type = PROVIDER_BROKER_LINEAGE_RUN_TYPES.get(run_type, "")
     if not index_provided:
-        return {
-            "provider_lineage_index_provided": False,
-            "provider_lineage_bundle_type": bundle_type,
-            "provider_lineage_pair_id": "",
-            "provider_lineage_role": "unindexed" if bundle_type else "",
-            "provider_lineage_selection_status": (
-                "index_not_provided" if bundle_type else "not_applicable"
-            ),
-            "provider_lineage_selection_eligible": not bool(bundle_type),
-            "provider_lineage_counterpart_path": "",
-        }
+        return _provider_active_lineage_chain_audit_fields(
+            run_dir,
+            bundle_type,
+            chain_audit_records,
+            {
+                "provider_lineage_index_provided": False,
+                "provider_lineage_bundle_type": bundle_type,
+                "provider_lineage_pair_id": "",
+                "provider_lineage_role": "unindexed" if bundle_type else "",
+                "provider_lineage_selection_status": (
+                    "index_not_provided" if bundle_type else "not_applicable"
+                ),
+                "provider_lineage_selection_eligible": not bool(bundle_type),
+                "provider_lineage_counterpart_path": "",
+            },
+        )
     if not bundle_type:
-        return {
-            "provider_lineage_index_provided": True,
-            "provider_lineage_bundle_type": "",
-            "provider_lineage_pair_id": "",
-            "provider_lineage_role": "",
-            "provider_lineage_selection_status": "not_applicable",
-            "provider_lineage_selection_eligible": True,
-            "provider_lineage_counterpart_path": "",
-        }
+        return _provider_active_lineage_chain_audit_fields(
+            run_dir,
+            bundle_type,
+            chain_audit_records,
+            {
+                "provider_lineage_index_provided": True,
+                "provider_lineage_bundle_type": "",
+                "provider_lineage_pair_id": "",
+                "provider_lineage_role": "",
+                "provider_lineage_selection_status": "not_applicable",
+                "provider_lineage_selection_eligible": True,
+                "provider_lineage_counterpart_path": "",
+            },
+        )
     matches = lineage_records.loc[
         lineage_records["bundle_path"].map(_resolved_path_text).eq(
             str(run_dir.resolve())
@@ -343,31 +400,164 @@ def _provider_lineage_selection_fields(
         & lineage_records["bundle_type"].astype(str).eq(bundle_type)
     ]
     if len(matches) != 1:
-        return {
+        return _provider_active_lineage_chain_audit_fields(
+            run_dir,
+            bundle_type,
+            chain_audit_records,
+            {
+                "provider_lineage_index_provided": True,
+                "provider_lineage_bundle_type": bundle_type,
+                "provider_lineage_pair_id": "",
+                "provider_lineage_role": "unindexed",
+                "provider_lineage_selection_status": "unindexed",
+                "provider_lineage_selection_eligible": False,
+                "provider_lineage_counterpart_path": "",
+            },
+        )
+    match = matches.iloc[0]
+    return _provider_active_lineage_chain_audit_fields(
+        run_dir,
+        bundle_type,
+        chain_audit_records,
+        {
             "provider_lineage_index_provided": True,
             "provider_lineage_bundle_type": bundle_type,
-            "provider_lineage_pair_id": "",
-            "provider_lineage_role": "unindexed",
-            "provider_lineage_selection_status": "unindexed",
-            "provider_lineage_selection_eligible": False,
-            "provider_lineage_counterpart_path": "",
+            "provider_lineage_pair_id": str(match.get("lineage_pair_id", "")),
+            "provider_lineage_role": str(match.get("lineage_role", "")),
+            "provider_lineage_selection_status": str(
+                match.get("selection_status", "")
+            ),
+            "provider_lineage_selection_eligible": _to_bool(
+                match.get("catalog_selectable")
+            ),
+            "provider_lineage_counterpart_path": str(
+                match.get("counterpart_bundle_path", "")
+            ),
+        },
+    )
+
+
+def _provider_active_lineage_chain_audit_fields(
+    run_dir: Path,
+    bundle_type: str,
+    chain_audit_records: pd.DataFrame | None,
+    selection: dict[str, Any],
+) -> dict[str, Any]:
+    fields = dict(selection)
+    required = bool(
+        bundle_type == "rehearsal_certificate"
+        and str(fields.get("provider_lineage_selection_status", ""))
+        == "selectable"
+    )
+    provided = chain_audit_records is not None
+    fields.update(
+        {
+            "provider_active_lineage_chain_audit_required": required,
+            "provider_active_lineage_chain_audit_provided": provided,
+            "provider_active_lineage_chain_audit_covered": False,
+            "provider_active_lineage_chain_audit_selection_bound": False,
+            "provider_active_lineage_chain_audit_status": (
+                "not_applicable" if not required else "audit_not_provided"
+            ),
+            "provider_active_lineage_chain_audit_dir": "",
+            "provider_active_lineage_chain_audit_manifest_sha256": "",
+            "provider_active_lineage_chain_audit_chain_digest_sha256": "",
+            "provider_active_lineage_chain_audit_contract_sha256": "",
+            "provider_active_lineage_chain_audit_certificate_manifest_sha256": "",
+            "provider_lineage_selection_block_reason": "",
         }
+    )
+    if not required:
+        if bundle_type and not _to_bool(
+            fields.get("provider_lineage_selection_eligible")
+        ):
+            fields["provider_lineage_selection_block_reason"] = (
+                "active_lineage_index_not_selectable"
+            )
+        return fields
+    if chain_audit_records is None:
+        fields["provider_lineage_selection_eligible"] = False
+        fields["provider_lineage_selection_block_reason"] = (
+            "active_lineage_chain_audit_not_provided"
+        )
+        return fields
+    matches = chain_audit_records.loc[
+        chain_audit_records["certificate_dir"].map(_resolved_path_text).eq(
+            str(run_dir.resolve())
+        )
+    ]
+    if len(matches) != 1:
+        fields["provider_active_lineage_chain_audit_status"] = (
+            "certificate_not_covered"
+        )
+        fields["provider_lineage_selection_eligible"] = False
+        fields["provider_lineage_selection_block_reason"] = (
+            "certificate_not_covered_by_active_lineage_chain_audit"
+        )
+        return fields
     match = matches.iloc[0]
-    return {
-        "provider_lineage_index_provided": True,
-        "provider_lineage_bundle_type": bundle_type,
-        "provider_lineage_pair_id": str(match.get("lineage_pair_id", "")),
-        "provider_lineage_role": str(match.get("lineage_role", "")),
-        "provider_lineage_selection_status": str(
-            match.get("selection_status", "")
-        ),
-        "provider_lineage_selection_eligible": _to_bool(
-            match.get("catalog_selectable")
-        ),
-        "provider_lineage_counterpart_path": str(
-            match.get("counterpart_bundle_path", "")
-        ),
-    }
+    certificate_manifest = run_dir / MANIFEST_NAME
+    current_manifest_sha256 = (
+        file_sha256(certificate_manifest)
+        if certificate_manifest.is_file()
+        else ""
+    )
+    expected_manifest_sha256 = str(
+        match.get("certificate_manifest_sha256", "")
+    )
+    current = bool(
+        current_manifest_sha256
+        and current_manifest_sha256 == expected_manifest_sha256
+    )
+    index_selectable = _to_bool(
+        fields.get("provider_lineage_selection_eligible")
+    )
+    selection_bound = bool(index_selectable and current)
+    fields.update(
+        {
+            "provider_active_lineage_chain_audit_covered": current,
+            "provider_active_lineage_chain_audit_selection_bound": (
+                selection_bound
+            ),
+            "provider_active_lineage_chain_audit_status": (
+                "certificate_manifest_drift"
+                if not current
+                else (
+                    "covered_current"
+                    if selection_bound
+                    else "active_lineage_index_not_selectable"
+                )
+            ),
+            "provider_active_lineage_chain_audit_dir": str(
+                match.get("audit_dir", "")
+            ),
+            "provider_active_lineage_chain_audit_manifest_sha256": str(
+                match.get("audit_manifest_sha256", "")
+            ),
+            "provider_active_lineage_chain_audit_chain_digest_sha256": str(
+                match.get("chain_digest_sha256", "")
+            ),
+            "provider_active_lineage_chain_audit_contract_sha256": str(
+                match.get(
+                    "provider_lineage_selection_contract_sha256",
+                    "",
+                )
+            ),
+            "provider_active_lineage_chain_audit_certificate_manifest_sha256": (
+                expected_manifest_sha256
+            ),
+        }
+    )
+    fields["provider_lineage_selection_eligible"] = selection_bound
+    if not current:
+        fields["provider_lineage_selection_block_reason"] = (
+            "certificate_manifest_drift_after_active_lineage_chain_audit"
+        )
+    elif not index_selectable:
+        fields["provider_lineage_selection_block_reason"] = (
+            "active_lineage_index_not_selectable"
+        )
+    return fields
 
 
 def _resolved_path_text(value: Any) -> str:
@@ -410,21 +600,69 @@ def _provider_lineage_selection_counts(catalog: pd.DataFrame) -> dict[str, int]:
         "provider_lineage_retained_only_runs": 0,
         "provider_lineage_unindexed_runs": 0,
         "provider_lineage_selection_blocked_runs": 0,
+        "provider_active_lineage_chain_audit_required_runs": 0,
+        "provider_active_lineage_chain_audit_covered_runs": 0,
+        "provider_active_lineage_chain_audit_blocked_runs": 0,
+        "provider_active_lineage_chain_audit_not_provided_runs": 0,
+        "provider_active_lineage_chain_audit_uncovered_runs": 0,
     }
     if catalog.empty or "provider_lineage_selection_status" not in catalog:
         return counts
     statuses = catalog["provider_lineage_selection_status"].astype(str)
-    selectable = statuses.eq("selectable")
+    provider_runs = catalog["provider_lineage_bundle_type"].astype(str).ne("")
+    eligible = catalog["provider_lineage_selection_eligible"].map(_to_bool)
+    selectable = statuses.eq("selectable") & eligible
     retained = statuses.eq("retained_only")
     unindexed = statuses.isin(["unindexed", "index_not_provided"])
+    audit_required = catalog.get(
+        "provider_active_lineage_chain_audit_required",
+        pd.Series(False, index=catalog.index),
+    ).map(_to_bool)
+    audit_covered = catalog.get(
+        "provider_active_lineage_chain_audit_covered",
+        pd.Series(False, index=catalog.index),
+    ).map(_to_bool)
+    audit_status = catalog.get(
+        "provider_active_lineage_chain_audit_status",
+        pd.Series("", index=catalog.index),
+    ).astype(str)
     counts.update(
         {
-            "provider_lineage_indexed_runs": int((selectable | retained).sum()),
+            "provider_lineage_indexed_runs": int(
+                (statuses.isin(["selectable", "retained_only"])).sum()
+            ),
             "provider_lineage_selectable_runs": int(selectable.sum()),
             "provider_lineage_retained_only_runs": int(retained.sum()),
             "provider_lineage_unindexed_runs": int(unindexed.sum()),
             "provider_lineage_selection_blocked_runs": int(
-                (retained | unindexed).sum()
+                (provider_runs & ~eligible).sum()
+            ),
+            "provider_active_lineage_chain_audit_required_runs": int(
+                audit_required.sum()
+            ),
+            "provider_active_lineage_chain_audit_covered_runs": int(
+                (
+                    audit_required
+                    & audit_covered
+                    & audit_status.eq("covered_current")
+                ).sum()
+            ),
+            "provider_active_lineage_chain_audit_blocked_runs": int(
+                (audit_required & ~audit_status.eq("covered_current")).sum()
+            ),
+            "provider_active_lineage_chain_audit_not_provided_runs": int(
+                (audit_required & audit_status.eq("audit_not_provided")).sum()
+            ),
+            "provider_active_lineage_chain_audit_uncovered_runs": int(
+                (
+                    audit_required
+                    & audit_status.isin(
+                        [
+                            "certificate_not_covered",
+                            "certificate_manifest_drift",
+                        ]
+                    )
+                ).sum()
             ),
         }
     )

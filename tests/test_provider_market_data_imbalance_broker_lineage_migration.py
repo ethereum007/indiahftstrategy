@@ -1066,15 +1066,42 @@ def test_active_lineage_index_retires_exact_converged_originals(tmp_path):
     retained = provider_rows.loc[
         provider_rows["provider_lineage_selection_status"] == "retained_only"
     ]
-    assert selectable["provider_lineage_selection_eligible"].astype(bool).all()
+    selectable_certificate = selectable.loc[
+        selectable["provider_lineage_bundle_type"] == "rehearsal_certificate"
+    ].iloc[0]
+    selectable_transport = selectable.loc[
+        selectable["provider_lineage_bundle_type"] != "rehearsal_certificate"
+    ]
+    assert selectable_transport[
+        "provider_lineage_selection_eligible"
+    ].astype(bool).all()
+    assert not bool(
+        selectable_certificate["provider_lineage_selection_eligible"]
+    )
+    assert selectable_certificate[
+        "provider_active_lineage_chain_audit_status"
+    ] == "audit_not_provided"
     assert not retained[
         "provider_lineage_selection_eligible"
     ].astype(bool).any()
-    assert int(catalog.summary.iloc[0]["provider_lineage_selectable_runs"]) == 3
+    assert int(catalog.summary.iloc[0]["provider_lineage_selectable_runs"]) == 2
     assert int(
         catalog.summary.iloc[0]["provider_lineage_retained_only_runs"]
     ) == 3
     assert int(catalog.summary.iloc[0]["provider_lineage_unindexed_runs"]) == 0
+    assert int(
+        catalog.summary.iloc[0]["provider_lineage_selection_blocked_runs"]
+    ) == 4
+    assert int(
+        catalog.summary.iloc[0][
+            "provider_active_lineage_chain_audit_required_runs"
+        ]
+    ) == 1
+    assert int(
+        catalog.summary.iloc[0][
+            "provider_active_lineage_chain_audit_blocked_runs"
+        ]
+    ) == 1
     unindexed_ack = _write_component(
         tmp_path / "unindexed_provider_ack",
         ACK_RUN_TYPE,
@@ -1122,7 +1149,6 @@ def test_active_lineage_index_retires_exact_converged_originals(tmp_path):
                 "--roots",
                 str(strict["ack"]),
                 str(strict["roundtrip"]),
-                str(strict["certificate"]),
                 "--out",
                 str(tmp_path / "strict_catalog"),
                 "--provider-broker-active-lineage-index",
@@ -1131,6 +1157,23 @@ def test_active_lineage_index_retires_exact_converged_originals(tmp_path):
             ]
         )
         == 0
+    )
+    assert (
+        main(
+            [
+                "catalog-runs",
+                "--roots",
+                str(strict["ack"]),
+                str(strict["roundtrip"]),
+                str(strict["certificate"]),
+                "--out",
+                str(tmp_path / "strict_catalog_missing_chain_audit"),
+                "--provider-broker-active-lineage-index",
+                str(report.output_dir),
+                "--fail-on-provider-lineage-selection-blocks",
+            ]
+        )
+        == 2
     )
     assert (
         main(

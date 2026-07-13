@@ -3,9 +3,12 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from hft_cli import main as _cli_main
 from tests.provider_adapter_capture_support import write_bundle_captures
+from reports.catalog import catalog_experiment_runs
+from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence
 from reports.manifest import verify_experiment_manifest
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
@@ -87,6 +90,7 @@ from reports.provider_market_data_imbalance_active_lineage_chain import (
     CHAIN_ARTIFACTS,
     RUN_TYPE as ACTIVE_LINEAGE_CHAIN_RUN_TYPE,
     ProviderMarketDataImbalanceActiveLineageChainConfig,
+    verify_provider_market_data_imbalance_active_lineage_chain_audit,
     write_provider_market_data_imbalance_active_lineage_chain_audit,
 )
 from reports.provider_market_data_live_bundle import (
@@ -32410,6 +32414,7 @@ def test_provider_market_data_imbalance_broker_rehearsal_certificate_blocks_roun
 
 def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_detects_drift(
     tmp_path,
+    monkeypatch,
 ):
     provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(
         tmp_path,
@@ -32472,6 +32477,112 @@ def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_de
         required_artifacts=CHAIN_ARTIFACTS,
         require_input_fingerprints=True,
     ).passed
+    verification = (
+        verify_provider_market_data_imbalance_active_lineage_chain_audit(
+            report.output_dir
+        )
+    )
+    assert verification.ready
+    assert verification.manifest_current
+    assert verification.source_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert verification.certificate_dir == certificate.output_dir.resolve()
+    assert verification.chain_digest_sha256 == report.summary.loc[
+        0, "chain_digest_sha256"
+    ]
+
+    certificate_pair_id = expected_contract["selected_pair_ids"].split(";")[0]
+    active_index_records = pd.DataFrame(
+        [
+            {
+                "bundle_path": str(certificate.output_dir.resolve()),
+                "bundle_type": "rehearsal_certificate",
+                "lineage_pair_id": certificate_pair_id,
+                "lineage_role": "active_strict",
+                "selection_status": "selectable",
+                "catalog_selectable": True,
+                "counterpart_bundle_path": str(
+                    tmp_path / "retained_certificate"
+                ),
+            }
+        ]
+    )
+    monkeypatch.setattr(
+        "reports.catalog.verified_provider_broker_active_lineage_records",
+        lambda _: active_index_records.copy(),
+    )
+    active_index_path = tmp_path / "active_lineage_index"
+    without_audit = catalog_experiment_runs(
+        [certificate.output_dir],
+        provider_broker_active_lineage_index=active_index_path,
+    )
+    without_audit_row = without_audit.catalog.iloc[0]
+    assert without_audit_row["provider_lineage_selection_status"] == (
+        "selectable"
+    )
+    assert not bool(
+        without_audit_row["provider_lineage_selection_eligible"]
+    )
+    assert without_audit_row[
+        "provider_active_lineage_chain_audit_status"
+    ] == "audit_not_provided"
+    blocked_evidence = evaluate_strategy_evidence(
+        without_audit.catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=(
+                "provider_market_data_imbalance_broker_rehearsal_certificate",
+            ),
+            allow_dirty_git=True,
+            require_provider_lineage_selection=True,
+        ),
+    )
+    assert not blocked_evidence.ready
+    assert not bool(blocked_evidence.evidence.iloc[0]["passed"])
+
+    trusted_catalog = catalog_experiment_runs(
+        [certificate.output_dir],
+        provider_broker_active_lineage_index=active_index_path,
+        provider_active_lineage_chain_audits=[report.output_dir],
+    )
+    trusted_row = trusted_catalog.catalog.iloc[0]
+    assert bool(trusted_row["provider_lineage_selection_eligible"])
+    assert bool(
+        trusted_row["provider_active_lineage_chain_audit_covered"]
+    )
+    assert bool(
+        trusted_row["provider_active_lineage_chain_audit_selection_bound"]
+    )
+    assert trusted_row[
+        "provider_active_lineage_chain_audit_status"
+    ] == "covered_current"
+    assert trusted_row[
+        "provider_active_lineage_chain_audit_chain_digest_sha256"
+    ] == report.summary.loc[0, "chain_digest_sha256"]
+    assert int(
+        trusted_catalog.summary.iloc[0][
+            "provider_active_lineage_chain_audit_covered_runs"
+        ]
+    ) == 1
+    trusted_evidence = evaluate_strategy_evidence(
+        trusted_catalog.catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=(
+                "provider_market_data_imbalance_broker_rehearsal_certificate",
+            ),
+            allow_dirty_git=True,
+            require_provider_lineage_selection=True,
+        ),
+    )
+    selected_evidence = trusted_evidence.evidence.iloc[0]
+    assert bool(selected_evidence["passed"])
+    assert bool(selected_evidence["provider_lineage_selected"])
+    assert selected_evidence[
+        "selected_provider_active_lineage_chain_audit_status"
+    ] == "covered_current"
+    assert selected_evidence[
+        "selected_provider_active_lineage_chain_audit_chain_digest_sha256"
+    ] == report.summary.loc[0, "chain_digest_sha256"]
 
     cli_out = tmp_path / "provider_imbalance_active_lineage_chain_audit_cli"
     assert (
@@ -32499,6 +32610,19 @@ def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_de
             {"sha256": "c" * 64}
         ),
     )
+    drifted_verification = (
+        verify_provider_market_data_imbalance_active_lineage_chain_audit(
+            report.output_dir
+        )
+    )
+    assert not drifted_verification.ready
+    assert not drifted_verification.manifest_current
+    with pytest.raises(ValueError, match="chain audit is not trusted"):
+        catalog_experiment_runs(
+            [certificate.output_dir],
+            provider_broker_active_lineage_index=active_index_path,
+            provider_active_lineage_chain_audits=[report.output_dir],
+        )
     drifted = write_provider_market_data_imbalance_active_lineage_chain_audit(
         certificate.output_dir,
         tmp_path / "provider_imbalance_active_lineage_chain_audit_drifted",

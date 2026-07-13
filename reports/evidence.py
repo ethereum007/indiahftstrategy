@@ -288,6 +288,10 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
             "selected_provider_lineage_role": "",
             "selected_provider_lineage_selection_status": "",
             "selected_provider_lineage_counterpart_path": "",
+            "selected_provider_active_lineage_chain_audit_status": "",
+            "selected_provider_active_lineage_chain_audit_dir": "",
+            "selected_provider_active_lineage_chain_audit_chain_digest_sha256": "",
+            "selected_provider_active_lineage_chain_audit_manifest_sha256": "",
             "passed": False,
         }
     matched["summary_status_bool"] = matched["summary_status"].map(_to_optional_bool)
@@ -337,6 +341,22 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
         "selected_provider_lineage_counterpart_path": _row_text(
             selected,
             "provider_lineage_counterpart_path",
+        ),
+        "selected_provider_active_lineage_chain_audit_status": _row_text(
+            selected,
+            "provider_active_lineage_chain_audit_status",
+        ),
+        "selected_provider_active_lineage_chain_audit_dir": _row_text(
+            selected,
+            "provider_active_lineage_chain_audit_dir",
+        ),
+        "selected_provider_active_lineage_chain_audit_chain_digest_sha256": _row_text(
+            selected,
+            "provider_active_lineage_chain_audit_chain_digest_sha256",
+        ),
+        "selected_provider_active_lineage_chain_audit_manifest_sha256": _row_text(
+            selected,
+            "provider_active_lineage_chain_audit_manifest_sha256",
         ),
         "passed": bool(candidate_passed_runs >= thresholds.min_passed_per_type),
     }
@@ -873,9 +893,22 @@ def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
         "provider_lineage_pair_id",
         "provider_lineage_role",
         "provider_lineage_counterpart_path",
+        "provider_active_lineage_chain_audit_status",
+        "provider_active_lineage_chain_audit_dir",
+        "provider_active_lineage_chain_audit_chain_digest_sha256",
+        "provider_active_lineage_chain_audit_manifest_sha256",
+        "provider_active_lineage_chain_audit_selection_bound",
     ]:
         if column not in frame.columns:
-            frame[column] = False if column == "provider_lineage_selection_eligible" else np.nan
+            frame[column] = (
+                False
+                if column
+                in {
+                    "provider_lineage_selection_eligible",
+                    "provider_active_lineage_chain_audit_selection_bound",
+                }
+                else np.nan
+            )
     for column in (
         "input_count",
         "input_file_count",
@@ -930,10 +963,45 @@ def _provider_lineage_selectable_mask(frame: pd.DataFrame) -> pd.Series:
         .str.strip()
         .str.lower()
     )
-    return statuses.eq("selectable") & _bool_column(
+    selectable = statuses.eq("selectable") & _bool_column(
         frame,
         "provider_lineage_selection_eligible",
     )
+    certificate = frame["run_type"].astype(str).eq(
+        PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE
+    )
+    audit_status = (
+        frame["provider_active_lineage_chain_audit_status"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+    audit_dir = (
+        frame["provider_active_lineage_chain_audit_dir"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .ne("")
+    )
+    audit_digest = frame[
+        "provider_active_lineage_chain_audit_chain_digest_sha256"
+    ].map(_valid_sha256)
+    audit_manifest = frame[
+        "provider_active_lineage_chain_audit_manifest_sha256"
+    ].map(_valid_sha256)
+    audit_selection_bound = _bool_column(
+        frame,
+        "provider_active_lineage_chain_audit_selection_bound",
+    )
+    certificate_audit_ready = (
+        audit_status.eq("covered_current")
+        & audit_dir
+        & audit_digest
+        & audit_manifest
+        & audit_selection_bound
+    )
+    return selectable & (~certificate | certificate_audit_ready)
 
 
 def _provider_lineage_selectable_counts(

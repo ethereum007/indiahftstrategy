@@ -587,6 +587,21 @@ def provider_imbalance_ops_launch_catalog_rows(
             row["summary_authorizes_submission"] = False
             row["summary_digitally_signed"] = False
             row["summary_certificate_sha256"] = "a" * 64
+            row["provider_active_lineage_chain_audit_status"] = (
+                "covered_current"
+            )
+            row["provider_active_lineage_chain_audit_dir"] = (
+                "runs/provider_imbalance_active_lineage_chain_audit"
+            )
+            row[
+                "provider_active_lineage_chain_audit_chain_digest_sha256"
+            ] = "b" * 64
+            row[
+                "provider_active_lineage_chain_audit_manifest_sha256"
+            ] = "c" * 64
+            row[
+                "provider_active_lineage_chain_audit_selection_bound"
+            ] = True
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1106,6 +1121,43 @@ def test_provider_imbalance_ops_launch_rejects_retained_only_rehearsal_candidate
     assert int(review.summary.iloc[0]["provider_lineage_covered_run_type_count"]) == 2
     assert int(review.summary.iloc[0]["provider_lineage_retained_only_runs"]) == 1
     assert int(review.summary.iloc[0]["provider_lineage_selection_blocked_runs"]) == 1
+
+
+def test_provider_imbalance_ops_launch_rejects_certificate_without_current_chain_audit():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    mask = (
+        catalog["run_type"]
+        == "provider_market_data_imbalance_broker_rehearsal_certificate"
+    )
+    catalog.loc[
+        mask, "provider_active_lineage_chain_audit_status"
+    ] = "certificate_manifest_drift"
+    catalog.loc[
+        mask, "provider_active_lineage_chain_audit_selection_bound"
+    ] = False
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types(
+                "provider_imbalance_ops_launch"
+            ),
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert (
+        "provider_lineage_selectable:"
+        "provider_market_data_imbalance_broker_rehearsal_certificate"
+        in failed
+    )
+    assert int(
+        review.summary.iloc[0]["provider_lineage_covered_run_type_count"]
+    ) == 2
+    assert int(
+        review.summary.iloc[0]["provider_lineage_selection_blocked_runs"]
+    ) == 1
 
 
 def test_provider_imbalance_ops_launch_selects_strict_siblings_alongside_archive():

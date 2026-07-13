@@ -2926,6 +2926,25 @@
   runtime-guard contract edit fails closed through both paths (`1 passed`). The
   shared contract, legacy certificate, and manifest suites remain green (`17
   passed`).
+- Provider rehearsal-certificate selection now fails closed on the chain audit.
+  The audit exposes a read-side verifier that independently rebuilds the full
+  13-stage graph from the covered certificate, rechecks all recursive
+  manifests, contract surfaces, predecessor links, certificate hash/cycle,
+  non-authorizing claims, and deterministic chain digest, and only then emits a
+  certificate coverage record. `catalog-runs` accepts repeatable
+  `--provider-active-lineage-chain-audit` inputs and makes a selectable
+  rehearsal certificate eligible only when one trusted audit covers its exact
+  directory and current manifest hash; acknowledgement and final-roundtrip
+  selection remain unchanged. Catalog rows and summaries expose audit coverage,
+  binding, digest, and block reasons, while strategy evidence independently
+  requires the bound `covered_current` status and carries the selected audit
+  path and hashes into its evidence item. A pre-existing catalog collision that
+  allowed a report's textual `status` field to overwrite normalized
+  `summary_status` is also closed. The real 13-stage clean/drift fixture,
+  active-index/catalog integration, all strategy-evidence, all experiment
+  catalog, and manifest suites pass together across focused runs (`127
+  passed`), with the certificate catalog namespace regression covered
+  separately (`1 passed`).
 
 ## Test Gate
 
@@ -2935,7 +2954,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1624 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1625 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -2968,7 +2987,11 @@ paths pass (`2 passed`) alongside all legacy certificate paths (`8 passed`).
 The operator chain audit now closes all 13 provider boundaries from route
 readiness through certification, independently verifies 65 recursive manifests
 in the real strict fixture, and rejects intermediate runtime-guard contract drift
-through both the Python and CLI surfaces (`1 passed`).
+through both the Python and CLI surfaces (`1 passed`). Its read-side verifier
+also recomputes that graph before catalog exposure; a selectable certificate
+without the exact current audit is blocked, while the covered certificate is
+selected with its audit digest and becomes invalid after the same upstream
+drift (`1 passed`).
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
@@ -3105,7 +3128,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1624-test collection is fully green.
+1625-test collection is fully green.
 
 ## Next Build Targets
 
@@ -3114,7 +3137,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Require a current passing active-lineage chain audit when the experiment
-   catalog or final broker-readiness evidence selects a provider rehearsal
-   certificate, so stale or detached certificates cannot become the operator's
-   latest retained proof.
+4. Make final strategy-evidence output verify the source catalog manifest and
+   fingerprint its selected provider chain audit and rehearsal certificate
+   directly, closing stale-catalog replay after either retained proof drifts.
