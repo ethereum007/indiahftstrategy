@@ -3189,6 +3189,18 @@
   `stale_or_inconsistent`, while existing data-readiness readers can consume
   the unchanged `mapped_data_summary.csv` filename. This boundary still does
   not authorize strategy research, routing, submission, or live release.
+- Data readiness and the single-file vendor onboarding pipeline now enforce the
+  reviewed-normalization boundary end to end. A strict readiness threshold
+  distinguishes ordinary mapped data from review-bound output, retains the
+  review/source/mapping fingerprints in readiness summaries, verifies the
+  explicit normalization-only and non-authorizing safety fields, and routes
+  repairs to `normalize-reviewed-mapped-data`. The vendor pipeline accepts a
+  mutually exclusive `--mapping-review`, verifies approval and exact source,
+  adapter, and kind bindings before creating output, derives the reviewed
+  mapping, forces the strict readiness threshold, and fingerprints the review
+  graph in its root manifest. Exact-source approvals are intentionally not
+  reused by the multi-file batch pipeline; broader schema-scoped approval is a
+  separate future contract.
 
 ## Test Gate
 
@@ -3198,8 +3210,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1751 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1759 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest review-bound onboarding/readiness gate: the strict readiness, exact-source
+pipeline, and reviewed-normalization suites pass together (`40 passed`). The
+broader intake, mapping review, mapped data, vendor/provider onboarding,
+readiness comparison, schema audit, shared CLI, catalog, manifest, and
+broker-vendor surface passes together (`160 passed`). Coverage includes
+explicit safety-claim parsing, SHA-256 provenance checks, intake-to-normalized
+source consistency, exact source/adapter/kind enforcement before output,
+mutually exclusive mapping inputs, strict CLI handoff, missing/loose evidence
+repair routing, and an operator-approved manual mapping that supersedes blocked
+column inference without weakening the source binding. The repository now
+collects 1759 tests across 151 files; the full suite was not rerun for this
+slice.
 
 Latest reviewed-normalization gate: all seven focused adversarial tests pass.
 The full affected mapping-review, normalization, intake, onboarding,

@@ -84,6 +84,23 @@ def mapped_data_summary(ready=True):
     )
 
 
+def reviewed_mapped_data_summary(ready=True):
+    summary = mapped_data_summary(ready)
+    summary["review_bound"] = True
+    summary["mapping_review_verified"] = True
+    summary["mapping_review_approved"] = True
+    summary["mapping_review_id"] = "mapping-review-123"
+    summary["mapping_review_sha256"] = "a" * 64
+    summary["source_file_sha256"] = "b" * 64
+    summary["reviewed_mapping_sha256"] = "c" * 64
+    summary["operator_approved_mapping_required"] = True
+    summary["reviewed_normalization_only"] = True
+    summary["authorizes_strategy_research"] = False
+    summary["authorizes_routing"] = False
+    summary["authorizes_submission"] = False
+    return summary
+
+
 def vendor_intake_summary(ready=True):
     return pd.DataFrame(
         [
@@ -179,6 +196,96 @@ def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
     assert report.ready
     assert int(report.summary.iloc[0]["required_components"]) == 7
     assert report.items.set_index("component").loc["vendor_intake", "ready"]
+
+
+def test_data_readiness_accepts_review_bound_mapping_normalization():
+    report = evaluate_data_readiness(
+        mapped_data_summary=reviewed_mapped_data_summary(),
+        thresholds=DataReadinessThresholds(
+            require_reviewed_mapping_normalization=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(summary["require_reviewed_mapping_normalization"])
+    assert bool(summary["mapped_data_review_bound"])
+    assert bool(summary["mapped_data_mapping_review_verified"])
+    assert bool(summary["mapped_data_mapping_review_approved"])
+    assert summary["mapped_data_mapping_review_id"] == "mapping-review-123"
+    assert summary["mapped_data_mapping_review_sha256"] == "a" * 64
+    assert summary["mapped_data_source_file_sha256"] == "b" * 64
+    assert summary["mapped_data_reviewed_mapping_sha256"] == "c" * 64
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+
+
+def test_data_readiness_rejects_loose_normalization_when_review_is_required():
+    report = evaluate_data_readiness(
+        mapped_data_summary=mapped_data_summary(),
+        thresholds=DataReadinessThresholds(
+            require_reviewed_mapping_normalization=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "mapped_data_review_bound",
+        "mapped_data_mapping_review_verified",
+        "mapped_data_mapping_review_approved",
+        "mapped_data_mapping_review_id_present",
+        "mapped_data_reviewed_mapping_sha256_present",
+    } <= failed
+    assert report.action_queue is not None
+    assert set(report.action_queue["next_gate"]) == {"normalize-reviewed-mapped-data"}
+    assert set(report.action_queue["next_gate_help_command"]) == {
+        "python -m hft_cli normalize-reviewed-mapped-data --help"
+    }
+
+
+def test_data_readiness_routes_missing_strict_mapping_evidence_to_reviewed_normalization():
+    report = evaluate_data_readiness(
+        thresholds=DataReadinessThresholds(
+            require_reviewed_mapping_normalization=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+
+    assert not report.ready
+    assert report.action_queue is not None
+    assert report.summary.loc[0, "next_gate"] == "normalize-reviewed-mapped-data"
+    assert set(report.action_queue["next_gate"]) == {"normalize-reviewed-mapped-data"}
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "mapped_data_reviewed_normalization_provided" in failed
+
+
+def test_data_readiness_rejects_invalid_safety_claims_and_source_mismatch():
+    mapped = reviewed_mapped_data_summary()
+    mapped["authorizes_routing"] = pd.Series(["unknown"], dtype=object)
+    intake = vendor_intake_summary()
+    intake.loc[0, "source_file_sha256"] = "d" * 64
+
+    report = evaluate_data_readiness(
+        vendor_intake_summary=intake,
+        mapped_data_summary=mapped,
+        thresholds=DataReadinessThresholds(
+            require_vendor_intake=True,
+            require_reviewed_mapping_normalization=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "mapped_data_authorizes_routing",
+        "mapped_data_vendor_source_consistency",
+    } <= failed
+    assert report.action_queue is not None
+    assert set(report.action_queue["next_gate"]) == {"normalize-reviewed-mapped-data"}
 
 
 def test_data_readiness_can_require_market_portability_pair():
@@ -593,6 +700,35 @@ def test_cli_data_readiness_can_require_vendor_intake(tmp_path):
     assert not bool(summary.loc[0, "ready"])
     assert "vendor_intake_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert "intake-vendor-csv" in set(queue["next_gate"])
+
+
+def test_cli_data_readiness_can_require_review_bound_normalization(tmp_path):
+    mapped_dir = tmp_path / "reviewed_mapped_data"
+    out_dir = tmp_path / "reviewed_data_readiness"
+    mapped_dir.mkdir()
+    reviewed_mapped_data_summary().to_csv(
+        mapped_dir / "mapped_data_summary.csv",
+        index=False,
+    )
+
+    code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(out_dir),
+            "--mapped-data",
+            str(mapped_dir),
+            "--require-reviewed-mapping-normalization",
+            "--skip-tick-diagnostics",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "require_reviewed_mapping_normalization"])
+    assert bool(summary.loc[0, "mapped_data_review_bound"])
 
 
 def test_cli_data_readiness_can_require_vendor_intake_kind(tmp_path):

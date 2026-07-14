@@ -7017,6 +7017,32 @@ Use `--kind chain` for option-chain snapshots. If `--mapping` is not supplied,
 the pipeline uses the intake-generated `vendor_mapping_draft.csv`; review and
 edit that mapping before treating the run as broker/vendor-approved evidence.
 
+For an exact source that already has a verified approved mapping review, use
+the review-bound path instead of `--mapping`:
+
+```powershell
+python -m hft_cli pipeline-vendor-market-data `
+  --input vendor\arrow_ticks_2026_06_10.csv `
+  --mapping-review mappings\arrow_ticks_review `
+  --out runs\vendor_data\arrow_ticks_2026_06_10_reviewed `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --min-rows 100000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+`--mapping` and `--mapping-review` are mutually exclusive. Review mode verifies
+the approval before creating pipeline output, requires `--input` to be the exact
+source retained by the review, derives the canonical mapping from that review,
+and forces the downstream data-readiness gate to require review-bound
+normalization. The root summary/config/manifest retain the review path, review
+ID, and review fingerprint. A review for one file cannot be reused by the batch
+pipeline; schema- or header-scoped approval reuse requires a separate future
+contract and is not inferred from an exact-source approval.
+
 Outputs:
 
 ```text
@@ -7257,7 +7283,7 @@ walk-forwards, or replay pipelines:
 python -m hft_cli review-data-readiness `
   --vendor-intake mappings\arrow_ticks_intake `
   --schema-audit runs\schema_audit\arrow_ticks `
-  --mapped-data data\normalized\arrow_ticks_2026_06_10 `
+  --mapped-data runs\data\arrow_ticks_reviewed `
   --tick-diagnostics runs\diagnostics\futures `
   --chain-diagnostics runs\diagnostics\chain `
   --market-profile runs\market_profiles\india_us `
@@ -7267,6 +7293,7 @@ python -m hft_cli review-data-readiness `
   --require-vendor-intake `
   --require-schema-audit `
   --require-mapped-data `
+  --require-reviewed-mapping-normalization `
   --require-chain-diagnostics `
   --require-market-profile `
   --require-explicit-fee-model `
@@ -7298,6 +7325,11 @@ manifest.json
 When `--market-portability` is supplied with `--expected-strategy` and
 `--expected-market`, the gate reads `market_portability_config.json` and fails
 closed unless that exact strategy-market pair is in `ready_pairs`.
+`--require-reviewed-mapping-normalization` also makes mapped data mandatory and
+fails closed unless its summary explicitly retains a verified approved mapping
+review, exact source and reviewed-mapping fingerprints, normalization-only
+safety, and non-research/non-routing/non-submission claims. Failed checks route
+operators to `normalize-reviewed-mapped-data`.
 `data_readiness_action_queue.csv` flattens failed checks into blocked actions
 with the inferred upstream gate, `next_gate_help_command`, observed value,
 threshold, reason, and recommendation. `data_readiness_summary.csv` also

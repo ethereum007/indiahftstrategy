@@ -1,8 +1,14 @@
 import json
+from pathlib import Path
 
 import pandas as pd
+import pytest
 
+from adapters.reviewed_mapped_data import ReviewedMappedDataReport
+from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
+from adapters.vendor_mapping_review import write_vendor_mapping_review
 from hft_cli import main
+from reports.manifest import file_sha256
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
@@ -33,6 +39,88 @@ def vendor_ticks(day: str) -> pd.DataFrame:
             },
         ]
     )
+
+
+def approved_mapping_review(
+    tmp_path: Path,
+    label: str = "reviewed",
+    *,
+    opaque_columns: bool = False,
+) -> tuple[Path, Path]:
+    source_path = tmp_path / f"{label}_ticks.csv"
+    intake_dir = tmp_path / f"{label}_review_intake"
+    mapping_path = tmp_path / f"{label}_candidate_mapping.csv"
+    decision_path = tmp_path / f"{label}_decision.csv"
+    review_dir = tmp_path / f"{label}_mapping_review"
+    if opaque_columns:
+        source = pd.DataFrame(
+            [
+                {
+                    "T": f"2026-06-10 09:15:0{second}",
+                    "B": 100.0 + second * 0.05,
+                    "A": 100.05 + second * 0.05,
+                    "BQ": 75,
+                    "AQ": 150,
+                    "L": 100.05 + second * 0.05,
+                    "LQ": 75,
+                }
+                for second in range(2)
+            ]
+        )
+    else:
+        source = vendor_ticks("2026-06-10")
+    source.to_csv(source_path, index=False)
+    intake = write_vendor_csv_intake_report(
+        source_path,
+        output_dir=intake_dir,
+        config=VendorCsvIntakeConfig(adapter="arrow_money", kind="ticks"),
+    )
+    if opaque_columns:
+        mapping = pd.DataFrame(
+            [
+                {"normalized_column": "ts", "source_column": "T"},
+                {"normalized_column": "bid", "source_column": "B", "transform": "float"},
+                {"normalized_column": "ask", "source_column": "A", "transform": "float"},
+                {"normalized_column": "bid_qty", "source_column": "BQ", "transform": "int"},
+                {"normalized_column": "ask_qty", "source_column": "AQ", "transform": "int"},
+                {"normalized_column": "last", "source_column": "L", "transform": "float"},
+                {"normalized_column": "last_qty", "source_column": "LQ", "transform": "int"},
+            ]
+        )
+    else:
+        mapping = intake.mapping_draft
+    mapping.to_csv(mapping_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "intake_receipt_id": intake.receipt["intake_receipt_id"],
+                "source_file_sha256": intake.source_profile["file_sha256"],
+                "mapping_candidate_sha256": file_sha256(mapping_path),
+                "adapter": "arrow_money",
+                "kind": "ticks",
+                "decision": "approved",
+                "operator_id": "market-data-reviewer-1",
+                "operator_role": "market_data_engineer",
+                "reviewed_at_utc": "2026-07-14T07:00:00+00:00",
+                "vendor_documentation_checked": True,
+                "source_columns_confirmed": True,
+                "field_semantics_confirmed": True,
+                "timestamp_semantics_confirmed": True,
+                "price_quantity_units_confirmed": True,
+                "transform_semantics_confirmed": True,
+                "notes": "Reviewed against retained vendor documentation.",
+                "authorizes_routing": False,
+                "authorizes_submission": False,
+            }
+        ]
+    ).to_csv(decision_path, index=False)
+    write_vendor_mapping_review(
+        intake_dir,
+        mapping_path,
+        decision_path,
+        review_dir,
+    )
+    return review_dir, source_path
 
 
 def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
@@ -132,6 +220,147 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
         ]
     )
     assert ready_code == 0
+
+
+def test_vendor_market_data_pipeline_uses_exact_approved_mapping_review(tmp_path):
+    review_dir, raw_path = approved_mapping_review(tmp_path)
+    out_dir = tmp_path / "reviewed_pipeline"
+
+    report = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=out_dir,
+        mapping_review_dir=review_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=2,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    readiness_summary = report.readiness.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "vendor_market_data_pipeline_config.json").read_text(encoding="utf-8")
+    )
+    assert report.ready
+    assert isinstance(report.mapped_data, ReviewedMappedDataReport)
+    assert summary["mapping_source"] == "verified_approved_review"
+    assert summary["mapping_review_path"] == str(review_dir.resolve())
+    assert summary["mapping_review_id"]
+    assert len(summary["mapping_review_sha256"]) == 64
+    assert bool(readiness_summary["require_reviewed_mapping_normalization"])
+    assert bool(readiness_summary["mapped_data_review_bound"])
+    assert bool(readiness_summary["mapped_data_mapping_review_verified"])
+    assert bool(readiness_summary["mapped_data_mapping_review_approved"])
+    assert "mapping_review" in manifest["inputs"]
+    assert "mapping_review_manifest" in manifest["inputs"]
+    assert "mapping_review_receipt" in manifest["inputs"]
+    assert config["mapping"]["source"] == "verified_approved_review"
+    assert config["mapping"]["review_path"] == str(review_dir.resolve())
+    assert config["data_readiness"]["thresholds"][
+        "require_reviewed_mapping_normalization"
+    ]
+
+    cli_out = tmp_path / "reviewed_pipeline_cli"
+    assert (
+        main(
+            [
+                "pipeline-vendor-market-data",
+                "--input",
+                str(raw_path),
+                "--out",
+                str(cli_out),
+                "--mapping-review",
+                str(review_dir),
+                "--timestamp-unit",
+                "datetime",
+                "--tick-size",
+                "0.05",
+                "--min-rows",
+                "2",
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+
+
+def test_vendor_market_data_pipeline_rejects_ambiguous_or_mismatched_review_inputs(tmp_path):
+    review_dir, raw_path = approved_mapping_review(tmp_path, "binding")
+    mapping_path = review_dir / "reviewed_vendor_mapping.csv"
+    mutual_out = tmp_path / "mutual_out"
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=mutual_out,
+            mapping_path=mapping_path,
+            mapping_review_dir=review_dir,
+        )
+    assert not mutual_out.exists()
+
+    other_source = tmp_path / "other_ticks.csv"
+    vendor_ticks("2026-06-11").to_csv(other_source, index=False)
+    source_out = tmp_path / "source_mismatch_out"
+    with pytest.raises(ValueError, match="exact source"):
+        write_vendor_market_data_pipeline(
+            other_source,
+            output_dir=source_out,
+            mapping_review_dir=review_dir,
+        )
+    assert not source_out.exists()
+
+    adapter_out = tmp_path / "adapter_mismatch_out"
+    with pytest.raises(ValueError, match="adapter does not match"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=adapter_out,
+            mapping_review_dir=review_dir,
+            config=VendorMarketDataPipelineConfig(adapter="irage"),
+        )
+    assert not adapter_out.exists()
+
+    kind_out = tmp_path / "kind_mismatch_out"
+    with pytest.raises(ValueError, match="kind does not match"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=kind_out,
+            mapping_review_dir=review_dir,
+            config=VendorMarketDataPipelineConfig(kind="chain"),
+        )
+    assert not kind_out.exists()
+
+
+def test_reviewed_pipeline_accepts_manual_mapping_over_blocked_inference(tmp_path):
+    review_dir, raw_path = approved_mapping_review(
+        tmp_path,
+        "opaque",
+        opaque_columns=True,
+    )
+
+    report = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=tmp_path / "opaque_reviewed_pipeline",
+        mapping_review_dir=review_dir,
+        config=VendorMarketDataPipelineConfig(
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=2,
+        ),
+    )
+
+    components = report.components.set_index("component")
+    readiness_items = report.readiness.items.set_index("component")
+    assert not report.intake.ready
+    assert report.ready
+    assert bool(components.loc["vendor_intake", "ready"])
+    assert components.loc["vendor_intake", "recommendation"] == (
+        "accepted_by_verified_mapping_review"
+    )
+    assert bool(readiness_items.loc["vendor_intake", "ready"])
+    assert len(report.mapped_data.data) == 2
 
 
 def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):

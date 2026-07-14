@@ -2977,7 +2977,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     vendor_market_data.add_argument("--input", required=True)
     vendor_market_data.add_argument("--out", required=True)
-    vendor_market_data.add_argument("--mapping", default=None)
+    vendor_mapping_source = vendor_market_data.add_mutually_exclusive_group()
+    vendor_mapping_source.add_argument("--mapping", default=None)
+    vendor_mapping_source.add_argument(
+        "--mapping-review",
+        default=None,
+        help="Verified approved mapping-review directory bound to this exact input file.",
+    )
     vendor_market_data.add_argument("--adapter", default="arrow_money")
     vendor_market_data.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
     vendor_market_data.add_argument("--output-file", default=None)
@@ -3122,6 +3128,10 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--require-vendor-intake", action="store_true")
     data_readiness.add_argument("--require-schema-audit", action="store_true")
     data_readiness.add_argument("--require-mapped-data", action="store_true")
+    data_readiness.add_argument(
+        "--require-reviewed-mapping-normalization",
+        action="store_true",
+    )
     data_readiness.add_argument("--skip-tick-diagnostics", action="store_true")
     data_readiness.add_argument("--require-chain-diagnostics", action="store_true")
     data_readiness.add_argument("--require-market-profile", action="store_true")
@@ -7279,6 +7289,7 @@ def main(argv: list[str] | None = None) -> int:
             args.input,
             output_dir=args.out,
             mapping_path=args.mapping,
+            mapping_review_dir=args.mapping_review,
             config=VendorMarketDataPipelineConfig(
                 adapter=args.adapter,
                 kind=args.kind,
@@ -7478,6 +7489,9 @@ def main(argv: list[str] | None = None) -> int:
                 require_vendor_intake=args.require_vendor_intake,
                 require_schema_audit=args.require_schema_audit,
                 require_mapped_data=args.require_mapped_data,
+                require_reviewed_mapping_normalization=(
+                    args.require_reviewed_mapping_normalization
+                ),
                 require_tick_diagnostics=not args.skip_tick_diagnostics,
                 require_chain_diagnostics=args.require_chain_diagnostics,
                 require_market_profile=args.require_market_profile,

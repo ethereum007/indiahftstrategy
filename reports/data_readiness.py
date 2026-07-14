@@ -28,6 +28,7 @@ class DataReadinessThresholds:
     require_vendor_intake: bool = False
     require_schema_audit: bool = False
     require_mapped_data: bool = False
+    require_reviewed_mapping_normalization: bool = False
     require_tick_diagnostics: bool = True
     require_chain_diagnostics: bool = False
     require_market_profile: bool = False
@@ -169,6 +170,12 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
     provided = not frame.empty
     required = _component_required(component, thresholds)
     ready = _component_ready(component, frame) if provided else False
+    if (
+        component == "vendor_intake"
+        and provided
+        and thresholds.require_reviewed_mapping_normalization
+    ):
+        ready = True
     row = _overall_row(frame) if provided else pd.Series(dtype=object)
     row_count = _number(
         row,
@@ -194,6 +201,19 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "source_header_sha256": _text(row, "source_header_sha256"),
         "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
         "mapping_coverage": _number(row, "mapping_coverage"),
+        "review_bound": _to_bool(row.get("review_bound", False)),
+        "mapping_review_verified": _to_bool(row.get("mapping_review_verified", False)),
+        "mapping_review_approved": _to_bool(row.get("mapping_review_approved", False)),
+        "mapping_review_id": _text(row, "mapping_review_id"),
+        "mapping_review_sha256": _text(row, "mapping_review_sha256"),
+        "reviewed_mapping_sha256": _text(row, "reviewed_mapping_sha256"),
+        "operator_approved_mapping_required": _to_bool(
+            row.get("operator_approved_mapping_required", False)
+        ),
+        "reviewed_normalization_only": _to_bool(row.get("reviewed_normalization_only", False)),
+        "authorizes_strategy_research": _to_bool(row.get("authorizes_strategy_research", False)),
+        "authorizes_routing": _to_bool(row.get("authorizes_routing", False)),
+        "authorizes_submission": _to_bool(row.get("authorizes_submission", False)),
         "recommendation": _component_recommendation(component, provided, ready, required, row),
     }
 
@@ -205,10 +225,16 @@ def _checks(
 ) -> pd.DataFrame:
     checks = []
     for row in items.itertuples(index=False):
+        check_prefix = str(row.component)
+        if (
+            row.component == "mapped_data"
+            and thresholds.require_reviewed_mapping_normalization
+        ):
+            check_prefix = "mapped_data_reviewed_normalization"
         if bool(row.required):
             checks.append(
                 _check(
-                    f"{row.component}_provided",
+                    f"{check_prefix}_provided",
                     bool(row.provided),
                     "is",
                     True,
@@ -219,7 +245,7 @@ def _checks(
         if bool(row.required) or bool(row.provided):
             checks.append(
                 _check(
-                    f"{row.component}_ready",
+                    f"{check_prefix}_ready",
                     bool(row.ready),
                     "is",
                     True,
@@ -291,7 +317,158 @@ def _checks(
             )
     checks.extend(_data_kind_checks(summaries, thresholds))
     checks.extend(_adapter_checks(summaries, thresholds))
+    if thresholds.require_reviewed_mapping_normalization:
+        checks.extend(
+            _reviewed_mapping_checks(
+                summaries["mapped_data"],
+                summaries["vendor_intake"],
+            )
+        )
     return pd.DataFrame(checks)
+
+
+def _reviewed_mapping_checks(
+    summary: pd.DataFrame,
+    vendor_intake_summary: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    row = _overall_row(summary)
+    checks = [
+        _explicit_bool_check(
+            row,
+            "review_bound",
+            expected=True,
+            reason="mapped data is not bound to an approved mapping review",
+        ),
+        _explicit_bool_check(
+            row,
+            "mapping_review_verified",
+            expected=True,
+            reason="mapped data does not preserve semantic mapping-review verification",
+        ),
+        _explicit_bool_check(
+            row,
+            "mapping_review_approved",
+            expected=True,
+            reason="mapped data does not preserve operator mapping approval",
+        ),
+        _explicit_bool_check(
+            row,
+            "operator_approved_mapping_required",
+            expected=True,
+            reason="mapped data does not require an operator-approved mapping",
+        ),
+        _explicit_bool_check(
+            row,
+            "reviewed_normalization_only",
+            expected=True,
+            reason="mapped data is not restricted to reviewed normalization",
+        ),
+        _explicit_bool_check(
+            row,
+            "authorizes_strategy_research",
+            expected=False,
+            reason="review-bound normalization must not authorize strategy research",
+        ),
+        _explicit_bool_check(
+            row,
+            "authorizes_routing",
+            expected=False,
+            reason="review-bound normalization must not authorize order routing",
+        ),
+        _explicit_bool_check(
+            row,
+            "authorizes_submission",
+            expected=False,
+            reason="review-bound normalization must not authorize order submission",
+        ),
+    ]
+    review_id = _text(row, "mapping_review_id")
+    checks.append(
+        _check(
+            "mapped_data_mapping_review_id_present",
+            review_id,
+            "nonempty",
+            True,
+            bool(review_id),
+            "mapped data does not retain a mapping-review identity",
+        )
+    )
+    for field, reason in (
+        ("mapping_review_sha256", "mapped data does not retain the mapping-review fingerprint"),
+        ("source_file_sha256", "mapped data does not retain the reviewed source fingerprint"),
+        ("reviewed_mapping_sha256", "mapped data does not retain the reviewed mapping fingerprint"),
+    ):
+        value = _text(row, field)
+        checks.append(
+            _check(
+                f"mapped_data_{field}_present",
+                value,
+                "is_sha256",
+                "64 lowercase hexadecimal characters",
+                _is_sha256(value),
+                reason,
+            )
+        )
+    if not vendor_intake_summary.empty:
+        intake_source_sha256 = _text(
+            _overall_row(vendor_intake_summary),
+            "source_file_sha256",
+        )
+        mapped_source_sha256 = _text(row, "source_file_sha256")
+        checks.append(
+            _check(
+                "mapped_data_vendor_source_consistency",
+                mapped_source_sha256,
+                "==",
+                intake_source_sha256,
+                bool(
+                    _is_sha256(mapped_source_sha256)
+                    and _is_sha256(intake_source_sha256)
+                    and mapped_source_sha256 == intake_source_sha256
+                ),
+                "vendor intake and review-bound normalization use different source files",
+            )
+        )
+    return checks
+
+
+def _explicit_bool_check(
+    row: pd.Series,
+    field: str,
+    *,
+    expected: bool,
+    reason: str,
+) -> dict[str, Any]:
+    present = field in row.index and not pd.isna(row.get(field))
+    valid, actual = _strict_bool_value(row.get(field)) if present else (False, False)
+    return _check(
+        f"mapped_data_{field}",
+        actual if present else "missing",
+        "is",
+        expected,
+        bool(present and valid and actual == expected),
+        reason,
+    )
+
+
+def _strict_bool_value(value: object) -> tuple[bool, bool]:
+    if isinstance(value, (bool, np.bool_)):
+        return True, bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "y"}:
+            return True, True
+        if normalized in {"false", "0", "no", "n"}:
+            return True, False
+    if isinstance(value, (int, float, np.integer, np.floating)) and not pd.isna(value):
+        if float(value) in {0.0, 1.0}:
+            return True, bool(value)
+    return False, False
+
+
+def _is_sha256(value: object) -> bool:
+    text = str(value or "").strip()
+    return len(text) == 64 and all(char in "0123456789abcdef" for char in text)
 
 
 def _data_kind_checks(
@@ -474,6 +651,9 @@ def _summary(
                 "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
                 "primary_blocker_reason": _check_reason(primary_blocker),
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
+                "require_reviewed_mapping_normalization": bool(
+                    thresholds.require_reviewed_mapping_normalization
+                ),
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
                 "expected_adapter": _identity(thresholds.expected_adapter),
@@ -499,6 +679,33 @@ def _summary(
                 "vendor_intake_source_header_sha256": _component_text(items, "vendor_intake", "source_header_sha256"),
                 "vendor_intake_mapping_draft_sha256": _component_text(items, "vendor_intake", "mapping_draft_sha256"),
                 "vendor_intake_mapping_coverage": _component_number(items, "vendor_intake", "mapping_coverage"),
+                "mapped_data_review_bound": _component_bool(items, "mapped_data", "review_bound"),
+                "mapped_data_mapping_review_verified": _component_bool(
+                    items,
+                    "mapped_data",
+                    "mapping_review_verified",
+                ),
+                "mapped_data_mapping_review_approved": _component_bool(
+                    items,
+                    "mapped_data",
+                    "mapping_review_approved",
+                ),
+                "mapped_data_mapping_review_id": _component_text(items, "mapped_data", "mapping_review_id"),
+                "mapped_data_mapping_review_sha256": _component_text(
+                    items,
+                    "mapped_data",
+                    "mapping_review_sha256",
+                ),
+                "mapped_data_source_file_sha256": _component_text(
+                    items,
+                    "mapped_data",
+                    "source_file_sha256",
+                ),
+                "mapped_data_reviewed_mapping_sha256": _component_text(
+                    items,
+                    "mapped_data",
+                    "reviewed_mapping_sha256",
+                ),
                 "ready_action_count": 0,
                 "blocked_action_count": int(len(action_queue)),
                 "next_gate": next_gate,
@@ -728,6 +935,8 @@ def _next_gate_for_check(check_name: str, component: str) -> str:
         return "pipeline-vendor-market-data"
     if check_name == "explicit_fee_model":
         return "market-profile-report"
+    if _is_reviewed_mapping_check(check_name):
+        return "normalize-reviewed-mapped-data"
     return {
         "vendor_intake": "intake-vendor-csv",
         "schema_audit": "audit-adapter-schema",
@@ -751,6 +960,8 @@ def _primary_next_gate(action_queue: pd.DataFrame) -> str:
 
 
 def _action_recommendation(check_name: str, component: str, item_recommendation: str) -> str:
+    if _is_reviewed_mapping_check(check_name):
+        return "normalize_with_verified_approved_mapping_review"
     if item_recommendation and item_recommendation != "accepted":
         return item_recommendation
     if check_name in {"data_kind_consistency", "data_adapter_consistency"}:
@@ -762,6 +973,22 @@ def _action_recommendation(check_name: str, component: str, item_recommendation:
     if check_name.endswith("_ready"):
         return f"fix_{component}"
     return f"fix_{component}_check"
+
+
+def _is_reviewed_mapping_check(check_name: str) -> bool:
+    return check_name.startswith("mapped_data_") and any(
+        token in check_name
+        for token in (
+            "review_bound",
+            "mapping_review",
+            "operator_approved_mapping",
+            "reviewed_normalization",
+            "authorizes_",
+            "source_file_sha256_present",
+            "reviewed_mapping_sha256_present",
+            "vendor_source_consistency",
+        )
+    )
 
 
 def _runbook_markdown(
@@ -885,7 +1112,10 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
         {
             "vendor_intake": thresholds.require_vendor_intake,
             "schema_audit": thresholds.require_schema_audit,
-            "mapped_data": thresholds.require_mapped_data,
+            "mapped_data": (
+                thresholds.require_mapped_data
+                or thresholds.require_reviewed_mapping_normalization
+            ),
             "tick_diagnostics": thresholds.require_tick_diagnostics,
             "chain_diagnostics": thresholds.require_chain_diagnostics,
             "market_profile": thresholds.require_market_profile,

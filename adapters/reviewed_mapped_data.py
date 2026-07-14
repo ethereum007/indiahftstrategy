@@ -65,6 +65,17 @@ class ReviewedMappedDataConfig:
 
 
 @dataclass(frozen=True)
+class ApprovedMappingReviewInputs:
+    mapping_review_dir: Path
+    source_path: Path
+    reviewed_mapping_path: Path
+    adapter: str
+    kind: str
+    mapping_review_id: str
+    mapping_review_sha256: str
+
+
+@dataclass(frozen=True)
 class ReviewedMappedDataReport:
     data: pd.DataFrame
     checks: pd.DataFrame
@@ -100,6 +111,22 @@ class ReviewedMappedDataVerification:
     source_path: Path | None = None
     reviewed_mapping_path: Path | None = None
     error: str = ""
+
+
+def approved_mapping_review_inputs(
+    mapping_review_dir: str | Path,
+) -> ApprovedMappingReviewInputs:
+    """Resolve only semantically verified, approved review-bound inputs."""
+    review = _review_contract(Path(mapping_review_dir).resolve())
+    return ApprovedMappingReviewInputs(
+        mapping_review_dir=Path(review["root"]),
+        source_path=Path(review["source_path"]),
+        reviewed_mapping_path=Path(review["mapping_path"]),
+        adapter=str(review["adapter"]),
+        kind=str(review["kind"]),
+        mapping_review_id=str(review["mapping_review_id"]),
+        mapping_review_sha256=str(review["mapping_review_sha256"]),
+    )
 
 
 def write_reviewed_mapped_data_normalization(

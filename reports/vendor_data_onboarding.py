@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from adapters.mapped_data import MappedDataConfig, MappedDataReport, write_mapped_data_normalization
+from adapters.reviewed_mapped_data import (
+    ApprovedMappingReviewInputs,
+    ReviewedMappedDataConfig,
+    ReviewedMappedDataReport,
+    approved_mapping_review_inputs,
+    write_reviewed_mapped_data_normalization,
+)
 from adapters.vendor_intake import VendorCsvIntakeConfig, VendorCsvIntakeReport, write_vendor_csv_intake_report
 from data.diagnostics import DiagnosticResult, chain_diagnostics, tick_diagnostics, write_diagnostics
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
@@ -47,7 +54,7 @@ class VendorMarketDataPipelineReport:
     components: pd.DataFrame
     summary: pd.DataFrame
     intake: VendorCsvIntakeReport
-    mapped_data: MappedDataReport
+    mapped_data: MappedDataReport | ReviewedMappedDataReport
     diagnostics: DiagnosticResult
     readiness: DataReadinessReport
     output_dir: Path | None = None
@@ -80,15 +87,25 @@ def write_vendor_market_data_pipeline(
     *,
     output_dir: str | Path,
     mapping_path: str | Path | None = None,
+    mapping_review_dir: str | Path | None = None,
     config: VendorMarketDataPipelineConfig | None = None,
     readiness_thresholds: DataReadinessThresholds | None = None,
 ) -> VendorMarketDataPipelineReport:
     config = config or VendorMarketDataPipelineConfig()
     _validate_config(config)
-    source_file = Path(input_path)
+    if mapping_path is not None and mapping_review_dir is not None:
+        raise ValueError("mapping_path and mapping_review_dir are mutually exclusive")
+    source_file = Path(input_path).resolve()
     if not source_file.exists():
         raise FileNotFoundError(f"vendor market-data input not found: {source_file}")
-    out = Path(output_dir)
+    approved_review = (
+        approved_mapping_review_inputs(mapping_review_dir)
+        if mapping_review_dir is not None
+        else None
+    )
+    if approved_review is not None:
+        _validate_review_binding(source_file, Path(output_dir), config, approved_review)
+    out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
     intake_dir = out / "01_vendor_intake"
@@ -107,25 +124,47 @@ def write_vendor_market_data_pipeline(
             output_mapping_file="vendor_mapping_draft.csv",
         ),
     )
-    mapping_source = "provided" if mapping_path is not None else "vendor_intake_draft"
-    mapping_file = Path(mapping_path) if mapping_path is not None else intake_dir / "vendor_mapping_draft.csv"
-    mapped = write_mapped_data_normalization(
-        source_file,
-        mapping_file,
-        output_dir=mapped_dir,
-        config=MappedDataConfig(
-            adapter=config.adapter,
-            kind=config.kind,
-            output_filename=_output_filename(config),
-            timestamp_unit=config.timestamp_unit,
-            timestamp_tz=config.timestamp_tz,
-            filter_session=config.filter_session,
-            market=config.market,
-            require_all_mapped=config.require_all_mapped,
-        ),
-    )
+    if approved_review is not None:
+        mapping_source = "verified_approved_review"
+        mapping_file = approved_review.reviewed_mapping_path
+        mapped = write_reviewed_mapped_data_normalization(
+            approved_review.mapping_review_dir,
+            output_dir=mapped_dir,
+            config=ReviewedMappedDataConfig(
+                output_filename=_output_filename(config),
+                timestamp_unit=config.timestamp_unit,
+                timestamp_tz=config.timestamp_tz,
+                filter_session=config.filter_session,
+                market=config.market,
+                require_all_mapped=config.require_all_mapped,
+            ),
+        )
+    else:
+        mapping_source = "provided" if mapping_path is not None else "vendor_intake_draft"
+        mapping_file = Path(mapping_path) if mapping_path is not None else intake_dir / "vendor_mapping_draft.csv"
+        mapped = write_mapped_data_normalization(
+            source_file,
+            mapping_file,
+            output_dir=mapped_dir,
+            config=MappedDataConfig(
+                adapter=config.adapter,
+                kind=config.kind,
+                output_filename=_output_filename(config),
+                timestamp_unit=config.timestamp_unit,
+                timestamp_tz=config.timestamp_tz,
+                filter_session=config.filter_session,
+                market=config.market,
+                require_all_mapped=config.require_all_mapped,
+            ),
+        )
     diagnostics = _write_diagnostics(mapped.data, diagnostics_dir, config)
     thresholds = readiness_thresholds or _readiness_thresholds(config)
+    if approved_review is not None:
+        thresholds = replace(
+            thresholds,
+            require_mapped_data=True,
+            require_reviewed_mapping_normalization=True,
+        )
     readiness = write_data_readiness_report(
         output_dir=readiness_dir,
         vendor_intake_dir=intake_dir,
@@ -134,7 +173,13 @@ def write_vendor_market_data_pipeline(
         chain_diagnostics_dir=diagnostics_dir if config.kind == "chain" else None,
         thresholds=thresholds,
     )
-    components = _components(intake, mapped, diagnostics, readiness)
+    components = _components(
+        intake,
+        mapped,
+        diagnostics,
+        readiness,
+        intake_accepted_by_review=approved_review is not None,
+    )
     action_queue = _pipeline_action_queue(components, readiness.action_queue)
     summary = _summary(
         source_file,
@@ -150,6 +195,7 @@ def write_vendor_market_data_pipeline(
         mapped_dir=mapped_dir,
         readiness_dir=readiness_dir,
         action_queue=action_queue,
+        approved_review=approved_review,
     )
     components.to_csv(out / "vendor_market_data_pipeline_components.csv", index=False)
     summary.to_csv(out / "vendor_market_data_pipeline_summary.csv", index=False)
@@ -167,6 +213,17 @@ def write_vendor_market_data_pipeline(
         "input": source_file,
         "mapping": mapping_file,
     }
+    if approved_review is not None:
+        inputs.update(
+            {
+                "mapping_review": approved_review.mapping_review_dir,
+                "mapping_review_manifest": approved_review.mapping_review_dir / "manifest.json",
+                "mapping_review_receipt": (
+                    approved_review.mapping_review_dir
+                    / "vendor_mapping_review_receipt.json"
+                ),
+            }
+        )
     inputs.update(
         _existing_paths(
             vendor_intake_manifest=intake_dir / "manifest.json",
@@ -350,12 +407,18 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
 
 def _components(
     intake: VendorCsvIntakeReport,
-    mapped: MappedDataReport,
+    mapped: MappedDataReport | ReviewedMappedDataReport,
     diagnostics: DiagnosticResult,
     readiness: DataReadinessReport,
+    *,
+    intake_accepted_by_review: bool = False,
 ) -> pd.DataFrame:
+    intake_ready = bool(intake.ready or intake_accepted_by_review)
+    intake_row = _first(intake.summary).copy()
+    if intake_accepted_by_review and not intake.ready:
+        intake_row["recommendation"] = "accepted_by_verified_mapping_review"
     rows = [
-        _component("vendor_intake", intake.ready, intake.output_dir, _first(intake.summary)),
+        _component("vendor_intake", intake_ready, intake.output_dir, intake_row),
         _component("mapped_data", mapped.ready, mapped.output_dir, _first(mapped.summary)),
         _component("diagnostics", _diagnostics_ready(diagnostics), diagnostics.output_dir, _diagnostic_overall(diagnostics)),
         _component("data_readiness", readiness.ready, readiness.output_dir, _first(readiness.summary)),
@@ -390,7 +453,7 @@ def _summary(
     mapping_file: Path,
     components: pd.DataFrame,
     intake: VendorCsvIntakeReport,
-    mapped: MappedDataReport,
+    mapped: MappedDataReport | ReviewedMappedDataReport,
     diagnostics: DiagnosticResult,
     readiness: DataReadinessReport,
     config: VendorMarketDataPipelineConfig,
@@ -400,6 +463,7 @@ def _summary(
     mapped_dir: Path,
     readiness_dir: Path,
     action_queue: pd.DataFrame,
+    approved_review: ApprovedMappingReviewInputs | None,
 ) -> pd.DataFrame:
     failed = int((~components["ready"].astype(bool)).sum()) if not components.empty else 1
     intake_row = _first(intake.summary)
@@ -416,6 +480,15 @@ def _summary(
                 "input_path": str(source_file),
                 "mapping_path": str(mapping_file),
                 "mapping_source": mapping_source,
+                "mapping_review_path": str(
+                    approved_review.mapping_review_dir if approved_review is not None else ""
+                ),
+                "mapping_review_id": (
+                    approved_review.mapping_review_id if approved_review is not None else ""
+                ),
+                "mapping_review_sha256": (
+                    approved_review.mapping_review_sha256 if approved_review is not None else ""
+                ),
                 "normalized_output_file": _output_filename(config),
                 "source_columns": int(_number(intake_row, "source_columns", fallback=0.0)),
                 "source_file_sha256": _text(intake_row, "source_file_sha256"),
@@ -754,6 +827,9 @@ def _pipeline_config(
             "draft_sha256": _text(row, "mapping_draft_sha256"),
             "coverage": _number(row, "mapping_coverage", fallback=0.0),
             "min_coverage": float(config.min_mapping_coverage),
+            "review_path": _text(row, "mapping_review_path"),
+            "review_id": _text(row, "mapping_review_id"),
+            "review_sha256": _text(row, "mapping_review_sha256"),
         },
         "normalized": {
             "output_file": _text(row, "normalized_output_file"),
@@ -1001,3 +1077,33 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         value = getattr(config, name)
         if value is not None and value <= 0:
             raise ValueError(f"{name} must be positive")
+
+
+def _validate_review_binding(
+    source_file: Path,
+    output_dir: Path,
+    config: VendorMarketDataPipelineConfig,
+    review: ApprovedMappingReviewInputs,
+) -> None:
+    if source_file.resolve() != review.source_path.resolve():
+        raise ValueError("pipeline input does not match the exact source bound by mapping review")
+    if _identity(config.adapter) != review.adapter:
+        raise ValueError("pipeline adapter does not match the approved mapping review")
+    if _identity(config.kind) != review.kind:
+        raise ValueError("pipeline kind does not match the approved mapping review")
+    if _is_relative_to(output_dir.resolve(), review.mapping_review_dir.resolve()):
+        raise ValueError("pipeline output cannot modify mapping-review evidence")
+    if _is_relative_to(review.mapping_review_dir.resolve(), output_dir.resolve()):
+        raise ValueError("pipeline output cannot contain mapping-review evidence")
+
+
+def _identity(value: object) -> str:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
