@@ -64,6 +64,45 @@ TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS = (
     "target_intake_receipt_id",
     "applied_mapping_sha256",
 )
+BROKER_FINAL_LINEAGE_FIELD_PREFIX = "broker_dispatch_roundtrip_vendor_market_data_batch"
+BROKER_FINAL_LINEAGE_DIGEST_FIELDS = (
+    (
+        "current_application_lineage_sha256",
+        "roundtrip_ack_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "broker_application_lineage_sha256",
+        "roundtrip_ack_broker_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "scaleup_carried_application_lineage_sha256",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "cutover_carried_application_lineage_sha256",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "route_carried_application_lineage_sha256",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "dispatch_carried_application_lineage_sha256",
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "send_carried_application_lineage_sha256",
+        "send_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "ack_carried_application_lineage_sha256",
+        "ack_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+    (
+        "roundtrip_carried_application_lineage_sha256",
+        "roundtrip_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -630,6 +669,7 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
             source_prefix=broker_vendor_source_prefix,
         )
+    _apply_broker_vendor_market_data_batch_lineage_config(frame, config)
     return frame
 
 
@@ -648,6 +688,66 @@ def _broker_vendor_market_data_batch_config(config: dict[str, Any]) -> tuple[dic
         ),
         default_source="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
     )
+
+
+def _broker_vendor_market_data_batch_lineage_comparison_config(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    for key in (
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
+    ):
+        comparison = config.get(key)
+        if isinstance(comparison, dict) and comparison:
+            return comparison
+    dispatch = config.get("dispatch_roundtrip", {}) or {}
+    if isinstance(dispatch, dict):
+        comparison = dispatch.get(
+            "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+        )
+        if isinstance(comparison, dict) and comparison:
+            return comparison
+    return {}
+
+
+def _apply_broker_vendor_market_data_batch_lineage_config(
+    frame: pd.DataFrame,
+    config: dict[str, Any],
+) -> None:
+    row = frame.iloc[0]
+    comparison = _broker_vendor_market_data_batch_lineage_comparison_config(config)
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    frame.loc[0, f"{prefix}_lineage_match_required"] = _to_bool(
+        comparison.get(
+            "required",
+            row.get(
+                f"{prefix}_lineage_match_required",
+                row.get(
+                    "roundtrip_broker_vendor_market_data_batch_lineage_match_required",
+                    False,
+                ),
+            ),
+        )
+    )
+    frame.loc[0, f"{prefix}_lineage_matches"] = _to_bool(
+        comparison.get(
+            "matches",
+            row.get(
+                f"{prefix}_lineage_matches",
+                row.get(
+                    "roundtrip_broker_vendor_market_data_batch_lineage_matches",
+                    False,
+                ),
+            ),
+        )
+    )
+    for field, summary_field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        frame.loc[0, f"{prefix}_{field}"] = _sha256_text(
+            comparison.get(
+                field,
+                row.get(f"{prefix}_{field}", row.get(summary_field, "")),
+            )
+        )
 
 
 def _broker_vendor_data_readiness_config(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -832,6 +932,12 @@ def _apply_vendor_market_data_batch_config(
         vendor.get(
             "application_lineage_consistent",
             row.get(f"{source_prefix}_application_lineage_consistent", False),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_application_lineage_sha256"] = _sha256_text(
+        vendor.get(
+            "application_lineage_sha256",
+            row.get(f"{source_prefix}_application_lineage_sha256", ""),
         )
     )
     frame.loc[0, f"{field_prefix}_comparison_accepted"] = _to_bool(
@@ -1538,6 +1644,11 @@ def _item(
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
             source_prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
         ),
+        **_broker_vendor_final_lineage_item_fields(
+            component,
+            row,
+            provided=provided,
+        ),
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -1921,6 +2032,14 @@ def _vendor_market_data_batch_item_fields(
             row,
             *consistency_fields,
         ),
+        f"{field_prefix}_application_lineage_sha256": _sha256_text(
+            _dispatch_text_any(
+                component,
+                row,
+                f"{field_prefix}_application_lineage_sha256",
+                f"{source_prefix}_application_lineage_sha256",
+            )
+        ),
         f"{field_prefix}_comparison_accepted": _dispatch_bool_any(
             component,
             row,
@@ -1944,6 +2063,63 @@ def _vendor_market_data_batch_item_fields(
             f"{source_prefix}_datasets_json",
         ),
     }
+
+
+def _broker_vendor_final_lineage_item_fields(
+    component: str,
+    row: pd.Series,
+    *,
+    provided: bool,
+) -> dict[str, Any]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    vendor_market_data_batch_only = _to_bool(
+        row.get("vendor_market_data_batch_only", False)
+    )
+    active = component == "dispatch_roundtrip" and (
+        provided or vendor_market_data_batch_only
+    )
+    vendor_fields = _vendor_market_data_batch_item_fields(
+        component,
+        row,
+        provided=provided,
+        field_prefix=prefix,
+        source_prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    projected = _vendor_market_data_batch_projection(
+        vendor_fields,
+        source_prefix=prefix,
+    )
+    final_target_required = bool(
+        active
+        and _dispatch_roundtrip_vendor_market_data_batch_active(projected)
+        and _target_application_batch_active(projected)
+        and bool(
+            projected.dispatch_roundtrip_vendor_market_data_batch_application_lineage_consistency_required
+        )
+    )
+    lineage_json = (
+        _target_application_lineage_identity_json(projected)
+        if final_target_required
+        else ""
+    )
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": bool(
+            active and _dispatch_bool(component, row, f"{prefix}_lineage_match_required")
+        ),
+        f"{prefix}_lineage_matches": bool(
+            active and _dispatch_bool(component, row, f"{prefix}_lineage_matches")
+        ),
+        f"{prefix}_readiness_carried_application_lineage_sha256": _lineage_sha256(
+            lineage_json
+        ),
+    }
+    for field, _summary_field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = (
+            _sha256_text(_dispatch_text(component, row, f"{prefix}_{field}"))
+            if active
+            else ""
+        )
+    return fields
 
 
 def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.DataFrame:
@@ -3162,6 +3338,15 @@ def _lineage_sha256(lineage_json: str) -> str:
     return hashlib.sha256(lineage_json.encode("utf-8")).hexdigest()
 
 
+def _sha256_text(value: object) -> str:
+    digest = _object_text(value).casefold()
+    if len(digest) != 64 or any(
+        character not in "0123456789abcdef" for character in digest
+    ):
+        return ""
+    return digest
+
+
 def _broker_vendor_current_lineage_state(row: Any) -> dict[str, object]:
     broker = _vendor_market_data_batch_projection(
         row,
@@ -3249,6 +3434,125 @@ def _broker_dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list
                 "broker-readiness dispatch round-trip vendor market-data target-application lineage was not reconciled across dispatch, send, and acknowledgement proof",
             )
         )
+        prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+        lineage_match_required = bool(
+            getattr(row, f"{prefix}_lineage_match_required", False)
+        )
+        lineage_matches = bool(getattr(row, f"{prefix}_lineage_matches", False))
+        broker_lineage_sha256 = _sha256_text(
+            getattr(row, f"{prefix}_broker_application_lineage_sha256", "")
+        )
+        current_lineage_sha256 = _sha256_text(
+            getattr(row, f"{prefix}_current_application_lineage_sha256", "")
+        )
+        application_lineage_sha256 = _sha256_text(
+            projected.dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256
+        )
+        checks.extend(
+            [
+                _check(
+                    f"{prefix}_lineage_match_required",
+                    lineage_match_required,
+                    "is",
+                    True,
+                    lineage_match_required,
+                    "broker readiness requires the final review's target-application lineage comparison",
+                ),
+                _check(
+                    f"{prefix}_lineage_matches",
+                    lineage_matches,
+                    "is",
+                    True,
+                    bool(lineage_match_required and lineage_matches),
+                    "final review did not reconcile every carried target-application lineage view",
+                ),
+                _check(
+                    f"{prefix}_source_lineage_sha256_matches",
+                    current_lineage_sha256,
+                    "==",
+                    broker_lineage_sha256,
+                    bool(
+                        lineage_match_required
+                        and current_lineage_sha256
+                        and broker_lineage_sha256
+                        and current_lineage_sha256 == broker_lineage_sha256
+                    ),
+                    "final review's source target lineage does not match its broker proof",
+                ),
+                _check(
+                    f"{prefix}_application_lineage_sha256_matches",
+                    application_lineage_sha256,
+                    "==",
+                    broker_lineage_sha256,
+                    bool(
+                        lineage_match_required
+                        and application_lineage_sha256
+                        and broker_lineage_sha256
+                        and application_lineage_sha256 == broker_lineage_sha256
+                    ),
+                    "final broker batch's declared target lineage does not match final review proof",
+                ),
+            ]
+        )
+        carried_lineage_fields = (
+            (
+                "scaleup",
+                "scaleup_carried_application_lineage_sha256",
+                "scale-up-carried target lineage does not match final review proof",
+            ),
+            (
+                "cutover",
+                "cutover_carried_application_lineage_sha256",
+                "cutover-carried target lineage does not match final review proof",
+            ),
+            (
+                "route",
+                "route_carried_application_lineage_sha256",
+                "route-carried target lineage does not match final review proof",
+            ),
+            (
+                "dispatch",
+                "dispatch_carried_application_lineage_sha256",
+                "dispatch-carried target lineage does not match final review proof",
+            ),
+            (
+                "send",
+                "send_carried_application_lineage_sha256",
+                "send-carried target lineage does not match final review proof",
+            ),
+            (
+                "ack",
+                "ack_carried_application_lineage_sha256",
+                "acknowledgement-carried target lineage does not match final review proof",
+            ),
+            (
+                "roundtrip",
+                "roundtrip_carried_application_lineage_sha256",
+                "final review's recomputed target lineage does not match its broker proof",
+            ),
+            (
+                "readiness",
+                "readiness_carried_application_lineage_sha256",
+                "broker readiness's independently recomputed target lineage does not match final review proof",
+            ),
+        )
+        for stage, field, reason in carried_lineage_fields:
+            carried_sha256 = _sha256_text(getattr(row, f"{prefix}_{field}", ""))
+            checks.append(
+                _check(
+                    f"{prefix}_{stage}_carried_lineage_sha256_matches",
+                    carried_sha256,
+                    "==",
+                    broker_lineage_sha256,
+                    bool(
+                        lineage_match_required
+                        and carried_sha256
+                        and broker_lineage_sha256
+                        and carried_sha256 == broker_lineage_sha256
+                    ),
+                    reason,
+                )
+            )
     return checks
 
 
@@ -3319,6 +3623,7 @@ def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any
         "target_application_coverage",
         "application_lineage_consistency_required",
         "application_lineage_consistent",
+        "application_lineage_sha256",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -3813,6 +4118,7 @@ def _summary(
                     dispatch_item,
                     field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
                 ),
+                **_broker_vendor_final_lineage_summary_fields(dispatch_item),
                 **_broker_vendor_current_lineage_summary_fields(dispatch_item),
                 "recommendation": _summary_recommendation(ready, schema_status, schema_review, thresholds),
             }
@@ -3871,12 +4177,37 @@ def _vendor_market_data_batch_summary_fields(
             item,
             f"{field_prefix}_application_lineage_consistent",
         ),
+        f"{field_prefix}_application_lineage_sha256": _item_text(
+            item,
+            f"{field_prefix}_application_lineage_sha256",
+        ),
         f"{field_prefix}_comparison_accepted": _item_bool(item, f"{field_prefix}_comparison_accepted"),
         f"{field_prefix}_comparison_failed_checks": int(
             _number(item, f"{field_prefix}_comparison_failed_checks", 0.0)
         ),
         f"{field_prefix}_datasets_json": _item_text(item, f"{field_prefix}_datasets_json"),
     }
+
+
+def _broker_vendor_final_lineage_summary_fields(item: pd.Series) -> dict[str, Any]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _item_bool(
+            item,
+            f"{prefix}_lineage_match_required",
+        ),
+        f"{prefix}_lineage_matches": _item_bool(
+            item,
+            f"{prefix}_lineage_matches",
+        ),
+        f"{prefix}_readiness_carried_application_lineage_sha256": _item_text(
+            item,
+            f"{prefix}_readiness_carried_application_lineage_sha256",
+        ),
+    }
+    for field, _summary_field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _item_text(item, f"{prefix}_{field}")
+    return fields
 
 
 def _broker_vendor_current_lineage_summary_fields(item: pd.Series) -> dict[str, Any]:
@@ -4396,6 +4727,9 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
             row,
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
         ),
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison": (
+            _broker_vendor_final_lineage_config(row)
+        ),
         "vendor_market_data_batch_lineage_comparison": {
             "required": _item_bool(
                 row,
@@ -4415,6 +4749,21 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
             ),
         },
     }
+
+
+def _broker_vendor_final_lineage_config(row: pd.Series) -> dict[str, Any]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    config: dict[str, Any] = {
+        "required": _item_bool(row, f"{prefix}_lineage_match_required"),
+        "matches": _item_bool(row, f"{prefix}_lineage_matches"),
+        "readiness_carried_application_lineage_sha256": _item_text(
+            row,
+            f"{prefix}_readiness_carried_application_lineage_sha256",
+        ),
+    }
+    for field, _summary_field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        config[field] = _item_text(row, f"{prefix}_{field}")
+    return config
 
 
 def _route_broker_route_readiness_config(row: pd.Series) -> dict[str, Any]:
@@ -4499,6 +4848,10 @@ def _vendor_market_data_batch_config(
         "application_lineage_consistent": _item_bool(
             row,
             f"{field_prefix}_application_lineage_consistent",
+        ),
+        "application_lineage_sha256": _item_text(
+            row,
+            f"{field_prefix}_application_lineage_sha256",
         ),
         "comparison": {
             "accepted": _item_bool(row, f"{field_prefix}_comparison_accepted"),

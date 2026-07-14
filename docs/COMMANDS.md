@@ -3413,13 +3413,19 @@ retains it as `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary
 fields plus `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
 config. For a target-application-backed final batch, that block also carries
 `application_lineage_consistency_required` and
-`application_lineage_consistent`. Broker readiness requires the latter to be
-true before accepting the final proof, whether it came from nested config or
-flattened final-summary fields, and preserves both values in its own summary
-and config. Generic onboarding target proof without a final cross-stage result
-and legacy draft-backed proof keep their compatibility paths. If the round-trip
-and current generic proofs are both active and either one signals target mode,
-broker readiness also canonicalizes each dataset's source, mapping,
+`application_lineage_consistent` plus the final batch's declared
+`application_lineage_sha256`. Broker readiness requires the affirmative final
+comparison and all nine retained lineage views from current, broker-final,
+scale-up, cutover, route, dispatch, send, acknowledgement, and final review,
+whether they came from nested config or flattened final-summary fields. It then
+independently canonicalizes the final datasets as a tenth view and stores that
+digest under
+`dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Missing, negative, blank, mismatched, or post-final-drifted proof fails closed.
+Generic onboarding target proof without a final cross-stage result and legacy
+draft-backed proof keep their compatibility paths. If the round-trip and
+current generic proofs are both active and either one signals target mode,
+broker readiness separately canonicalizes each dataset's source, mapping,
 scope-review, target-intake, and applied-mapping identity. It records the
 current and final lineage SHA-256 digests under
 `dispatch_roundtrip.vendor_market_data_batch_lineage_comparison` and fails

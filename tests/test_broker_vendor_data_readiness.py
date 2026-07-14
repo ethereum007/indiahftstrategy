@@ -606,10 +606,27 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
     final_vendor_config = json.loads(json.dumps(nested_vendor_config))
     final_vendor_config["application_lineage_consistency_required"] = True
     final_vendor_config["application_lineage_consistent"] = True
+    final_lineage_sha256 = str(summary["vendor_application_lineage_sha256"])
+    final_vendor_config["application_lineage_sha256"] = final_lineage_sha256
     final_roundtrip_config = dispatch_roundtrip_config()
     final_roundtrip_config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
     ] = final_vendor_config
+    final_roundtrip_config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": final_lineage_sha256,
+        "broker_application_lineage_sha256": final_lineage_sha256,
+        "scaleup_carried_application_lineage_sha256": final_lineage_sha256,
+        "cutover_carried_application_lineage_sha256": final_lineage_sha256,
+        "route_carried_application_lineage_sha256": final_lineage_sha256,
+        "dispatch_carried_application_lineage_sha256": final_lineage_sha256,
+        "send_carried_application_lineage_sha256": final_lineage_sha256,
+        "ack_carried_application_lineage_sha256": final_lineage_sha256,
+        "roundtrip_carried_application_lineage_sha256": final_lineage_sha256,
+    }
     (evidence["roundtrip"] / "broker_dispatch_roundtrip_config.json").write_text(
         json.dumps(final_roundtrip_config, indent=2) + "\n",
         encoding="utf-8",

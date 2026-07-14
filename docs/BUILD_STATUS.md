@@ -3359,13 +3359,17 @@
   views remain in the flattened summary and sibling lineage-comparison config.
   Legacy draft-backed final reviews remain compatible; thin target sidecars
   fail closed until the acknowledgement handoff is complete.
-- Broker readiness now consumes that final reconciliation result as an explicit
-  target-application lineage-consistency handoff. Nested final config and
-  flattened final summary inputs both retain whether cross-stage consistency is
-  required and whether it passed. A final target-backed batch cannot become
-  broker-ready unless dispatch, send, and acknowledgement lineage was identical;
-  direct generic onboarding proof and legacy draft-backed batches retain their
-  compatibility paths and do not claim final reconciliation.
+- Broker readiness now consumes the final reconciliation's complete nine-view
+  target-application lineage handoff. Nested final config and flattened final
+  summary inputs retain the required/matches decision, current and broker-final
+  digests, and every scale-up-, cutover-, route-, dispatch-, send-, ack-, and
+  final-review-carried digest. Readiness verifies the final batch's declared
+  digest, then independently canonicalizes its datasets as a tenth view and
+  persists that readiness-carried SHA-256 in summary/config artifacts. Missing
+  or negative decisions, blank or mismatched carried views, and post-final
+  dataset drift fail closed. Direct generic onboarding proof and legacy
+  draft-backed batches retain their compatibility paths and do not claim final
+  reconciliation.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3384,8 +3388,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1854 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1860 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-readiness final target-lineage gate: all 72 broker-readiness
+tests pass, including nested-config and flattened-summary recovery of the final
+nine-view decision, mandatory final comparison, declared-digest validation,
+independent tenth-view recomputation, current/final drift rejection, and generic
+target/draft compatibility. All 7 combined broker-vendor readiness tests and
+all 46 final round-trip producer tests pass against the stronger handoff. The
+repository now collects 1860 tests across 154 files; the full suite was not
+rerun for this slice.
 
 Latest broker-dispatch final-roundtrip target-lineage gate: all 46 final-review
 tests pass, including rich acknowledgement comparison and flattened summary
@@ -3393,8 +3406,8 @@ recovery, nine-view digest retention, mandatory final consistency, independent
 final canonical recomputation, legacy draft-sidecar compatibility, fail-closed
 thin target handling, and rejection of negative acknowledgement decisions or
 post-ack dataset drift. The full 95-test acknowledgement/final-review chain and
-the 73-test broker-readiness/wrapper chain pass against the richer final config.
-The repository now collects 1854 tests across 154 files; the full suite was not
+the 79-test broker-readiness/wrapper chain pass against the richer final config.
+The repository now collects 1860 tests across 154 files; the full suite was not
 rerun for this slice.
 
 Latest broker-dispatch acknowledgement target-lineage gate: all 49
