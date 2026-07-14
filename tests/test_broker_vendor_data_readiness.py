@@ -517,6 +517,14 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
     assert int(summary["broker_vendor_mapping_application_count"]) == 2
     assert int(summary["broker_vendor_unique_mapping_applications"]) == 2
     assert summary["broker_vendor_target_application_coverage"] == 1.0
+    assert not bool(summary["broker_vendor_application_lineage_consistency_required"])
+    assert not bool(summary["broker_vendor_application_lineage_consistent"])
+    assert bool(summary["broker_vendor_lineage_match_required"])
+    assert bool(summary["broker_vendor_lineage_matches"])
+    assert len(summary["vendor_application_lineage_sha256"]) == 64
+    assert summary["vendor_application_lineage_sha256"] == (
+        summary["broker_vendor_application_lineage_sha256"]
+    )
     assert broker_summary[
         "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode"
     ] == "per_dataset_verified_target_application"
@@ -536,6 +544,7 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
         "broker_vendor_mapping_application_count",
         "broker_vendor_unique_mapping_applications",
         "broker_vendor_target_application_coverage",
+        "broker_vendor_lineage_matches_current_batch",
     }.issubset(set(report.checks["check"]))
     assert {
         "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode",
@@ -543,18 +552,27 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
         "broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_applications",
         "broker_dispatch_roundtrip_vendor_market_data_batch_target_application_coverage",
         "broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_datasets",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_matches_current_vendor_lineage",
     }.issubset(set(report.broker_readiness.checks["check"]))
     vendor_config = config["vendor_market_data_batch"]
     assert vendor_config["mapping_application_count"] == 2
     assert vendor_config["unique_mapping_applications"] == 2
     assert vendor_config["target_application_coverage"] == 1.0
+    assert len(vendor_config["application_lineage_sha256"]) == 64
     broker_vendor_config = config["broker_readiness"]["vendor_market_data_batch"]
-    assert broker_vendor_config == {
-        "mapping_application_count": 2,
-        "mapping_source_mode": "per_dataset_verified_target_application",
-        "target_application_coverage": 1.0,
-        "unique_mapping_applications": 2,
-    }
+    assert broker_vendor_config["mapping_application_count"] == 2
+    assert broker_vendor_config["mapping_source_mode"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert broker_vendor_config["target_application_coverage"] == 1.0
+    assert broker_vendor_config["unique_mapping_applications"] == 2
+    assert not broker_vendor_config["application_lineage_consistency_required"]
+    assert not broker_vendor_config["application_lineage_consistent"]
+    assert broker_vendor_config["current_vendor_lineage_match_required"]
+    assert broker_vendor_config["matches_current_vendor_lineage"]
+    assert broker_vendor_config["application_lineage_sha256"] == (
+        vendor_config["application_lineage_sha256"]
+    )
     nested_vendor_config = broker_config["dispatch_roundtrip"][
         "broker_dispatch_roundtrip_vendor_market_data_batch"
     ]
@@ -582,6 +600,20 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
     assert "- Mapping applications: 2" in runbook
     assert "- Target-application coverage: 1.000" in runbook
     assert "- Broker target-application coverage: 1.000" in runbook
+    assert "- Final target-lineage consistency required: no" in runbook
+    assert "- Current/final target lineage matches: yes" in runbook
+
+    final_vendor_config = json.loads(json.dumps(nested_vendor_config))
+    final_vendor_config["application_lineage_consistency_required"] = True
+    final_vendor_config["application_lineage_consistent"] = True
+    final_roundtrip_config = dispatch_roundtrip_config()
+    final_roundtrip_config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
+    ] = final_vendor_config
+    (evidence["roundtrip"] / "broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(final_roundtrip_config, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     cli_out = tmp_path / "broker_vendor_target_cli"
     cli_args = [
@@ -622,8 +654,32 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
     cli_summary = pd.read_csv(
         cli_out / "broker_vendor_data_readiness_summary.csv"
     ).iloc[0]
+    cli_checks = pd.read_csv(
+        cli_out / "broker_vendor_data_readiness_checks.csv"
+    )
+    cli_config = json.loads(
+        (cli_out / "broker_vendor_data_readiness_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert int(cli_summary["mapping_application_count"]) == 2
     assert int(cli_summary["broker_vendor_mapping_application_count"]) == 2
+    assert bool(cli_summary["broker_vendor_application_lineage_consistency_required"])
+    assert bool(cli_summary["broker_vendor_application_lineage_consistent"])
+    assert bool(cli_summary["broker_vendor_lineage_match_required"])
+    assert bool(cli_summary["broker_vendor_lineage_matches"])
+    assert cli_summary["vendor_application_lineage_sha256"] == (
+        cli_summary["broker_vendor_application_lineage_sha256"]
+    )
+    assert {
+        "broker_vendor_application_lineage_consistent",
+        "broker_vendor_lineage_matches_current_batch",
+    }.issubset(set(cli_checks["check"]))
+    cli_broker_vendor = cli_config["broker_readiness"]["vendor_market_data_batch"]
+    assert cli_broker_vendor["application_lineage_consistency_required"]
+    assert cli_broker_vendor["application_lineage_consistent"]
+    assert cli_broker_vendor["current_vendor_lineage_match_required"]
+    assert cli_broker_vendor["matches_current_vendor_lineage"]
 
 
 def test_broker_vendor_data_readiness_rejects_bad_application_alignment_before_root(

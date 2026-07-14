@@ -3401,8 +3401,11 @@ summary fields plus `dispatch_roundtrip.vendor_market_data_batch` config.
 `--vendor-market-data-batch` may point directly at a
 `pipeline-vendor-market-data-batch` output directory or
 `vendor_market_data_batch_config.json`; broker readiness merges that artifact
-as both the generic round-trip vendor-data proof and the broker-specific
-readiness-native proof, then fingerprints the batch config and manifest.
+as the current generic round-trip vendor-data proof and seeds the broker-specific
+readiness-native proof only when no stronger broker-specific source is already
+present. A final round-trip, acknowledgement, dispatch, route, cutover, or
+scale-up proof therefore keeps precedence. Broker readiness fingerprints the
+supplied batch config and manifest regardless.
 If the round-trip config carries
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, broker
 readiness revalidates the broker-readiness final dispatch batch proof and
@@ -3415,7 +3418,13 @@ true before accepting the final proof, whether it came from nested config or
 flattened final-summary fields, and preserves both values in its own summary
 and config. Generic onboarding target proof without a final cross-stage result
 and legacy draft-backed proof keep their compatibility paths. If the round-trip
-config carries
+and current generic proofs are both active and either one signals target mode,
+broker readiness also canonicalizes each dataset's source, mapping,
+scope-review, target-intake, and applied-mapping identity. It records the
+current and final lineage SHA-256 digests under
+`dispatch_roundtrip.vendor_market_data_batch_lineage_comparison` and fails
+closed unless the graphs match; dataset labels and generated output paths do
+not affect that identity comparison. If the round-trip config carries
 `roundtrip_broker_vendor_data_readiness`, broker readiness revalidates the
 wrapper and retains it as `broker_vendor_data_readiness_*` summary fields plus
 `dispatch_roundtrip.broker_vendor_data_readiness` config. When both
@@ -7502,7 +7511,12 @@ ready. In application mode, the batch, broker-readiness, and wrapper
 summary/config artifacts all preserve `mapping_source_mode`,
 `mapping_application_count`, `unique_mapping_applications`, and
 `target_application_coverage`; broker readiness additionally requires one
-complete application-lineage record per dataset. The wrapper manifest directly
+complete application-lineage record per dataset. When final round-trip target
+proof is available, the wrapper also exposes its cross-stage consistency flag,
+the current/final lineage match decision, and both lineage SHA-256 digests in
+the root summary/config/checks/runbook. A fresh current batch cannot replace the
+final broker proof or pass when it refers to different target applications.
+The wrapper manifest directly
 fingerprints every application directory, application manifest and receipt,
 plus the nested batch manifest/config, while the nested batch manifest retains
 the scope-review, target-intake, exact-source, and applied-mapping graph.

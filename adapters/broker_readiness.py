@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -51,6 +52,18 @@ SUMMARY_FALLBACK_DIRS = {
     "upload_pack": ("05_upload_pack", "04_upload_pack"),
 }
 TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
+TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS = (
+    "source_file_sha256",
+    "source_header_sha256",
+    "mapping_draft_sha256",
+    "mapping_source",
+    "mapping_application_id",
+    "mapping_application_sha256",
+    "mapping_scope_review_id",
+    "mapping_scope_review_sha256",
+    "target_intake_receipt_id",
+    "applied_mapping_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -2036,6 +2049,18 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                 checks.extend(_dispatch_roundtrip_vendor_market_data_batch_checks(row))
             if _broker_dispatch_roundtrip_vendor_market_data_batch_active(row):
                 checks.extend(_broker_dispatch_roundtrip_vendor_market_data_batch_checks(row))
+            lineage_state = _broker_vendor_current_lineage_state(row)
+            if bool(lineage_state["required"]):
+                checks.append(
+                    _check(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_matches_current_vendor_lineage",
+                        bool(lineage_state["matches"]),
+                        "is",
+                        True,
+                        bool(lineage_state["matches"]),
+                        "broker-readiness final target-application lineage does not match the current vendor market-data batch",
+                    )
+                )
     return pd.DataFrame(checks)
 
 
@@ -3104,6 +3129,70 @@ def _target_application_lineage_dataset_count(row: Any) -> int:
     )
 
 
+def _target_application_lineage_identity_json(row: Any) -> str:
+    datasets = _json_list(
+        row.dispatch_roundtrip_vendor_market_data_batch_datasets_json
+    )
+    identities: list[dict[str, str]] = []
+    for dataset in datasets:
+        if not isinstance(dataset, dict):
+            return ""
+        identity = {
+            field: _object_text(dataset.get(field))
+            for field in TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS
+        }
+        if not all(identity.values()):
+            return ""
+        identities.append(identity)
+    if not identities:
+        return ""
+    return json.dumps(
+        sorted(
+            identities,
+            key=lambda identity: json.dumps(identity, sort_keys=True, separators=(",", ":")),
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _lineage_sha256(lineage_json: str) -> str:
+    if not lineage_json:
+        return ""
+    return hashlib.sha256(lineage_json.encode("utf-8")).hexdigest()
+
+
+def _broker_vendor_current_lineage_state(row: Any) -> dict[str, object]:
+    broker = _vendor_market_data_batch_projection(
+        row,
+        source_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    generic_active = _dispatch_roundtrip_vendor_market_data_batch_active(row)
+    broker_active = _dispatch_roundtrip_vendor_market_data_batch_active(broker)
+    generic_target = generic_active and _target_application_batch_active(row)
+    broker_target = broker_active and _target_application_batch_active(broker)
+    required = bool(
+        generic_active and broker_active and (generic_target or broker_target)
+    )
+    current_lineage = (
+        _target_application_lineage_identity_json(row) if required else ""
+    )
+    broker_lineage = (
+        _target_application_lineage_identity_json(broker) if required else ""
+    )
+    return {
+        "required": required,
+        "matches": bool(
+            required
+            and current_lineage
+            and broker_lineage
+            and current_lineage == broker_lineage
+        ),
+        "current_sha256": _lineage_sha256(current_lineage),
+        "broker_sha256": _lineage_sha256(broker_lineage),
+    }
+
+
 def _vendor_market_data_batch_expected_kind(row: Any) -> str:
     return _identity_key(getattr(row, "expected_vendor_data_kind", ""))
 
@@ -3199,7 +3288,14 @@ def _shadow_broker_projection(row: Any, *, source_prefix: str) -> Any:
 
 
 def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any:
-    data = row._asdict() if hasattr(row, "_asdict") else dict(vars(row))
+    if hasattr(row, "_asdict"):
+        data = row._asdict()
+    elif isinstance(row, pd.Series):
+        data = row.to_dict()
+    elif isinstance(row, dict):
+        data = dict(row)
+    else:
+        data = dict(vars(row))
     for suffix in (
         "provided",
         "ready",
@@ -3717,6 +3813,7 @@ def _summary(
                     dispatch_item,
                     field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
                 ),
+                **_broker_vendor_current_lineage_summary_fields(dispatch_item),
                 "recommendation": _summary_recommendation(ready, schema_status, schema_review, thresholds),
             }
         ]
@@ -3779,6 +3876,22 @@ def _vendor_market_data_batch_summary_fields(
             _number(item, f"{field_prefix}_comparison_failed_checks", 0.0)
         ),
         f"{field_prefix}_datasets_json": _item_text(item, f"{field_prefix}_datasets_json"),
+    }
+
+
+def _broker_vendor_current_lineage_summary_fields(item: pd.Series) -> dict[str, Any]:
+    state = _broker_vendor_current_lineage_state(item)
+    return {
+        "broker_vendor_market_data_batch_lineage_match_required": bool(
+            state["required"]
+        ),
+        "broker_vendor_market_data_batch_lineage_matches": bool(state["matches"]),
+        "vendor_market_data_batch_application_lineage_sha256": str(
+            state["current_sha256"]
+        ),
+        "broker_vendor_market_data_batch_application_lineage_sha256": str(
+            state["broker_sha256"]
+        ),
     }
 
 
@@ -4283,6 +4396,24 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
             row,
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
         ),
+        "vendor_market_data_batch_lineage_comparison": {
+            "required": _item_bool(
+                row,
+                "broker_vendor_market_data_batch_lineage_match_required",
+            ),
+            "matches": _item_bool(
+                row,
+                "broker_vendor_market_data_batch_lineage_matches",
+            ),
+            "current_application_lineage_sha256": _item_text(
+                row,
+                "vendor_market_data_batch_application_lineage_sha256",
+            ),
+            "broker_application_lineage_sha256": _item_text(
+                row,
+                "broker_vendor_market_data_batch_application_lineage_sha256",
+            ),
+        },
     }
 
 
@@ -4778,7 +4909,14 @@ def _dispatch_roundtrip_config_with_vendor_market_data_batch(
         return merged
     vendor = dict(vendor_market_data_batch_config)
     merged["roundtrip_vendor_market_data_batch"] = vendor
-    merged["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    existing_broker_vendor, existing_source = _broker_vendor_market_data_batch_config(
+        merged
+    )
+    if (
+        not existing_broker_vendor
+        or existing_source == "roundtrip_vendor_market_data_batch"
+    ):
+        merged["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
     return merged
 
 

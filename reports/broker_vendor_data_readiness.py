@@ -394,6 +394,42 @@ def _summary(
                         0.0,
                     )
                 ),
+                "broker_vendor_application_lineage_consistency_required": _bool(
+                    broker_row.get(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_consistency_required",
+                        False,
+                    )
+                ),
+                "broker_vendor_application_lineage_consistent": _bool(
+                    broker_row.get(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_consistent",
+                        False,
+                    )
+                ),
+                "broker_vendor_lineage_match_required": _bool(
+                    broker_row.get(
+                        "broker_vendor_market_data_batch_lineage_match_required",
+                        False,
+                    )
+                ),
+                "broker_vendor_lineage_matches": _bool(
+                    broker_row.get(
+                        "broker_vendor_market_data_batch_lineage_matches",
+                        False,
+                    )
+                ),
+                "vendor_application_lineage_sha256": str(
+                    broker_row.get(
+                        "vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    )
+                ),
+                "broker_vendor_application_lineage_sha256": str(
+                    broker_row.get(
+                        "broker_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    )
+                ),
                 "broker_readiness_route_readiness_ready": _bool(
                     broker_row.get("route_readiness_ready", False)
                 ),
@@ -756,6 +792,28 @@ def _checks(
             "vendor market-data batch comparison has failed checks",
         ),
     ]
+    if _bool(row.get("broker_vendor_application_lineage_consistency_required", False)):
+        checks.append(
+            _check(
+                "broker_vendor_application_lineage_consistent",
+                _bool(row.get("broker_vendor_application_lineage_consistent", False)),
+                "is",
+                True,
+                _bool(row.get("broker_vendor_application_lineage_consistent", False)),
+                "broker readiness did not preserve a successful final dispatch/send/ack target-lineage reconciliation",
+            )
+        )
+    if _bool(row.get("broker_vendor_lineage_match_required", False)):
+        checks.append(
+            _check(
+                "broker_vendor_lineage_matches_current_batch",
+                _bool(row.get("broker_vendor_lineage_matches", False)),
+                "is",
+                True,
+                _bool(row.get("broker_vendor_lineage_matches", False)),
+                "broker-readiness target lineage does not match the current vendor market-data batch",
+            )
+        )
     return pd.DataFrame(checks)
 
 
@@ -943,6 +1001,10 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Unique mapping applications: {_int(row.get('unique_mapping_applications', 0))}",
         f"- Target-application coverage: {_float(row.get('target_application_coverage', 0.0)):.3f}",
         f"- Broker target-application coverage: {_float(row.get('broker_vendor_target_application_coverage', 0.0)):.3f}",
+        f"- Final target-lineage consistency required: {_yes_no(_bool(row.get('broker_vendor_application_lineage_consistency_required', False)))}",
+        f"- Final target-lineage consistent: {_yes_no(_bool(row.get('broker_vendor_application_lineage_consistent', False)))}",
+        f"- Current/final target lineage match required: {_yes_no(_bool(row.get('broker_vendor_lineage_match_required', False)))}",
+        f"- Current/final target lineage matches: {_yes_no(_bool(row.get('broker_vendor_lineage_matches', False)))}",
         f"- Broker readiness ready: {_yes_no(_bool(row.get('broker_readiness_ready', False)))}",
         f"- Broker vendor-data accepted: {_yes_no(_bool(row.get('broker_vendor_data_ready', False)))}",
         "",
@@ -1054,6 +1116,9 @@ def _config(
             "target_application_coverage": _float(
                 row.get("target_application_coverage", 0.0)
             ),
+            "application_lineage_sha256": str(
+                row.get("vendor_application_lineage_sha256", "")
+            ),
             "comparison": {
                 "accepted": bool(row.get("comparison_accepted", False)),
                 "failed_checks": _int(row.get("comparison_failed_checks", 0)),
@@ -1080,6 +1145,24 @@ def _config(
                 ),
                 "target_application_coverage": _float(
                     row.get("broker_vendor_target_application_coverage", 0.0)
+                ),
+                "application_lineage_consistency_required": _bool(
+                    row.get(
+                        "broker_vendor_application_lineage_consistency_required",
+                        False,
+                    )
+                ),
+                "application_lineage_consistent": _bool(
+                    row.get("broker_vendor_application_lineage_consistent", False)
+                ),
+                "current_vendor_lineage_match_required": _bool(
+                    row.get("broker_vendor_lineage_match_required", False)
+                ),
+                "matches_current_vendor_lineage": _bool(
+                    row.get("broker_vendor_lineage_matches", False)
+                ),
+                "application_lineage_sha256": str(
+                    row.get("broker_vendor_application_lineage_sha256", "")
                 ),
             },
             "resume_gate": _broker_readiness_resume_gate_config(row),

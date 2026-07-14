@@ -3326,6 +3326,15 @@
   broker-ready unless dispatch, send, and acknowledgement lineage was identical;
   direct generic onboarding proof and legacy draft-backed batches retain their
   compatibility paths and do not claim final reconciliation.
+- Broker readiness and the combined broker-vendor wrapper now bind the current
+  vendor batch to that final target proof. Supplying a fresh vendor artifact no
+  longer shadows stronger broker-specific round-trip evidence. When current and
+  final proof are both active and either one signals target mode, readiness
+  canonicalizes each dataset's immutable source, mapping, scope-review,
+  target-intake, and applied-mapping identities, records both SHA-256 digests,
+  and fails closed unless they match. This rejects target-to-draft downgrades as
+  well. The wrapper surfaces the final consistency decision and current/final
+  match in its summary, config, checks, and operator runbook.
 
 ## Test Gate
 
@@ -3335,16 +3344,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1822 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1824 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest target-application broker-readiness final-lineage gate: all 64 broker-
-readiness tests pass, including nested final config, flattened final-summary
-recovery, explicit cross-stage consistency carry, fail-closed rejection of
-inconsistent lineage, and compatibility for generic target onboarding plus
-legacy draft-backed batches. All 41 final broker round-trip tests and all 7
-broker vendor-data readiness tests also pass against the handoff. The repository
-now collects 1822 tests across 154 files; the full suite was not rerun for this
+Latest current-to-final target-lineage gate: all 66 broker-readiness tests pass,
+including stronger-proof precedence, canonical lineage digest equality, and
+fail-closed rejection when the final batch refers to a different mapping
+application. All 7 combined broker vendor-data readiness tests pass with the
+final consistency and current/final match surfaced at the wrapper root, and all
+41 final broker round-trip tests pass against the handoff. The repository now
+collects 1824 tests across 154 files; the full suite was not rerun for this
 slice.
 
 Latest target-application final broker round-trip gate: all 41 final-review

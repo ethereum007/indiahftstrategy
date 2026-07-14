@@ -1266,6 +1266,7 @@ def test_broker_readiness_carries_broker_dispatch_roundtrip_vendor_market_data_b
 def test_broker_readiness_carries_final_target_application_lineage_consistency():
     vendor = target_application_vendor_market_data_batch_config()
     config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
     config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
 
     report = evaluate_broker_readiness(
@@ -1293,6 +1294,20 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
     assert carried["application_lineage_consistency_required"]
     assert carried["application_lineage_consistent"]
     assert carried["datasets"][1]["mapping_application_id"] == "mapping-app-day2"
+    assert bool(summary["broker_vendor_market_data_batch_lineage_match_required"])
+    assert bool(summary["broker_vendor_market_data_batch_lineage_matches"])
+    assert len(summary["vendor_market_data_batch_application_lineage_sha256"]) == 64
+    assert summary["vendor_market_data_batch_application_lineage_sha256"] == (
+        summary["broker_vendor_market_data_batch_application_lineage_sha256"]
+    )
+    lineage_config = report.config["dispatch_roundtrip"][
+        "vendor_market_data_batch_lineage_comparison"
+    ]
+    assert lineage_config["required"]
+    assert lineage_config["matches"]
+    assert lineage_config["current_application_lineage_sha256"] == (
+        lineage_config["broker_application_lineage_sha256"]
+    )
     expected_checks = {
         f"{field_prefix}_mapping_source_mode",
         f"{field_prefix}_mapping_application_count",
@@ -1300,9 +1315,51 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
         f"{field_prefix}_target_application_coverage",
         f"{field_prefix}_application_lineage_datasets",
         f"{field_prefix}_application_lineage_consistent",
+        f"{field_prefix}_matches_current_vendor_lineage",
     }
     passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
     assert expected_checks <= passed
+
+
+def test_broker_readiness_blocks_final_target_lineage_drift_from_current_vendor_batch():
+    vendor = target_application_vendor_market_data_batch_config()
+    final_vendor = json.loads(json.dumps(vendor))
+    final_vendor["datasets"][1]["mapping_application_id"] = "mapping-app-replaced"
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = final_vendor
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    check_name = (
+        "broker_dispatch_roundtrip_vendor_market_data_batch_"
+        "matches_current_vendor_lineage"
+    )
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    lineage_config = report.config["dispatch_roundtrip"][
+        "vendor_market_data_batch_lineage_comparison"
+    ]
+    assert check_name in failed
+    assert bool(summary["broker_vendor_market_data_batch_lineage_match_required"])
+    assert not bool(summary["broker_vendor_market_data_batch_lineage_matches"])
+    assert summary["vendor_market_data_batch_application_lineage_sha256"] != (
+        summary["broker_vendor_market_data_batch_application_lineage_sha256"]
+    )
+    assert lineage_config["required"]
+    assert not lineage_config["matches"]
 
 
 def test_broker_readiness_carries_flattened_final_target_application_lineage_consistency():
@@ -2568,6 +2625,56 @@ def test_broker_readiness_reads_vendor_market_data_batch_artifact(tmp_path):
         assert path_tail(manifest["inputs"]["vendor_market_data_batch_manifest"]["path"]).endswith(
             "/vendor_batch/manifest.json"
         )
+
+
+def test_broker_readiness_preserves_stronger_roundtrip_vendor_proof_with_vendor_artifact(
+    tmp_path,
+):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(
+        tmp_path,
+        "arrow_money",
+    )
+    roundtrip_config_path = roundtrip_dir / "broker_dispatch_roundtrip_config.json"
+    roundtrip_config = json.loads(roundtrip_config_path.read_text(encoding="utf-8"))
+    final_vendor = vendor_market_data_batch_config()
+    final_vendor["mapping_sources"] = "final_roundtrip_mapping"
+    roundtrip_config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
+    ] = final_vendor
+    roundtrip_config_path.write_text(
+        json.dumps(roundtrip_config, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money")
+    out_dir = tmp_path / "readiness"
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        vendor_market_data_batch_dir=vendor_batch_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    config = report.config["dispatch_roundtrip"]
+    assert summary["dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == (
+        "vendor_intake_draft"
+    )
+    assert summary[
+        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"
+    ] == "final_roundtrip_mapping"
+    assert config["vendor_market_data_batch"]["mapping_sources"] == "vendor_intake_draft"
+    assert config["broker_dispatch_roundtrip_vendor_market_data_batch"][
+        "mapping_sources"
+    ] == "final_roundtrip_mapping"
 
 
 def test_cli_broker_readiness_accepts_vendor_market_data_batch_artifact(tmp_path):
