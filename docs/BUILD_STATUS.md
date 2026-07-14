@@ -3303,6 +3303,14 @@
   retain all application aggregates and per-dataset lineage in the send summary
   and config. Target signals activate the same strict one-application-per-
   dataset gate, while draft-backed packets retain their compatibility path.
+- Broker dispatch acknowledgement reconciliation now preserves and independently
+  gates the send-retained target proof before accepted acknowledgement evidence
+  can advance. Nested send/dispatch config, flattened dispatch summary, and
+  broker-readiness sidecar hydration retain mapping mode, application count,
+  uniqueness, coverage, and every dataset's complete application/scope-review/
+  target-intake/applied-mapping lineage in acknowledgement summary and config.
+  Any target signal must satisfy the strict one-distinct-application-per-dataset
+  contract; legacy draft-backed acknowledgement packets remain compatible.
 
 ## Test Gate
 
@@ -3312,8 +3320,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1812 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1815 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application broker-dispatch acknowledgement gate: all 43
+acknowledgement reconciliation tests pass, including nested dispatch config,
+flattened dispatch summary recovery, broker-readiness sidecar hydration,
+complete aggregate and per-dataset lineage, and fail-closed rejection of
+downgraded or incomplete application proof. All 38 final round-trip tests also
+pass against the richer acknowledgement config. The repository now collects
+1815 tests across 154 files; the full suite was not rerun for this slice.
 
 Latest target-application broker-dispatch send gate: all 59 sender tests pass,
 including nested dispatch config, flattened dispatch summary recovery,

@@ -5037,7 +5037,14 @@ the ack gate preserves the dataset/header/mapping proof as
 broker-readiness final dispatch round-trip vendor market-data batch proof, the
 ack gate preserves it as
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`ack_broker_dispatch_roundtrip_vendor_market_data_batch` config block. When
+`ack_broker_dispatch_roundtrip_vendor_market_data_batch` config block. For
+application-backed proof, acknowledgement reconciliation also carries mapping
+mode, application count, uniqueness, coverage, and each dataset's application,
+scope-review, target-intake, and applied-mapping lineage. Any target signal
+requires `per_dataset_verified_target_application`, one distinct application
+per dataset, 100% coverage, and complete lineage before accepted evidence can
+advance. This applies to nested send/dispatch config, flattened dispatch
+summary recovery, and broker-readiness sidecar hydration. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
 ack-stage block. If the dispatch config retained broker-vendor wrapper
