@@ -4447,6 +4447,15 @@ round-trip vendor market-data batch proof, cutover revalidates adapter, market,
 dataset, provenance, and comparison acceptance checks and preserves it as
 `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
 `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch` config block.
+Application-backed proof also retains mapping mode, application count,
+application uniqueness, target coverage, and per-dataset application,
+scope-review, target-intake, and applied-mapping lineage. Any target signal
+activates strict cutover checks requiring
+`per_dataset_verified_target_application`, one distinct application per
+dataset, 100% coverage, and complete lineage. The same contract applies when
+cutover reconstructs the batch from flattened scale-up summary fields or a
+broker-readiness config sidecar; legacy draft-backed proof keeps the existing
+provenance checks.
 When the scale-up config includes both
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
 and the older `broker_readiness.dispatch_roundtrip.vendor_market_data_batch`

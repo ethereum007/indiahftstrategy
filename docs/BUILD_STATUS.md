@@ -3273,6 +3273,14 @@
   signal activates fail-closed checks requiring the strict source mode, one
   distinct application per dataset, full coverage, and complete lineage;
   legacy draft-backed vendor batches remain compatible.
+- Cutover now preserves and independently gates the same application-backed
+  broker vendor batch from scale-up config, flattened scale-up summary, or a
+  broker-readiness config sidecar. Its authorization, summary, and nested
+  config retain mode, count, uniqueness, coverage, and each dataset's complete
+  application/scope-review/target-intake/applied-mapping graph. Any target
+  signal requires strict mode, one unique application per dataset, full
+  coverage, and complete lineage before route enable can inherit the proof;
+  legacy draft-backed handoffs keep their existing compatibility path.
 
 ## Test Gate
 
@@ -3282,8 +3290,15 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1800 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1803 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application cutover gate: all 47 cutover tests pass, including
+nested scale-up config, flattened summary fallback, broker-sidecar hydration,
+aggregate and per-dataset lineage retention, and fail-closed rejection of a
+downgraded or incomplete target batch. All 44 route-enable tests also pass
+against the richer cutover config. The repository now collects 1803 tests
+across 154 files; the full suite was not rerun for this slice.
 
 Latest target-application controlled scale-up gate: all 82 scale-up tests pass,
 including rich-summary and thin-sidecar hydration, aggregate
