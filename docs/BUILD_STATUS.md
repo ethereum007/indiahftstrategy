@@ -3334,9 +3334,18 @@
   one-distinct-application-per-dataset contract, the affirmative route-retained
   lineage decision, final consistency when required, exact current/final,
   scale-up-, cutover-, and route-carried digests, plus a fresh canonical digest
-  recomputed from dispatch-carried datasets. Dispatch artifacts retain all six
-  digest views. Legacy draft-backed batches remain compatible; thin target
-  sidecars fail until the intervening gates produce every carried decision.
+  recomputed from dispatch-carried datasets. Reconciled targets now also
+  require route enable's complete thirteen-view final comparison. Dispatch
+  planning revalidates the current, broker-final, historical scale-up-,
+  cutover-, route-, dispatch-, send-, ack-, final-review-, readiness-,
+  scale-up-review-, cutover-review-, and route-enable-review-carried digests,
+  then independently recomputes the canonical digest as view fourteen. The
+  existing six-view compatibility comparison is unchanged; the full handoff is
+  retained in flattened summary fields and the sibling
+  `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Legacy draft-backed and generic non-reconciled batches remain
+  compatible; thin target sidecars fail until route enable produces the
+  complete final comparison.
 - Broker dispatch send preparation now carries and revalidates that target
   proof before non-submitting request envelopes can advance. Nested dispatch
   config, flattened dispatch summary, and broker-readiness sidecar hydration
@@ -3406,24 +3415,23 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1882 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1890 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest route-enable final target-lineage gate: all 59 route-enable tests pass,
-including nested cutover config and flattened cutover-summary recovery of the
-full twelve-view handoff; mandatory final comparison for reconciled targets;
-independent thirteenth-view recomputation; missing, negative, inherited-digest,
-and post-cutover dataset drift rejection; and generic non-reconciled
-target/draft compatibility. The complete 278-test broker-readiness -> scale-up
--> cutover -> route-enable lineage chain passes in 149.6 seconds. All 166
-downstream broker-dispatch planning, send, and acknowledgement tests pass in
-153.8 seconds against the new route-scoped comparison, including a distinct-
-digest compatibility regression that prevents broker dispatch's legacy parser
-from confusing the historical route view with route enable's new review view.
-The repository now collects 1882 tests across 154 files. The full suite was not
-rerun for this slice; the preceding complete-suite attempt reached the
-30-minute command limit without emitting a failure, so the last completed
-full-suite baseline remains unchanged.
+Latest broker-dispatch final target-lineage gate: all 60 broker-dispatch tests
+pass, including nested route config and flattened route-summary recovery of the
+full thirteen-view handoff; mandatory final comparison for reconciled targets;
+independent fourteenth-view recomputation; missing, negative, inherited-digest,
+and post-route dataset drift rejection; and generic non-reconciled target/draft
+compatibility. The complete 338-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch lineage chain passes in 203.2 seconds. All 174
+broker-dispatch planning, send, and acknowledgement tests pass in 169.9 seconds,
+including a distinct-digest compatibility regression that prevents send
+preparation's legacy parser from confusing the historical dispatch view with
+broker dispatch's new review view. The repository now collects 1890 tests
+across 154 files. The full suite was not rerun for this slice; the preceding
+complete-suite attempt reached the 30-minute command limit without emitting a
+failure, so the last completed full-suite baseline remains unchanged.
 
 Latest cutover final target-lineage gate: all 56 cutover tests pass, including
 nested scale-up config, flattened scale-up summary, and broker-readiness

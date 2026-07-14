@@ -4831,10 +4831,19 @@ dataset, 100% coverage, complete lineage, an affirmative route-retained lineage
 decision, and final dispatch/send/ack consistency when required. Dispatch
 planning verifies the current and broker-final digests, the scale-up-, cutover-,
 and route-carried digests, and a fresh canonical digest recomputed from its own
-datasets. All six views remain in the flattened summary and the
+datasets. Reconciled targets additionally require route enable's complete
+thirteen-view final comparison. Dispatch planning revalidates the historical
+scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-, final-review-,
+readiness-, scale-up-review-, cutover-review-, and route-enable-review-carried
+digests against the final broker proof, then independently computes view
+fourteen. The existing six-view compatibility handoff remains in the flattened
+summary and the
 `route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-config block, including `dispatch_carried_application_lineage_sha256`. The same
-contract applies to nested route config and flattened route summary recovery. If
+config block, including `dispatch_carried_application_lineage_sha256`; the full
+fourteen-view handoff is emitted as
+`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The same contract applies to nested route config and flattened route summary
+recovery. If
 route-enable carried the broker-vendor wrapper readiness state, dispatch
 planning carries it as `route_broker_vendor_data_readiness_*` fields plus
 `route_broker_vendor_data_readiness` config, and fails closed when the wrapper
@@ -4847,9 +4856,10 @@ For older or thin route-enable configs, dispatch planning can follow the
 route-enable manifest to the cutover manifest and hydrate missing broker
 vendor-data proof and wrapper readiness from the recorded
 `broker_readiness_config` sidecar before revalidating them. Legacy draft-backed
-sidecars remain compatible. A target-application sidecar without the scale-up-,
-cutover-, and route-carried lineage digests fails closed; rerun the intervening
-gates so dispatch planning receives the complete route handoff.
+sidecars and generic non-reconciled targets remain compatible. A reconciled
+target-application sidecar without route enable's complete thirteen-view final
+comparison fails closed; rerun the intervening gates so dispatch planning
+receives the complete route handoff rather than fabricating those decisions.
 `broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
