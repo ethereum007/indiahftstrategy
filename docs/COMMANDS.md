@@ -3805,12 +3805,22 @@ are hydrated from a thin broker-readiness summary plus its config sidecar.
 Target-backed scale-up now also requires broker readiness to carry a successful
 current/final lineage comparison. Scale-up validates the two upstream SHA-256
 digests, recomputes the canonical digest from the carried dataset identities,
-and fails closed if any digest or final dispatch/send/ack consistency decision
-disagrees. The summary retains final-consistency, match, and digest fields;
+and fails closed if either digest disagrees. When final consistency is required,
+scale-up also requires the broker-readiness ten-view final comparison, verifies
+its current, broker-final, prior scale-up-, cutover-, route-, dispatch-, send-,
+ack-, final-review-, and readiness-carried digests plus the final batch's
+declared digest, then treats its independent recomputation as view eleven.
+Missing or negative final decisions, blank or mismatched views, and post-
+readiness dataset drift block promotion. Generic target onboarding without a
+final reconciliation keeps the current/final/recomputed compatibility path.
+The summary retains final-consistency, match, and digest fields;
 `broker_readiness.dispatch_roundtrip.vendor_market_data_batch` retains the
 consistency state and recomputed digest, while
 `broker_readiness.dispatch_roundtrip.vendor_market_data_batch_lineage_comparison`
-retains the current, broker-final, and scale-up-carried digests for cutover.
+retains the current, broker-final, and scale-up-carried digests for cutover. The
+sibling
+`broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+retains all ten broker-readiness views plus the new scale-up-carried digest.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`

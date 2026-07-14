@@ -3274,10 +3274,15 @@
   distinct application per dataset, full coverage, and complete lineage;
   legacy draft-backed vendor batches remain compatible. Scale-up now also
   requires the broker-readiness current/final lineage-match decision for every
-  target-backed batch, recomputes the canonical lineage digest from the carried
-  datasets, and compares it with both upstream SHA-256 digests. Final dispatch/
-  send/ack consistency state and all three digests remain visible in the
-  scale-up summary and nested config for downstream cutover audit.
+  target-backed batch and recomputes the canonical lineage digest from the
+  carried datasets. When broker readiness marks final reconciliation required,
+  scale-up additionally requires its complete ten-view decision, validates the
+  current, broker-final, prior scale-up-, cutover-, route-, dispatch-, send-,
+  ack-, final-review-, and readiness-carried digests plus the final batch's
+  declared digest, and makes its own recomputation view eleven. All upstream
+  views and the new scale-up-carried digest remain visible in summary and
+  sibling config artifacts. Generic target onboarding keeps the established
+  three-view path; legacy draft-backed batches remain compatible.
 - Cutover now preserves and independently gates the same application-backed
   broker vendor batch from scale-up config, flattened scale-up summary, or a
   broker-readiness config sidecar. Its authorization, summary, and nested
@@ -3388,8 +3393,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1860 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1867 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest controlled scale-up final target-lineage gate: all 91 scale-up tests
+pass, including rich-summary and broker-readiness-sidecar recovery of the full
+ten-view decision, mandatory final comparison for reconciled targets,
+independent eleventh-view recomputation, negative decision and carried-digest
+drift rejection, and generic target/draft compatibility. The repository now
+collects 1867 tests across 154 files; the full suite was not rerun for this
+slice.
 
 Latest broker-readiness final target-lineage gate: all 72 broker-readiness
 tests pass, including nested-config and flattened-summary recovery of the final

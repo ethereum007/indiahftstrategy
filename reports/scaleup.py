@@ -94,6 +94,19 @@ TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS: tuple[str, ...] = (
     "target_intake_receipt_id",
     "applied_mapping_sha256",
 )
+BROKER_FINAL_LINEAGE_FIELD_PREFIX = "broker_dispatch_roundtrip_vendor_market_data_batch"
+BROKER_FINAL_LINEAGE_DIGEST_FIELDS: tuple[str, ...] = (
+    "current_application_lineage_sha256",
+    "broker_application_lineage_sha256",
+    "scaleup_carried_application_lineage_sha256",
+    "cutover_carried_application_lineage_sha256",
+    "route_carried_application_lineage_sha256",
+    "dispatch_carried_application_lineage_sha256",
+    "send_carried_application_lineage_sha256",
+    "ack_carried_application_lineage_sha256",
+    "roundtrip_carried_application_lineage_sha256",
+    "readiness_carried_application_lineage_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -2819,6 +2832,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 if not broker_readiness.empty
                 else 0,
                 **_broker_vendor_market_data_batch_plan_fields(broker_readiness),
+                **_broker_vendor_final_lineage_plan_fields(broker_readiness),
                 **_broker_shadow_broker_plan_fields(broker_readiness),
                 "authorizes_submission": False,
             }
@@ -3319,6 +3333,7 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     plan_row["broker_route_dispatch_roundtrip_unmatched_acks"]
                 ),
                 **_broker_vendor_market_data_batch_summary_fields(plan_row),
+                **_broker_vendor_final_lineage_summary_fields(plan_row),
                 **_broker_shadow_broker_summary_fields(plan_row),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
@@ -3871,6 +3886,9 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                         ]
                     ),
                 },
+                "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison": (
+                    _broker_vendor_final_lineage_config(plan_row)
+                ),
             },
             "shadow_broker_readiness": _broker_shadow_broker_config(plan_row),
         },
@@ -4575,6 +4593,149 @@ def _broker_vendor_market_data_batch_checks(
                     "broker-readiness final dispatch/send/ack target lineage was not consistent",
                 )
             )
+            checks.extend(
+                _broker_vendor_final_lineage_checks(
+                    broker_readiness,
+                    source_prefix=source_prefix,
+                    scaleup_lineage_sha256=carried_lineage_sha256,
+                )
+            )
+    return checks
+
+
+def _broker_vendor_final_lineage_checks(
+    broker_readiness: pd.Series,
+    *,
+    source_prefix: str,
+    scaleup_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    lineage_match_required = _to_bool(
+        broker_readiness.get(f"{prefix}_lineage_match_required", False)
+    )
+    lineage_matches = _to_bool(
+        broker_readiness.get(f"{prefix}_lineage_matches", False)
+    )
+    broker_lineage_sha256 = _sha256_text(
+        broker_readiness.get(f"{prefix}_broker_application_lineage_sha256", "")
+    )
+    current_lineage_sha256 = _sha256_text(
+        broker_readiness.get(f"{prefix}_current_application_lineage_sha256", "")
+    )
+    readiness_broker_lineage_sha256 = _sha256_text(
+        broker_readiness.get(
+            "broker_vendor_market_data_batch_application_lineage_sha256",
+            "",
+        )
+    )
+    declared_lineage_sha256 = _sha256_text(
+        broker_readiness.get(f"{source_prefix}_application_lineage_sha256", "")
+    )
+    checks = [
+        _check(
+            f"{prefix}_final_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "reconciled target scale-up requires broker readiness's final lineage comparison",
+        ),
+        _check(
+            f"{prefix}_final_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "broker readiness did not reconcile every final target-lineage view",
+        ),
+        _check(
+            f"{prefix}_final_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "broker readiness's final source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{prefix}_final_broker_lineage_sha256_matches",
+            readiness_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and readiness_broker_lineage_sha256
+                and broker_lineage_sha256
+                and readiness_broker_lineage_sha256 == broker_lineage_sha256
+            ),
+            "broker readiness's current/final broker digest does not match its final comparison",
+        ),
+        _check(
+            f"{prefix}_final_application_lineage_sha256_matches",
+            declared_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and declared_lineage_sha256
+                and broker_lineage_sha256
+                and declared_lineage_sha256 == broker_lineage_sha256
+            ),
+            "broker readiness's declared final batch digest does not match final comparison",
+        ),
+    ]
+    carried_fields = (
+        ("prior_scaleup", "scaleup_carried_application_lineage_sha256"),
+        ("cutover", "cutover_carried_application_lineage_sha256"),
+        ("route", "route_carried_application_lineage_sha256"),
+        ("dispatch", "dispatch_carried_application_lineage_sha256"),
+        ("send", "send_carried_application_lineage_sha256"),
+        ("ack", "ack_carried_application_lineage_sha256"),
+        ("roundtrip", "roundtrip_carried_application_lineage_sha256"),
+        ("readiness", "readiness_carried_application_lineage_sha256"),
+    )
+    for stage, field in carried_fields:
+        carried_sha256 = _sha256_text(
+            broker_readiness.get(f"{prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{prefix}_final_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"broker readiness's {stage.replace('_', '-')} target lineage "
+                    "does not match final broker proof"
+                ),
+            )
+        )
+    scaleup_sha256 = _sha256_text(scaleup_lineage_sha256)
+    checks.append(
+        _check(
+            f"{prefix}_scaleup_review_carried_lineage_sha256_matches",
+            scaleup_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and scaleup_sha256
+                and broker_lineage_sha256
+                and scaleup_sha256 == broker_lineage_sha256
+            ),
+            "scale-up's independently recomputed target lineage does not match final broker proof",
+        )
+    )
     return checks
 
 
@@ -5179,6 +5340,25 @@ def _broker_vendor_market_data_batch_plan_fields(broker_readiness: pd.Series) ->
     }
 
 
+def _broker_vendor_final_lineage_plan_fields(
+    broker_readiness: pd.Series,
+) -> dict[str, object]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            broker_readiness.get(f"{prefix}_lineage_match_required", False)
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            broker_readiness.get(f"{prefix}_lineage_matches", False)
+        ),
+    }
+    for field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            broker_readiness.get(f"{prefix}_{field}", "")
+        )
+    return fields
+
+
 def _broker_shadow_broker_summary_fields(plan_row: pd.Series) -> dict[str, object]:
     return {
         "broker_shadow_broker_readiness_provided": _to_bool(
@@ -5321,6 +5501,23 @@ def _broker_vendor_market_data_batch_summary_fields(plan_row: pd.Series) -> dict
     }
 
 
+def _broker_vendor_final_lineage_summary_fields(
+    plan_row: pd.Series,
+) -> dict[str, object]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            plan_row[f"{prefix}_lineage_match_required"]
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            plan_row[f"{prefix}_lineage_matches"]
+        ),
+    }
+    for field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = str(plan_row[f"{prefix}_{field}"])
+    return fields
+
+
 def _broker_shadow_broker_config(plan_row: pd.Series) -> dict[str, object]:
     return {
         "provided": _to_bool(plan_row["broker_shadow_broker_readiness_provided"]),
@@ -5409,6 +5606,20 @@ def _broker_vendor_market_data_batch_config(plan_row: pd.Series) -> dict[str, ob
         },
         "datasets": _json_list(plan_row[f"{field_prefix}_datasets_json"]),
     }
+
+
+def _broker_vendor_final_lineage_config(plan_row: pd.Series) -> dict[str, object]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    config: dict[str, object] = {
+        "required": _to_bool(plan_row[f"{prefix}_lineage_match_required"]),
+        "matches": _to_bool(plan_row[f"{prefix}_lineage_matches"]),
+        "carried_application_lineage_sha256": str(
+            plan_row[f"{prefix}_application_lineage_sha256"]
+        ),
+    }
+    for field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        config[field] = str(plan_row[f"{prefix}_{field}"])
+    return config
 
 
 def load_strategy_portfolio_provenance(
@@ -6299,6 +6510,11 @@ def _with_broker_vendor_market_data_batch_config(
             broker_config
         )
     )
+    final_lineage_comparison_config = (
+        _broker_vendor_final_lineage_comparison_from_readiness_config(
+            broker_config
+        )
+    )
     resume_route_configs = _broker_resume_route_readiness_configs_from_readiness_config(
         broker_config
     )
@@ -6306,6 +6522,7 @@ def _with_broker_vendor_market_data_batch_config(
         batch_config is None
         and vendor_readiness_config is None
         and lineage_comparison_config is None
+        and final_lineage_comparison_config is None
         and not resume_route_configs
     ):
         return broker_readiness
@@ -6323,6 +6540,13 @@ def _with_broker_vendor_market_data_batch_config(
     if lineage_comparison_config is not None:
         for column, value in _broker_vendor_market_data_batch_lineage_flat_fields(
             lineage_comparison_config
+        ).items():
+            if column in out.columns:
+                out[column] = out[column].astype("object")
+            out.loc[index, column] = value
+    if final_lineage_comparison_config is not None:
+        for column, value in _broker_vendor_final_lineage_flat_fields(
+            final_lineage_comparison_config
         ).items():
             if column in out.columns:
                 out[column] = out[column].astype("object")
@@ -6354,6 +6578,20 @@ def _broker_vendor_market_data_batch_lineage_comparison_from_readiness_config(
     return comparison
 
 
+def _broker_vendor_final_lineage_comparison_from_readiness_config(
+    broker_readiness_config: dict[str, Any],
+) -> dict[str, Any] | None:
+    dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
+    if not isinstance(dispatch, dict):
+        return None
+    comparison = dispatch.get(
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    )
+    if not isinstance(comparison, dict) or not comparison:
+        return None
+    return comparison
+
+
 def _broker_vendor_market_data_batch_lineage_flat_fields(
     comparison: dict[str, Any],
 ) -> dict[str, object]:
@@ -6371,6 +6609,23 @@ def _broker_vendor_market_data_batch_lineage_flat_fields(
             comparison.get("broker_application_lineage_sha256", "")
         ),
     }
+
+
+def _broker_vendor_final_lineage_flat_fields(
+    comparison: dict[str, Any],
+) -> dict[str, object]:
+    prefix = BROKER_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get("required", False)
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get("matches", False)
+        ),
+    }
+    for field in BROKER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _sha256_text(comparison.get(field, ""))
+    return fields
 
 
 def _broker_vendor_data_readiness_config_from_readiness_config(
@@ -6548,6 +6803,9 @@ def _broker_vendor_market_data_batch_flat_fields(batch_config: dict[str, Any]) -
         f"{prefix}_application_lineage_consistent": _to_bool(
             summary["application_lineage_consistent"]
         ),
+        f"{prefix}_application_lineage_sha256": _sha256_text(
+            summary["application_lineage_sha256"]
+        ),
         f"{prefix}_comparison_accepted": _to_bool(comparison.get("accepted", False)),
         f"{prefix}_comparison_failed_checks": int(_number_from(comparison, "failed_checks", 0.0)),
         f"{prefix}_datasets_json": json.dumps(summary["datasets"], sort_keys=True),
@@ -6591,6 +6849,9 @@ def _vendor_market_data_batch_summary(batch_config: dict[str, Any]) -> dict[str,
         ),
         "application_lineage_consistent": _to_bool(
             batch_config.get("application_lineage_consistent", False)
+        ),
+        "application_lineage_sha256": _sha256_text(
+            batch_config.get("application_lineage_sha256", "")
         ),
         "comparison": {
             "accepted": _to_bool(comparison.get("accepted", False)),
