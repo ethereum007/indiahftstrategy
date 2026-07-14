@@ -5103,9 +5103,20 @@ application-backed proof, acknowledgement reconciliation also carries mapping
 mode, application count, uniqueness, coverage, and each dataset's application,
 scope-review, target-intake, and applied-mapping lineage. Any target signal
 requires `per_dataset_verified_target_application`, one distinct application
-per dataset, 100% coverage, and complete lineage before accepted evidence can
-advance. This applies to nested send/dispatch config, flattened dispatch
-summary recovery, and broker-readiness sidecar hydration. When
+per dataset, 100% coverage, complete lineage, the affirmative sender-retained
+lineage decision, and final dispatch/send/ack consistency before accepted
+evidence can advance. With `--send`, reconciliation consumes the sender's
+lineage-comparison config, verifies the current and broker-final digests plus
+the scale-up-, cutover-, route-, dispatch-, and send-carried digests, and then
+independently recomputes an eighth canonical digest from the datasets entering
+the acknowledgement record. All eight views are retained in the flattened ack
+summary and
+`ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+including `ack_carried_application_lineage_sha256`. This applies to nested
+send/dispatch config, flattened dispatch summary recovery, and
+broker-readiness sidecar hydration. Legacy draft-backed sidecars remain
+compatible; a target-application sidecar without every carried digest fails
+closed and must be regenerated through the sender handoff. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
 ack-stage block. If the dispatch config retained broker-vendor wrapper

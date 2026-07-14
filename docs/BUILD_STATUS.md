@@ -3338,7 +3338,13 @@
   uniqueness, coverage, and every dataset's complete application/scope-review/
   target-intake/applied-mapping lineage in acknowledgement summary and config.
   Any target signal must satisfy the strict one-distinct-application-per-dataset
-  contract; legacy draft-backed acknowledgement packets remain compatible.
+  contract, retain the affirmative sender lineage decision and final consistency,
+  and match the current, broker-final, scale-up-, cutover-, route-, dispatch-, and
+  send-carried digests. Reconciliation then independently recomputes an eighth
+  canonical digest from the acknowledgement-carried datasets. All eight views
+  remain in the flattened summary and sibling lineage-comparison config. Legacy
+  draft-backed acknowledgement packets remain compatible; thin target sidecars
+  fail closed until the complete sender handoff is supplied.
 - Final broker dispatch round-trip review now reconciles that target proof
   across dispatch, send, and acknowledgement components before dry-run bridge
   evidence can be trusted. It retains mapping mode, application count,
@@ -3372,16 +3378,27 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1843 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1849 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch acknowledgement target-lineage gate: all 49
+acknowledgement reconciliation tests pass, including rich sender comparison and
+flattened dispatch-summary recovery, eight-view digest retention, mandatory
+final consistency, independent acknowledgement canonical recomputation, legacy
+draft-sidecar compatibility, fail-closed thin target-sidecar handling, and
+rejection of post-send dataset or retained-decision drift. All 64 sender tests
+and all 41 final round-trip tests pass against the richer acknowledgement
+contract, including direct sender-config overlay precedence. The repository now
+collects 1849 tests across 154 files; the full suite was not rerun for this
+slice.
 
 Latest broker-dispatch sender target-lineage gate: all 64 sender tests pass,
 including rich dispatch config and flattened summary recovery, seven-view digest
 retention, final consistency carry, independent send canonical recomputation,
 legacy draft-sidecar compatibility, fail-closed target-sidecar handling, and
-rejection of carried dataset or dispatch-decision drift. All 43 acknowledgement
+rejection of carried dataset or dispatch-decision drift. All 49 acknowledgement
 reconciliation tests and all 41 final round-trip tests pass against the richer
-sender config. The repository now collects 1843 tests across 154 files; the full
+sender config. The repository now collects 1849 tests across 154 files; the full
 suite was not rerun for this slice.
 
 Latest broker-dispatch target-lineage gate: all 52 dispatch-planning tests pass,
