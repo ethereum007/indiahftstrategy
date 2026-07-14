@@ -3265,6 +3265,14 @@
   every dataset before accepting an application-backed vendor batch. Raw
   mapping and application modes remain mutually exclusive at both API and CLI
   boundaries.
+- Controlled scale-up now retains that target-application proof at the first
+  capital-control boundary. Rich broker summaries and thin summaries hydrated
+  from `broker_readiness_config.json` both carry mapping mode, application
+  count, uniqueness, coverage, and the complete per-dataset application,
+  scope-review, target-intake, and applied-mapping lineage. Any target-mode
+  signal activates fail-closed checks requiring the strict source mode, one
+  distinct application per dataset, full coverage, and complete lineage;
+  legacy draft-backed vendor batches remain compatible.
 
 ## Test Gate
 
@@ -3274,8 +3282,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1798 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1800 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application controlled scale-up gate: all 82 scale-up tests pass,
+including rich-summary and thin-sidecar hydration, aggregate
+mode/count/uniqueness/coverage retention, complete per-dataset lineage, and
+fail-closed rejection of partial or downgraded application proof. The adjacent
+broker-vendor readiness, broker readiness, cutover, and route-enable suites
+pass together (`155 passed`). The repository now collects 1800 tests across
+154 files; the full suite was not rerun for this slice.
 
 Latest combined target-application broker handoff gate: all seven
 broker-vendor readiness tests pass, including API and repeated CLI application

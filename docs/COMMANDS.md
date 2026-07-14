@@ -3772,6 +3772,15 @@ readiness may also supply the same broker-specific proof under
 after revalidating the round-trip broker proof chain. Scale-up prefers that
 broker-specific block when present and falls back to the generic
 `vendor_market_data_batch` block for older readiness artifacts.
+For an application-backed batch, any target-application mode, source, count,
+or coverage signal activates the stricter scale-up contract. The mapping mode
+must be `per_dataset_verified_target_application`, application and unique
+application counts must both equal the dataset count, coverage must be 100%,
+and every dataset must retain its application path/ID/hash, scope-review
+ID/hash, target-intake receipt ID, and applied-mapping hash. These fields are
+preserved in both the scale-up summary and nested config, including when they
+are hydrated from a thin broker-readiness summary plus its config sidecar.
+Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
 fields so broker-stage proof can be audited independently from the
