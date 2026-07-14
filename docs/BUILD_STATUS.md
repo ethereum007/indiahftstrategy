@@ -3177,6 +3177,18 @@
   upstream source drift, candidate tampering after re-manifesting, write-once
   output, unknown operator claims, strict CLI behavior, and catalog
   classification.
+- Reviewed mapped-data normalization now enforces that approval at execution.
+  The write-once path derives the vendor source, canonical mapping, adapter, and
+  data kind from a semantically verified approved review, then emits the
+  standard `mapped_data_*` artifacts plus deterministic binding checks and a
+  receipt. Its verifier reruns normalization and reconstructs every retained
+  artifact, input fingerprint, setting, manifest field, and safety claim.
+  Rejected or stale reviews are refused; data-quality failures remain honest
+  `verified_blocked` evidence; source drift or re-manifested output tampering is
+  stale/inconsistent. Catalogs expose `verified_ready`, `verified_blocked`, and
+  `stale_or_inconsistent`, while existing data-readiness readers can consume
+  the unchanged `mapped_data_summary.csv` filename. This boundary still does
+  not authorize strategy research, routing, submission, or live release.
 
 ## Test Gate
 
@@ -3186,8 +3198,18 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1744 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1751 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest reviewed-normalization gate: all seven focused adversarial tests pass.
+The full affected mapping-review, normalization, intake, onboarding,
+market-data, data-readiness, catalog, manifest, shared adapter/CLI, and
+broker-vendor surface passes together (`138 passed`). Coverage includes
+approved-only execution, derived source/mapping/adapter/kind identity,
+write-once output, strict writer and verifier exit codes, valid blocked data
+quality, rejected-review refusal, source drift, re-manifested normalized-output
+tampering, path collision and traversal rejection, and ready/blocked/stale
+catalog states.
 
 Latest vendor-mapping review gate: all eight focused adversarial tests pass.
 The broader intake, mapping, onboarding, market-data, data-readiness, catalog,

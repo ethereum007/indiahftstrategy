@@ -8,6 +8,11 @@ from adapters.broker_readiness import BrokerReadinessThresholds, write_broker_re
 from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
+from adapters.reviewed_mapped_data import (
+    ReviewedMappedDataConfig,
+    verify_reviewed_mapped_data_normalization,
+    write_reviewed_mapped_data_normalization,
+)
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
@@ -1269,6 +1274,39 @@ def main(argv: list[str] | None = None) -> int:
     mapped_data.add_argument("--fail-on-breach", action="store_true")
     mapped_data.add_argument("--fail-on-blocked-actions", action="store_true")
     mapped_data.add_argument("--fail-on-actions", action="store_true")
+    reviewed_mapped_data = sub.add_parser(
+        "normalize-reviewed-mapped-data",
+        help="Normalize the exact vendor source and mapping from a verified approval.",
+    )
+    reviewed_mapped_data.add_argument("--review", required=True)
+    reviewed_mapped_data.add_argument("--out", required=True)
+    reviewed_mapped_data.add_argument("--output-file", default="normalized_data.csv")
+    reviewed_mapped_data.add_argument("--timestamp-unit", default="ns")
+    reviewed_mapped_data.add_argument("--timestamp-tz", default=None)
+    reviewed_mapped_data.add_argument(
+        "--market",
+        default="india_nse_index_derivatives",
+    )
+    reviewed_mapped_data.add_argument("--no-filter-session", action="store_true")
+    reviewed_mapped_data.add_argument(
+        "--allow-missing-required",
+        action="store_true",
+    )
+    reviewed_mapped_data.add_argument("--fail-on-breach", action="store_true")
+    reviewed_mapped_data.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    reviewed_mapped_data.add_argument("--fail-on-actions", action="store_true")
+    verify_reviewed_mapped_data = sub.add_parser(
+        "verify-reviewed-mapped-data",
+        help="Reconstruct reviewed mapped-data evidence and all retained inputs.",
+    )
+    verify_reviewed_mapped_data.add_argument("--normalization", required=True)
+    verify_reviewed_mapped_data.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
 
     market_data_source = sub.add_parser(
         "plan-market-data-source",
@@ -5455,6 +5493,59 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "normalize-reviewed-mapped-data":
+        result = write_reviewed_mapped_data_normalization(
+            args.review,
+            output_dir=args.out,
+            config=ReviewedMappedDataConfig(
+                output_filename=args.output_file,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                filter_session=not args.no_filter_session,
+                market=args.market,
+                require_all_mapped=not args.allow_missing_required,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                (result.action_queue["queue_status"].astype(str) == "blocked").sum()
+            )
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "verify-reviewed-mapped-data":
+        result = verify_reviewed_mapped_data_normalization(args.normalization)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "blocked": result.blocked,
+                    "manifest_current": result.manifest_current,
+                    "mapping_review_current": result.mapping_review_current,
+                    "source_current": result.source_current,
+                    "reviewed_mapping_current": result.reviewed_mapping_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "normalization_only": result.normalization_only,
+                    "non_routing": result.non_routing,
+                    "normalization_dir": str(result.output_dir),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach and not (result.verified and result.ready)
+            else 0
+        )
     if args.command == "plan-market-data-source":
         result = write_market_data_source_plan(
             args.out,

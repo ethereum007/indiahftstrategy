@@ -2955,6 +2955,60 @@ routing, submission, or live release. Catalogs distinguish
 `verified_approved`, `verified_rejected`, and `stale_or_inconsistent` review
 evidence.
 
+## Reviewed Vendor Data Normalization
+
+Normalize the exact raw source with the exact canonical mapping from a verified
+approved mapping review. Source path, mapping path, adapter, and data kind are
+derived from the retained approval and cannot be substituted on the command
+line:
+
+```powershell
+python -m hft_cli normalize-reviewed-mapped-data `
+  --review mappings\arrow_ticks_review `
+  --out runs\data\arrow_ticks_reviewed `
+  --timestamp-unit datetime `
+  --timestamp-tz Asia/Kolkata `
+  --fail-on-breach `
+  --fail-on-blocked-actions
+```
+
+Outputs:
+
+```text
+normalized_data.csv
+mapped_data_checks.csv
+mapped_data_review_checks.csv
+mapped_data_action_queue.csv
+mapped_data_summary.csv
+mapped_data_receipt.json
+mapped_data_config.json
+mapped_data_runbook.md
+manifest.json
+```
+
+The output is write-once. A rejected or stale review is refused before an
+output directory is created. An approved mapping can still produce valid
+blocked evidence when timestamps, session filtering, values, or transforms
+yield no usable normalized rows. `mapped_data_summary.csv` preserves the
+existing data-readiness contract while adding the review ID, exact source and
+mapping fingerprints, binding checks, and explicit non-research/non-routing
+safety fields.
+
+Reconstruct the normalization from the current approved review, source, mapping,
+and settings before using it downstream:
+
+```powershell
+python -m hft_cli verify-reviewed-mapped-data `
+  --normalization runs\data\arrow_ticks_reviewed `
+  --fail-on-breach
+```
+
+Catalogs distinguish `verified_ready`, `verified_blocked`, and
+`stale_or_inconsistent`. A verified normalization proves deterministic mapping
+under the operator approval only. It does not authorize strategy research,
+routing, submission, or live release; the data-readiness and later promotion
+gates remain mandatory.
+
 ## Vendor Order Mapping Draft
 
 Draft a reviewable mapping from the broker-neutral `broker_orders.csv` export
