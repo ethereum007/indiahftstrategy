@@ -3424,12 +3424,23 @@
   summary inputs retain the required/matches decision, current and broker-final
   digests, and every scale-up-, cutover-, route-, dispatch-, send-, ack-, and
   final-review-carried digest. Readiness verifies the final batch's declared
-  digest, then independently canonicalizes its datasets as a tenth view and
-  persists that readiness-carried SHA-256 in summary/config artifacts. Missing
-  or negative decisions, blank or mismatched carried views, and post-final
-  dataset drift fail closed. Direct generic onboarding proof and legacy
-  draft-backed batches retain their compatibility paths and do not claim final
-  reconciliation.
+  digest, then independently canonicalizes its datasets as a tenth compatibility
+  view. Reconciled targets additionally require round-trip review's complete
+  seventeen-view final comparison. Broker readiness revalidates the current,
+  broker-final, historical scale-up-, cutover-, route-, dispatch-, send-, ack-,
+  final-review-, readiness-, scale-up-review-, cutover-review-,
+  route-enable-review-, dispatch-plan-review-, send-packet-review-,
+  acknowledgement-reconciliation-review-, and roundtrip-final-review-carried
+  digests, then independently recomputes the canonical digest as view eighteen.
+  The existing ten-view comparison remains unchanged in summary fields and the
+  `broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block for controlled scale-up compatibility. The complete
+  eighteen-view handoff is retained in flattened summary fields and the sibling
+  `broker_readiness_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  block under `dispatch_roundtrip`. Missing or negative decisions, blank or
+  mismatched carried views, and post-final dataset drift fail closed. Direct
+  generic onboarding proof and legacy draft-backed batches retain their
+  compatibility paths and do not claim final reconciliation.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3448,8 +3459,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1914 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1921 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-readiness final target-lineage gate: all 79 broker-readiness
+tests pass, including nested roundtrip config and flattened roundtrip-summary
+recovery of the complete seventeen-view handoff; mandatory final comparison
+for reconciled targets; independent eighteenth-view recomputation; missing,
+negative, inherited-digest, roundtrip-review-digest, and post-roundtrip dataset
+drift rejection; and generic non-reconciled target/draft compatibility. The
+historical ten-view readiness comparison remains unchanged for controlled
+scale-up consumption, while the complete eighteen-view handoff is emitted under
+the sibling `broker_readiness_final_*` comparison. All 92 scale-up tests pass,
+including a distinct-digest compatibility regression. The full 529-test
+broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch ->
+broker-dispatch-send -> broker-dispatch-acknowledgement ->
+broker-dispatch-roundtrip chain passes in 325.2 seconds. The repository now
+collects 1921 tests across 154 files. The full suite was not rerun for this
+slice; the last completed full-suite baseline remains unchanged.
 
 Latest broker-dispatch-roundtrip final target-lineage gate: all 54 roundtrip
 tests pass, including nested acknowledgement config and flattened

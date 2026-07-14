@@ -758,6 +758,33 @@ def target_application_lineage_comparison(vendor, **overrides):
     return comparison
 
 
+def roundtrip_final_target_application_lineage_comparison(vendor, **overrides):
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    comparison = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": lineage_sha256,
+        "broker_application_lineage_sha256": lineage_sha256,
+        "scaleup_carried_application_lineage_sha256": lineage_sha256,
+        "cutover_carried_application_lineage_sha256": lineage_sha256,
+        "route_carried_application_lineage_sha256": lineage_sha256,
+        "dispatch_carried_application_lineage_sha256": lineage_sha256,
+        "send_carried_application_lineage_sha256": lineage_sha256,
+        "ack_carried_application_lineage_sha256": lineage_sha256,
+        "roundtrip_carried_application_lineage_sha256": lineage_sha256,
+        "readiness_carried_application_lineage_sha256": lineage_sha256,
+        "scaleup_review_carried_application_lineage_sha256": lineage_sha256,
+        "cutover_review_carried_application_lineage_sha256": lineage_sha256,
+        "route_enable_review_carried_application_lineage_sha256": lineage_sha256,
+        "dispatch_plan_review_carried_application_lineage_sha256": lineage_sha256,
+        "send_packet_review_carried_application_lineage_sha256": lineage_sha256,
+        "ack_reconciliation_review_carried_application_lineage_sha256": lineage_sha256,
+        "carried_application_lineage_sha256": lineage_sha256,
+    }
+    comparison.update(overrides)
+    return comparison
+
+
 def with_broker_vendor_batch_summary(
     summary,
     vendor,
@@ -776,6 +803,10 @@ def with_broker_vendor_batch_summary(
             result.loc[0, f"{prefix}_{key}"] = value
     if include_lineage_comparison and vendor.get("application_lineage_sha256"):
         comparison = target_application_lineage_comparison(vendor)
+        final_comparison = roundtrip_final_target_application_lineage_comparison(
+            vendor
+        )
+        final_prefix = "ack_final_broker_dispatch_roundtrip_vendor_market_data_batch"
         result.loc[
             0,
             "roundtrip_broker_vendor_market_data_batch_lineage_match_required",
@@ -815,6 +846,13 @@ def with_broker_vendor_batch_summary(
         }
         for field, summary_field in summary_fields.items():
             result.loc[0, summary_field] = comparison[field]
+        result.loc[0, f"{final_prefix}_lineage_match_required"] = final_comparison[
+            "required"
+        ]
+        result.loc[0, f"{final_prefix}_lineage_matches"] = final_comparison["matches"]
+        for field, value in final_comparison.items():
+            if field not in {"required", "matches", "carried_application_lineage_sha256"}:
+                result.loc[0, f"{final_prefix}_{field}"] = value
     return result
 
 
@@ -1375,6 +1413,9 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
     config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ] = final_lineage
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(vendor)
 
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),
@@ -1434,6 +1475,32 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
         "readiness_carried_application_lineage_sha256",
     ):
         assert final_lineage_config[field] == vendor["application_lineage_sha256"]
+    readiness_final_lineage = report.config["dispatch_roundtrip"][
+        "broker_readiness_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert readiness_final_lineage["required"]
+    assert readiness_final_lineage["matches"]
+    for field in (
+        "current_application_lineage_sha256",
+        "broker_application_lineage_sha256",
+        "scaleup_carried_application_lineage_sha256",
+        "cutover_carried_application_lineage_sha256",
+        "route_carried_application_lineage_sha256",
+        "dispatch_carried_application_lineage_sha256",
+        "send_carried_application_lineage_sha256",
+        "ack_carried_application_lineage_sha256",
+        "roundtrip_carried_application_lineage_sha256",
+        "readiness_carried_application_lineage_sha256",
+        "scaleup_review_carried_application_lineage_sha256",
+        "cutover_review_carried_application_lineage_sha256",
+        "route_enable_review_carried_application_lineage_sha256",
+        "dispatch_plan_review_carried_application_lineage_sha256",
+        "send_packet_review_carried_application_lineage_sha256",
+        "ack_reconciliation_review_carried_application_lineage_sha256",
+        "roundtrip_final_review_carried_application_lineage_sha256",
+        "carried_application_lineage_sha256",
+    ):
+        assert readiness_final_lineage[field] == vendor["application_lineage_sha256"]
     expected_checks = {
         f"{field_prefix}_mapping_source_mode",
         f"{field_prefix}_mapping_application_count",
@@ -1454,15 +1521,35 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
         f"{field_prefix}_roundtrip_carried_lineage_sha256_matches",
         f"{field_prefix}_readiness_carried_lineage_sha256_matches",
         f"{field_prefix}_matches_current_vendor_lineage",
+        f"{field_prefix}_final_lineage_match_required",
+        f"{field_prefix}_final_lineage_matches",
+        f"{field_prefix}_final_source_lineage_sha256_matches",
+        f"{field_prefix}_final_broker_lineage_sha256_matches",
+        f"{field_prefix}_final_application_lineage_sha256_matches",
+        f"{field_prefix}_final_prior_scaleup_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_prior_cutover_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_route_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_dispatch_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_send_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_ack_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_roundtrip_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_readiness_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_scaleup_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_cutover_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_route_enable_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_dispatch_plan_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_send_packet_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_ack_reconciliation_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_final_roundtrip_review_carried_lineage_sha256_matches",
+        f"{field_prefix}_broker_readiness_final_review_carried_lineage_sha256_matches",
     }
     passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
     assert expected_checks <= passed
 
 
-def test_broker_readiness_uses_roundtrip_compatibility_lineage_before_roundtrip_final():
+def test_broker_readiness_blocks_roundtrip_final_lineage_drift_when_compatibility_matches():
     vendor = target_application_vendor_market_data_batch_config()
     compatibility_sha256 = vendor["application_lineage_sha256"]
-    final_sha256 = "f" * 64
     config = dispatch_roundtrip_config()
     config["roundtrip_vendor_market_data_batch"] = vendor
     config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
@@ -1471,14 +1558,10 @@ def test_broker_readiness_uses_roundtrip_compatibility_lineage_before_roundtrip_
     ] = target_application_lineage_comparison(vendor)
     config[
         "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
-    ] = {
-        "required": True,
-        "matches": True,
-        "current_application_lineage_sha256": final_sha256,
-        "broker_application_lineage_sha256": final_sha256,
-        "ack_reconciliation_review_carried_application_lineage_sha256": final_sha256,
-        "carried_application_lineage_sha256": final_sha256,
-    }
+    ] = roundtrip_final_target_application_lineage_comparison(
+        vendor,
+        current_application_lineage_sha256="f" * 64,
+    )
 
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),
@@ -1493,7 +1576,12 @@ def test_broker_readiness_uses_roundtrip_compatibility_lineage_before_roundtrip_
         ),
     )
 
-    assert report.ready
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert (
+        "broker_dispatch_roundtrip_vendor_market_data_batch_final_source_lineage_sha256_matches"
+        in failed
+    )
     lineage = report.config["dispatch_roundtrip"][
         "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ]
@@ -1517,6 +1605,9 @@ def test_broker_readiness_blocks_final_target_lineage_drift_from_current_vendor_
     config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ] = target_application_lineage_comparison(final_vendor)
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(final_vendor)
 
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),
@@ -1589,6 +1680,17 @@ def test_broker_readiness_carries_flattened_final_target_application_lineage_con
     assert final_lineage["readiness_carried_application_lineage_sha256"] == (
         vendor["application_lineage_sha256"]
     )
+    readiness_final_lineage = report.config["dispatch_roundtrip"][
+        "broker_readiness_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert readiness_final_lineage["required"]
+    assert readiness_final_lineage["matches"]
+    assert readiness_final_lineage[
+        "roundtrip_final_review_carried_application_lineage_sha256"
+    ] == vendor["application_lineage_sha256"]
+    assert readiness_final_lineage["carried_application_lineage_sha256"] == vendor[
+        "application_lineage_sha256"
+    ]
 
 
 def test_broker_readiness_blocks_inconsistent_final_target_application_lineage():
@@ -1672,6 +1774,104 @@ def test_broker_readiness_requires_final_target_application_lineage_comparison()
     assert not comparison["matches"]
 
 
+def test_broker_readiness_requires_roundtrip_final_lineage_for_reconciled_target():
+    vendor = target_application_vendor_market_data_batch_config()
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor)
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        f"{prefix}_final_lineage_match_required",
+        f"{prefix}_final_lineage_matches",
+    } <= failed
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_failed_check"),
+    [
+        (
+            "required",
+            False,
+            "broker_dispatch_roundtrip_vendor_market_data_batch_final_lineage_match_required",
+        ),
+        (
+            "matches",
+            False,
+            "broker_dispatch_roundtrip_vendor_market_data_batch_final_lineage_matches",
+        ),
+        (
+            "current_application_lineage_sha256",
+            "f" * 64,
+            "broker_dispatch_roundtrip_vendor_market_data_batch_final_source_lineage_sha256_matches",
+        ),
+        (
+            "readiness_carried_application_lineage_sha256",
+            "f" * 64,
+            "broker_dispatch_roundtrip_vendor_market_data_batch_final_readiness_carried_lineage_sha256_matches",
+        ),
+        (
+            "carried_application_lineage_sha256",
+            "f" * 64,
+            "broker_dispatch_roundtrip_vendor_market_data_batch_final_roundtrip_review_carried_lineage_sha256_matches",
+        ),
+    ],
+)
+def test_broker_readiness_blocks_invalid_roundtrip_final_lineage(
+    field,
+    value,
+    expected_failed_check,
+):
+    vendor = target_application_vendor_market_data_batch_config()
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor)
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(
+        vendor,
+        **{field: value},
+    )
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert expected_failed_check in failed
+
+
 def test_broker_readiness_recomputes_final_target_application_lineage():
     vendor = target_application_vendor_market_data_batch_config()
     tampered_vendor = json.loads(json.dumps(vendor))
@@ -1684,6 +1884,9 @@ def test_broker_readiness_recomputes_final_target_application_lineage():
     config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ] = target_application_lineage_comparison(vendor)
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(vendor)
 
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),
@@ -1704,6 +1907,10 @@ def test_broker_readiness_recomputes_final_target_application_lineage():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
     assert check_name in failed
+    assert (
+        f"{prefix}_broker_readiness_final_review_carried_lineage_sha256_matches"
+        in failed
+    )
     assert f"{prefix}_matches_current_vendor_lineage" in passed
     comparison = report.config["dispatch_roundtrip"][
         "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
@@ -1748,6 +1955,9 @@ def test_broker_readiness_blocks_invalid_final_target_lineage_decisions(
     config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ] = target_application_lineage_comparison(vendor, **comparison_overrides)
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(vendor)
 
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),

@@ -3421,7 +3421,21 @@ whether they came from nested config or flattened final-summary fields. It then
 independently canonicalizes the final datasets as a tenth view and stores that
 digest under
 `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Missing, negative, blank, mismatched, or post-final-drifted proof fails closed.
+Reconciled targets additionally require the final roundtrip's complete
+seventeen-view comparison. Broker readiness verifies its current, broker-final,
+scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-,
+prior-roundtrip-, readiness-, scale-up-review-, cutover-review-,
+route-enable-review-, dispatch-plan-review-, send-packet-review-,
+acknowledgement-reconciliation-review-, and roundtrip-final-review-carried
+digests, then independently recomputes view eighteen from the final datasets.
+The existing ten-view compatibility proof remains unchanged for controlled
+scale-up. The complete eighteen-view proof is emitted in flattened summary
+fields and
+`dispatch_roundtrip.broker_readiness_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `roundtrip_final_review_carried_application_lineage_sha256` retains
+roundtrip view seventeen and `carried_application_lineage_sha256` is the fresh
+broker-readiness digest. Missing, negative, blank, mismatched, or
+post-final-drifted proof fails closed.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
