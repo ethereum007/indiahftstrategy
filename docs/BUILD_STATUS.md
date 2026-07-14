@@ -3291,13 +3291,18 @@
   signal requires strict mode, one unique application per dataset, full
   coverage, complete lineage, an affirmative scale-up current/final match, and
   final dispatch/send/ack consistency when that final-stage decision is marked
-  required before route enable can inherit the proof. Cutover verifies the
-  upstream current, broker-final, and scale-up-carried SHA-256 digests,
-  independently recomputes the canonical digest from
-  its carried datasets, and retains all four digest views in summary/config
-  artifacts. Broker-readiness sidecar hydration includes the lineage
-  comparison as well as the target batch. Legacy draft-backed handoffs keep
-  their existing compatibility path.
+  required before route enable can inherit the proof. Reconciled targets now
+  also require scale-up's complete eleven-view final comparison. Cutover
+  revalidates the current, broker-final, historical scale-up-, cutover-, route-,
+  dispatch-, send-, ack-, final-review-, readiness-, and scale-up-review-carried
+  digests, then independently recomputes the canonical digest from its carried
+  datasets as view twelve. The original four-view compatibility comparison is
+  unchanged; the full handoff is retained in flattened summary fields and the
+  sibling
+  `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Broker-readiness sidecar hydration includes both lineage
+  comparisons as well as the target batch. Generic non-reconciled targets and
+  legacy draft-backed handoffs keep their existing compatibility paths.
 - Route enable now carries and revalidates that target-application batch before
   dry-run broker dispatch can inherit it. Current cutover config, flattened
   cutover summary, and broker-readiness sidecar inputs all retain mapping mode,
@@ -3393,8 +3398,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1867 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1874 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest cutover final target-lineage gate: all 56 cutover tests pass, including
+nested scale-up config, flattened scale-up summary, and broker-readiness
+sidecar recovery of the full eleven-view handoff; mandatory final comparison
+for reconciled targets; independent twelfth-view recomputation; missing,
+negative, carried-digest, and post-scale-up dataset drift rejection; and
+generic non-reconciled target/draft compatibility. All 52 downstream
+route-enable tests pass unchanged. The complete 271-test broker-readiness ->
+scale-up -> cutover -> route-enable lineage chain passes in 167.6 seconds. The
+repository now collects 1874 tests across 154 files. A complete-suite run was
+attempted but reached the 30-minute command limit without emitting a failure;
+because pytest did not return a final result, the last completed full-suite
+baseline remains unchanged.
 
 Latest controlled scale-up final target-lineage gate: all 91 scale-up tests
 pass, including rich-summary and broker-readiness-sidecar recovery of the full
