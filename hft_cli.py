@@ -3117,7 +3117,16 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--input", nargs="+", required=True)
     broker_vendor_data_readiness.add_argument("--out", required=True)
     broker_vendor_data_readiness.add_argument("--label", action="append", dest="labels")
-    broker_vendor_data_readiness.add_argument("--mapping", default=None)
+    broker_vendor_mapping_source = (
+        broker_vendor_data_readiness.add_mutually_exclusive_group()
+    )
+    broker_vendor_mapping_source.add_argument("--mapping", default=None)
+    broker_vendor_mapping_source.add_argument(
+        "--mapping-application",
+        action="append",
+        dest="mapping_applications",
+        help="Repeat once per input, in input order, with a distinct verified target application.",
+    )
     broker_vendor_data_readiness.add_argument("--adapter", default="arrow_money")
     broker_vendor_data_readiness.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
     broker_vendor_data_readiness.add_argument("--output-file", default=None)
@@ -7565,6 +7574,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             labels=args.labels,
             mapping_path=args.mapping,
+            mapping_application_dirs=args.mapping_applications,
             schema_audit_dir=args.schema_audit,
             order_export_dir=args.order_export,
             mapping_draft_dir=args.mapping_draft,

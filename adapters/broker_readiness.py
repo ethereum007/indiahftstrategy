@@ -50,6 +50,7 @@ SUMMARY_FALLBACK_DIRS = {
     "order_export": ("04_export", "03_export"),
     "upload_pack": ("05_upload_pack", "04_upload_pack"),
 }
+TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
 
 
 @dataclass(frozen=True)
@@ -752,6 +753,28 @@ def _apply_vendor_market_data_batch_config(
     )
     frame.loc[0, f"{field_prefix}_mapping_sources"] = _object_text(
         vendor.get("mapping_sources", row.get(f"{source_prefix}_mapping_sources", ""))
+    )
+    frame.loc[0, f"{field_prefix}_mapping_source_mode"] = _object_text(
+        vendor.get(
+            "mapping_source_mode",
+            row.get(f"{source_prefix}_mapping_source_mode", ""),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_mapping_application_count"] = int(
+        _number_value(
+            vendor.get("mapping_application_count"),
+            _number(row, f"{source_prefix}_mapping_application_count", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_unique_mapping_applications"] = int(
+        _number_value(
+            vendor.get("unique_mapping_applications"),
+            _number(row, f"{source_prefix}_unique_mapping_applications", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_target_application_coverage"] = _number_value(
+        vendor.get("target_application_coverage"),
+        _number(row, f"{source_prefix}_target_application_coverage", 0.0),
     )
     frame.loc[0, f"{field_prefix}_comparison_accepted"] = _to_bool(
         comparison.get("accepted", row.get(f"{source_prefix}_comparison_accepted", False))
@@ -1753,6 +1776,40 @@ def _vendor_market_data_batch_item_fields(
             f"{field_prefix}_mapping_sources",
             f"{source_prefix}_mapping_sources",
         ),
+        f"{field_prefix}_mapping_source_mode": _dispatch_text_any(
+            component,
+            row,
+            f"{field_prefix}_mapping_source_mode",
+            f"{source_prefix}_mapping_source_mode",
+        ),
+        f"{field_prefix}_mapping_application_count": int(
+            _dispatch_number_any(
+                component,
+                row,
+                f"{field_prefix}_mapping_application_count",
+                f"{source_prefix}_mapping_application_count",
+            )
+        )
+        if active
+        else 0,
+        f"{field_prefix}_unique_mapping_applications": int(
+            _dispatch_number_any(
+                component,
+                row,
+                f"{field_prefix}_unique_mapping_applications",
+                f"{source_prefix}_unique_mapping_applications",
+            )
+        )
+        if active
+        else 0,
+        f"{field_prefix}_target_application_coverage": _dispatch_number_any(
+            component,
+            row,
+            f"{field_prefix}_target_application_coverage",
+            f"{source_prefix}_target_application_coverage",
+        )
+        if active
+        else 0.0,
         f"{field_prefix}_comparison_accepted": _dispatch_bool_any(
             component,
             row,
@@ -2728,7 +2785,7 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
     manifest_run_type = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_manifest_run_type)
     expected_market = _vendor_market_data_batch_expected_market(row)
     vendor_market = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market)
-    return [
+    checks = [
         _check(
             "dispatch_roundtrip_vendor_market_data_batch_provided",
             bool(row.dispatch_roundtrip_vendor_market_data_batch_provided),
@@ -2838,6 +2895,115 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
             "dispatch round-trip vendor market-data comparison has failed checks",
         ),
     ]
+    if _target_application_batch_active(row):
+        dataset_count = int(
+            row.dispatch_roundtrip_vendor_market_data_batch_dataset_count
+        )
+        mapping_application_count = int(
+            row.dispatch_roundtrip_vendor_market_data_batch_mapping_application_count
+        )
+        unique_mapping_applications = int(
+            row.dispatch_roundtrip_vendor_market_data_batch_unique_mapping_applications
+        )
+        target_application_coverage = float(
+            row.dispatch_roundtrip_vendor_market_data_batch_target_application_coverage
+        )
+        lineage_datasets = _target_application_lineage_dataset_count(row)
+        checks.extend(
+            [
+                _check(
+                    "dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode",
+                    _identity_key(
+                        row.dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode
+                    ),
+                    "==",
+                    TARGET_APPLICATION_BATCH_MODE,
+                    _identity_key(
+                        row.dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode
+                    )
+                    == TARGET_APPLICATION_BATCH_MODE,
+                    "dispatch round-trip vendor market-data target applications are missing strict source mode",
+                ),
+                _check(
+                    "dispatch_roundtrip_vendor_market_data_batch_mapping_application_count",
+                    mapping_application_count,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and mapping_application_count == dataset_count,
+                    "dispatch round-trip vendor market-data target applications are not aligned one for one",
+                ),
+                _check(
+                    "dispatch_roundtrip_vendor_market_data_batch_unique_mapping_applications",
+                    unique_mapping_applications,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and unique_mapping_applications == dataset_count,
+                    "dispatch round-trip vendor market-data target applications are not distinct per dataset",
+                ),
+                _check(
+                    "dispatch_roundtrip_vendor_market_data_batch_target_application_coverage",
+                    target_application_coverage,
+                    ">=",
+                    1.0,
+                    target_application_coverage >= 1.0,
+                    "dispatch round-trip vendor market-data target-application coverage is incomplete",
+                ),
+                _check(
+                    "dispatch_roundtrip_vendor_market_data_batch_application_lineage_datasets",
+                    lineage_datasets,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and lineage_datasets == dataset_count,
+                    "dispatch round-trip vendor market-data datasets are missing target-application lineage",
+                ),
+            ]
+        )
+    return checks
+
+
+def _target_application_batch_active(row: Any) -> bool:
+    mapping_sources = {
+        value.strip().lower()
+        for value in str(
+            row.dispatch_roundtrip_vendor_market_data_batch_mapping_sources
+        ).split(";")
+        if value.strip()
+    }
+    return bool(
+        _identity_key(
+            row.dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode
+        )
+        == TARGET_APPLICATION_BATCH_MODE
+        or "verified_target_application" in mapping_sources
+        or int(
+            row.dispatch_roundtrip_vendor_market_data_batch_mapping_application_count
+        )
+        > 0
+        or float(
+            row.dispatch_roundtrip_vendor_market_data_batch_target_application_coverage
+        )
+        > 0.0
+    )
+
+
+def _target_application_lineage_dataset_count(row: Any) -> int:
+    datasets = _json_list(
+        row.dispatch_roundtrip_vendor_market_data_batch_datasets_json
+    )
+    required_fields = (
+        "mapping_application_path",
+        "mapping_application_id",
+        "mapping_application_sha256",
+        "mapping_scope_review_id",
+        "mapping_scope_review_sha256",
+        "target_intake_receipt_id",
+        "applied_mapping_sha256",
+    )
+    return sum(
+        isinstance(dataset, dict)
+        and all(_object_text(dataset.get(field)) for field in required_fields)
+        for dataset in datasets
+    )
 
 
 def _vendor_market_data_batch_expected_kind(row: Any) -> str:
@@ -2934,6 +3100,10 @@ def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any
         "unique_header_fingerprints",
         "unique_mapping_drafts",
         "mapping_sources",
+        "mapping_source_mode",
+        "mapping_application_count",
+        "unique_mapping_applications",
+        "target_application_coverage",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -3462,6 +3632,21 @@ def _vendor_market_data_batch_summary_fields(
         ),
         f"{field_prefix}_unique_mapping_drafts": int(_number(item, f"{field_prefix}_unique_mapping_drafts", 0.0)),
         f"{field_prefix}_mapping_sources": _item_text(item, f"{field_prefix}_mapping_sources"),
+        f"{field_prefix}_mapping_source_mode": _item_text(
+            item,
+            f"{field_prefix}_mapping_source_mode",
+        ),
+        f"{field_prefix}_mapping_application_count": int(
+            _number(item, f"{field_prefix}_mapping_application_count", 0.0)
+        ),
+        f"{field_prefix}_unique_mapping_applications": int(
+            _number(item, f"{field_prefix}_unique_mapping_applications", 0.0)
+        ),
+        f"{field_prefix}_target_application_coverage": _number(
+            item,
+            f"{field_prefix}_target_application_coverage",
+            0.0,
+        ),
         f"{field_prefix}_comparison_accepted": _item_bool(item, f"{field_prefix}_comparison_accepted"),
         f"{field_prefix}_comparison_failed_checks": int(
             _number(item, f"{field_prefix}_comparison_failed_checks", 0.0)
@@ -4039,6 +4224,16 @@ def _vendor_market_data_batch_config(
         "unique_header_fingerprints": int(_number(row, f"{field_prefix}_unique_header_fingerprints", 0.0)),
         "unique_mapping_drafts": int(_number(row, f"{field_prefix}_unique_mapping_drafts", 0.0)),
         "mapping_sources": _item_text(row, f"{field_prefix}_mapping_sources"),
+        "mapping_source_mode": _item_text(row, f"{field_prefix}_mapping_source_mode"),
+        "mapping_application_count": int(
+            _number(row, f"{field_prefix}_mapping_application_count", 0.0)
+        ),
+        "unique_mapping_applications": int(
+            _number(row, f"{field_prefix}_unique_mapping_applications", 0.0)
+        ),
+        "target_application_coverage": _jsonable(
+            _number(row, f"{field_prefix}_target_application_coverage", 0.0)
+        ),
         "comparison": {
             "accepted": _item_bool(row, f"{field_prefix}_comparison_accepted"),
             "failed_checks": int(_number(row, f"{field_prefix}_comparison_failed_checks", 0.0)),

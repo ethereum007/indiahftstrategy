@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.broker_vendor_data_readiness import (
@@ -8,6 +9,7 @@ from reports.broker_vendor_data_readiness import (
     write_broker_vendor_data_readiness_pipeline,
 )
 from tests.broker_vendor_data_helpers import assert_broker_vendor_data_proof_forwarded
+from tests.test_vendor_data_onboarding import target_mapping_application_batch
 
 
 def vendor_ticks(day: str, *, base: float = 100.0):
@@ -451,6 +453,205 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
         assert "broker_vendor_data_readiness_action_queue.csv" in artifact_paths
         assert "broker_vendor_data_readiness_runbook.md" in artifact_paths
+
+
+def test_broker_vendor_data_readiness_preserves_target_application_batch(
+    tmp_path,
+):
+    evidence = write_inputs(tmp_path / "broker_evidence", "arrow_money")
+    application_dirs, source_paths, _ = target_mapping_application_batch(
+        tmp_path,
+        "broker_vendor_target",
+        ["2026-07-15", "2026-07-16"],
+    )
+    out_dir = tmp_path / "broker_vendor_target_proof"
+
+    report = write_broker_vendor_data_readiness_pipeline(
+        source_paths,
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        mapping_application_dirs=application_dirs,
+        schema_audit_dir=evidence["schema"],
+        order_export_dir=evidence["export"],
+        upload_pack_dir=evidence["upload"],
+        resume_dir=evidence["resume"],
+        dispatch_roundtrip_dir=evidence["roundtrip"],
+        config=BrokerVendorDataReadinessConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=1,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    broker_summary = report.broker_readiness.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "broker_vendor_data_readiness_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    broker_config = json.loads(
+        (
+            out_dir
+            / "02_broker_readiness"
+            / "broker_readiness_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert report.ready
+    assert summary["mapping_source_mode"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert int(summary["mapping_application_count"]) == 2
+    assert int(summary["unique_mapping_applications"]) == 2
+    assert summary["target_application_coverage"] == 1.0
+    assert summary["broker_vendor_mapping_source_mode"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert int(summary["broker_vendor_mapping_application_count"]) == 2
+    assert int(summary["broker_vendor_unique_mapping_applications"]) == 2
+    assert summary["broker_vendor_target_application_coverage"] == 1.0
+    assert broker_summary[
+        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode"
+    ] == "per_dataset_verified_target_application"
+    assert int(
+        broker_summary[
+            "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_application_count"
+        ]
+    ) == 2
+    assert broker_summary[
+        "broker_dispatch_roundtrip_vendor_market_data_batch_target_application_coverage"
+    ] == 1.0
+    assert bool(report.checks["passed"].all())
+    assert {
+        "mapping_application_count",
+        "unique_mapping_applications",
+        "target_application_coverage",
+        "broker_vendor_mapping_application_count",
+        "broker_vendor_unique_mapping_applications",
+        "broker_vendor_target_application_coverage",
+    }.issubset(set(report.checks["check"]))
+    assert {
+        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_application_count",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_applications",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_target_application_coverage",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_datasets",
+    }.issubset(set(report.broker_readiness.checks["check"]))
+    vendor_config = config["vendor_market_data_batch"]
+    assert vendor_config["mapping_application_count"] == 2
+    assert vendor_config["unique_mapping_applications"] == 2
+    assert vendor_config["target_application_coverage"] == 1.0
+    broker_vendor_config = config["broker_readiness"]["vendor_market_data_batch"]
+    assert broker_vendor_config == {
+        "mapping_application_count": 2,
+        "mapping_source_mode": "per_dataset_verified_target_application",
+        "target_application_coverage": 1.0,
+        "unique_mapping_applications": 2,
+    }
+    nested_vendor_config = broker_config["dispatch_roundtrip"][
+        "broker_dispatch_roundtrip_vendor_market_data_batch"
+    ]
+    assert nested_vendor_config["mapping_application_count"] == 2
+    assert nested_vendor_config["unique_mapping_applications"] == 2
+    assert nested_vendor_config["target_application_coverage"] == 1.0
+    assert len(nested_vendor_config["datasets"]) == 2
+    assert all(
+        dataset["mapping_application_id"]
+        and dataset["mapping_scope_review_id"]
+        and dataset["target_intake_receipt_id"]
+        and dataset["applied_mapping_sha256"]
+        for dataset in nested_vendor_config["datasets"]
+    )
+    assert len(manifest["inputs"]["mapping_applications"]) == 2
+    assert len(manifest["inputs"]["mapping_application_manifests"]) == 2
+    assert len(manifest["inputs"]["mapping_application_receipts"]) == 2
+    assert manifest["inputs"]["vendor_market_data_batch_manifest"]["path"].endswith(
+        "01_vendor_market_data_batch\\manifest.json"
+    )
+    assert manifest["parameters"]["mapping_source"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert manifest["parameters"]["mapping_application_count"] == 2
+    assert "- Mapping applications: 2" in runbook
+    assert "- Target-application coverage: 1.000" in runbook
+    assert "- Broker target-application coverage: 1.000" in runbook
+
+    cli_out = tmp_path / "broker_vendor_target_cli"
+    cli_args = [
+        "pipeline-broker-vendor-readiness",
+        "--input",
+        *(str(path) for path in source_paths),
+        "--label",
+        "cli_day1",
+        "--label",
+        "cli_day2",
+        "--out",
+        str(cli_out),
+    ]
+    for application_dir in application_dirs:
+        cli_args.extend(["--mapping-application", str(application_dir)])
+    cli_args.extend(
+        [
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--schema-audit",
+            str(evidence["schema"]),
+            "--order-export",
+            str(evidence["export"]),
+            "--upload-pack",
+            str(evidence["upload"]),
+            "--dispatch-roundtrip",
+            str(evidence["roundtrip"]),
+            "--allow-placeholder-schema",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+            "--fail-on-blocked-actions",
+            "--fail-on-actions",
+        ]
+    )
+    assert main(cli_args) == 0
+    cli_summary = pd.read_csv(
+        cli_out / "broker_vendor_data_readiness_summary.csv"
+    ).iloc[0]
+    assert int(cli_summary["mapping_application_count"]) == 2
+    assert int(cli_summary["broker_vendor_mapping_application_count"]) == 2
+
+
+def test_broker_vendor_data_readiness_rejects_bad_application_alignment_before_root(
+    tmp_path,
+):
+    application_dirs, source_paths, _ = target_mapping_application_batch(
+        tmp_path,
+        "broker_vendor_binding",
+        ["2026-07-15", "2026-07-16"],
+    )
+
+    count_out = tmp_path / "broker_vendor_count_out"
+    with pytest.raises(ValueError, match="one for one"):
+        write_broker_vendor_data_readiness_pipeline(
+            source_paths,
+            output_dir=count_out,
+            mapping_application_dirs=application_dirs[:1],
+        )
+    assert not count_out.exists()
+
+    swapped_out = tmp_path / "broker_vendor_swapped_out"
+    with pytest.raises(ValueError, match="exact target source"):
+        write_broker_vendor_data_readiness_pipeline(
+            source_paths,
+            output_dir=swapped_out,
+            mapping_application_dirs=list(reversed(application_dirs)),
+        )
+    assert not swapped_out.exists()
 
 
 def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):

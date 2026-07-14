@@ -3256,6 +3256,15 @@
   scope-review, target-intake, target-source, and applied-mapping graph and
   re-verifies them before sealing. Raw shared mappings and per-dataset
   applications remain mutually exclusive.
+- The combined broker-vendor readiness pipeline now accepts the same ordered
+  per-dataset target applications. It defers creation of the wrapper root until
+  the nested batch preflight succeeds, directly fingerprints application and
+  nested-batch evidence, and exposes mapping mode, count, uniqueness, and
+  coverage at the wrapper root. Broker readiness now carries those fields into
+  its own summary/config and requires complete target-application lineage for
+  every dataset before accepting an application-backed vendor batch. Raw
+  mapping and application modes remain mutually exclusive at both API and CLI
+  boundaries.
 
 ## Test Gate
 
@@ -3265,8 +3274,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1796 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1798 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest combined target-application broker handoff gate: all seven
+broker-vendor readiness tests pass, including API and repeated CLI application
+alignment, broker-side mode/count/uniqueness/coverage retention, complete
+per-dataset lineage checks, direct wrapper manifest dependencies, and
+fail-before-root refusal for count mismatch and swapped targets. Broker
+readiness, broker-vendor readiness, and vendor onboarding pass together (`81
+passed`). The expanded intake, mapping-review, scope-review,
+target-application, reviewed and target-applied normalization, readiness,
+comparison, mapped-data, onboarding, catalog, manifest, broker-vendor,
+broker-readiness, and shared CLI surface passes together (`249 passed`). The
+repository now collects 1798 tests across 154 files; the full suite was not
+rerun for this slice.
 
 Latest per-dataset target-application batch gate: all 14 vendor onboarding
 tests pass. The new focused cases cover two distinct target files sharing one

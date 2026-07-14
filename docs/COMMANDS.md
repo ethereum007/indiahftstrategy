@@ -7392,6 +7392,39 @@ python -m hft_cli pipeline-broker-vendor-readiness `
   --fail-on-breach
 ```
 
+For files covered by approved exact-header scopes, the combined broker handoff
+accepts the same ordered per-dataset applications as the batch command:
+
+```powershell
+python -m hft_cli pipeline-broker-vendor-readiness `
+  --input vendor\arrow_ticks_2026_06_10.csv vendor\arrow_ticks_2026_06_11.csv `
+  --mapping-application mappings\arrow_ticks_2026_06_10_application `
+  --mapping-application mappings\arrow_ticks_2026_06_11_application `
+  --label day1 `
+  --label day2 `
+  --out runs\broker_vendor_data\arrow_target_bound `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --schema-audit runs\broker_schema\arrow_money `
+  --order-export runs\launch\04_export `
+  --upload-pack runs\launch\05_upload_pack `
+  --dispatch-roundtrip runs\broker_dispatch_roundtrip `
+  --allow-placeholder-schema `
+  --require-dispatch-roundtrip `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+Combined `--mapping` and repeated `--mapping-application` inputs are mutually
+exclusive. Application arguments must align one for one with the input order.
+The wrapper does not create its root until the nested batch has verified every
+application, exact target source, adapter/kind binding, distinct application,
+sanitized label, and evidence/output path. Count mismatches, swapped targets,
+duplicates, stale evidence, and path collisions therefore fail before either
+the vendor batch or broker proof root is created.
+
 This writes `01_vendor_market_data_batch`, `02_broker_readiness`,
 `broker_vendor_data_readiness_components.csv`,
 `broker_vendor_data_readiness_summary.csv`,
@@ -7404,7 +7437,15 @@ handoff. The root summary/config also surfaces source-file fingerprint
 coverage, minimum mapping coverage, and mapping-draft provenance, so operators
 can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
-ready. The wrapper summary/config/runbook also surfaces `adapter_schema_status`,
+ready. In application mode, the batch, broker-readiness, and wrapper
+summary/config artifacts all preserve `mapping_source_mode`,
+`mapping_application_count`, `unique_mapping_applications`, and
+`target_application_coverage`; broker readiness additionally requires one
+complete application-lineage record per dataset. The wrapper manifest directly
+fingerprints every application directory, application manifest and receipt,
+plus the nested batch manifest/config, while the nested batch manifest retains
+the scope-review, target-intake, exact-source, and applied-mapping graph.
+The wrapper summary/config/runbook also surfaces `adapter_schema_status`,
 `schema_review_required`, `schema_reviewed`, `schema_review_mode`,
 `placeholder_schema_active`, `placeholder_schema_allowed`, and
 `placeholder_schema_warning`, so dry-run placeholder schema overrides remain

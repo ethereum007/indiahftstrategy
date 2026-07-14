@@ -7,9 +7,10 @@ from pathlib import Path
 import pandas as pd
 
 from adapters.broker_readiness import BrokerReadinessReport, BrokerReadinessThresholds, write_broker_readiness_report
+from adapters.vendor_mapping_application import RECEIPT_FILE as MAPPING_APPLICATION_RECEIPT_FILE
 from reports.data_readiness import DataReadinessThresholds
 from reports.data_readiness_comparison import DataReadinessComparisonThresholds
-from reports.manifest import write_experiment_manifest
+from reports.manifest import MANIFEST_NAME, write_experiment_manifest
 from reports.vendor_data_onboarding import (
     VendorMarketDataBatchReport,
     VendorMarketDataPipelineConfig,
@@ -22,6 +23,7 @@ _VENDOR_BATCH_PREFIXES = (
     "dispatch_roundtrip_vendor_market_data_batch",
 )
 PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
+TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
 BROKER_VENDOR_NEXT_GATES = {
     "vendor_market_data_batch": "pipeline-vendor-market-data-batch",
     "broker_readiness": "review-broker-readiness",
@@ -75,6 +77,7 @@ def write_broker_vendor_data_readiness_pipeline(
     output_dir: str | Path,
     labels: list[str] | None = None,
     mapping_path: str | Path | None = None,
+    mapping_application_dirs: list[str | Path] | None = None,
     schema_audit_dir: str | Path | None = None,
     order_export_dir: str | Path | None = None,
     mapping_draft_dir: str | Path | None = None,
@@ -91,10 +94,14 @@ def write_broker_vendor_data_readiness_pipeline(
     broker_thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerVendorDataReadinessReport:
     config = config or BrokerVendorDataReadinessConfig()
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
+    out = Path(output_dir).resolve()
     vendor_batch_dir = out / "01_vendor_market_data_batch"
     broker_readiness_dir = out / "02_broker_readiness"
+    mapping_application_roots = (
+        [Path(path).resolve() for path in mapping_application_dirs]
+        if mapping_application_dirs is not None
+        else []
+    )
 
     vendor_config = VendorMarketDataPipelineConfig(
         adapter=config.adapter,
@@ -121,6 +128,11 @@ def write_broker_vendor_data_readiness_pipeline(
         output_dir=vendor_batch_dir,
         labels=labels,
         mapping_path=mapping_path,
+        mapping_application_dirs=(
+            mapping_application_roots
+            if mapping_application_dirs is not None
+            else None
+        ),
         config=vendor_config,
         readiness_thresholds=readiness_thresholds,
         comparison_thresholds=comparison_thresholds,
@@ -195,10 +207,29 @@ def write_broker_vendor_data_readiness_pipeline(
             if comparison_thresholds is not None
             else None,
             "labels": labels,
+            "mapping_source": str(summary.iloc[0].get("mapping_source_mode", "")),
+            "mapping_application_count": _int(
+                summary.iloc[0].get("mapping_application_count", 0)
+            ),
         },
         inputs={
             "inputs": [Path(path) for path in input_paths],
             "mapping": Path(mapping_path) if mapping_path is not None else None,
+            "mapping_applications": (
+                mapping_application_roots
+                if mapping_application_dirs is not None
+                else None
+            ),
+            "mapping_application_manifests": (
+                [path / MANIFEST_NAME for path in mapping_application_roots]
+                if mapping_application_dirs is not None
+                else None
+            ),
+            "mapping_application_receipts": (
+                [path / MAPPING_APPLICATION_RECEIPT_FILE for path in mapping_application_roots]
+                if mapping_application_dirs is not None
+                else None
+            ),
             "schema_audit": schema_audit_dir,
             "order_export": order_export_dir,
             "mapping_draft": mapping_draft_dir,
@@ -210,6 +241,10 @@ def write_broker_vendor_data_readiness_pipeline(
             "resume_gate": resume_dir,
             "dispatch_roundtrip": dispatch_roundtrip_dir,
             "vendor_market_data_batch": vendor_batch_dir,
+            "vendor_market_data_batch_manifest": vendor_batch_dir / MANIFEST_NAME,
+            "vendor_market_data_batch_config": (
+                vendor_batch_dir / "vendor_market_data_batch_config.json"
+            ),
             "broker_readiness": broker_readiness_dir,
         },
     )
@@ -256,6 +291,16 @@ def _component(name: str, ready: bool, artifact_dir: Path, summary: pd.DataFrame
         "min_mapping_coverage": _float(_vendor_value(row, "min_mapping_coverage", 0.0)),
         "unique_mapping_drafts": _int(_vendor_value(row, "unique_mapping_drafts", 0)),
         "mapping_sources": str(_vendor_value(row, "mapping_sources", "")),
+        "mapping_source_mode": str(_vendor_value(row, "mapping_source_mode", "")),
+        "mapping_application_count": _int(
+            _vendor_value(row, "mapping_application_count", 0)
+        ),
+        "unique_mapping_applications": _int(
+            _vendor_value(row, "unique_mapping_applications", 0)
+        ),
+        "target_application_coverage": _float(
+            _vendor_value(row, "target_application_coverage", 0.0)
+        ),
         "adapter_schema_status": str(row.get("adapter_schema_status", "")),
         "schema_reviewed": _bool(row.get("schema_reviewed", False)),
         "schema_review_mode": str(row.get("schema_review_mode", "")),
@@ -310,10 +355,44 @@ def _summary(
                 "min_mapping_coverage": _float(vendor_row.get("min_mapping_coverage", 0.0)),
                 "unique_mapping_drafts": _int(vendor_row.get("unique_mapping_drafts", 0)),
                 "mapping_sources": str(vendor_row.get("mapping_sources", "")),
+                "mapping_source_mode": str(vendor_row.get("mapping_source_mode", "")),
+                "mapping_application_count": _int(
+                    vendor_row.get("mapping_application_count", 0)
+                ),
+                "unique_mapping_applications": _int(
+                    vendor_row.get("unique_mapping_applications", 0)
+                ),
+                "target_application_coverage": _float(
+                    vendor_row.get("target_application_coverage", 0.0)
+                ),
                 "comparison_accepted": bool(vendor_row.get("comparison_accepted", False)),
                 "comparison_failed_checks": _int(vendor_row.get("comparison_failed_checks", 0)),
                 "broker_vendor_data_ready": bool(
                     broker_row.get("broker_dispatch_roundtrip_vendor_market_data_batch_ready", False)
+                ),
+                "broker_vendor_mapping_source_mode": str(
+                    broker_row.get(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode",
+                        "",
+                    )
+                ),
+                "broker_vendor_mapping_application_count": _int(
+                    broker_row.get(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_application_count",
+                        0,
+                    )
+                ),
+                "broker_vendor_unique_mapping_applications": _int(
+                    broker_row.get(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_applications",
+                        0,
+                    )
+                ),
+                "broker_vendor_target_application_coverage": _float(
+                    broker_row.get(
+                        "broker_dispatch_roundtrip_vendor_market_data_batch_target_application_coverage",
+                        0.0,
+                    )
                 ),
                 "broker_readiness_route_readiness_ready": _bool(
                     broker_row.get("route_readiness_ready", False)
@@ -489,6 +568,10 @@ def _checks(
 ) -> pd.DataFrame:
     dataset_count = _int(row.get("dataset_count", 0))
     min_mapping_coverage = float(config.min_mapping_coverage)
+    mapping_source_mode = str(row.get("mapping_source_mode", "")).strip()
+    target_application_mode = mapping_source_mode == TARGET_APPLICATION_BATCH_MODE
+    expected_application_count = dataset_count if target_application_mode else 0
+    expected_application_coverage = 1.0 if target_application_mode else 0.0
     checks = [
         _check(
             "vendor_batch_ready",
@@ -585,6 +668,76 @@ def _checks(
             "",
             bool(str(row.get("mapping_sources", "")).strip()),
             "vendor market-data batch is missing mapping source provenance",
+        ),
+        _check(
+            "mapping_source_mode",
+            mapping_source_mode,
+            "!=",
+            "",
+            bool(mapping_source_mode),
+            "vendor market-data batch is missing its mapping-source mode",
+        ),
+        _check(
+            "mapping_application_count",
+            _int(row.get("mapping_application_count", 0)),
+            "==",
+            expected_application_count,
+            _int(row.get("mapping_application_count", 0)) == expected_application_count,
+            "vendor market-data batch target applications are not aligned one for one",
+        ),
+        _check(
+            "unique_mapping_applications",
+            _int(row.get("unique_mapping_applications", 0)),
+            "==",
+            expected_application_count,
+            _int(row.get("unique_mapping_applications", 0)) == expected_application_count,
+            "vendor market-data batch target applications are not distinct per dataset",
+        ),
+        _check(
+            "target_application_coverage",
+            _float(row.get("target_application_coverage", 0.0)),
+            "==",
+            expected_application_coverage,
+            _float(row.get("target_application_coverage", 0.0))
+            == expected_application_coverage,
+            "vendor market-data batch target-application coverage is incomplete",
+        ),
+        _check(
+            "broker_vendor_mapping_source_mode",
+            str(row.get("broker_vendor_mapping_source_mode", "")).strip(),
+            "==",
+            mapping_source_mode,
+            bool(mapping_source_mode)
+            and str(row.get("broker_vendor_mapping_source_mode", "")).strip()
+            == mapping_source_mode,
+            "broker readiness did not preserve the vendor batch mapping-source mode",
+        ),
+        _check(
+            "broker_vendor_mapping_application_count",
+            _int(row.get("broker_vendor_mapping_application_count", 0)),
+            "==",
+            expected_application_count,
+            _int(row.get("broker_vendor_mapping_application_count", 0))
+            == expected_application_count,
+            "broker readiness did not preserve the target-application count",
+        ),
+        _check(
+            "broker_vendor_unique_mapping_applications",
+            _int(row.get("broker_vendor_unique_mapping_applications", 0)),
+            "==",
+            expected_application_count,
+            _int(row.get("broker_vendor_unique_mapping_applications", 0))
+            == expected_application_count,
+            "broker readiness did not preserve distinct target-application lineage",
+        ),
+        _check(
+            "broker_vendor_target_application_coverage",
+            _float(row.get("broker_vendor_target_application_coverage", 0.0)),
+            "==",
+            expected_application_coverage,
+            _float(row.get("broker_vendor_target_application_coverage", 0.0))
+            == expected_application_coverage,
+            "broker readiness did not preserve target-application coverage",
         ),
         _check(
             "comparison_accepted",
@@ -746,7 +899,9 @@ def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
 
 
 def _action_component(check_name: str) -> str:
-    if check_name in {"broker_readiness_ready", "broker_vendor_data_ready"}:
+    if check_name in {"broker_readiness_ready", "broker_vendor_data_ready"} or check_name.startswith(
+        "broker_vendor_"
+    ):
         return "broker_readiness"
     if check_name == "failed_components":
         return "broker_vendor_data"
@@ -783,6 +938,11 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Failed checks: {_int(row.get('failed_checks', 0))}",
         f"- Dataset count: {_int(row.get('dataset_count', 0))}",
         f"- Ready datasets: {_int(row.get('ready_datasets', 0))}",
+        f"- Mapping source mode: {str(row.get('mapping_source_mode', ''))}",
+        f"- Mapping applications: {_int(row.get('mapping_application_count', 0))}",
+        f"- Unique mapping applications: {_int(row.get('unique_mapping_applications', 0))}",
+        f"- Target-application coverage: {_float(row.get('target_application_coverage', 0.0)):.3f}",
+        f"- Broker target-application coverage: {_float(row.get('broker_vendor_target_application_coverage', 0.0)):.3f}",
         f"- Broker readiness ready: {_yes_no(_bool(row.get('broker_readiness_ready', False)))}",
         f"- Broker vendor-data accepted: {_yes_no(_bool(row.get('broker_vendor_data_ready', False)))}",
         "",
@@ -886,6 +1046,14 @@ def _config(
             "min_mapping_coverage": _float(row.get("min_mapping_coverage", 0.0)),
             "unique_mapping_drafts": _int(row.get("unique_mapping_drafts", 0)),
             "mapping_sources": str(row.get("mapping_sources", "")),
+            "mapping_source_mode": str(row.get("mapping_source_mode", "")),
+            "mapping_application_count": _int(row.get("mapping_application_count", 0)),
+            "unique_mapping_applications": _int(
+                row.get("unique_mapping_applications", 0)
+            ),
+            "target_application_coverage": _float(
+                row.get("target_application_coverage", 0.0)
+            ),
             "comparison": {
                 "accepted": bool(row.get("comparison_accepted", False)),
                 "failed_checks": _int(row.get("comparison_failed_checks", 0)),
@@ -900,6 +1068,20 @@ def _config(
             "schema_review_mode": str(row.get("schema_review_mode", "")),
             "placeholder_schema_active": _bool(row.get("placeholder_schema_active", False)),
             "placeholder_schema_allowed": _bool(row.get("placeholder_schema_allowed", False)),
+            "vendor_market_data_batch": {
+                "mapping_source_mode": str(
+                    row.get("broker_vendor_mapping_source_mode", "")
+                ),
+                "mapping_application_count": _int(
+                    row.get("broker_vendor_mapping_application_count", 0)
+                ),
+                "unique_mapping_applications": _int(
+                    row.get("broker_vendor_unique_mapping_applications", 0)
+                ),
+                "target_application_coverage": _float(
+                    row.get("broker_vendor_target_application_coverage", 0.0)
+                ),
+            },
             "resume_gate": _broker_readiness_resume_gate_config(row),
             "dispatch_roundtrip": _broker_readiness_dispatch_roundtrip_config(row),
         },
@@ -930,6 +1112,16 @@ def _config(
                 ),
                 "min_mapping_coverage": _float(component.get("min_mapping_coverage", 0.0)),
                 "unique_mapping_drafts": _int(component.get("unique_mapping_drafts", 0)),
+                "mapping_source_mode": str(component.get("mapping_source_mode", "")),
+                "mapping_application_count": _int(
+                    component.get("mapping_application_count", 0)
+                ),
+                "unique_mapping_applications": _int(
+                    component.get("unique_mapping_applications", 0)
+                ),
+                "target_application_coverage": _float(
+                    component.get("target_application_coverage", 0.0)
+                ),
                 "adapter_schema_status": str(component.get("adapter_schema_status", "")),
                 "schema_reviewed": _bool(component.get("schema_reviewed", False)),
                 "schema_review_mode": str(component.get("schema_review_mode", "")),
