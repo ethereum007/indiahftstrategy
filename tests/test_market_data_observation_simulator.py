@@ -8,6 +8,7 @@ from market_data_observation_simulator import (
     MarketDataObservationSimulationError,
     simulate_bounded_market_data_session,
 )
+from strategies.microprice_features import microprice_features
 
 
 def _simulate(**config_overrides):
@@ -40,6 +41,26 @@ def test_bounded_market_data_simulation_is_complete_and_deterministic():
     assert first.telemetry["ts_ns"].is_monotonic_increasing
     assert (first.telemetry["ask_price"] > first.telemetry["bid_price"]).all()
     pd.testing.assert_frame_equal(first.telemetry, second.telemetry)
+
+
+def test_bounded_market_data_simulation_carries_deterministic_imbalance_cycles():
+    result = _simulate(event_count=6)
+    features = [
+        microprice_features(
+            {
+                "bid": row.bid_price,
+                "ask": row.ask_price,
+                "bid_qty": row.bid_qty,
+                "ask_qty": row.ask_qty,
+            },
+            0.05,
+        )
+        for row in result.telemetry.itertuples(index=False)
+    ]
+
+    assert [feature["imbalance"] for feature in features] == pytest.approx(
+        [0.8, 0.8, 0.1, -0.8, -0.8, -0.1]
+    )
 
 
 def test_bounded_market_data_simulation_halts_at_session_boundary():

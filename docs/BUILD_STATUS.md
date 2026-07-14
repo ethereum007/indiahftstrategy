@@ -3085,8 +3085,29 @@
   The simulator plus launcher/verifier/CLI/catalog boundary passes `17` focused
   tests, and both retained audit/certificate proof variants pass the complete
   recursive drift chain (`2 passed`). This is not real Arrow.money/iRage market
-  data and does not claim provider-side behavior; choosing a production
-  endpoint/auth contract and supplying credentials remain external gates.
+   data and does not claim provider-side behavior; choosing a production
+   endpoint/auth contract and supplying credentials remain external gates.
+- A semantically verified completed runtime-launcher session can now advance
+  through `evaluate-provider-market-data-imbalance-live-dryrun-shadow`. The
+  bounded evaluator reuses engine-independent microprice feature, entry, and
+  exit semantics to produce deterministic broker-neutral intent observations,
+  applies the handoff's exact order-count, gross-notional, open-order, and
+  position limits, requires the retained kill switch, and terminally flattens
+  hypothetical exposure. Intents are explicitly `not_routable` and
+  `not_submitted`; the evaluator has no execution-engine, order-object,
+  credential, provider-network, dynamic-import, or broker-order capability.
+  Completed and limit-halted sessions emit write-once features, intents,
+  checks, config, runbook, summary, terminal receipt, and recursive manifest.
+  `verify-provider-market-data-imbalance-live-dryrun-shadow-evaluation`
+  reconstructs the artifacts from current launcher telemetry and handoff
+  limits without routing, submitting, or reconnecting; catalog ingestion
+  distinguishes verified completion, verified halt, and stale or inconsistent
+  results. The pure feature/runtime/report/CLI/catalog boundary passes `49`
+  focused tests, and both retained audit/certificate drift variants pass the
+  complete proof chain (`2 passed`). The current source remains deterministic
+  simulation, uses a synthetic one-unit lot size unless explicitly configured,
+  and provides no claim of realized fills, live edge, Arrow.money/iRage
+  behavior, or production instrument metadata.
 
 ## Test Gate
 
@@ -3096,7 +3117,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1655 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1686 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest completed strategy-evidence read-verification gate: strategy evidence,
@@ -3152,6 +3173,17 @@ the full CLI/catalog/write-once/credential-absence/direct-and-recursive-drift
 chain (`2 passed`). Shared manifest/catalog compatibility passes (`68 passed`)
 and the complete strategy-evidence file passes (`59 passed`), for a green
 affected surface of `144 passed` across split batches.
+
+Latest bounded shadow-evaluator gate: engine-independent microprice semantics,
+deterministic long/flat/short/flat intent cycles, retained order/notional/
+position limits, an always-zero open-order invariant, terminal flattening,
+kill-switch halts, strict telemetry validation, write-once artifacts, semantic
+reconstruction, CLI exit behavior, catalog completed/halted/stale states,
+authorization tamper, recursive source drift, and direct capability audits pass
+together (`49 passed`). Both retained-proof variants pass the complete
+release-to-shadow chain inside the green complete strategy-evidence suite (`59
+passed`), and shared manifest/catalog compatibility passes (`68 passed`). The
+non-overlapping affected surface is therefore `176 passed`.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3328,12 +3360,11 @@ the last completed full-suite green baseline rather than claiming the current
 
 ## Next Build Targets
 
-1. Add a bounded non-submitting shadow-strategy evaluator that consumes only a
-   semantically verified completed launcher telemetry set, computes deterministic
-   microprice-imbalance signals and broker-neutral intents, enforces the retained
-   runtime limits and kill switch, and cannot route or submit orders. Keep the
-   simulator path until a real provider endpoint/auth contract and credentials
-   are chosen.
+1. Add a non-authorizing shadow-intent calibration and markout gate that consumes
+   only a semantically verified completed shadow receipt, measures forward
+   mid/microprice outcomes, adverse selection, latency sensitivity, and
+   India-specific cost break-even, and cannot promote, route, or submit. Keep
+   simulation results clearly separated from real-provider evidence.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

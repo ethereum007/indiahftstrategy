@@ -6,6 +6,11 @@ import numpy as np
 
 from engine.hft_backtest import OrderType
 from engine.multi_engine import MultiInstrumentEngine, MultiInstrumentStrategy, RoutedFill
+from strategies.microprice_features import (
+    microprice_entry_side,
+    microprice_exit_action,
+    microprice_features,
+)
 
 
 @dataclass(frozen=True)
@@ -45,7 +50,7 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
         if instrument_id != self.config.instrument_id:
             return
         now = int(tick["ts"])
-        features = _features(tick, self.config.tick_size)
+        features = microprice_features(tick, self.config.tick_size)
         if features is None:
             return
 
@@ -81,13 +86,13 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
         pass
 
     def _entry_side(self, features: dict[str, float]) -> int:
-        imbalance = features["imbalance"]
-        edge_ticks = features["microprice_edge_ticks"]
-        if imbalance >= self.config.entry_imbalance and edge_ticks >= self.config.min_microprice_edge_ticks:
-            return +1
-        if imbalance <= -self.config.entry_imbalance and edge_ticks <= -self.config.min_microprice_edge_ticks:
-            return -1
-        return 0
+        return microprice_entry_side(
+            features,
+            entry_imbalance=self.config.entry_imbalance,
+            min_microprice_edge_ticks=(
+                self.config.min_microprice_edge_ticks
+            ),
+        )
 
     def _maybe_exit(
         self,
@@ -97,12 +102,15 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
         pos: int,
         now: int,
     ) -> None:
-        hold_expired = self.entry_ts is not None and now - self.entry_ts >= self.config.hold_ns
-        signal_decayed = (
-            (pos > 0 and features["imbalance"] <= self.config.exit_imbalance)
-            or (pos < 0 and features["imbalance"] >= -self.config.exit_imbalance)
+        action = microprice_exit_action(
+            features,
+            position_lots=pos,
+            entry_ts_ns=self.entry_ts,
+            now_ns=now,
+            hold_ns=self.config.hold_ns,
+            exit_imbalance=self.config.exit_imbalance,
         )
-        if not hold_expired and not signal_decayed:
+        if not action:
             return
         side = -1 if pos > 0 else +1
         price = float(tick["bid"] if side < 0 else tick["ask"])
@@ -112,7 +120,7 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
             features,
             side=side,
             price=price,
-            action="exit_hold" if hold_expired else "exit_decay",
+            action=action,
             oid=oid,
         )
         if oid is not None:
@@ -148,25 +156,6 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
                 "microprice_edge_ticks": features["microprice_edge_ticks"],
             }
         )
-
-
-def _features(tick: dict, tick_size: float) -> dict[str, float] | None:
-    bid = float(tick["bid"])
-    ask = float(tick["ask"])
-    bid_qty = float(tick["bid_qty"])
-    ask_qty = float(tick["ask_qty"])
-    if bid <= 0 or ask <= 0 or ask < bid or bid_qty <= 0 or ask_qty <= 0:
-        return None
-    depth = bid_qty + ask_qty
-    mid = 0.5 * (bid + ask)
-    microprice = (ask * bid_qty + bid * ask_qty) / depth
-    return {
-        "spread_ticks": (ask - bid) / tick_size,
-        "imbalance": (bid_qty - ask_qty) / depth,
-        "microprice": microprice,
-        "microprice_edge_ticks": (microprice - mid) / tick_size,
-    }
-
 
 def _validate_config(config: MicropriceImbalanceConfig) -> None:
     if not config.instrument_id:

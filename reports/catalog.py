@@ -39,6 +39,10 @@ from reports.provider_market_data_imbalance_live_dryrun_runtime_launcher import 
     RUN_TYPE as PROVIDER_LIVE_DRYRUN_RUNTIME_LAUNCHER_RUN_TYPE,
     verify_provider_market_data_imbalance_live_dryrun_runtime_launcher,
 )
+from reports.provider_market_data_imbalance_live_dryrun_shadow_evaluator import (
+    RUN_TYPE as PROVIDER_LIVE_DRYRUN_SHADOW_RUN_TYPE,
+    verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
+)
 
 
 SUMMARY_FILES = [
@@ -132,6 +136,7 @@ SUMMARY_FILES = [
     "provider_market_data_imbalance_live_dryrun_handoff_summary.csv",
     "provider_market_data_imbalance_live_dryrun_runtime_preflight_summary.csv",
     "provider_market_data_imbalance_live_dryrun_runtime_launcher_summary.csv",
+    "provider_market_data_imbalance_live_dryrun_shadow_summary.csv",
     "provider_broker_lineage_migration_summary.csv",
     "provider_broker_lineage_audit_usage_summary.csv",
     "provider_broker_lineage_refresh_convergence_summary.csv",
@@ -384,6 +389,12 @@ def _catalog_row(
             str(manifest.get("run_type", "")),
         )
     )
+    provider_live_dryrun_shadow_verification = (
+        _provider_live_dryrun_shadow_verification_fields(
+            run_dir,
+            str(manifest.get("run_type", "")),
+        )
+    )
     if (
         strategy_evidence_verification[
             "strategy_evidence_verification_required"
@@ -444,6 +455,16 @@ def _catalog_row(
     ):
         status_column = "provider_live_dryrun_runtime_launcher_verification"
         status = False
+    if (
+        provider_live_dryrun_shadow_verification[
+            "provider_live_dryrun_shadow_verification_required"
+        ]
+        and not provider_live_dryrun_shadow_verification[
+            "provider_live_dryrun_shadow_verification_verified"
+        ]
+    ):
+        status_column = "provider_live_dryrun_shadow_verification"
+        status = False
     inputs = manifest.get("inputs", {}) or {}
     input_stats = _input_stats(inputs)
     row = {
@@ -468,6 +489,7 @@ def _catalog_row(
         **provider_live_dryrun_handoff_verification,
         **provider_live_dryrun_runtime_preflight_verification,
         **provider_live_dryrun_runtime_launcher_verification,
+        **provider_live_dryrun_shadow_verification,
         **_provider_lineage_selection_fields(
             run_dir,
             str(manifest.get("run_type", "")),
@@ -945,6 +967,71 @@ def _provider_live_dryrun_runtime_launcher_verification_fields(
     return fields
 
 
+def _provider_live_dryrun_shadow_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == PROVIDER_LIVE_DRYRUN_SHADOW_RUN_TYPE
+    prefix = "provider_live_dryrun_shadow_verification_"
+    fields: dict[str, Any] = {
+        f"{prefix}required": required,
+        f"{prefix}status": (
+            "verification_required" if required else "not_applicable"
+        ),
+        f"{prefix}verified": False,
+        f"{prefix}completed": False,
+        f"{prefix}halted": False,
+        f"{prefix}manifest_current": False,
+        f"{prefix}launcher_current": False,
+        f"{prefix}handoff_current": False,
+        f"{prefix}artifacts_consistent": False,
+        f"{prefix}shadow_only": False,
+        f"{prefix}non_authorizing": False,
+        f"{prefix}error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = (
+            verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+                run_dir
+            )
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields[f"{prefix}status"] = "verification_error"
+        fields[f"{prefix}error"] = str(exc)
+        return fields
+    status = "stale_or_inconsistent"
+    if verification.verified:
+        status = (
+            "verified_completed"
+            if verification.completed
+            else (
+                "verified_halted"
+                if verification.halted
+                else "verified_incomplete"
+            )
+        )
+    fields.update(
+        {
+            f"{prefix}status": status,
+            f"{prefix}verified": verification.verified,
+            f"{prefix}completed": verification.completed,
+            f"{prefix}halted": verification.halted,
+            f"{prefix}manifest_current": verification.manifest_current,
+            f"{prefix}launcher_current": verification.launcher_current,
+            f"{prefix}handoff_current": verification.handoff_current,
+            f"{prefix}artifacts_consistent": (
+                verification.artifacts_consistent
+            ),
+            f"{prefix}shadow_only": verification.shadow_only,
+            f"{prefix}non_authorizing": verification.non_authorizing,
+            f"{prefix}error": verification.error,
+        }
+    )
+    return fields
+
+
 def _provider_lineage_selection_fields(
     run_dir: Path,
     run_type: str,
@@ -1293,6 +1380,9 @@ def _catalog_summary(
     provider_live_dryrun_runtime_launcher_verification_counts = (
         _provider_live_dryrun_runtime_launcher_verification_counts(catalog)
     )
+    provider_live_dryrun_shadow_verification_counts = (
+        _provider_live_dryrun_shadow_verification_counts(catalog)
+    )
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -1322,6 +1412,7 @@ def _catalog_summary(
                     **provider_live_dryrun_handoff_verification_counts,
                     **provider_live_dryrun_runtime_preflight_verification_counts,
                     **provider_live_dryrun_runtime_launcher_verification_counts,
+                    **provider_live_dryrun_shadow_verification_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -1356,6 +1447,7 @@ def _catalog_summary(
                 **provider_live_dryrun_handoff_verification_counts,
                 **provider_live_dryrun_runtime_preflight_verification_counts,
                 **provider_live_dryrun_runtime_launcher_verification_counts,
+                **provider_live_dryrun_shadow_verification_counts,
                 **action_counts,
                 **hygiene_counts,
             }
@@ -1613,6 +1705,40 @@ def _provider_live_dryrun_runtime_launcher_verification_counts(
             "provider_live_dryrun_runtime_launcher_verification_stale_runs": int(
                 (required & ~verified).sum()
             ),
+        }
+    )
+    return counts
+
+
+def _provider_live_dryrun_shadow_verification_counts(
+    catalog: pd.DataFrame,
+) -> dict[str, int]:
+    prefix = "provider_live_dryrun_shadow_verification_"
+    counts = {
+        f"{prefix}required_runs": 0,
+        f"{prefix}verified_runs": 0,
+        f"{prefix}completed_runs": 0,
+        f"{prefix}halted_runs": 0,
+        f"{prefix}stale_runs": 0,
+    }
+    required_column = f"{prefix}required"
+    if catalog.empty or required_column not in catalog.columns:
+        return counts
+    required = catalog[required_column].map(_to_bool)
+    verified = catalog[f"{prefix}verified"].map(_to_bool)
+    completed = catalog[f"{prefix}completed"].map(_to_bool)
+    halted = catalog[f"{prefix}halted"].map(_to_bool)
+    counts.update(
+        {
+            f"{prefix}required_runs": int(required.sum()),
+            f"{prefix}verified_runs": int((required & verified).sum()),
+            f"{prefix}completed_runs": int(
+                (required & verified & completed).sum()
+            ),
+            f"{prefix}halted_runs": int(
+                (required & verified & halted).sum()
+            ),
+            f"{prefix}stale_runs": int((required & ~verified).sum()),
         }
     )
     return counts

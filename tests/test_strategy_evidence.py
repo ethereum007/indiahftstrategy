@@ -41,6 +41,10 @@ from reports.provider_market_data_imbalance_live_dryrun_runtime_launcher import 
     verify_provider_market_data_imbalance_live_dryrun_runtime_launcher,
     write_provider_market_data_imbalance_live_dryrun_runtime_launcher,
 )
+from reports.provider_market_data_imbalance_live_dryrun_shadow_evaluator import (
+    verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
+    write_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
+)
 
 
 def _manifest_input_paths(value):
@@ -3018,6 +3022,125 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
             runtime_launcher_dir,
         )
 
+    runtime_shadow_dir = tmp_path / "runtime_shadow"
+    assert (
+        main(
+            [
+                "evaluate-provider-market-data-imbalance-live-dryrun-shadow",
+                "--launcher",
+                str(runtime_launcher_dir),
+                "--out",
+                str(runtime_shadow_dir),
+                "--fail-on-halt",
+            ]
+        )
+        == 0
+    )
+    runtime_shadow_receipt_path = (
+        runtime_shadow_dir
+        / "provider_market_data_imbalance_live_dryrun_shadow_terminal_receipt.json"
+    )
+    runtime_shadow_receipt = json.loads(
+        runtime_shadow_receipt_path.read_text(encoding="utf-8")
+    )
+    assert runtime_shadow_receipt["completed"] is True
+    assert runtime_shadow_receipt["halted"] is False
+    for field in (
+        "provider_network_called",
+        "provider_backend_loaded",
+        "credential_environment_read",
+        "credential_values_stored",
+        "execution_engine_loaded",
+        "order_object_created",
+        "live_position_created",
+        "broker_order_api_imported",
+        "broker_order_api_called",
+        "broker_api_called",
+        "routing_enabled",
+        "submission_enabled",
+        "authorizes_submission",
+        "release_approved",
+    ):
+        assert runtime_shadow_receipt["safety"][field] is False
+    for field in (
+        "shadow_only",
+        "market_data_read_only",
+        "deterministic_evaluation",
+        "broker_neutral_intents_only",
+        "kill_switch_armed",
+        "terminal_flatten_required",
+        "requires_separate_order_runtime",
+    ):
+        assert runtime_shadow_receipt["safety"][field] is True
+    runtime_shadow_intents = pd.read_csv(
+        runtime_shadow_dir
+        / "provider_market_data_imbalance_live_dryrun_shadow_intents.csv"
+    )
+    assert runtime_shadow_intents["action"].tolist() == [
+        "entry",
+        "exit_hold",
+    ]
+    assert set(runtime_shadow_intents["routing_status"]) == {"not_routable"}
+    assert set(runtime_shadow_intents["submission_status"]) == {
+        "not_submitted"
+    }
+    serialized_shadow = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in runtime_shadow_dir.rglob("*")
+        if path.is_file()
+    )
+    assert runtime_api_key not in serialized_shadow
+    assert runtime_api_secret not in serialized_shadow
+    runtime_shadow_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+            runtime_shadow_dir
+        )
+    )
+    assert runtime_shadow_verification.verified
+    assert runtime_shadow_verification.completed
+    assert not runtime_shadow_verification.halted
+    assert runtime_shadow_verification.manifest_current
+    assert runtime_shadow_verification.launcher_current
+    assert runtime_shadow_verification.handoff_current
+    assert runtime_shadow_verification.artifacts_consistent
+    assert runtime_shadow_verification.shadow_only
+    assert runtime_shadow_verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-live-dryrun-shadow-evaluation",
+                "--shadow",
+                str(runtime_shadow_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    runtime_shadow_catalog = catalog_experiment_runs([runtime_shadow_dir])
+    runtime_shadow_row = runtime_shadow_catalog.catalog.iloc[0]
+    assert bool(runtime_shadow_row["summary_status"])
+    assert (
+        runtime_shadow_row[
+            "provider_live_dryrun_shadow_verification_status"
+        ]
+        == "verified_completed"
+    )
+    assert bool(
+        runtime_shadow_row[
+            "provider_live_dryrun_shadow_verification_verified"
+        ]
+    )
+    assert int(
+        runtime_shadow_catalog.summary.iloc[0][
+            "provider_live_dryrun_shadow_verification_completed_runs"
+        ]
+    ) == 1
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+            runtime_launcher_dir,
+            runtime_shadow_dir,
+        )
+
     certificate_source.write_text(
         "source\nchanged_after_release_review\n",
         encoding="utf-8",
@@ -3066,6 +3189,20 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     )
     assert not stale_runtime_launcher_verification.verified
     assert not stale_runtime_launcher_verification.preflight_current
+    stale_runtime_shadow_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+            runtime_shadow_dir
+        )
+    )
+    assert not stale_runtime_shadow_verification.verified
+    assert not stale_runtime_shadow_verification.launcher_current
+    assert not verify_experiment_manifest(
+        runtime_shadow_dir / "manifest.json",
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_shadow_evaluator"
+        ),
+        require_input_fingerprints=True,
+    ).passed
     assert not verify_experiment_manifest(
         runtime_launcher_dir / "manifest.json",
         expected_run_type=(
@@ -3147,6 +3284,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
         runtime_launcher_dir
     ).verified
+    assert verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+        runtime_shadow_dir
+    ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
     assert bool(cataloged_row["summary_status"])
@@ -3217,6 +3357,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert not verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
         runtime_launcher_dir
+    ).verified
+    assert not verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+        runtime_shadow_dir
     ).verified
     assert not verify_experiment_manifest(
         release_manifest_path,

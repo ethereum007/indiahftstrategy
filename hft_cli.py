@@ -260,6 +260,11 @@ from reports.provider_market_data_imbalance_live_dryrun_runtime_launcher import 
     verify_provider_market_data_imbalance_live_dryrun_runtime_launcher,
     write_provider_market_data_imbalance_live_dryrun_runtime_launcher,
 )
+from reports.provider_market_data_imbalance_live_dryrun_shadow_evaluator import (
+    ProviderMarketDataImbalanceLiveDryrunShadowConfig,
+    verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
+    write_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2374,7 +2379,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
         "--spread",
         type=float,
-        default=0.5,
+        default=0.05,
     )
     provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
         "--quantity",
@@ -2419,6 +2424,97 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_market_data_imbalance_live_dryrun_runtime_launcher_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_live_dryrun_shadow = sub.add_parser(
+        "evaluate-provider-market-data-imbalance-live-dryrun-shadow",
+        help=(
+            "Evaluate deterministic microprice signals and non-routable "
+            "shadow intents from a verified completed runtime launcher."
+        ),
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--launcher",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--lot-size",
+        type=int,
+        default=1,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--intent-quantity-lots",
+        type=int,
+        default=1,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--tick-size",
+        type=float,
+        default=0.05,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--entry-imbalance",
+        type=float,
+        default=0.6,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--exit-imbalance",
+        type=float,
+        default=0.15,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--min-microprice-edge-ticks",
+        type=float,
+        default=0.25,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--max-spread-ticks",
+        type=float,
+        default=2.0,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--min-depth",
+        type=int,
+        default=1,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--hold-ns",
+        type=int,
+        default=500_000_000,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--cooloff-ns",
+        type=int,
+        default=0,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=32_768,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow.add_argument(
+        "--fail-on-halt",
+        action="store_true",
+    )
+    verify_provider_market_data_imbalance_live_dryrun_shadow_parser = (
+        sub.add_parser(
+            "verify-provider-market-data-imbalance-live-dryrun-shadow-evaluation",
+            help=(
+                "Reopen shadow features, non-routable intents, retained limits, "
+                "and the complete launcher proof graph without reevaluating sources."
+            ),
+        )
+    )
+    verify_provider_market_data_imbalance_live_dryrun_shadow_parser.add_argument(
+        "--shadow",
+        required=True,
+    )
+    verify_provider_market_data_imbalance_live_dryrun_shadow_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -6425,6 +6521,77 @@ def main(argv: list[str] | None = None) -> int:
                         ""
                         if result.preflight_dir is None
                         else str(result.preflight_dir)
+                    ),
+                    "handoff_dir": (
+                        ""
+                        if result.handoff_dir is None
+                        else str(result.handoff_dir)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.completed)
+            else 0
+        )
+    if (
+        args.command
+        == "evaluate-provider-market-data-imbalance-live-dryrun-shadow"
+    ):
+        result = (
+            write_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+                args.launcher,
+                args.out,
+                config=ProviderMarketDataImbalanceLiveDryrunShadowConfig(
+                    lot_size=args.lot_size,
+                    intent_quantity_lots=args.intent_quantity_lots,
+                    tick_size=args.tick_size,
+                    entry_imbalance=args.entry_imbalance,
+                    exit_imbalance=args.exit_imbalance,
+                    min_microprice_edge_ticks=(
+                        args.min_microprice_edge_ticks
+                    ),
+                    max_spread_ticks=args.max_spread_ticks,
+                    min_depth=args.min_depth,
+                    hold_ns=args.hold_ns,
+                    cooloff_ns=args.cooloff_ns,
+                    terminal_flatten=True,
+                    max_dependency_count=args.max_dependencies,
+                ),
+            )
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_halt and not result.completed else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-live-dryrun-shadow-evaluation"
+    ):
+        result = (
+            verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
+                args.shadow
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "completed": result.completed,
+                    "halted": result.halted,
+                    "manifest_current": result.manifest_current,
+                    "launcher_current": result.launcher_current,
+                    "handoff_current": result.handoff_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "shadow_only": result.shadow_only,
+                    "non_authorizing": result.non_authorizing,
+                    "shadow_dir": str(result.output_dir),
+                    "launcher_dir": (
+                        ""
+                        if result.launcher_dir is None
+                        else str(result.launcher_dir)
                     ),
                     "handoff_dir": (
                         ""

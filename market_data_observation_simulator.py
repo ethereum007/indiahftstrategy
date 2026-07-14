@@ -51,7 +51,7 @@ class BoundedMarketDataSimulationConfig:
     start_offset_seconds: int = 0
     symbol: str = "NIFTY-SIM"
     base_mid_price: float = 25_000.0
-    spread: float = 0.5
+    spread: float = 0.05
     quantity: int = 100
     price_step: float = 0.05
     fault_mode: str = "none"
@@ -125,6 +125,7 @@ def simulate_bounded_market_data_session(
         ):
             ts_ns = previous_accepted_ts_ns
         bid, ask, mid = _quote(config, sequence)
+        bid_qty, ask_qty = _depth(config.quantity, sequence)
         if (
             config.fault_mode == "invalid_quote"
             and sequence == config.fault_at_event
@@ -137,8 +138,8 @@ def simulate_bounded_market_data_session(
             session_close_ts_ns=close_ns,
             bid=bid,
             ask=ask,
-            bid_qty=config.quantity,
-            ask_qty=config.quantity,
+            bid_qty=bid_qty,
+            ask_qty=ask_qty,
         )
         accepted = not breach
         rows.append(
@@ -151,8 +152,8 @@ def simulate_bounded_market_data_session(
                 "symbol": symbol,
                 "bid_price": bid,
                 "ask_price": ask,
-                "bid_qty": config.quantity,
-                "ask_qty": config.quantity,
+                "bid_qty": bid_qty,
+                "ask_qty": ask_qty,
                 "mid_price": mid,
                 "spread": round(ask - bid, 10),
                 "accepted": accepted,
@@ -278,6 +279,21 @@ def _quote(
         round(float(ask), 10),
         round(float(mid), 10),
     )
+
+
+def _depth(base_quantity: int, sequence: int) -> tuple[int, int]:
+    cycle = (
+        (9, 1),
+        (9, 1),
+        (11, 9),
+        (1, 9),
+        (1, 9),
+        (9, 11),
+        (1, 1),
+        (1, 1),
+    )
+    bid_multiplier, ask_multiplier = cycle[(sequence - 1) % len(cycle)]
+    return base_quantity * bid_multiplier, base_quantity * ask_multiplier
 
 
 def _breach_code(
