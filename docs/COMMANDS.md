@@ -3796,6 +3796,15 @@ and every dataset must retain its application path/ID/hash, scope-review
 ID/hash, target-intake receipt ID, and applied-mapping hash. These fields are
 preserved in both the scale-up summary and nested config, including when they
 are hydrated from a thin broker-readiness summary plus its config sidecar.
+Target-backed scale-up now also requires broker readiness to carry a successful
+current/final lineage comparison. Scale-up validates the two upstream SHA-256
+digests, recomputes the canonical digest from the carried dataset identities,
+and fails closed if any digest or final dispatch/send/ack consistency decision
+disagrees. The summary retains final-consistency, match, and digest fields;
+`broker_readiness.dispatch_roundtrip.vendor_market_data_batch` retains the
+consistency state and recomputed digest, while
+`broker_readiness.dispatch_roundtrip.vendor_market_data_batch_lineage_comparison`
+retains the current, broker-final, and scale-up-carried digests for cutover.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`

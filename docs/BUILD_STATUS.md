@@ -3272,7 +3272,12 @@
   scope-review, target-intake, and applied-mapping lineage. Any target-mode
   signal activates fail-closed checks requiring the strict source mode, one
   distinct application per dataset, full coverage, and complete lineage;
-  legacy draft-backed vendor batches remain compatible.
+  legacy draft-backed vendor batches remain compatible. Scale-up now also
+  requires the broker-readiness current/final lineage-match decision for every
+  target-backed batch, recomputes the canonical lineage digest from the carried
+  datasets, and compares it with both upstream SHA-256 digests. Final dispatch/
+  send/ack consistency state and all three digests remain visible in the
+  scale-up summary and nested config for downstream cutover audit.
 - Cutover now preserves and independently gates the same application-backed
   broker vendor batch from scale-up config, flattened scale-up summary, or a
   broker-readiness config sidecar. Its authorization, summary, and nested
@@ -3344,8 +3349,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1824 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1826 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest controlled scale-up target-lineage gate: all 84 scale-up tests pass,
+including broker-readiness sidecar hydration, final consistency carry, exact
+current/final digest agreement, canonical carried-batch recomputation, and
+fail-closed rejection when carried application identity drifts despite upstream
+success flags. All 47 cutover tests pass against the richer scale-up config.
+The repository now collects 1826 tests across 154 files; the full suite was not
+rerun for this slice.
 
 Latest current-to-final target-lineage gate: all 66 broker-readiness tests pass,
 including stronger-proof precedence, canonical lineage digest equality, and
