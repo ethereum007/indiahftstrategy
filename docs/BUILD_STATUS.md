@@ -3300,7 +3300,13 @@
   route packet, summary, and config. Summary-only recovery now selects the
   current `cutover_*` proof prefix before older `scaleup_*` compatibility
   fields. Any target signal activates the same one-application-per-dataset
-  fail-closed contract, while legacy draft-backed handoffs remain compatible.
+  fail-closed contract and additionally requires the affirmative cutover
+  lineage decision, final consistency when required, exact current/final,
+  scale-up-carried, and cutover-carried digests, plus a fresh canonical digest
+  recomputed from the route-carried datasets. The packet, summary, and sibling
+  lineage-comparison config retain all five digest views. Legacy draft-backed
+  handoffs remain compatible; thin target sidecars fail until scale-up and
+  cutover produce the missing carried lineage decisions.
 - Broker dispatch planning now preserves and independently gates the same
   application-backed vendor batch before any sender packet can be prepared.
   Nested route config, flattened route summary, and broker-readiness sidecar
@@ -3356,17 +3362,23 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1828 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1833 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest route-enable target-lineage gate: all 52 route-enable tests pass,
+including rich cutover config and flattened summary recovery, five-view digest
+retention, final consistency carry, independent route canonical recomputation,
+legacy sidecar compatibility, fail-closed target-sidecar handling, and rejection
+of carried dataset or cutover-decision drift. The full 148-test cutover,
+route-enable, and broker-dispatch planning chain passes. The repository now
+collects 1833 tests across 154 files; the full suite was not rerun for this
+slice.
 
 Latest cutover target-lineage gate: all 49 cutover tests pass, including rich
 scale-up config, flattened summary, and broker-readiness sidecar recovery;
 final consistency and current/final decision carry; upstream digest checks;
 independent cutover canonical recomputation; and fail-closed rejection of
-carried dataset drift despite unchanged upstream success flags. All 47
-route-enable tests pass against the richer cutover artifacts. The repository
-now collects 1828 tests across 154 files; the full suite was not rerun for this
-slice.
+carried dataset drift despite unchanged upstream success flags.
 
 Latest controlled scale-up target-lineage gate: all 84 scale-up tests pass,
 including broker-readiness sidecar hydration, final consistency carry, exact
