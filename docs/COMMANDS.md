@@ -4945,9 +4945,19 @@ application-backed proof, send preparation also carries mapping mode,
 application count, uniqueness, coverage, and each dataset's application,
 scope-review, target-intake, and applied-mapping lineage. Any target signal
 requires `per_dataset_verified_target_application`, one distinct application
-per dataset, 100% coverage, and complete lineage. This applies to nested
-dispatch config, flattened dispatch summary recovery, and broker-readiness
-sidecar hydration. If
+per dataset, 100% coverage, complete lineage, an affirmative dispatch-retained
+current/final match decision, and final dispatch/send/ack consistency when that
+decision is marked required. Send preparation verifies the current and
+broker-final digests, the scale-up-, cutover-, route-, and dispatch-carried
+digests, then independently recomputes a seventh canonical digest from the
+datasets entering the request packet. All seven views remain in the flattened
+send summary and the
+`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+config block, including `send_carried_application_lineage_sha256`. This applies
+to nested dispatch config and flattened dispatch summary recovery. Legacy
+draft-backed broker-readiness sidecars remain compatible; a target-application
+sidecar without every intervening carried digest fails closed and must be
+regenerated through scale-up, cutover, route-enable, and dispatch planning. If
 the dispatch config retained broker-vendor wrapper readiness, the sender packet
 carries it as `dispatch_broker_vendor_data_readiness_*` fields plus
 `dispatch_broker_vendor_data_readiness` config, and fails closed when the

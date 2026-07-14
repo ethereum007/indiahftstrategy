@@ -3324,7 +3324,13 @@
   config, flattened dispatch summary, and broker-readiness sidecar hydration
   retain all application aggregates and per-dataset lineage in the send summary
   and config. Target signals activate the same strict one-application-per-
-  dataset gate, while draft-backed packets retain their compatibility path.
+  dataset gate, require the affirmative dispatch-retained lineage decision and
+  final consistency when marked required, verify the current, broker-final,
+  scale-up-, cutover-, route-, and dispatch-carried digests, and independently
+  recompute a seventh canonical digest from the send-carried datasets. All seven
+  views remain in the flattened summary and sibling lineage-comparison config.
+  Draft-backed packets retain their compatibility path; thin target sidecars
+  fail until the intervening gates provide every carried lineage view.
 - Broker dispatch acknowledgement reconciliation now preserves and independently
   gates the send-retained target proof before accepted acknowledgement evidence
   can advance. Nested send/dispatch config, flattened dispatch summary, and
@@ -3366,8 +3372,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1838 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1843 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch sender target-lineage gate: all 64 sender tests pass,
+including rich dispatch config and flattened summary recovery, seven-view digest
+retention, final consistency carry, independent send canonical recomputation,
+legacy draft-sidecar compatibility, fail-closed target-sidecar handling, and
+rejection of carried dataset or dispatch-decision drift. All 43 acknowledgement
+reconciliation tests and all 41 final round-trip tests pass against the richer
+sender config. The repository now collects 1843 tests across 154 files; the full
+suite was not rerun for this slice.
 
 Latest broker-dispatch target-lineage gate: all 52 dispatch-planning tests pass,
 including rich route config and flattened summary recovery, six-view digest
