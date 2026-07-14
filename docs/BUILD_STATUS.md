@@ -3213,6 +3213,15 @@
   seal authorizes exact-header mapping application only; target-file
   normalization, research, routing, submission, and live release remain
   unauthorized.
+- Target mapping application now turns that scope into per-file evidence. A
+  write-once application reconstructs the approved scope and a current target
+  vendor intake, binds the target source fingerprint, requires exact ordered
+  header plus adapter/kind equality, and retains the canonical mapping byte for
+  byte. Opaque but semantically verified blocked intakes can be accepted only
+  through this approved scope. The semantic verifier catches target-source,
+  intake, and upstream scope drift as well as re-manifested safety widening;
+  catalogs expose `verified_ready` and `stale_or_inconsistent`. This boundary
+  records that normalization has not run and remains unauthorized.
 
 ## Test Gate
 
@@ -3222,8 +3231,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1770 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1781 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target mapping-application gate: all 11 focused adversarial tests pass.
+The affected intake, mapping-review, scope-review, target-application,
+reviewed-normalization, vendor onboarding, catalog, manifest, and shared CLI
+surface passes together (`128 passed`). Coverage includes different-day exact
+headers, ordered-column mismatch, adapter/kind substitution, approved manual
+mapping over opaque blocked inference, rejected scope refusal, source and
+upstream decision drift, byte-preserving output, strict CLI behavior, catalog
+states, write-once/path isolation, and re-manifested mapping or normalization
+authority tampering. The repository now collects 1781 tests across 153 files;
+the full suite was not rerun for this slice.
 
 Latest exact-header mapping-scope gate: all 11 focused adversarial tests pass.
 The affected intake, mapping-review, reviewed-normalization, mapped-data,

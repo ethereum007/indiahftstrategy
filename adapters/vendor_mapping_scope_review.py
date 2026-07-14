@@ -100,6 +100,23 @@ class VendorMappingScopeReviewConfig:
 
 
 @dataclass(frozen=True)
+class ApprovedMappingScopeReviewInputs:
+    scope_review_dir: Path
+    mapping_review_dir: Path
+    seed_source_path: Path
+    scoped_mapping_path: Path
+    adapter: str
+    kind: str
+    reuse_scope: str
+    mapping_scope_review_id: str
+    mapping_scope_review_sha256: str
+    mapping_review_id: str
+    mapping_review_sha256: str
+    source_header_sha256: str
+    reviewed_mapping_sha256: str
+
+
+@dataclass(frozen=True)
 class VendorMappingScopeReviewReport:
     checks: pd.DataFrame
     mapping: pd.DataFrame
@@ -137,6 +154,90 @@ class VendorMappingScopeReviewVerification:
     mapping_review_dir: Path | None = None
     operator_decision_path: Path | None = None
     error: str = ""
+
+
+def approved_mapping_scope_review_inputs(
+    scope_review_dir: str | Path,
+) -> ApprovedMappingScopeReviewInputs:
+    """Resolve only semantically verified, approved exact-header scope inputs."""
+    root = Path(scope_review_dir).resolve()
+    verification = verify_vendor_mapping_scope_review(root)
+    if not verification.verified or not verification.approved:
+        state = "rejected" if verification.rejected else "stale_or_inconsistent"
+        raise ValueError(
+            "mapping application requires a verified approved scope review: "
+            f"{state}; {verification.error}"
+        )
+    receipt = _read_json(root / RECEIPT_FILE, "mapping scope-review receipt")
+    identity = _mapping(receipt.get("identity"))
+    scope = _mapping(receipt.get("scope"))
+    mapping_review = _mapping(receipt.get("mapping_review"))
+    mapping = _mapping(receipt.get("mapping"))
+    output_name = _text(mapping.get("output_file"))
+    output_path = Path(output_name)
+    if (
+        not output_name
+        or output_path.is_absolute()
+        or len(output_path.parts) != 1
+        or output_path.name in {"", ".", ".."}
+    ):
+        raise ValueError("scope review does not name a safe scoped mapping file")
+    scoped_mapping_path = (root / output_path.name).resolve()
+    review_root = Path(_text(mapping_review.get("path"))).resolve()
+    seed_source_path = Path(_text(mapping_review.get("seed_source_path"))).resolve()
+    adapter = _identity(identity.get("adapter"))
+    kind = _identity(identity.get("kind"))
+    reuse_scope = _identity(scope.get("reuse_scope"))
+    scope_review_id = _text(receipt.get("mapping_scope_review_id"))
+    scope_review_sha256 = _text(receipt.get("mapping_scope_review_sha256"))
+    mapping_review_id = _text(mapping_review.get("mapping_review_id"))
+    mapping_review_sha256 = _text(mapping_review.get("mapping_review_sha256"))
+    source_header_sha256 = _text(scope.get("source_header_sha256"))
+    reviewed_mapping_sha256 = _text(mapping.get("reviewed_sha256"))
+    if not all(
+        (
+            scoped_mapping_path.is_file(),
+            review_root.is_dir(),
+            seed_source_path.is_file(),
+            adapter,
+            kind,
+            reuse_scope == REUSE_SCOPE,
+            scope_review_id,
+            scope_review_sha256,
+            mapping_review_id,
+            mapping_review_sha256,
+            source_header_sha256,
+            reviewed_mapping_sha256,
+        )
+    ):
+        raise ValueError("scope review identity or fingerprints are incomplete")
+    if file_sha256(scoped_mapping_path) != reviewed_mapping_sha256:
+        raise ValueError("scope-approved mapping fingerprint is stale")
+    if verification.mapping_review_dir != review_root:
+        raise ValueError("scope review mapping-review path is inconsistent")
+    safety = _mapping(receipt.get("safety"))
+    if (
+        _explicit_bool(safety.get("authorizes_header_scoped_application"))
+        is not True
+        or not _surfaces_application_only(receipt)
+        or not _surfaces_non_routing(receipt)
+    ):
+        raise ValueError("scope review safety contract is inconsistent")
+    return ApprovedMappingScopeReviewInputs(
+        scope_review_dir=root,
+        mapping_review_dir=review_root,
+        seed_source_path=seed_source_path,
+        scoped_mapping_path=scoped_mapping_path,
+        adapter=adapter,
+        kind=kind,
+        reuse_scope=reuse_scope,
+        mapping_scope_review_id=scope_review_id,
+        mapping_scope_review_sha256=scope_review_sha256,
+        mapping_review_id=mapping_review_id,
+        mapping_review_sha256=mapping_review_sha256,
+        source_header_sha256=source_header_sha256,
+        reviewed_mapping_sha256=reviewed_mapping_sha256,
+    )
 
 
 def write_vendor_mapping_scope_review(

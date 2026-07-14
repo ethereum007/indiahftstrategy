@@ -3031,6 +3031,65 @@ release. Target-file binding and normalization evidence remain separate gates.
 Catalogs distinguish `verified_approved`, `verified_rejected`, and
 `stale_or_inconsistent` scope evidence.
 
+## Target Mapping Application
+
+Bind an approved exact-header scope to one future vendor file before
+normalization. First retain a write-once intake for the target file, using the
+same adapter and data kind as the scope:
+
+```powershell
+python -m hft_cli intake-vendor-csv `
+  --sample data\arrow\2026-07-15-ticks.csv `
+  --out mappings\arrow_ticks_2026_07_15_intake `
+  --adapter arrow_money `
+  --kind ticks
+```
+
+Apply the scope to that retained intake:
+
+```powershell
+python -m hft_cli apply-vendor-mapping-scope `
+  --scope-review mappings\arrow_ticks_exact_header_scope `
+  --intake mappings\arrow_ticks_2026_07_15_intake `
+  --out mappings\arrow_ticks_2026_07_15_application `
+  --fail-on-breach
+```
+
+The command reconstructs both evidence graphs before writing anything. It
+requires an approved current scope, a semantically verified current target
+intake, matching adapter and kind, and an exact match of the ordered-header
+SHA-256. A blocked intake with opaque vendor column names can be accepted when
+its exact header and the operator-approved mapping scope match; inferred
+semantics are not substituted for that approval.
+
+Outputs:
+
+```text
+target_applied_vendor_mapping.csv
+vendor_mapping_application_checks.csv
+vendor_mapping_application_action_queue.csv
+vendor_mapping_application_summary.csv
+vendor_mapping_application_receipt.json
+vendor_mapping_application_config.json
+vendor_mapping_application_runbook.md
+manifest.json
+```
+
+Verify the retained scope, target intake/source, byte-identical mapping, and
+all generated artifacts before a later normalization gate consumes the proof:
+
+```powershell
+python -m hft_cli verify-vendor-mapping-application `
+  --application mappings\arrow_ticks_2026_07_15_application `
+  --fail-on-breach
+```
+
+The application receipt is target-file specific. Reordered, added, removed, or
+renamed columns change the header hash and are refused before output. The proof
+does not execute or authorize normalization, strategy research, routing,
+submission, or live release. Catalogs report `verified_ready` or
+`stale_or_inconsistent` application evidence.
+
 ## Reviewed Vendor Data Normalization
 
 Normalize the exact raw source with the exact canonical mapping from a verified

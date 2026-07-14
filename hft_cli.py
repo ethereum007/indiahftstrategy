@@ -30,6 +30,11 @@ from adapters.vendor_mapping_review import (
     verify_vendor_mapping_review,
     write_vendor_mapping_review,
 )
+from adapters.vendor_mapping_application import (
+    VendorMappingApplicationConfig,
+    verify_vendor_mapping_application,
+    write_vendor_mapping_application,
+)
 from adapters.vendor_mapping_scope_review import (
     VendorMappingScopeReviewConfig,
     verify_vendor_mapping_scope_review,
@@ -4026,6 +4031,30 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_vendor_mapping_scope_review_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    vendor_mapping_application = sub.add_parser(
+        "apply-vendor-mapping-scope",
+        help="Bind an approved exact-header mapping scope to a target intake.",
+    )
+    vendor_mapping_application.add_argument("--scope-review", required=True)
+    vendor_mapping_application.add_argument("--intake", required=True)
+    vendor_mapping_application.add_argument("--out", required=True)
+    vendor_mapping_application.add_argument(
+        "--output-mapping-file",
+        default="target_applied_vendor_mapping.csv",
+    )
+    vendor_mapping_application.add_argument("--fail-on-breach", action="store_true")
+    verify_vendor_mapping_application_parser = sub.add_parser(
+        "verify-vendor-mapping-application",
+        help="Reconstruct a target-bound exact-header mapping application.",
+    )
+    verify_vendor_mapping_application_parser.add_argument(
+        "--application",
+        required=True,
+    )
+    verify_vendor_mapping_application_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -8693,6 +8722,39 @@ def main(argv: list[str] | None = None) -> int:
             and not (result.verified and result.approved)
             else 0
         )
+    if args.command == "apply-vendor-mapping-scope":
+        result = write_vendor_mapping_application(
+            args.scope_review,
+            args.intake,
+            args.out,
+            config=VendorMappingApplicationConfig(
+                output_mapping_file=args.output_mapping_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "verify-vendor-mapping-application":
+        result = verify_vendor_mapping_application(args.application)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "scope_review_current": result.scope_review_current,
+                    "target_intake_current": result.target_intake_current,
+                    "target_source_current": result.target_source_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "target_bound": result.target_bound,
+                    "application_only": result.application_only,
+                    "non_routing": result.non_routing,
+                    "application_dir": str(result.output_dir),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.verified else 0
     if args.command == "map-broker-orders":
         result = write_mapped_order_export(
             args.export,
