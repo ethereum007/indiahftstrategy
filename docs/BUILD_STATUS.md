@@ -3313,8 +3313,12 @@
   hydration retain mapping mode, application count, uniqueness, coverage, and
   every dataset's application/scope-review/target-intake/applied-mapping
   lineage in dispatch summary and config. Any target signal must satisfy the
-  one-distinct-application-per-dataset contract; legacy draft-backed batches
-  remain compatible.
+  one-distinct-application-per-dataset contract, the affirmative route-retained
+  lineage decision, final consistency when required, exact current/final,
+  scale-up-, cutover-, and route-carried digests, plus a fresh canonical digest
+  recomputed from dispatch-carried datasets. Dispatch artifacts retain all six
+  digest views. Legacy draft-backed batches remain compatible; thin target
+  sidecars fail until the intervening gates produce every carried decision.
 - Broker dispatch send preparation now carries and revalidates that target
   proof before non-submitting request envelopes can advance. Nested dispatch
   config, flattened dispatch summary, and broker-readiness sidecar hydration
@@ -3362,8 +3366,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1833 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1838 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch target-lineage gate: all 52 dispatch-planning tests pass,
+including rich route config and flattened summary recovery, six-view digest
+retention, final consistency carry, independent dispatch canonical
+recomputation, legacy sidecar compatibility, fail-closed target-sidecar
+handling, and rejection of carried dataset or route-decision drift. All 59
+sender tests pass against the richer dispatch config. The repository now
+collects 1838 tests across 154 files; the full suite was not rerun for this
+slice.
 
 Latest route-enable target-lineage gate: all 52 route-enable tests pass,
 including rich cutover config and flattened summary recovery, five-view digest
