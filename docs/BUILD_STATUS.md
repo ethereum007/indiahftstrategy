@@ -3038,6 +3038,33 @@
   retained-proof variants pass the focused approved/rejected, identity,
   credential-key, limit, write-once, semantic-tamper, controls/rollback drift,
   and recursive-source-drift gate (`2 passed`).
+- A verified ready live-dry-run handoff can now advance through a credential-safe
+  runtime connectivity preflight with
+  `preflight-provider-market-data-imbalance-live-dryrun-runtime`. A strict,
+  credential-free runtime profile binds the exact handoff ID/SHA,
+  provider/adapter/transport/market/exchange/session identity, secure endpoint,
+  built-in provider credential env-var names, and connectivity-only safety
+  contract. The trusted backend boundary receives only env-var names and
+  presence booleans; backend exceptions are reduced to safe codes, credential
+  values are scanned out of every artifact, and no strategy or broker-order API
+  capability exists on the probe interface. Ready and valid-but-blocked runs
+  both emit write-once launch receipts, checks, summary, config, runbook, and a
+  recursive manifest. Every surface explicitly records no strategy launch, no
+  order API call, no submission authority, and the need for a separate runtime
+  launcher. `verify-provider-market-data-imbalance-live-dryrun-runtime-preflight`
+  reconstructs the receipt from current handoff/profile sources without
+  reconnecting, while catalog ingestion distinguishes `verified_ready`,
+  `verified_blocked`, and stale/tampered runs. Secure-endpoint, missing-
+  credential, backend-failure, exception-redaction, and strict-entrypoint
+  boundary tests pass (`11 passed`); both retained-proof variants pass the full
+  CLI/catalog/write-once/authorization-tamper/profile-drift/recursive-drift gate
+  (`2 passed`). Shared manifest and catalog regressions remain green (`68
+  passed`). This provides the provider-neutral safety boundary only: no
+  production Arrow.money/iRage connectivity backend, signed provider
+  attestation, endpoint/auth contract, or live credential has been supplied.
+  The configured backend remains trusted in-process code; the receipt does not
+  independently prove an unaudited module's side effects or provider-side
+  credential scope.
 
 ## Test Gate
 
@@ -3047,7 +3074,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1627 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1638 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest completed strategy-evidence read-verification gate: strategy evidence,
@@ -3080,6 +3107,19 @@ key rejection, finite exact-integer limit enforcement, write-once output, CLI
 verification, catalog status/counts, re-manifested authorization tamper,
 controls and rollback drift, and direct plus recursive retained-proof drift pass
 in both provider evidence variants (`2 passed`).
+
+Latest controlled runtime-preflight gate: the provider-neutral connectivity
+boundary passes secure endpoint, query-free URI, credential-presence-only,
+backend failure, exception redaction, invalid outcome, and provider-scoped
+configuration tests (`11 passed`). Both complete retained-proof variants pass
+ready and blocked receipt creation, CLI verification, catalog semantics,
+write-once output, credential-value absence, re-manifested authorization tamper,
+runtime-profile drift, and direct plus recursive source drift (`2 passed`).
+Shared manifest and experiment-catalog compatibility pass together (`68
+passed`), and all other strategy-evidence compatibility paths pass (`57
+passed`). The affected surface therefore totals `138 passed` across split
+batches; the split avoids the local Windows command-host ceiling without
+omitting any collected case in those files.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3256,10 +3296,12 @@ the last completed full-suite green baseline rather than claiming the current
 
 ## Next Build Targets
 
-1. Add a credential-safe controlled live-dry-run runtime preflight that consumes
-   only a verified handoff, validates configured credential environment-variable
-   presence and provider connectivity without storing values or permitting
-   submission, and emits a non-submitting launch receipt.
+1. Add a bounded market-data-only controlled live-dry-run launcher that consumes
+   only a current ready runtime-preflight receipt and handoff, enforces the bound
+   session window and kill switch, cannot import or call broker order APIs, and
+   emits immutable telemetry plus a terminal non-submitting receipt. Keep a
+   deterministic simulated backend path until a real provider endpoint/auth
+   contract and credentials are chosen.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

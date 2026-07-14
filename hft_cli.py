@@ -250,6 +250,11 @@ from reports.provider_market_data_imbalance_live_dryrun_handoff import (
     verify_provider_market_data_imbalance_live_dryrun_handoff,
     write_provider_market_data_imbalance_live_dryrun_handoff,
 )
+from reports.provider_market_data_imbalance_live_dryrun_runtime_preflight import (
+    ProviderMarketDataImbalanceLiveDryrunRuntimePreflightConfig,
+    verify_provider_market_data_imbalance_live_dryrun_runtime_preflight,
+    write_provider_market_data_imbalance_live_dryrun_runtime_preflight,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2257,6 +2262,66 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_market_data_imbalance_live_dryrun_handoff_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight = (
+        sub.add_parser(
+            "preflight-provider-market-data-imbalance-live-dryrun-runtime",
+            help=(
+                "Probe credential-safe provider connectivity from a verified "
+                "live-dry-run handoff and emit a non-submitting launch receipt."
+            ),
+        )
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--handoff",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--runtime-profile",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--backend",
+        default="",
+        help=(
+            "Trusted module:function connectivity backend. Defaults to the "
+            "provider-specific or shared connectivity-backend environment variable."
+        ),
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=8192,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--max-connectivity-latency-ms",
+        type=float,
+        default=5000.0,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_preflight.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    verify_provider_market_data_imbalance_live_dryrun_runtime_preflight_parser = (
+        sub.add_parser(
+            "verify-provider-market-data-imbalance-live-dryrun-runtime-preflight",
+            help=(
+                "Reopen a provider connectivity preflight receipt and its "
+                "verified handoff/profile proof graph without rerunning connectivity."
+            ),
+        )
+    )
+    verify_provider_market_data_imbalance_live_dryrun_runtime_preflight_parser.add_argument(
+        "--preflight",
+        required=True,
+    )
+    verify_provider_market_data_imbalance_live_dryrun_runtime_preflight_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -6144,6 +6209,65 @@ def main(argv: list[str] | None = None) -> int:
                         ""
                         if result.rollback_runbook_path is None
                         else str(result.rollback_runbook_path)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "preflight-provider-market-data-imbalance-live-dryrun-runtime"
+    ):
+        result = (
+            write_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+                args.handoff,
+                args.runtime_profile,
+                args.out,
+                config=(
+                    ProviderMarketDataImbalanceLiveDryrunRuntimePreflightConfig(
+                        max_dependency_count=args.max_dependencies,
+                        max_connectivity_latency_ms=(
+                            args.max_connectivity_latency_ms
+                        ),
+                    )
+                ),
+                backend_entrypoint=args.backend,
+            )
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-live-dryrun-runtime-preflight"
+    ):
+        result = (
+            verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+                args.preflight
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "handoff_current": result.handoff_current,
+                    "runtime_profile_current": result.runtime_profile_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "credential_safe": result.credential_safe,
+                    "non_authorizing": result.non_authorizing,
+                    "preflight_dir": str(result.output_dir),
+                    "handoff_dir": (
+                        ""
+                        if result.handoff_dir is None
+                        else str(result.handoff_dir)
+                    ),
+                    "runtime_profile_path": (
+                        ""
+                        if result.runtime_profile_path is None
+                        else str(result.runtime_profile_path)
                     ),
                     "error": result.error,
                 },

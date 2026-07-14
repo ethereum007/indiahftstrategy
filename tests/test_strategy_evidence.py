@@ -33,6 +33,10 @@ from reports.provider_market_data_imbalance_live_dryrun_handoff import (
     verify_provider_market_data_imbalance_live_dryrun_handoff,
     write_provider_market_data_imbalance_live_dryrun_handoff,
 )
+from reports.provider_market_data_imbalance_live_dryrun_runtime_preflight import (
+    verify_provider_market_data_imbalance_live_dryrun_runtime_preflight,
+    write_provider_market_data_imbalance_live_dryrun_runtime_preflight,
+)
 
 
 def _manifest_input_paths(value):
@@ -2586,6 +2590,326 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
         handoff_dir
     ).verified
 
+    backend_module_name = (
+        f"trusted_runtime_preflight_backend_{drift_target}"
+    )
+    backend_module_path = tmp_path / f"{backend_module_name}.py"
+    backend_module_path.write_text(
+        "from provider_connectivity import ProviderConnectivityOutcome\n\n"
+        "def probe(request):\n"
+        "    return ProviderConnectivityOutcome(\n"
+        "        connected=True,\n"
+        "        authenticated=True,\n"
+        "        market_data_readable=True,\n"
+        "        protocol=request.transport,\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    runtime_api_key = "runtime-key-must-not-be-stored"
+    runtime_api_secret = "runtime-secret-must-not-be-stored"
+    monkeypatch.setenv("ARROW_MONEY_API_KEY", runtime_api_key)
+    monkeypatch.setenv("ARROW_MONEY_API_SECRET", runtime_api_secret)
+    monkeypatch.setenv(
+        "ARROW_MONEY_PROVIDER_CONNECTIVITY_BACKEND",
+        f"{backend_module_name}:probe",
+    )
+    runtime_profile = {
+        "contract_version": (
+            "provider_live_dryrun_runtime_preflight_profile/v1"
+        ),
+        "capability": "market_data_connectivity",
+        "handoff_id": handoff_plan["handoff_id"],
+        "plan_sha256": handoff_plan["plan_sha256"],
+        "identity": {
+            field: handoff_plan["identity"][field]
+            for field in (
+                "provider",
+                "adapter",
+                "transport",
+                "market",
+                "exchange",
+                "session_id",
+            )
+        },
+        "endpoint": "wss://feed.arrow.money/market-data/nse",
+        "credential_env_vars": [
+            "ARROW_MONEY_API_KEY",
+            "ARROW_MONEY_API_SECRET",
+        ],
+        "safety": {
+            "connectivity_only": True,
+            "dry_run_only": True,
+            "submission_enabled": False,
+            "broker_order_api_enabled": False,
+            "authorizes_submission": False,
+            "credential_values_stored": False,
+        },
+    }
+    runtime_profile_path = controls_dir / "runtime_preflight_profile.json"
+    runtime_profile_path.write_text(
+        json.dumps(runtime_profile, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    runtime_preflight_dir = tmp_path / "runtime_preflight"
+    assert (
+        main(
+            [
+                "preflight-provider-market-data-imbalance-live-dryrun-runtime",
+                "--handoff",
+                str(handoff_dir),
+                "--runtime-profile",
+                str(runtime_profile_path),
+                "--out",
+                str(runtime_preflight_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    runtime_receipt_path = (
+        runtime_preflight_dir
+        / "provider_market_data_imbalance_live_dryrun_launch_receipt.json"
+    )
+    runtime_receipt = json.loads(
+        runtime_receipt_path.read_text(encoding="utf-8")
+    )
+    assert runtime_receipt["ready_for_separate_runtime_launch"] is True
+    assert runtime_receipt["connectivity"]["probe_called"] is True
+    assert runtime_receipt["connectivity"]["connected"] is True
+    assert runtime_receipt["connectivity"]["authenticated"] is True
+    assert runtime_receipt["connectivity"]["market_data_readable"] is True
+    assert runtime_receipt["connectivity"]["backend_entrypoint"] == (
+        f"{backend_module_name}:probe"
+    )
+    assert runtime_receipt["credentials"]["env_presence"] == {
+        "ARROW_MONEY_API_KEY": True,
+        "ARROW_MONEY_API_SECRET": True,
+    }
+    for field in (
+        "strategy_execution_enabled",
+        "launch_executed",
+        "release_approved",
+        "broker_order_api_enabled",
+        "broker_order_api_called",
+        "broker_api_called",
+        "submission_enabled",
+        "authorizes_submission",
+        "credential_values_stored",
+    ):
+        assert runtime_receipt["safety"][field] is False
+    assert runtime_receipt["safety"]["connectivity_only"] is True
+    assert runtime_receipt["safety"]["dry_run_only"] is True
+    assert (
+        runtime_receipt["safety"]["requires_separate_runtime_launcher"]
+        is True
+    )
+    serialized_preflight = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in runtime_preflight_dir.rglob("*")
+        if path.is_file()
+    )
+    assert runtime_api_key not in serialized_preflight
+    assert runtime_api_secret not in serialized_preflight
+    runtime_preflight_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            runtime_preflight_dir
+        )
+    )
+    assert runtime_preflight_verification.verified
+    assert runtime_preflight_verification.ready
+    assert runtime_preflight_verification.manifest_current
+    assert runtime_preflight_verification.handoff_current
+    assert runtime_preflight_verification.runtime_profile_current
+    assert runtime_preflight_verification.artifacts_consistent
+    assert runtime_preflight_verification.credential_safe
+    assert runtime_preflight_verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-live-dryrun-runtime-preflight",
+                "--preflight",
+                str(runtime_preflight_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    runtime_preflight_catalog = catalog_experiment_runs(
+        [runtime_preflight_dir]
+    )
+    runtime_preflight_row = runtime_preflight_catalog.catalog.iloc[0]
+    assert bool(runtime_preflight_row["summary_status"])
+    assert (
+        runtime_preflight_row[
+            "provider_live_dryrun_runtime_preflight_verification_status"
+        ]
+        == "verified_ready"
+    )
+    assert bool(
+        runtime_preflight_row[
+            "provider_live_dryrun_runtime_preflight_verification_verified"
+        ]
+    )
+    assert bool(
+        runtime_preflight_row[
+            "provider_live_dryrun_runtime_preflight_verification_ready"
+        ]
+    )
+    assert int(
+        runtime_preflight_catalog.summary.iloc[0][
+            "provider_live_dryrun_runtime_preflight_verification_ready_runs"
+        ]
+    ) == 1
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            handoff_dir,
+            runtime_profile_path,
+            runtime_preflight_dir,
+        )
+
+    blocked_preflight_dir = tmp_path / "runtime_preflight_missing_credentials"
+    blocked_preflight = (
+        write_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            handoff_dir,
+            runtime_profile_path,
+            blocked_preflight_dir,
+            backend_entrypoint=(
+                "must_not_import_missing_credentials:probe"
+            ),
+            environ={},
+        )
+    )
+    assert not blocked_preflight.ready
+    assert blocked_preflight.receipt["connectivity"]["error_code"] == (
+        "credentials_missing"
+    )
+    blocked_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            blocked_preflight_dir
+        )
+    )
+    assert blocked_verification.verified
+    assert not blocked_verification.ready
+    assert blocked_verification.credential_safe
+    assert blocked_verification.non_authorizing
+    blocked_catalog = catalog_experiment_runs([blocked_preflight_dir])
+    blocked_row = blocked_catalog.catalog.iloc[0]
+    assert not bool(blocked_row["summary_status"])
+    assert (
+        blocked_row[
+            "provider_live_dryrun_runtime_preflight_verification_status"
+        ]
+        == "verified_blocked"
+    )
+    assert int(
+        blocked_catalog.summary.iloc[0][
+            "provider_live_dryrun_runtime_preflight_verification_blocked_runs"
+        ]
+    ) == 1
+
+    unsafe_runtime_profile = json.loads(json.dumps(runtime_profile))
+    unsafe_runtime_profile["endpoint"] += "?token=must-not-be-stored"
+    unsafe_runtime_profile_path = controls_dir / "unsafe_runtime_profile.json"
+    unsafe_runtime_profile_path.write_text(
+        json.dumps(unsafe_runtime_profile, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="endpoint_secure_and_credential_free",
+    ):
+        write_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            handoff_dir,
+            unsafe_runtime_profile_path,
+            tmp_path / "unsafe_runtime_preflight",
+        )
+
+    runtime_preflight_manifest_path = runtime_preflight_dir / "manifest.json"
+    runtime_preflight_manifest = json.loads(
+        runtime_preflight_manifest_path.read_text(encoding="utf-8")
+    )
+    original_runtime_receipt_text = runtime_receipt_path.read_text(
+        encoding="utf-8"
+    )
+    tampered_runtime_receipt = json.loads(original_runtime_receipt_text)
+    tampered_runtime_receipt["safety"]["authorizes_submission"] = True
+    runtime_receipt_path.write_text(
+        json.dumps(tampered_runtime_receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        runtime_preflight_dir,
+        run_type=(
+            "provider_market_data_imbalance_live_dryrun_runtime_preflight"
+        ),
+        parameters=runtime_preflight_manifest["parameters"],
+        inputs=_manifest_input_paths(runtime_preflight_manifest["inputs"]),
+        extra=runtime_preflight_manifest["extra"],
+    )
+    assert verify_experiment_manifest(
+        runtime_preflight_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_runtime_preflight"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    tampered_runtime_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            runtime_preflight_dir
+        )
+    )
+    assert not tampered_runtime_verification.verified
+    assert tampered_runtime_verification.manifest_current
+    assert not tampered_runtime_verification.artifacts_consistent
+    assert not tampered_runtime_verification.non_authorizing
+    assert not bool(
+        catalog_experiment_runs(
+            [runtime_preflight_dir]
+        ).catalog.iloc[0]["summary_status"]
+    )
+    runtime_receipt_path.write_text(
+        original_runtime_receipt_text,
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        runtime_preflight_dir,
+        run_type=(
+            "provider_market_data_imbalance_live_dryrun_runtime_preflight"
+        ),
+        parameters=runtime_preflight_manifest["parameters"],
+        inputs=_manifest_input_paths(runtime_preflight_manifest["inputs"]),
+        extra=runtime_preflight_manifest["extra"],
+    )
+    assert verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+        runtime_preflight_dir
+    ).verified
+
+    original_runtime_profile_text = runtime_profile_path.read_text(
+        encoding="utf-8"
+    )
+    runtime_profile_path.write_text(
+        original_runtime_profile_text.replace(
+            "nse-live-dryrun-20260714",
+            "changed-runtime-session",
+        ),
+        encoding="utf-8",
+    )
+    runtime_profile_drift = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            runtime_preflight_dir
+        )
+    )
+    assert not runtime_profile_drift.verified
+    assert not runtime_profile_drift.runtime_profile_current
+    runtime_profile_path.write_text(
+        original_runtime_profile_text,
+        encoding="utf-8",
+    )
+    assert verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+        runtime_preflight_dir
+    ).verified
+
     certificate_source.write_text(
         "source\nchanged_after_release_review\n",
         encoding="utf-8",
@@ -2620,6 +2944,20 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     )
     assert not stale_handoff_verification.verified
     assert not stale_handoff_verification.release_decision_current
+    stale_runtime_preflight_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+            runtime_preflight_dir
+        )
+    )
+    assert not stale_runtime_preflight_verification.verified
+    assert not stale_runtime_preflight_verification.handoff_current
+    assert not verify_experiment_manifest(
+        runtime_preflight_manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_runtime_preflight"
+        ),
+        require_input_fingerprints=True,
+    ).passed
     assert not verify_experiment_manifest(
         handoff_manifest_path,
         expected_run_type=(
@@ -2680,6 +3018,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert verify_provider_market_data_imbalance_live_dryrun_handoff(
         handoff_dir
+    ).verified
+    assert verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+        runtime_preflight_dir
     ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
@@ -2745,6 +3086,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert not verify_provider_market_data_imbalance_live_dryrun_handoff(
         handoff_dir
+    ).verified
+    assert not verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
+        runtime_preflight_dir
     ).verified
     assert not verify_experiment_manifest(
         release_manifest_path,
