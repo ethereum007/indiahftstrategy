@@ -3408,7 +3408,14 @@ If the round-trip config carries
 readiness revalidates the broker-readiness final dispatch batch proof and
 retains it as `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary
 fields plus `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
-config. If the round-trip config carries
+config. For a target-application-backed final batch, that block also carries
+`application_lineage_consistency_required` and
+`application_lineage_consistent`. Broker readiness requires the latter to be
+true before accepting the final proof, whether it came from nested config or
+flattened final-summary fields, and preserves both values in its own summary
+and config. Generic onboarding target proof without a final cross-stage result
+and legacy draft-backed proof keep their compatibility paths. If the round-trip
+config carries
 `roundtrip_broker_vendor_data_readiness`, broker readiness revalidates the
 wrapper and retains it as `broker_vendor_data_readiness_*` summary fields plus
 `dispatch_roundtrip.broker_vendor_data_readiness` config. When both

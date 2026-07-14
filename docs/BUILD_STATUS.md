@@ -3319,6 +3319,13 @@
   strict mode, one unique application per dataset, full coverage, complete
   lineage, and the same canonical lineage graph; legacy draft-backed final
   reviews remain compatible.
+- Broker readiness now consumes that final reconciliation result as an explicit
+  target-application lineage-consistency handoff. Nested final config and
+  flattened final summary inputs both retain whether cross-stage consistency is
+  required and whether it passed. A final target-backed batch cannot become
+  broker-ready unless dispatch, send, and acknowledgement lineage was identical;
+  direct generic onboarding proof and legacy draft-backed batches retain their
+  compatibility paths and do not claim final reconciliation.
 
 ## Test Gate
 
@@ -3328,8 +3335,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1818 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1822 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application broker-readiness final-lineage gate: all 64 broker-
+readiness tests pass, including nested final config, flattened final-summary
+recovery, explicit cross-stage consistency carry, fail-closed rejection of
+inconsistent lineage, and compatibility for generic target onboarding plus
+legacy draft-backed batches. All 41 final broker round-trip tests and all 7
+broker vendor-data readiness tests also pass against the handoff. The repository
+now collects 1822 tests across 154 files; the full suite was not rerun for this
+slice.
 
 Latest target-application final broker round-trip gate: all 41 final-review
 tests pass, including nested component config, flattened component-summary

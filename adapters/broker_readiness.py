@@ -776,6 +776,51 @@ def _apply_vendor_market_data_batch_config(
         vendor.get("target_application_coverage"),
         _number(row, f"{source_prefix}_target_application_coverage", 0.0),
     )
+    mapping_sources = {
+        value.strip().lower()
+        for value in str(frame.loc[0, f"{field_prefix}_mapping_sources"]).split(";")
+        if value.strip()
+    }
+    target_application_active = bool(
+        _identity_key(frame.loc[0, f"{field_prefix}_mapping_source_mode"])
+        == TARGET_APPLICATION_BATCH_MODE
+        or "verified_target_application" in mapping_sources
+        or int(frame.loc[0, f"{field_prefix}_mapping_application_count"]) > 0
+        or float(frame.loc[0, f"{field_prefix}_target_application_coverage"]) > 0.0
+    )
+    frame.loc[0, f"{field_prefix}_proof_source"] = source_prefix
+    consistency_required_fields = (
+        "application_lineage_consistency_required",
+        f"{source_prefix}_application_lineage_consistency_required",
+    )
+    consistency_required_provided = bool(
+        consistency_required_fields[0] in vendor
+        or consistency_required_fields[1] in row.index
+    )
+    carried_consistency_required = _to_bool(
+        vendor.get(
+            consistency_required_fields[0],
+            row.get(consistency_required_fields[1], False),
+        )
+    )
+    consistency_provided = bool(
+        "application_lineage_consistent" in vendor
+        or f"{source_prefix}_application_lineage_consistent" in row.index
+    )
+    frame.loc[0, f"{field_prefix}_application_lineage_consistency_required"] = bool(
+        target_application_active
+        and (
+            source_prefix == "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
+            or carried_consistency_required
+            or (not consistency_required_provided and consistency_provided)
+        )
+    )
+    frame.loc[0, f"{field_prefix}_application_lineage_consistent"] = _to_bool(
+        vendor.get(
+            "application_lineage_consistent",
+            row.get(f"{source_prefix}_application_lineage_consistent", False),
+        )
+    )
     frame.loc[0, f"{field_prefix}_comparison_accepted"] = _to_bool(
         comparison.get("accepted", row.get(f"{source_prefix}_comparison_accepted", False))
     )
@@ -1667,6 +1712,86 @@ def _vendor_market_data_batch_item_fields(
     dataset_count = int(
         _dispatch_number_any(component, row, f"{field_prefix}_dataset_count", f"{source_prefix}_dataset_count")
     )
+    mapping_sources = _dispatch_text_any(
+        component,
+        row,
+        f"{field_prefix}_mapping_sources",
+        f"{source_prefix}_mapping_sources",
+    )
+    mapping_source_mode = _dispatch_text_any(
+        component,
+        row,
+        f"{field_prefix}_mapping_source_mode",
+        f"{source_prefix}_mapping_source_mode",
+    )
+    mapping_application_count = int(
+        _dispatch_number_any(
+            component,
+            row,
+            f"{field_prefix}_mapping_application_count",
+            f"{source_prefix}_mapping_application_count",
+        )
+    )
+    unique_mapping_applications = int(
+        _dispatch_number_any(
+            component,
+            row,
+            f"{field_prefix}_unique_mapping_applications",
+            f"{source_prefix}_unique_mapping_applications",
+        )
+    )
+    target_application_coverage = _dispatch_number_any(
+        component,
+        row,
+        f"{field_prefix}_target_application_coverage",
+        f"{source_prefix}_target_application_coverage",
+    )
+    target_application_active = bool(
+        _identity_key(mapping_source_mode) == TARGET_APPLICATION_BATCH_MODE
+        or "verified_target_application"
+        in {value.strip().lower() for value in mapping_sources.split(";") if value.strip()}
+        or mapping_application_count > 0
+        or target_application_coverage > 0.0
+    )
+    consistency_required_fields = (
+        f"{field_prefix}_application_lineage_consistency_required",
+        f"{source_prefix}_application_lineage_consistency_required",
+    )
+    consistency_fields = (
+        f"{field_prefix}_application_lineage_consistent",
+        f"{source_prefix}_application_lineage_consistent",
+    )
+    consistency_required_provided = any(
+        field in row.index for field in consistency_required_fields
+    )
+    carried_consistency_required = (
+        _dispatch_bool_any(component, row, *consistency_required_fields)
+        if consistency_required_provided
+        else False
+    )
+    proof_source = _dispatch_text_any(
+        component,
+        row,
+        f"{field_prefix}_proof_source",
+        f"{source_prefix}_proof_source",
+    )
+    if not proof_source and any(
+        f"{source_prefix}_{suffix}" in row.index
+        for suffix in ("provided", "dataset_count", "mapping_source_mode")
+    ):
+        proof_source = source_prefix
+    consistency_required = bool(
+        target_application_active
+        and (
+            proof_source
+            == "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
+            or carried_consistency_required
+            or (
+                not consistency_required_provided
+                and any(field in row.index for field in consistency_fields)
+            )
+        )
+    )
     return {
         f"{field_prefix}_provided": _dispatch_bool_any(
             component,
@@ -1770,46 +1895,19 @@ def _vendor_market_data_batch_item_fields(
         )
         if active
         else 0,
-        f"{field_prefix}_mapping_sources": _dispatch_text_any(
-            component,
-            row,
-            f"{field_prefix}_mapping_sources",
-            f"{source_prefix}_mapping_sources",
+        f"{field_prefix}_mapping_sources": mapping_sources,
+        f"{field_prefix}_mapping_source_mode": mapping_source_mode,
+        f"{field_prefix}_mapping_application_count": mapping_application_count if active else 0,
+        f"{field_prefix}_unique_mapping_applications": unique_mapping_applications if active else 0,
+        f"{field_prefix}_target_application_coverage": target_application_coverage if active else 0.0,
+        f"{field_prefix}_application_lineage_consistency_required": bool(
+            active and consistency_required
         ),
-        f"{field_prefix}_mapping_source_mode": _dispatch_text_any(
+        f"{field_prefix}_application_lineage_consistent": _dispatch_bool_any(
             component,
             row,
-            f"{field_prefix}_mapping_source_mode",
-            f"{source_prefix}_mapping_source_mode",
+            *consistency_fields,
         ),
-        f"{field_prefix}_mapping_application_count": int(
-            _dispatch_number_any(
-                component,
-                row,
-                f"{field_prefix}_mapping_application_count",
-                f"{source_prefix}_mapping_application_count",
-            )
-        )
-        if active
-        else 0,
-        f"{field_prefix}_unique_mapping_applications": int(
-            _dispatch_number_any(
-                component,
-                row,
-                f"{field_prefix}_unique_mapping_applications",
-                f"{source_prefix}_unique_mapping_applications",
-            )
-        )
-        if active
-        else 0,
-        f"{field_prefix}_target_application_coverage": _dispatch_number_any(
-            component,
-            row,
-            f"{field_prefix}_target_application_coverage",
-            f"{source_prefix}_target_application_coverage",
-        )
-        if active
-        else 0.0,
         f"{field_prefix}_comparison_accepted": _dispatch_bool_any(
             component,
             row,
@@ -3043,6 +3141,25 @@ def _broker_dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list
                 "broker-readiness dispatch round-trip vendor market-data",
             )
         checks.append(renamed)
+    if (
+        _target_application_batch_active(projected)
+        and bool(
+            projected.dispatch_roundtrip_vendor_market_data_batch_application_lineage_consistency_required
+        )
+    ):
+        lineage_consistent = bool(
+            projected.dispatch_roundtrip_vendor_market_data_batch_application_lineage_consistent
+        )
+        checks.append(
+            _check(
+                "broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_consistent",
+                lineage_consistent,
+                "is",
+                True,
+                lineage_consistent,
+                "broker-readiness dispatch round-trip vendor market-data target-application lineage was not reconciled across dispatch, send, and acknowledgement proof",
+            )
+        )
     return checks
 
 
@@ -3104,6 +3221,8 @@ def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any
         "mapping_application_count",
         "unique_mapping_applications",
         "target_application_coverage",
+        "application_lineage_consistency_required",
+        "application_lineage_consistent",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -3646,6 +3765,14 @@ def _vendor_market_data_batch_summary_fields(
             item,
             f"{field_prefix}_target_application_coverage",
             0.0,
+        ),
+        f"{field_prefix}_application_lineage_consistency_required": _item_bool(
+            item,
+            f"{field_prefix}_application_lineage_consistency_required",
+        ),
+        f"{field_prefix}_application_lineage_consistent": _item_bool(
+            item,
+            f"{field_prefix}_application_lineage_consistent",
         ),
         f"{field_prefix}_comparison_accepted": _item_bool(item, f"{field_prefix}_comparison_accepted"),
         f"{field_prefix}_comparison_failed_checks": int(
@@ -4233,6 +4360,14 @@ def _vendor_market_data_batch_config(
         ),
         "target_application_coverage": _jsonable(
             _number(row, f"{field_prefix}_target_application_coverage", 0.0)
+        ),
+        "application_lineage_consistency_required": _item_bool(
+            row,
+            f"{field_prefix}_application_lineage_consistency_required",
+        ),
+        "application_lineage_consistent": _item_bool(
+            row,
+            f"{field_prefix}_application_lineage_consistent",
         ),
         "comparison": {
             "accepted": _item_bool(row, f"{field_prefix}_comparison_accepted"),

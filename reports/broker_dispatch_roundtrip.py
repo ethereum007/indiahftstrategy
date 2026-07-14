@@ -3670,6 +3670,14 @@ def _vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...]) -> dic
                 "vendor_market_data_batch_target_application_coverage",
             )
         ),
+        "roundtrip_vendor_market_data_batch_application_lineage_consistency_required": (
+            _target_application_batch_active(rows)
+        ),
+        "roundtrip_vendor_market_data_batch_application_lineage_consistent": (
+            _target_application_lineage_consistent(rows)
+            if _target_application_batch_active(rows)
+            else False
+        ),
         "roundtrip_vendor_market_data_batch_comparison_accepted": bool(
             rows
             and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
@@ -3876,6 +3884,12 @@ def _vendor_market_data_batch_config(
         ),
         "target_application_coverage": _jsonable(
             summary[f"{field_prefix}_target_application_coverage"]
+        ),
+        "application_lineage_consistency_required": _to_bool(
+            summary[f"{field_prefix}_application_lineage_consistency_required"]
+        ),
+        "application_lineage_consistent": _to_bool(
+            summary[f"{field_prefix}_application_lineage_consistent"]
         ),
         "comparison": {
             "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),

@@ -1825,6 +1825,8 @@ def test_broker_dispatch_roundtrip_carries_target_application_vendor_batch():
     assert int(summary[f"{prefix}_mapping_application_count"]) == 2
     assert int(summary[f"{prefix}_unique_mapping_applications"]) == 2
     assert summary[f"{prefix}_target_application_coverage"] == 1.0
+    assert bool(summary[f"{prefix}_application_lineage_consistency_required"])
+    assert bool(summary[f"{prefix}_application_lineage_consistent"])
     summary_datasets = json.loads(summary[f"{prefix}_datasets_json"])
     assert summary_datasets[0]["mapping_application_id"] == "mapping-app-day1"
     assert summary_datasets[1]["applied_mapping_sha256"] == "3" * 64
@@ -1833,6 +1835,8 @@ def test_broker_dispatch_roundtrip_carries_target_application_vendor_batch():
     assert carried["mapping_application_count"] == 2
     assert carried["unique_mapping_applications"] == 2
     assert carried["target_application_coverage"] == 1.0
+    assert carried["application_lineage_consistency_required"]
+    assert carried["application_lineage_consistent"]
     assert carried["datasets"][1]["target_intake_receipt_id"] == "target-intake-day2"
     expected_checks = {
         "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode",
