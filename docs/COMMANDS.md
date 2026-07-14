@@ -7222,14 +7222,40 @@ python -m hft_cli pipeline-vendor-market-data `
   --fail-on-breach
 ```
 
-`--mapping` and `--mapping-review` are mutually exclusive. Review mode verifies
-the approval before creating pipeline output, requires `--input` to be the exact
-source retained by the review, derives the canonical mapping from that review,
-and forces the downstream data-readiness gate to require review-bound
-normalization. The root summary/config/manifest retain the review path, review
-ID, and review fingerprint. A review for one file cannot be reused by the batch
-pipeline; schema- or header-scoped approval reuse requires a separate future
-contract and is not inferred from an exact-source approval.
+For a different file covered by an approved exact-header scope, first create its
+verified target mapping application with `apply-vendor-mapping-scope`, then run
+the target-bound path:
+
+```powershell
+python -m hft_cli pipeline-vendor-market-data `
+  --input vendor\arrow_ticks_2026_06_11.csv `
+  --mapping-application mappings\arrow_ticks_2026_06_11_application `
+  --out runs\vendor_data\arrow_ticks_2026_06_11_applied `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --min-rows 100000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+`--mapping`, `--mapping-review`, and `--mapping-application` are mutually
+exclusive. Review mode verifies approval before creating pipeline output,
+requires `--input` to be the exact source retained by the review, derives the
+canonical mapping from that review, and forces review-bound data readiness.
+Application mode reconstructs the verified scope-review, target-intake, exact
+target-source, and applied-mapping graph before creating output. It derives all
+normalization inputs from that application and forces the stricter
+target-application readiness contract. The root summary, config, and manifest
+retain the relevant review or application IDs, fingerprints, and evidence
+paths.
+
+An exact-source review cannot be reused for another file, and an application
+cannot be reused for another target. The multi-file batch pipeline does not yet
+accept applications because every dataset requires its own verified target
+application. Run the single-file command per target; per-application batch
+orchestration remains a separate, fail-closed boundary.
 
 Outputs:
 
@@ -7247,11 +7273,14 @@ manifest.json
 ```
 
 The pipeline summary carries market identity, the raw source file hash, header
-hash, mapping hash, mapping source, and component manifest paths. The root
-manifest fingerprints the intake, mapped-data, and data-readiness manifests, so
-reruns can prove whether a changed Arrow.money/iRage file, header, or mapping
-is the reason readiness changed. `vendor_market_data_pipeline_config.json` is
-the machine-readable handoff for strategy research or future vendor adapters.
+hash, mapping hash, mapping source, mapping-review or target-application
+lineage, and component manifest paths. The root manifest fingerprints the
+intake, mapped-data, and data-readiness manifests and, in application mode, the
+application, scope-review, target-intake, exact source, and applied mapping.
+Reruns can therefore prove whether a changed Arrow.money/iRage file, header,
+mapping, or approval graph is the reason readiness changed.
+`vendor_market_data_pipeline_config.json` is the machine-readable handoff for
+strategy research or future vendor adapters.
 The root action queue and runbook promote nested data-readiness blockers into
 catalog-visible next gates, so operators do not have to inspect
 `04_data_readiness` before deciding the next command to run.

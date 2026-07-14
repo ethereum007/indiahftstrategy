@@ -4,8 +4,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from adapters.applied_mapped_data import AppliedMappedDataReport
 from adapters.reviewed_mapped_data import ReviewedMappedDataReport
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
+from adapters.vendor_mapping_application import write_vendor_mapping_application
 from adapters.vendor_mapping_review import write_vendor_mapping_review
 from hft_cli import main
 from reports.manifest import file_sha256
@@ -13,6 +15,12 @@ from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
     write_vendor_market_data_pipeline,
+)
+from tests.test_vendor_mapping_application import (
+    _mapping_scope,
+    _normal_ticks,
+    _opaque_ticks,
+    _target_intake,
 )
 
 
@@ -121,6 +129,28 @@ def approved_mapping_review(
         review_dir,
     )
     return review_dir, source_path
+
+
+def target_mapping_application(
+    tmp_path: Path,
+    label: str,
+    *,
+    opaque_columns: bool = False,
+) -> tuple[Path, Path, Path, Path]:
+    scope_dir, _ = _mapping_scope(tmp_path, label, opaque=opaque_columns)
+    target_frame = (
+        _opaque_ticks("2026-07-15")
+        if opaque_columns
+        else _normal_ticks("2026-07-15")
+    )
+    intake_dir, source_path, _ = _target_intake(
+        tmp_path,
+        f"{label}_target",
+        frame=target_frame,
+    )
+    application_dir = tmp_path / f"{label}_application"
+    write_vendor_mapping_application(scope_dir, intake_dir, application_dir)
+    return application_dir, scope_dir, intake_dir, source_path
 
 
 def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
@@ -331,6 +361,201 @@ def test_vendor_market_data_pipeline_rejects_ambiguous_or_mismatched_review_inpu
             config=VendorMarketDataPipelineConfig(kind="chain"),
         )
     assert not kind_out.exists()
+
+
+def test_vendor_market_data_pipeline_uses_verified_target_application(tmp_path):
+    application_dir, scope_dir, intake_dir, raw_path = target_mapping_application(
+        tmp_path,
+        "pipeline_target",
+    )
+    out_dir = tmp_path / "target_application_pipeline"
+
+    report = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=out_dir,
+        mapping_application_dir=application_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=1,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    mapped_summary = report.mapped_data.summary.iloc[0]
+    readiness_summary = report.readiness.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report.ready
+    assert isinstance(report.mapped_data, AppliedMappedDataReport)
+    assert summary["mapping_source"] == "verified_target_application"
+    assert summary["mapping_application_path"] == str(application_dir.resolve())
+    assert summary["mapping_application_id"]
+    assert len(summary["mapping_application_sha256"]) == 64
+    assert summary["mapping_scope_review_path"] == str(scope_dir.resolve())
+    assert summary["mapping_scope_review_id"]
+    assert summary["target_intake_path"] == str(intake_dir.resolve())
+    assert summary["target_intake_receipt_id"]
+    assert len(summary["applied_mapping_sha256"]) == 64
+    assert bool(mapped_summary["target_application_bound"])
+    assert bool(mapped_summary["mapping_application_verified"])
+    assert bool(readiness_summary["require_target_application_normalization"])
+    assert not bool(readiness_summary["require_reviewed_mapping_normalization"])
+    assert bool(readiness_summary["mapped_data_target_application_bound"])
+    assert bool(readiness_summary["mapped_data_mapping_application_verified"])
+    assert {
+        "mapping_application",
+        "mapping_application_manifest",
+        "mapping_application_receipt",
+        "mapping_scope_review",
+        "target_intake",
+        "target_source",
+        "applied_mapping",
+    }.issubset(manifest["inputs"])
+    assert config["mapping"]["source"] == "verified_target_application"
+    assert config["mapping"]["application"]["path"] == str(
+        application_dir.resolve()
+    )
+    assert config["mapping"]["application"]["scope_review_id"] == summary[
+        "mapping_scope_review_id"
+    ]
+    assert config["mapping"]["application"]["target_intake_receipt_id"] == summary[
+        "target_intake_receipt_id"
+    ]
+    assert config["mapping"]["application"]["applied_mapping_sha256"] == summary[
+        "applied_mapping_sha256"
+    ]
+    assert config["data_readiness"]["thresholds"][
+        "require_target_application_normalization"
+    ]
+
+    cli_out = tmp_path / "target_application_pipeline_cli"
+    assert (
+        main(
+            [
+                "pipeline-vendor-market-data",
+                "--input",
+                str(raw_path),
+                "--out",
+                str(cli_out),
+                "--mapping-application",
+                str(application_dir),
+                "--timestamp-unit",
+                "datetime",
+                "--tick-size",
+                "0.05",
+                "--min-rows",
+                "1",
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+
+
+def test_target_application_pipeline_accepts_blocked_opaque_intake(tmp_path):
+    application_dir, _, _, raw_path = target_mapping_application(
+        tmp_path,
+        "opaque_target_pipeline",
+        opaque_columns=True,
+    )
+
+    report = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=tmp_path / "opaque_target_application_pipeline",
+        mapping_application_dir=application_dir,
+        config=VendorMarketDataPipelineConfig(
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=1,
+        ),
+    )
+
+    components = report.components.set_index("component")
+    readiness_items = report.readiness.items.set_index("component")
+    assert not report.intake.ready
+    assert report.ready
+    assert bool(components.loc["vendor_intake", "ready"])
+    assert components.loc["vendor_intake", "recommendation"] == (
+        "accepted_by_verified_target_application"
+    )
+    assert bool(readiness_items.loc["vendor_intake", "ready"])
+    assert len(report.mapped_data.data) == 1
+
+
+def test_target_application_pipeline_rejects_substitution_collision_and_drift(tmp_path):
+    application_dir, _, intake_dir, raw_path = target_mapping_application(
+        tmp_path,
+        "target_binding",
+    )
+    mapping_path = application_dir / "target_applied_vendor_mapping.csv"
+
+    mutual_out = tmp_path / "target_mutual_out"
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=mutual_out,
+            mapping_path=mapping_path,
+            mapping_application_dir=application_dir,
+        )
+    assert not mutual_out.exists()
+
+    other_source = tmp_path / "target_other.csv"
+    _normal_ticks("2026-07-16").to_csv(other_source, index=False)
+    source_out = tmp_path / "target_source_mismatch_out"
+    with pytest.raises(ValueError, match="exact target source"):
+        write_vendor_market_data_pipeline(
+            other_source,
+            output_dir=source_out,
+            mapping_application_dir=application_dir,
+        )
+    assert not source_out.exists()
+
+    adapter_out = tmp_path / "target_adapter_mismatch_out"
+    with pytest.raises(ValueError, match="adapter does not match"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=adapter_out,
+            mapping_application_dir=application_dir,
+            config=VendorMarketDataPipelineConfig(adapter="irage"),
+        )
+    assert not adapter_out.exists()
+
+    kind_out = tmp_path / "target_kind_mismatch_out"
+    with pytest.raises(ValueError, match="kind does not match"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=kind_out,
+            mapping_application_dir=application_dir,
+            config=VendorMarketDataPipelineConfig(kind="chain"),
+        )
+    assert not kind_out.exists()
+
+    collision_out = application_dir / "pipeline"
+    with pytest.raises(ValueError, match="cannot modify mapping-application evidence"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=collision_out,
+            mapping_application_dir=application_dir,
+        )
+    assert not collision_out.exists()
+
+    raw_path.write_text(raw_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    stale_out = tmp_path / "target_stale_out"
+    with pytest.raises(ValueError, match="verified ready target application"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=stale_out,
+            mapping_application_dir=application_dir,
+        )
+    assert not stale_out.exists()
+    assert intake_dir.exists()
 
 
 def test_reviewed_pipeline_accepts_manual_mapping_over_blocked_inference(tmp_path):

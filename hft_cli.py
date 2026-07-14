@@ -3038,6 +3038,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Verified approved mapping-review directory bound to this exact input file.",
     )
+    vendor_mapping_source.add_argument(
+        "--mapping-application",
+        default=None,
+        help="Verified target mapping-application directory bound to this exact input file.",
+    )
     vendor_market_data.add_argument("--adapter", default="arrow_money")
     vendor_market_data.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
     vendor_market_data.add_argument("--output-file", default=None)
@@ -7452,6 +7457,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             mapping_path=args.mapping,
             mapping_review_dir=args.mapping_review,
+            mapping_application_dir=args.mapping_application,
             config=VendorMarketDataPipelineConfig(
                 adapter=args.adapter,
                 kind=args.kind,

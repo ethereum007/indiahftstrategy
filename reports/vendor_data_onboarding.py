@@ -7,6 +7,11 @@ from typing import Any
 
 import pandas as pd
 
+from adapters.applied_mapped_data import (
+    AppliedMappedDataConfig,
+    AppliedMappedDataReport,
+    write_applied_mapped_data_normalization,
+)
 from adapters.mapped_data import MappedDataConfig, MappedDataReport, write_mapped_data_normalization
 from adapters.reviewed_mapped_data import (
     ApprovedMappingReviewInputs,
@@ -16,6 +21,11 @@ from adapters.reviewed_mapped_data import (
     write_reviewed_mapped_data_normalization,
 )
 from adapters.vendor_intake import VendorCsvIntakeConfig, VendorCsvIntakeReport, write_vendor_csv_intake_report
+from adapters.vendor_mapping_application import (
+    ApprovedVendorMappingApplicationInputs,
+    RECEIPT_FILE as MAPPING_APPLICATION_RECEIPT_FILE,
+    approved_vendor_mapping_application_inputs,
+)
 from data.diagnostics import DiagnosticResult, chain_diagnostics, tick_diagnostics, write_diagnostics
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.data_readiness import DataReadinessReport, DataReadinessThresholds, write_data_readiness_report
@@ -24,7 +34,7 @@ from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
     write_data_readiness_comparison,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import MANIFEST_NAME, write_experiment_manifest
 
 
 @dataclass(frozen=True)
@@ -54,7 +64,7 @@ class VendorMarketDataPipelineReport:
     components: pd.DataFrame
     summary: pd.DataFrame
     intake: VendorCsvIntakeReport
-    mapped_data: MappedDataReport | ReviewedMappedDataReport
+    mapped_data: MappedDataReport | ReviewedMappedDataReport | AppliedMappedDataReport
     diagnostics: DiagnosticResult
     readiness: DataReadinessReport
     output_dir: Path | None = None
@@ -88,13 +98,17 @@ def write_vendor_market_data_pipeline(
     output_dir: str | Path,
     mapping_path: str | Path | None = None,
     mapping_review_dir: str | Path | None = None,
+    mapping_application_dir: str | Path | None = None,
     config: VendorMarketDataPipelineConfig | None = None,
     readiness_thresholds: DataReadinessThresholds | None = None,
 ) -> VendorMarketDataPipelineReport:
     config = config or VendorMarketDataPipelineConfig()
     _validate_config(config)
-    if mapping_path is not None and mapping_review_dir is not None:
-        raise ValueError("mapping_path and mapping_review_dir are mutually exclusive")
+    mapping_modes = (mapping_path, mapping_review_dir, mapping_application_dir)
+    if sum(value is not None for value in mapping_modes) > 1:
+        raise ValueError(
+            "mapping_path, mapping_review_dir, and mapping_application_dir are mutually exclusive"
+        )
     source_file = Path(input_path).resolve()
     if not source_file.exists():
         raise FileNotFoundError(f"vendor market-data input not found: {source_file}")
@@ -103,8 +117,20 @@ def write_vendor_market_data_pipeline(
         if mapping_review_dir is not None
         else None
     )
+    approved_application = (
+        approved_vendor_mapping_application_inputs(mapping_application_dir)
+        if mapping_application_dir is not None
+        else None
+    )
     if approved_review is not None:
         _validate_review_binding(source_file, Path(output_dir), config, approved_review)
+    if approved_application is not None:
+        _validate_application_binding(
+            source_file,
+            Path(output_dir),
+            config,
+            approved_application,
+        )
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
@@ -124,7 +150,22 @@ def write_vendor_market_data_pipeline(
             output_mapping_file="vendor_mapping_draft.csv",
         ),
     )
-    if approved_review is not None:
+    if approved_application is not None:
+        mapping_source = "verified_target_application"
+        mapping_file = approved_application.applied_mapping_path
+        mapped = write_applied_mapped_data_normalization(
+            approved_application.application_dir,
+            output_dir=mapped_dir,
+            config=AppliedMappedDataConfig(
+                output_filename=_output_filename(config),
+                timestamp_unit=config.timestamp_unit,
+                timestamp_tz=config.timestamp_tz,
+                filter_session=config.filter_session,
+                market=config.market,
+                require_all_mapped=config.require_all_mapped,
+            ),
+        )
+    elif approved_review is not None:
         mapping_source = "verified_approved_review"
         mapping_file = approved_review.reviewed_mapping_path
         mapped = write_reviewed_mapped_data_normalization(
@@ -159,11 +200,19 @@ def write_vendor_market_data_pipeline(
         )
     diagnostics = _write_diagnostics(mapped.data, diagnostics_dir, config)
     thresholds = readiness_thresholds or _readiness_thresholds(config)
-    if approved_review is not None:
+    if approved_application is not None:
+        thresholds = replace(
+            thresholds,
+            require_mapped_data=True,
+            require_reviewed_mapping_normalization=False,
+            require_target_application_normalization=True,
+        )
+    elif approved_review is not None:
         thresholds = replace(
             thresholds,
             require_mapped_data=True,
             require_reviewed_mapping_normalization=True,
+            require_target_application_normalization=False,
         )
     readiness = write_data_readiness_report(
         output_dir=readiness_dir,
@@ -179,6 +228,7 @@ def write_vendor_market_data_pipeline(
         diagnostics,
         readiness,
         intake_accepted_by_review=approved_review is not None,
+        intake_accepted_by_application=approved_application is not None,
     )
     action_queue = _pipeline_action_queue(components, readiness.action_queue)
     summary = _summary(
@@ -196,6 +246,7 @@ def write_vendor_market_data_pipeline(
         readiness_dir=readiness_dir,
         action_queue=action_queue,
         approved_review=approved_review,
+        approved_application=approved_application,
     )
     components.to_csv(out / "vendor_market_data_pipeline_components.csv", index=False)
     summary.to_csv(out / "vendor_market_data_pipeline_summary.csv", index=False)
@@ -209,6 +260,14 @@ def write_vendor_market_data_pipeline(
         json.dumps(pipeline_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    if approved_application is not None:
+        final_application = approved_vendor_mapping_application_inputs(
+            approved_application.application_dir
+        )
+        if final_application != approved_application:
+            raise RuntimeError(
+                "mapping application graph changed during vendor market-data pipeline"
+            )
     inputs: dict[str, Any] = {
         "input": source_file,
         "mapping": mapping_file,
@@ -222,6 +281,23 @@ def write_vendor_market_data_pipeline(
                     approved_review.mapping_review_dir
                     / "vendor_mapping_review_receipt.json"
                 ),
+            }
+        )
+    if approved_application is not None:
+        inputs.update(
+            {
+                "mapping_application": approved_application.application_dir,
+                "mapping_application_manifest": (
+                    approved_application.application_dir / MANIFEST_NAME
+                ),
+                "mapping_application_receipt": (
+                    approved_application.application_dir
+                    / MAPPING_APPLICATION_RECEIPT_FILE
+                ),
+                "mapping_scope_review": approved_application.scope_review_dir,
+                "target_intake": approved_application.target_intake_dir,
+                "target_source": approved_application.target_source_path,
+                "applied_mapping": approved_application.applied_mapping_path,
             }
         )
     inputs.update(
@@ -407,15 +483,22 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
 
 def _components(
     intake: VendorCsvIntakeReport,
-    mapped: MappedDataReport | ReviewedMappedDataReport,
+    mapped: MappedDataReport | ReviewedMappedDataReport | AppliedMappedDataReport,
     diagnostics: DiagnosticResult,
     readiness: DataReadinessReport,
     *,
     intake_accepted_by_review: bool = False,
+    intake_accepted_by_application: bool = False,
 ) -> pd.DataFrame:
-    intake_ready = bool(intake.ready or intake_accepted_by_review)
+    intake_ready = bool(
+        intake.ready
+        or intake_accepted_by_review
+        or intake_accepted_by_application
+    )
     intake_row = _first(intake.summary).copy()
-    if intake_accepted_by_review and not intake.ready:
+    if intake_accepted_by_application and not intake.ready:
+        intake_row["recommendation"] = "accepted_by_verified_target_application"
+    elif intake_accepted_by_review and not intake.ready:
         intake_row["recommendation"] = "accepted_by_verified_mapping_review"
     rows = [
         _component("vendor_intake", intake_ready, intake.output_dir, intake_row),
@@ -453,7 +536,7 @@ def _summary(
     mapping_file: Path,
     components: pd.DataFrame,
     intake: VendorCsvIntakeReport,
-    mapped: MappedDataReport | ReviewedMappedDataReport,
+    mapped: MappedDataReport | ReviewedMappedDataReport | AppliedMappedDataReport,
     diagnostics: DiagnosticResult,
     readiness: DataReadinessReport,
     config: VendorMarketDataPipelineConfig,
@@ -464,6 +547,7 @@ def _summary(
     readiness_dir: Path,
     action_queue: pd.DataFrame,
     approved_review: ApprovedMappingReviewInputs | None,
+    approved_application: ApprovedVendorMappingApplicationInputs | None,
 ) -> pd.DataFrame:
     failed = int((~components["ready"].astype(bool)).sum()) if not components.empty else 1
     intake_row = _first(intake.summary)
@@ -488,6 +572,51 @@ def _summary(
                 ),
                 "mapping_review_sha256": (
                     approved_review.mapping_review_sha256 if approved_review is not None else ""
+                ),
+                "mapping_application_path": str(
+                    approved_application.application_dir
+                    if approved_application is not None
+                    else ""
+                ),
+                "mapping_application_id": (
+                    approved_application.mapping_application_id
+                    if approved_application is not None
+                    else ""
+                ),
+                "mapping_application_sha256": (
+                    approved_application.mapping_application_sha256
+                    if approved_application is not None
+                    else ""
+                ),
+                "mapping_scope_review_path": str(
+                    approved_application.scope_review_dir
+                    if approved_application is not None
+                    else ""
+                ),
+                "mapping_scope_review_id": (
+                    approved_application.mapping_scope_review_id
+                    if approved_application is not None
+                    else ""
+                ),
+                "mapping_scope_review_sha256": (
+                    approved_application.mapping_scope_review_sha256
+                    if approved_application is not None
+                    else ""
+                ),
+                "target_intake_path": str(
+                    approved_application.target_intake_dir
+                    if approved_application is not None
+                    else ""
+                ),
+                "target_intake_receipt_id": (
+                    approved_application.target_intake_receipt_id
+                    if approved_application is not None
+                    else ""
+                ),
+                "applied_mapping_sha256": (
+                    approved_application.reviewed_mapping_sha256
+                    if approved_application is not None
+                    else ""
                 ),
                 "normalized_output_file": _output_filename(config),
                 "source_columns": int(_number(intake_row, "source_columns", fallback=0.0)),
@@ -830,6 +959,26 @@ def _pipeline_config(
             "review_path": _text(row, "mapping_review_path"),
             "review_id": _text(row, "mapping_review_id"),
             "review_sha256": _text(row, "mapping_review_sha256"),
+            "application": {
+                "path": _text(row, "mapping_application_path"),
+                "id": _text(row, "mapping_application_id"),
+                "sha256": _text(row, "mapping_application_sha256"),
+                "scope_review_path": _text(row, "mapping_scope_review_path"),
+                "scope_review_id": _text(row, "mapping_scope_review_id"),
+                "scope_review_sha256": _text(
+                    row,
+                    "mapping_scope_review_sha256",
+                ),
+                "target_intake_path": _text(row, "target_intake_path"),
+                "target_intake_receipt_id": _text(
+                    row,
+                    "target_intake_receipt_id",
+                ),
+                "applied_mapping_sha256": _text(
+                    row,
+                    "applied_mapping_sha256",
+                ),
+            },
         },
         "normalized": {
             "output_file": _text(row, "normalized_output_file"),
@@ -1095,6 +1244,35 @@ def _validate_review_binding(
         raise ValueError("pipeline output cannot modify mapping-review evidence")
     if _is_relative_to(review.mapping_review_dir.resolve(), output_dir.resolve()):
         raise ValueError("pipeline output cannot contain mapping-review evidence")
+
+
+def _validate_application_binding(
+    source_file: Path,
+    output_dir: Path,
+    config: VendorMarketDataPipelineConfig,
+    application: ApprovedVendorMappingApplicationInputs,
+) -> None:
+    if source_file.resolve() != application.target_source_path.resolve():
+        raise ValueError(
+            "pipeline input does not match the exact target source bound by mapping application"
+        )
+    if _identity(config.adapter) != application.adapter:
+        raise ValueError("pipeline adapter does not match the verified mapping application")
+    if _identity(config.kind) != application.kind:
+        raise ValueError("pipeline kind does not match the verified mapping application")
+
+    out = output_dir.resolve()
+    evidence_paths = (
+        ("mapping-application", application.application_dir.resolve()),
+        ("mapping-scope-review", application.scope_review_dir.resolve()),
+        ("target-intake", application.target_intake_dir.resolve()),
+        ("target-source", application.target_source_path.resolve()),
+    )
+    for label, evidence_path in evidence_paths:
+        if _is_relative_to(out, evidence_path):
+            raise ValueError(f"pipeline output cannot modify {label} evidence")
+        if _is_relative_to(evidence_path, out):
+            raise ValueError(f"pipeline output cannot contain {label} evidence")
 
 
 def _identity(value: object) -> str:

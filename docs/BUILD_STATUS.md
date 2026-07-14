@@ -3235,6 +3235,17 @@
   the exact-source review mode. The application itself remains non-authorizing,
   and normalization still grants no strategy-research, routing, submission, or
   live-release authority.
+- The single-file vendor onboarding pipeline now consumes target applications
+  end to end. Its mutually exclusive `--mapping-application` mode reconstructs
+  the verified application graph before creating output, requires the exact
+  target source plus adapter/kind identity, derives normalization only from the
+  retained application, and forces target-application-bound data readiness.
+  Opaque blocked inference can proceed only when the application supplies the
+  reviewed mapping. Pipeline summaries, config, and the root manifest retain
+  the application, scope-review, target-intake, exact-source, and applied-mapping
+  lineage. Output/evidence overlap, identity substitution, source drift, and
+  mixed mapping modes fail before pipeline output is created. Batch ingestion
+  intentionally remains closed because every dataset needs its own application.
 
 ## Test Gate
 
@@ -3244,8 +3255,18 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1791 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1794 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application onboarding gate: all 12 focused onboarding tests
+pass, including normal and opaque-header target applications, strict readiness,
+CLI execution, root lineage retention, mapping-mode exclusivity, exact-source
+and adapter/kind binding, evidence-path isolation, and stale-source refusal.
+The full affected intake, mapping-review, scope-review, target-application,
+reviewed and target-applied normalization, data-readiness, comparison, mapped
+data, onboarding, catalog, manifest, broker-vendor, and shared CLI surface
+passes together (`174 passed`). The repository now collects 1794 tests across
+154 files; the full suite was not rerun for this slice.
 
 Latest target-applied normalization gate: all 10 focused adversarial tests pass.
 The affected target normalization, data-readiness, mapped-data, intake,
