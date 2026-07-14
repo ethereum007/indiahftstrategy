@@ -35,6 +35,10 @@ from reports.provider_market_data_imbalance_live_dryrun_runtime_preflight import
     RUN_TYPE as PROVIDER_LIVE_DRYRUN_RUNTIME_PREFLIGHT_RUN_TYPE,
     verify_provider_market_data_imbalance_live_dryrun_runtime_preflight,
 )
+from reports.provider_market_data_imbalance_live_dryrun_runtime_launcher import (
+    RUN_TYPE as PROVIDER_LIVE_DRYRUN_RUNTIME_LAUNCHER_RUN_TYPE,
+    verify_provider_market_data_imbalance_live_dryrun_runtime_launcher,
+)
 
 
 SUMMARY_FILES = [
@@ -127,6 +131,7 @@ SUMMARY_FILES = [
     "provider_market_data_imbalance_release_decision_summary.csv",
     "provider_market_data_imbalance_live_dryrun_handoff_summary.csv",
     "provider_market_data_imbalance_live_dryrun_runtime_preflight_summary.csv",
+    "provider_market_data_imbalance_live_dryrun_runtime_launcher_summary.csv",
     "provider_broker_lineage_migration_summary.csv",
     "provider_broker_lineage_audit_usage_summary.csv",
     "provider_broker_lineage_refresh_convergence_summary.csv",
@@ -373,6 +378,12 @@ def _catalog_row(
             str(manifest.get("run_type", "")),
         )
     )
+    provider_live_dryrun_runtime_launcher_verification = (
+        _provider_live_dryrun_runtime_launcher_verification_fields(
+            run_dir,
+            str(manifest.get("run_type", "")),
+        )
+    )
     if (
         strategy_evidence_verification[
             "strategy_evidence_verification_required"
@@ -423,6 +434,16 @@ def _catalog_row(
     ):
         status_column = "provider_live_dryrun_runtime_preflight_verification"
         status = False
+    if (
+        provider_live_dryrun_runtime_launcher_verification[
+            "provider_live_dryrun_runtime_launcher_verification_required"
+        ]
+        and not provider_live_dryrun_runtime_launcher_verification[
+            "provider_live_dryrun_runtime_launcher_verification_verified"
+        ]
+    ):
+        status_column = "provider_live_dryrun_runtime_launcher_verification"
+        status = False
     inputs = manifest.get("inputs", {}) or {}
     input_stats = _input_stats(inputs)
     row = {
@@ -446,6 +467,7 @@ def _catalog_row(
         **provider_release_decision_verification,
         **provider_live_dryrun_handoff_verification,
         **provider_live_dryrun_runtime_preflight_verification,
+        **provider_live_dryrun_runtime_launcher_verification,
         **_provider_lineage_selection_fields(
             run_dir,
             str(manifest.get("run_type", "")),
@@ -837,6 +859,92 @@ def _provider_live_dryrun_runtime_preflight_verification_fields(
     return fields
 
 
+def _provider_live_dryrun_runtime_launcher_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == PROVIDER_LIVE_DRYRUN_RUNTIME_LAUNCHER_RUN_TYPE
+    fields: dict[str, Any] = {
+        "provider_live_dryrun_runtime_launcher_verification_required": required,
+        "provider_live_dryrun_runtime_launcher_verification_status": (
+            "verification_required" if required else "not_applicable"
+        ),
+        "provider_live_dryrun_runtime_launcher_verification_verified": False,
+        "provider_live_dryrun_runtime_launcher_verification_completed": False,
+        "provider_live_dryrun_runtime_launcher_verification_halted": False,
+        "provider_live_dryrun_runtime_launcher_verification_manifest_current": False,
+        "provider_live_dryrun_runtime_launcher_verification_preflight_current": False,
+        "provider_live_dryrun_runtime_launcher_verification_handoff_current": False,
+        "provider_live_dryrun_runtime_launcher_verification_artifacts_consistent": False,
+        "provider_live_dryrun_runtime_launcher_verification_simulation_only": False,
+        "provider_live_dryrun_runtime_launcher_verification_non_authorizing": False,
+        "provider_live_dryrun_runtime_launcher_verification_error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = (
+            verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+                run_dir
+            )
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields[
+            "provider_live_dryrun_runtime_launcher_verification_status"
+        ] = "verification_error"
+        fields[
+            "provider_live_dryrun_runtime_launcher_verification_error"
+        ] = str(exc)
+        return fields
+    status = "stale_or_inconsistent"
+    if verification.verified:
+        status = (
+            "verified_completed"
+            if verification.completed
+            else (
+                "verified_halted"
+                if verification.halted
+                else "verified_incomplete"
+            )
+        )
+    fields.update(
+        {
+            "provider_live_dryrun_runtime_launcher_verification_status": status,
+            "provider_live_dryrun_runtime_launcher_verification_verified": (
+                verification.verified
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_completed": (
+                verification.completed
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_halted": (
+                verification.halted
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_manifest_current": (
+                verification.manifest_current
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_preflight_current": (
+                verification.preflight_current
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_handoff_current": (
+                verification.handoff_current
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_artifacts_consistent": (
+                verification.artifacts_consistent
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_simulation_only": (
+                verification.simulation_only
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_non_authorizing": (
+                verification.non_authorizing
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_error": (
+                verification.error
+            ),
+        }
+    )
+    return fields
+
+
 def _provider_lineage_selection_fields(
     run_dir: Path,
     run_type: str,
@@ -1182,6 +1290,9 @@ def _catalog_summary(
     provider_live_dryrun_runtime_preflight_verification_counts = (
         _provider_live_dryrun_runtime_preflight_verification_counts(catalog)
     )
+    provider_live_dryrun_runtime_launcher_verification_counts = (
+        _provider_live_dryrun_runtime_launcher_verification_counts(catalog)
+    )
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -1210,6 +1321,7 @@ def _catalog_summary(
                     **provider_release_decision_verification_counts,
                     **provider_live_dryrun_handoff_verification_counts,
                     **provider_live_dryrun_runtime_preflight_verification_counts,
+                    **provider_live_dryrun_runtime_launcher_verification_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -1243,6 +1355,7 @@ def _catalog_summary(
                 **provider_release_decision_verification_counts,
                 **provider_live_dryrun_handoff_verification_counts,
                 **provider_live_dryrun_runtime_preflight_verification_counts,
+                **provider_live_dryrun_runtime_launcher_verification_counts,
                 **action_counts,
                 **hygiene_counts,
             }
@@ -1451,6 +1564,53 @@ def _provider_live_dryrun_runtime_preflight_verification_counts(
                 (required & verified & ~ready).sum()
             ),
             "provider_live_dryrun_runtime_preflight_verification_stale_runs": int(
+                (required & ~verified).sum()
+            ),
+        }
+    )
+    return counts
+
+
+def _provider_live_dryrun_runtime_launcher_verification_counts(
+    catalog: pd.DataFrame,
+) -> dict[str, int]:
+    counts = {
+        "provider_live_dryrun_runtime_launcher_verification_required_runs": 0,
+        "provider_live_dryrun_runtime_launcher_verification_verified_runs": 0,
+        "provider_live_dryrun_runtime_launcher_verification_completed_runs": 0,
+        "provider_live_dryrun_runtime_launcher_verification_halted_runs": 0,
+        "provider_live_dryrun_runtime_launcher_verification_stale_runs": 0,
+    }
+    required_column = (
+        "provider_live_dryrun_runtime_launcher_verification_required"
+    )
+    if catalog.empty or required_column not in catalog.columns:
+        return counts
+    required = catalog[required_column].map(_to_bool)
+    verified = catalog[
+        "provider_live_dryrun_runtime_launcher_verification_verified"
+    ].map(_to_bool)
+    completed = catalog[
+        "provider_live_dryrun_runtime_launcher_verification_completed"
+    ].map(_to_bool)
+    halted = catalog[
+        "provider_live_dryrun_runtime_launcher_verification_halted"
+    ].map(_to_bool)
+    counts.update(
+        {
+            "provider_live_dryrun_runtime_launcher_verification_required_runs": int(
+                required.sum()
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_verified_runs": int(
+                (required & verified).sum()
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_completed_runs": int(
+                (required & verified & completed).sum()
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_halted_runs": int(
+                (required & verified & halted).sum()
+            ),
+            "provider_live_dryrun_runtime_launcher_verification_stale_runs": int(
                 (required & ~verified).sum()
             ),
         }

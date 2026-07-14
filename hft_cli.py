@@ -255,6 +255,11 @@ from reports.provider_market_data_imbalance_live_dryrun_runtime_preflight import
     verify_provider_market_data_imbalance_live_dryrun_runtime_preflight,
     write_provider_market_data_imbalance_live_dryrun_runtime_preflight,
 )
+from reports.provider_market_data_imbalance_live_dryrun_runtime_launcher import (
+    ProviderMarketDataImbalanceLiveDryrunRuntimeLauncherConfig,
+    verify_provider_market_data_imbalance_live_dryrun_runtime_launcher,
+    write_provider_market_data_imbalance_live_dryrun_runtime_launcher,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2322,6 +2327,98 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_market_data_imbalance_live_dryrun_runtime_preflight_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher = (
+        sub.add_parser(
+            "launch-provider-market-data-imbalance-live-dryrun-simulated-runtime",
+            help=(
+                "Run a bounded deterministic market-data-only simulation from "
+                "a current ready runtime preflight and emit a terminal receipt."
+            ),
+        )
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--preflight",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--events",
+        type=int,
+        default=100,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--interval-ms",
+        type=int,
+        default=100,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--start-offset-seconds",
+        type=int,
+        default=0,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--symbol",
+        default="NIFTY-SIM",
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--base-mid-price",
+        type=float,
+        default=25_000.0,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--spread",
+        type=float,
+        default=0.5,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--quantity",
+        type=int,
+        default=100,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--price-step",
+        type=float,
+        default=0.05,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--simulate-fault",
+        choices=("none", "invalid_quote", "non_monotonic_timestamp"),
+        default="none",
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--fault-at-event",
+        type=int,
+        default=0,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=16_384,
+    )
+    provider_market_data_imbalance_live_dryrun_runtime_launcher.add_argument(
+        "--fail-on-halt",
+        action="store_true",
+    )
+    verify_provider_market_data_imbalance_live_dryrun_runtime_launcher_parser = (
+        sub.add_parser(
+            "verify-provider-market-data-imbalance-live-dryrun-runtime-launcher",
+            help=(
+                "Reopen bounded simulated runtime telemetry and its current "
+                "preflight/handoff proof graph without rerunning the session."
+            ),
+        )
+    )
+    verify_provider_market_data_imbalance_live_dryrun_runtime_launcher_parser.add_argument(
+        "--launcher",
+        required=True,
+    )
+    verify_provider_market_data_imbalance_live_dryrun_runtime_launcher_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -6275,6 +6372,76 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2 if args.fail_on_breach and not result.ready else 0
+    if (
+        args.command
+        == "launch-provider-market-data-imbalance-live-dryrun-simulated-runtime"
+    ):
+        result = (
+            write_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+                args.preflight,
+                args.out,
+                config=(
+                    ProviderMarketDataImbalanceLiveDryrunRuntimeLauncherConfig(
+                        event_count=args.events,
+                        interval_ms=args.interval_ms,
+                        start_offset_seconds=args.start_offset_seconds,
+                        symbol=args.symbol,
+                        base_mid_price=args.base_mid_price,
+                        spread=args.spread,
+                        quantity=args.quantity,
+                        price_step=args.price_step,
+                        fault_mode=args.simulate_fault,
+                        fault_at_event=args.fault_at_event,
+                        max_dependency_count=args.max_dependencies,
+                    )
+                ),
+            )
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_halt and not result.completed else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-live-dryrun-runtime-launcher"
+    ):
+        result = (
+            verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+                args.launcher
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "completed": result.completed,
+                    "halted": result.halted,
+                    "manifest_current": result.manifest_current,
+                    "preflight_current": result.preflight_current,
+                    "handoff_current": result.handoff_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "simulation_only": result.simulation_only,
+                    "non_authorizing": result.non_authorizing,
+                    "launcher_dir": str(result.output_dir),
+                    "preflight_dir": (
+                        ""
+                        if result.preflight_dir is None
+                        else str(result.preflight_dir)
+                    ),
+                    "handoff_dir": (
+                        ""
+                        if result.handoff_dir is None
+                        else str(result.handoff_dir)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.completed)
+            else 0
+        )
     if (
         args.command
         == "audit-provider-market-data-imbalance-broker-lineage-migration"

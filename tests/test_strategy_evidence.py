@@ -37,6 +37,10 @@ from reports.provider_market_data_imbalance_live_dryrun_runtime_preflight import
     verify_provider_market_data_imbalance_live_dryrun_runtime_preflight,
     write_provider_market_data_imbalance_live_dryrun_runtime_preflight,
 )
+from reports.provider_market_data_imbalance_live_dryrun_runtime_launcher import (
+    verify_provider_market_data_imbalance_live_dryrun_runtime_launcher,
+    write_provider_market_data_imbalance_live_dryrun_runtime_launcher,
+)
 
 
 def _manifest_input_paths(value):
@@ -2910,6 +2914,110 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
         runtime_preflight_dir
     ).verified
 
+    runtime_launcher_dir = tmp_path / "runtime_launcher"
+    assert (
+        main(
+            [
+                "launch-provider-market-data-imbalance-live-dryrun-simulated-runtime",
+                "--preflight",
+                str(runtime_preflight_dir),
+                "--out",
+                str(runtime_launcher_dir),
+                "--events",
+                "3",
+                "--interval-ms",
+                "250",
+                "--fail-on-halt",
+            ]
+        )
+        == 0
+    )
+    runtime_terminal_receipt_path = (
+        runtime_launcher_dir
+        / "provider_market_data_imbalance_live_dryrun_terminal_receipt.json"
+    )
+    runtime_terminal_receipt = json.loads(
+        runtime_terminal_receipt_path.read_text(encoding="utf-8")
+    )
+    assert runtime_terminal_receipt["completed"] is True
+    assert runtime_terminal_receipt["halted"] is False
+    assert runtime_terminal_receipt["launcher_mode"] == (
+        "deterministic_simulation"
+    )
+    for field in (
+        "provider_network_called",
+        "provider_backend_loaded",
+        "credential_environment_read",
+        "credential_values_stored",
+        "strategy_execution_enabled",
+        "order_generation_enabled",
+        "broker_order_api_imported",
+        "broker_order_api_called",
+        "broker_api_called",
+        "submission_enabled",
+        "authorizes_submission",
+        "release_approved",
+    ):
+        assert runtime_terminal_receipt["safety"][field] is False
+    serialized_launcher = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in runtime_launcher_dir.rglob("*")
+        if path.is_file()
+    )
+    assert runtime_api_key not in serialized_launcher
+    assert runtime_api_secret not in serialized_launcher
+    runtime_launcher_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+            runtime_launcher_dir
+        )
+    )
+    assert runtime_launcher_verification.verified
+    assert runtime_launcher_verification.completed
+    assert not runtime_launcher_verification.halted
+    assert runtime_launcher_verification.manifest_current
+    assert runtime_launcher_verification.preflight_current
+    assert runtime_launcher_verification.handoff_current
+    assert runtime_launcher_verification.artifacts_consistent
+    assert runtime_launcher_verification.simulation_only
+    assert runtime_launcher_verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-live-dryrun-runtime-launcher",
+                "--launcher",
+                str(runtime_launcher_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    runtime_launcher_catalog = catalog_experiment_runs(
+        [runtime_launcher_dir]
+    )
+    runtime_launcher_row = runtime_launcher_catalog.catalog.iloc[0]
+    assert bool(runtime_launcher_row["summary_status"])
+    assert (
+        runtime_launcher_row[
+            "provider_live_dryrun_runtime_launcher_verification_status"
+        ]
+        == "verified_completed"
+    )
+    assert bool(
+        runtime_launcher_row[
+            "provider_live_dryrun_runtime_launcher_verification_verified"
+        ]
+    )
+    assert int(
+        runtime_launcher_catalog.summary.iloc[0][
+            "provider_live_dryrun_runtime_launcher_verification_completed_runs"
+        ]
+    ) == 1
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+            runtime_preflight_dir,
+            runtime_launcher_dir,
+        )
+
     certificate_source.write_text(
         "source\nchanged_after_release_review\n",
         encoding="utf-8",
@@ -2951,6 +3059,20 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     )
     assert not stale_runtime_preflight_verification.verified
     assert not stale_runtime_preflight_verification.handoff_current
+    stale_runtime_launcher_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+            runtime_launcher_dir
+        )
+    )
+    assert not stale_runtime_launcher_verification.verified
+    assert not stale_runtime_launcher_verification.preflight_current
+    assert not verify_experiment_manifest(
+        runtime_launcher_dir / "manifest.json",
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_runtime_launcher"
+        ),
+        require_input_fingerprints=True,
+    ).passed
     assert not verify_experiment_manifest(
         runtime_preflight_manifest_path,
         expected_run_type=(
@@ -3022,6 +3144,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
         runtime_preflight_dir
     ).verified
+    assert verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+        runtime_launcher_dir
+    ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
     assert bool(cataloged_row["summary_status"])
@@ -3089,6 +3214,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert not verify_provider_market_data_imbalance_live_dryrun_runtime_preflight(
         runtime_preflight_dir
+    ).verified
+    assert not verify_provider_market_data_imbalance_live_dryrun_runtime_launcher(
+        runtime_launcher_dir
     ).verified
     assert not verify_experiment_manifest(
         release_manifest_path,

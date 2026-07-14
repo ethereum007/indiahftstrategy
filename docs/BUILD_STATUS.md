@@ -3065,6 +3065,28 @@
   The configured backend remains trusted in-process code; the receipt does not
   independently prove an unaudited module's side effects or provider-side
   credential scope.
+- A current ready runtime preflight can now advance through the bounded,
+  simulation-only market-data launcher with
+  `launch-provider-market-data-imbalance-live-dryrun-simulated-runtime`. The
+  launcher enforces the handoff's exact India session window and armed kill
+  switch, generates a finite deterministic quote stream, stops at the first
+  session, timestamp, or quote-integrity breach, and emits write-once telemetry,
+  checks, config, runbook, summary, recursive manifest, and terminal receipt.
+  The execution modules have no ambient provider, network, dynamic-import,
+  credential, or broker-order capability; every artifact explicitly records
+  that provider networking, credential reads, strategy execution, order
+  generation, broker API use, and submission were absent. Completed and
+  kill-switch-halted sessions are both semantically reopenable, while only a
+  completed session is progression-ready. The strict
+  `verify-provider-market-data-imbalance-live-dryrun-runtime-launcher` command
+  deterministically reconstructs the session without reconnecting, rejects
+  source drift and freshly re-manifested authorization claims, and drives
+  `verified_completed`, `verified_halted`, or stale experiment-catalog states.
+  The simulator plus launcher/verifier/CLI/catalog boundary passes `17` focused
+  tests, and both retained audit/certificate proof variants pass the complete
+  recursive drift chain (`2 passed`). This is not real Arrow.money/iRage market
+  data and does not claim provider-side behavior; choosing a production
+  endpoint/auth contract and supplying credentials remain external gates.
 
 ## Test Gate
 
@@ -3074,7 +3096,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1638 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1655 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest completed strategy-evidence read-verification gate: strategy evidence,
@@ -3120,6 +3142,16 @@ passed`), and all other strategy-evidence compatibility paths pass (`57
 passed`). The affected surface therefore totals `138 passed` across split
 batches; the split avoids the local Windows command-host ceiling without
 omitting any collected case in those files.
+
+Latest bounded runtime-launcher gate: deterministic market-data generation,
+session bounds, first-breach kill-switch behavior, write-once artifacts,
+semantic reconstruction, CLI exit semantics, catalog completed/halted/stale
+states, re-manifested authorization tamper, source drift, and ambient-capability
+import audits pass together (`17 passed`). Both retained-proof variants pass
+the full CLI/catalog/write-once/credential-absence/direct-and-recursive-drift
+chain (`2 passed`). Shared manifest/catalog compatibility passes (`68 passed`)
+and the complete strategy-evidence file passes (`59 passed`), for a green
+affected surface of `144 passed` across split batches.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3292,16 +3324,16 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1627-test collection is fully green.
+1655-test collection is fully green.
 
 ## Next Build Targets
 
-1. Add a bounded market-data-only controlled live-dry-run launcher that consumes
-   only a current ready runtime-preflight receipt and handoff, enforces the bound
-   session window and kill switch, cannot import or call broker order APIs, and
-   emits immutable telemetry plus a terminal non-submitting receipt. Keep a
-   deterministic simulated backend path until a real provider endpoint/auth
-   contract and credentials are chosen.
+1. Add a bounded non-submitting shadow-strategy evaluator that consumes only a
+   semantically verified completed launcher telemetry set, computes deterministic
+   microprice-imbalance signals and broker-neutral intents, enforces the retained
+   runtime limits and kill switch, and cannot route or submit orders. Keep the
+   simulator path until a real provider endpoint/auth contract and credentials
+   are chosen.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
