@@ -4591,7 +4591,15 @@ route-enable revalidates adapter, market, dataset, provenance, and comparison
 acceptance checks and carries it as
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*` audit fields
 plus the `cutover_broker_dispatch_roundtrip_vendor_market_data_batch` config
-block. If cutover retained the broker-vendor wrapper readiness state,
+block. For application-backed proof, route-enable also retains mapping mode,
+application count, uniqueness, coverage, and each dataset's application,
+scope-review, target-intake, and applied-mapping lineage. Any target signal
+requires `per_dataset_verified_target_application`, one distinct application
+per dataset, 100% coverage, and complete lineage. This applies to current
+cutover config, flattened cutover summary recovery, and broker-readiness
+sidecar hydration. Summary-only recovery prefers the current `cutover_*`
+columns before older `scaleup_*` compatibility fields. If cutover retained the
+broker-vendor wrapper readiness state,
 route-enable carries it as `cutover_broker_vendor_data_readiness_*` audit
 fields plus `cutover_broker_vendor_data_readiness` config, and fails closed
 when the wrapper is not ready or has failed checks even if the nested vendor

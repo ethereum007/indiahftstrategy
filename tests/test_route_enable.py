@@ -614,6 +614,10 @@ def vendor_market_data_batch_config(
     min_mapping_coverage=1.0,
     unique_mapping_drafts=1,
     mapping_sources="vendor_intake_draft",
+    mapping_source_mode="",
+    mapping_application_count=0,
+    unique_mapping_applications=0,
+    target_application_coverage=0.0,
     comparison_accepted=True,
     comparison_failed_checks=0,
     datasets=None,
@@ -654,12 +658,74 @@ def vendor_market_data_batch_config(
         "min_mapping_coverage": min_mapping_coverage,
         "unique_mapping_drafts": unique_mapping_drafts,
         "mapping_sources": mapping_sources,
+        "mapping_source_mode": mapping_source_mode,
+        "mapping_application_count": mapping_application_count,
+        "unique_mapping_applications": unique_mapping_applications,
+        "target_application_coverage": target_application_coverage,
         "comparison": {
             "accepted": comparison_accepted,
             "failed_checks": comparison_failed_checks,
         },
         "datasets": datasets,
     }
+
+
+def target_application_vendor_market_data_batch_config(**overrides):
+    config = vendor_market_data_batch_config(
+        mapping_sources="verified_target_application",
+        mapping_source_mode="per_dataset_verified_target_application",
+        mapping_application_count=2,
+        unique_mapping_applications=2,
+        target_application_coverage=1.0,
+        datasets=[
+            {
+                "dataset": "nifty_day1",
+                "ready": True,
+                "source_file_sha256": "a" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "verified_target_application",
+                "mapping_application_path": "applications/day1/application.json",
+                "mapping_application_id": "mapping-app-day1",
+                "mapping_application_sha256": "1" * 64,
+                "mapping_scope_review_id": "scope-review-1",
+                "mapping_scope_review_sha256": "2" * 64,
+                "target_intake_receipt_id": "target-intake-day1",
+                "applied_mapping_sha256": "3" * 64,
+            },
+            {
+                "dataset": "nifty_day2",
+                "ready": True,
+                "source_file_sha256": "d" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "verified_target_application",
+                "mapping_application_path": "applications/day2/application.json",
+                "mapping_application_id": "mapping-app-day2",
+                "mapping_application_sha256": "4" * 64,
+                "mapping_scope_review_id": "scope-review-1",
+                "mapping_scope_review_sha256": "2" * 64,
+                "target_intake_receipt_id": "target-intake-day2",
+                "applied_mapping_sha256": "3" * 64,
+            },
+        ],
+    )
+    config.update(overrides)
+    return config
+
+
+def with_cutover_broker_vendor_batch_summary(summary, vendor):
+    prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    result = summary.copy()
+    for key, value in vendor.items():
+        if key == "comparison":
+            result.loc[0, f"{prefix}_comparison_accepted"] = value["accepted"]
+            result.loc[0, f"{prefix}_comparison_failed_checks"] = value["failed_checks"]
+        elif key == "datasets":
+            result.loc[0, f"{prefix}_datasets_json"] = json.dumps(value, sort_keys=True)
+        else:
+            result.loc[0, f"{prefix}_{key}"] = value
+    return result
 
 
 def broker_vendor_data_readiness_config(provided=True, ready=True, failed_checks=0):
@@ -1266,6 +1332,100 @@ def test_route_enable_carries_cutover_broker_vendor_market_data_batch():
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_route_enable_carries_target_application_vendor_batch_from_cutover_config():
+    config = cutover_config()
+    config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"] = (
+        target_application_vendor_market_data_batch_config()
+    )
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert report.ready
+    prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    summary = report.summary.iloc[0]
+    assert summary[f"{prefix}_mapping_source_mode"] == "per_dataset_verified_target_application"
+    assert int(summary[f"{prefix}_mapping_application_count"]) == 2
+    assert int(summary[f"{prefix}_unique_mapping_applications"]) == 2
+    assert summary[f"{prefix}_target_application_coverage"] == 1.0
+    summary_datasets = json.loads(summary[f"{prefix}_datasets_json"])
+    assert summary_datasets[0]["mapping_application_id"] == "mapping-app-day1"
+    assert summary_datasets[1]["applied_mapping_sha256"] == "3" * 64
+    vendor = report.config[prefix]
+    assert vendor["mapping_source_mode"] == "per_dataset_verified_target_application"
+    assert vendor["mapping_application_count"] == 2
+    assert vendor["unique_mapping_applications"] == 2
+    assert vendor["target_application_coverage"] == 1.0
+    assert vendor["datasets"][1]["target_intake_receipt_id"] == "target-intake-day2"
+    expected_checks = {
+        f"{prefix}_mapping_source_mode",
+        f"{prefix}_mapping_application_count",
+        f"{prefix}_unique_mapping_applications",
+        f"{prefix}_target_application_coverage",
+        f"{prefix}_application_lineage_datasets",
+    }
+    passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
+    assert expected_checks <= passed
+
+
+def test_route_enable_carries_target_application_vendor_batch_from_cutover_summary():
+    vendor = target_application_vendor_market_data_batch_config()
+    summary_input = with_cutover_broker_vendor_batch_summary(cutover_summary(), vendor)
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=summary_input,
+        cutover_config=cutover_config(),
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert report.ready
+    prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    summary = report.summary.iloc[0]
+    assert summary[f"{prefix}_mapping_source_mode"] == "per_dataset_verified_target_application"
+    assert int(summary[f"{prefix}_mapping_application_count"]) == 2
+    carried = report.config[prefix]
+    assert carried["unique_mapping_applications"] == 2
+    assert carried["target_application_coverage"] == 1.0
+    assert carried["datasets"][0]["mapping_application_sha256"] == "1" * 64
+    assert carried["datasets"][1]["mapping_scope_review_id"] == "scope-review-1"
+
+
+def test_route_enable_blocks_incomplete_target_application_vendor_batch():
+    vendor = target_application_vendor_market_data_batch_config(
+        mapping_source_mode="legacy_application_mode",
+        mapping_application_count=1,
+        unique_mapping_applications=1,
+        target_application_coverage=0.5,
+    )
+    vendor["datasets"][1]["mapping_application_sha256"] = ""
+    config = cutover_config()
+    config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        f"{prefix}_mapping_source_mode",
+        f"{prefix}_mapping_application_count",
+        f"{prefix}_unique_mapping_applications",
+        f"{prefix}_target_application_coverage",
+        f"{prefix}_application_lineage_datasets",
+    } <= failed
 
 
 def test_route_enable_blocks_failed_cutover_broker_vendor_data_readiness():
@@ -2142,7 +2302,7 @@ def test_cli_route_enable_hydrates_broker_vendor_data_from_cutover_manifest(tmp_
                     "strategy": "lead_lag_taker",
                     "market": "india_nse_index_derivatives",
                     "broker_dispatch_roundtrip_vendor_market_data_batch": (
-                        vendor_market_data_batch_config()
+                        target_application_vendor_market_data_batch_config()
                     ),
                 },
             },
@@ -2199,13 +2359,28 @@ def test_cli_route_enable_hydrates_broker_vendor_data_from_cutover_manifest(tmp_
         int(summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"])
         == 1
     )
+    assert summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_source_mode"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert int(
+        summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_application_count"]
+    ) == 2
+    assert int(
+        summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_applications"]
+    ) == 2
+    assert summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_target_application_coverage"] == 1.0
     assert vendor["provided"]
     assert vendor["ready"]
     assert vendor["source_file_fingerprint_coverage"] == 1.0
     assert vendor["min_mapping_coverage"] == 1.0
     assert vendor["unique_mapping_drafts"] == 1
+    assert vendor["mapping_source_mode"] == "per_dataset_verified_target_application"
+    assert vendor["mapping_application_count"] == 2
+    assert vendor["unique_mapping_applications"] == 2
+    assert vendor["target_application_coverage"] == 1.0
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+    assert vendor["datasets"][1]["mapping_application_id"] == "mapping-app-day2"
 
 
 def test_cli_route_enable_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):

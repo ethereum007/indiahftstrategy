@@ -42,6 +42,16 @@ ACTION_QUEUE_COLUMNS = [
 CUTOVER_LINEAGE_OUTPUT_COLUMNS = tuple(
     cutover_lineage_fields(empty_cutover_lineage()).keys()
 )
+TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
+TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
+    "mapping_application_path",
+    "mapping_application_id",
+    "mapping_application_sha256",
+    "mapping_scope_review_id",
+    "mapping_scope_review_sha256",
+    "target_intake_receipt_id",
+    "applied_mapping_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -1070,7 +1080,7 @@ def _broker_vendor_data_readiness_checks(cutover: dict[str, Any]) -> list[dict[s
 def _broker_vendor_market_data_batch_checks(cutover: dict[str, Any]) -> list[dict[str, object]]:
     vendor = cutover["broker_dispatch_roundtrip_vendor_market_data_batch"]
     prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
-    return [
+    checks = [
         _check(
             f"{prefix}_provided",
             _to_bool(vendor["provided"]),
@@ -1192,6 +1202,83 @@ def _broker_vendor_market_data_batch_checks(cutover: dict[str, Any]) -> list[dic
             "cutover broker-readiness vendor market-data comparison has failed checks",
         ),
     ]
+    if _target_application_batch_active(vendor):
+        dataset_count = int(vendor["dataset_count"])
+        mapping_application_count = int(vendor["mapping_application_count"])
+        unique_mapping_applications = int(vendor["unique_mapping_applications"])
+        target_application_coverage = float(vendor["target_application_coverage"])
+        lineage_datasets = _target_application_lineage_dataset_count(vendor)
+        mapping_source_mode = _identity_key(vendor["mapping_source_mode"])
+        checks.extend(
+            [
+                _check(
+                    f"{prefix}_mapping_source_mode",
+                    mapping_source_mode,
+                    "==",
+                    TARGET_APPLICATION_BATCH_MODE,
+                    mapping_source_mode == TARGET_APPLICATION_BATCH_MODE,
+                    "cutover broker-readiness vendor target applications are missing strict source mode",
+                ),
+                _check(
+                    f"{prefix}_mapping_application_count",
+                    mapping_application_count,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and mapping_application_count == dataset_count,
+                    "cutover broker-readiness vendor target applications are not aligned one for one",
+                ),
+                _check(
+                    f"{prefix}_unique_mapping_applications",
+                    unique_mapping_applications,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and unique_mapping_applications == dataset_count,
+                    "cutover broker-readiness vendor target applications are not distinct per dataset",
+                ),
+                _check(
+                    f"{prefix}_target_application_coverage",
+                    target_application_coverage,
+                    ">=",
+                    1.0,
+                    target_application_coverage >= 1.0,
+                    "cutover broker-readiness vendor target-application coverage is incomplete",
+                ),
+                _check(
+                    f"{prefix}_application_lineage_datasets",
+                    lineage_datasets,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and lineage_datasets == dataset_count,
+                    "cutover broker-readiness vendor datasets are missing target-application lineage",
+                ),
+            ]
+        )
+    return checks
+
+
+def _target_application_batch_active(vendor: dict[str, Any]) -> bool:
+    mapping_sources = {
+        value.strip().lower()
+        for value in str(vendor["mapping_sources"]).split(";")
+        if value.strip()
+    }
+    return bool(
+        _identity_key(vendor["mapping_source_mode"]) == TARGET_APPLICATION_BATCH_MODE
+        or "verified_target_application" in mapping_sources
+        or int(vendor["mapping_application_count"]) > 0
+        or float(vendor["target_application_coverage"]) > 0.0
+    )
+
+
+def _target_application_lineage_dataset_count(vendor: dict[str, Any]) -> int:
+    return sum(
+        isinstance(dataset, dict)
+        and all(
+            _first_text(dataset.get(field, ""))
+            for field in TARGET_APPLICATION_DATASET_LINEAGE_FIELDS
+        )
+        for dataset in vendor["datasets"]
+    )
 
 
 def _shadow_broker_readiness_active(cutover: dict[str, Any]) -> bool:
@@ -1902,6 +1989,10 @@ def _broker_vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> d
         f"{field_prefix}_min_mapping_coverage": vendor["min_mapping_coverage"],
         f"{field_prefix}_unique_mapping_drafts": vendor["unique_mapping_drafts"],
         f"{field_prefix}_mapping_sources": vendor["mapping_sources"],
+        f"{field_prefix}_mapping_source_mode": vendor["mapping_source_mode"],
+        f"{field_prefix}_mapping_application_count": vendor["mapping_application_count"],
+        f"{field_prefix}_unique_mapping_applications": vendor["unique_mapping_applications"],
+        f"{field_prefix}_target_application_coverage": vendor["target_application_coverage"],
         f"{field_prefix}_comparison_accepted": vendor["comparison_accepted"],
         f"{field_prefix}_comparison_failed_checks": vendor["comparison_failed_checks"],
         f"{field_prefix}_datasets_json": json.dumps(vendor["datasets"], sort_keys=True),
@@ -2439,8 +2530,19 @@ def _broker_vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[s
         f"{field_prefix}_min_mapping_coverage": _jsonable(packet[f"{field_prefix}_min_mapping_coverage"]),
         f"{field_prefix}_unique_mapping_drafts": int(packet[f"{field_prefix}_unique_mapping_drafts"]),
         f"{field_prefix}_mapping_sources": str(packet[f"{field_prefix}_mapping_sources"]),
+        f"{field_prefix}_mapping_source_mode": str(packet[f"{field_prefix}_mapping_source_mode"]),
+        f"{field_prefix}_mapping_application_count": int(
+            packet[f"{field_prefix}_mapping_application_count"]
+        ),
+        f"{field_prefix}_unique_mapping_applications": int(
+            packet[f"{field_prefix}_unique_mapping_applications"]
+        ),
+        f"{field_prefix}_target_application_coverage": _jsonable(
+            packet[f"{field_prefix}_target_application_coverage"]
+        ),
         f"{field_prefix}_comparison_accepted": _to_bool(packet[f"{field_prefix}_comparison_accepted"]),
         f"{field_prefix}_comparison_failed_checks": int(packet[f"{field_prefix}_comparison_failed_checks"]),
+        f"{field_prefix}_datasets_json": str(packet[f"{field_prefix}_datasets_json"]),
     }
 
 
@@ -2979,6 +3081,14 @@ def _broker_vendor_market_data_batch_config(packet: pd.Series) -> dict[str, Any]
         "min_mapping_coverage": _jsonable(packet[f"{field_prefix}_min_mapping_coverage"]),
         "unique_mapping_drafts": int(packet[f"{field_prefix}_unique_mapping_drafts"]),
         "mapping_sources": str(packet[f"{field_prefix}_mapping_sources"]),
+        "mapping_source_mode": str(packet[f"{field_prefix}_mapping_source_mode"]),
+        "mapping_application_count": int(packet[f"{field_prefix}_mapping_application_count"]),
+        "unique_mapping_applications": int(
+            packet[f"{field_prefix}_unique_mapping_applications"]
+        ),
+        "target_application_coverage": _jsonable(
+            packet[f"{field_prefix}_target_application_coverage"]
+        ),
         "comparison": {
             "accepted": _to_bool(packet[f"{field_prefix}_comparison_accepted"]),
             "failed_checks": int(packet[f"{field_prefix}_comparison_failed_checks"]),
@@ -3059,6 +3169,31 @@ def _vendor_market_data_batch_state(
             )
         ),
         "mapping_sources": _first_text(vendor.get("mapping_sources", ""), row_value("mapping_sources", "")),
+        "mapping_source_mode": _identity_key(
+            _first_text(
+                vendor.get("mapping_source_mode", ""),
+                row_value("mapping_source_mode", ""),
+            )
+        ),
+        "mapping_application_count": int(
+            _number_from(
+                vendor,
+                "mapping_application_count",
+                _number(row, f"{field_prefix}_mapping_application_count", 0.0),
+            )
+        ),
+        "unique_mapping_applications": int(
+            _number_from(
+                vendor,
+                "unique_mapping_applications",
+                _number(row, f"{field_prefix}_unique_mapping_applications", 0.0),
+            )
+        ),
+        "target_application_coverage": _number_from(
+            vendor,
+            "target_application_coverage",
+            _number(row, f"{field_prefix}_target_application_coverage", 0.0),
+        ),
         "comparison_accepted": _to_bool(comparison.get("accepted", row_value("comparison_accepted", False))),
         "comparison_failed_checks": int(
             _number_from(
@@ -3075,6 +3210,17 @@ def _vendor_market_data_batch_state(
                 "source_header_sha256": _first_text(item.get("source_header_sha256", "")),
                 "mapping_draft_sha256": _first_text(item.get("mapping_draft_sha256", "")),
                 "mapping_source": _first_text(item.get("mapping_source", "")),
+                "mapping_application_path": _first_text(item.get("mapping_application_path", "")),
+                "mapping_application_id": _first_text(item.get("mapping_application_id", "")),
+                "mapping_application_sha256": _first_text(
+                    item.get("mapping_application_sha256", "")
+                ),
+                "mapping_scope_review_id": _first_text(item.get("mapping_scope_review_id", "")),
+                "mapping_scope_review_sha256": _first_text(
+                    item.get("mapping_scope_review_sha256", "")
+                ),
+                "target_intake_receipt_id": _first_text(item.get("target_intake_receipt_id", "")),
+                "applied_mapping_sha256": _first_text(item.get("applied_mapping_sha256", "")),
             }
             for item in datasets
             if isinstance(item, dict)
@@ -3222,6 +3368,8 @@ def _cutover_state(
         broker_vendor_market_data_batch,
         broker_vendor_market_data_batch_prefix,
     ) = _broker_vendor_market_data_batch_source(config)
+    if not vendor_market_data_batch_source_active(broker_vendor_market_data_batch):
+        broker_vendor_market_data_batch_prefix = _broker_vendor_market_data_batch_row_prefix(row)
     (
         broker_vendor_data_readiness,
         broker_vendor_data_readiness_prefix,
@@ -3971,6 +4119,26 @@ def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dic
         ),
         default_source="scaleup_broker_dispatch_roundtrip_vendor_market_data_batch",
     )
+
+
+def _broker_vendor_market_data_batch_row_prefix(row: pd.Series) -> str:
+    prefixes = (
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "broker_dispatch_roundtrip_vendor_market_data_batch",
+        "roundtrip_vendor_market_data_batch",
+    )
+    for prefix in prefixes:
+        if (
+            _to_bool(row.get(f"{prefix}_provided", False))
+            or int(_number(row, f"{prefix}_dataset_count", 0.0)) > 0
+            or _identity_key(row.get(f"{prefix}_adapter", ""))
+            or _identity_key(row.get(f"{prefix}_market", ""))
+            or _identity_key(row.get(f"{prefix}_manifest_run_type", ""))
+        ):
+            return prefix
+    return "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"
 
 
 def _broker_vendor_data_readiness_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:

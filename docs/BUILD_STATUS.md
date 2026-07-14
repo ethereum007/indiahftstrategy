@@ -3281,6 +3281,14 @@
   signal requires strict mode, one unique application per dataset, full
   coverage, and complete lineage before route enable can inherit the proof;
   legacy draft-backed handoffs keep their existing compatibility path.
+- Route enable now carries and revalidates that target-application batch before
+  dry-run broker dispatch can inherit it. Current cutover config, flattened
+  cutover summary, and broker-readiness sidecar inputs all retain mapping mode,
+  application count, uniqueness, coverage, and full per-dataset lineage in the
+  route packet, summary, and config. Summary-only recovery now selects the
+  current `cutover_*` proof prefix before older `scaleup_*` compatibility
+  fields. Any target signal activates the same one-application-per-dataset
+  fail-closed contract, while legacy draft-backed handoffs remain compatible.
 
 ## Test Gate
 
@@ -3290,8 +3298,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1803 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1806 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application route-enable gate: all 47 route-enable tests pass,
+including current cutover config, flattened cutover summary recovery,
+broker-readiness sidecar hydration, complete aggregate and per-dataset lineage,
+and fail-closed rejection of incomplete application proof. All 178 broker
+dispatch planning, send, acknowledgement, and round-trip tests also pass
+against the richer route packet. The repository now collects 1806 tests across
+154 files; the full suite was not rerun for this slice.
 
 Latest target-application cutover gate: all 47 cutover tests pass, including
 nested scale-up config, flattened summary fallback, broker-sidecar hydration,
