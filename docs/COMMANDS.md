@@ -4745,7 +4745,14 @@ carried the broker-readiness final dispatch round-trip vendor market-data batch
 proof, dispatch planning revalidates adapter, market, dataset, provenance, and
 comparison acceptance checks and preserves it as
 `route_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`route_broker_dispatch_roundtrip_vendor_market_data_batch` config block. If
+`route_broker_dispatch_roundtrip_vendor_market_data_batch` config block. For
+application-backed proof, the planner also retains mapping mode, application
+count, uniqueness, coverage, and each dataset's application, scope-review,
+target-intake, and applied-mapping lineage. Any target signal requires
+`per_dataset_verified_target_application`, one distinct application per
+dataset, 100% coverage, and complete lineage. The same contract applies to
+nested route config, flattened route summary recovery, and broker-readiness
+sidecar hydration. If
 route-enable carried the broker-vendor wrapper readiness state, dispatch
 planning carries it as `route_broker_vendor_data_readiness_*` fields plus
 `route_broker_vendor_data_readiness` config, and fails closed when the wrapper

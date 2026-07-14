@@ -3289,6 +3289,14 @@
   current `cutover_*` proof prefix before older `scaleup_*` compatibility
   fields. Any target signal activates the same one-application-per-dataset
   fail-closed contract, while legacy draft-backed handoffs remain compatible.
+- Broker dispatch planning now preserves and independently gates the same
+  application-backed vendor batch before any sender packet can be prepared.
+  Nested route config, flattened route summary, and broker-readiness sidecar
+  hydration retain mapping mode, application count, uniqueness, coverage, and
+  every dataset's application/scope-review/target-intake/applied-mapping
+  lineage in dispatch summary and config. Any target signal must satisfy the
+  one-distinct-application-per-dataset contract; legacy draft-backed batches
+  remain compatible.
 
 ## Test Gate
 
@@ -3298,8 +3306,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1806 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1809 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application broker-dispatch planning gate: all 47 planning tests
+pass, including nested route config, flattened route summary recovery,
+broker-readiness sidecar hydration, complete aggregate and per-dataset lineage,
+and fail-closed rejection of downgraded or incomplete application proof. All 56
+broker-dispatch sender tests also pass against the richer plan config. The
+repository now collects 1809 tests across 154 files; the full suite was not
+rerun for this slice.
 
 Latest target-application route-enable gate: all 47 route-enable tests pass,
 including current cutover config, flattened cutover summary recovery,
