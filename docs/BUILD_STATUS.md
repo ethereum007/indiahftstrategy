@@ -3351,8 +3351,14 @@
   uniqueness, coverage, and the complete per-dataset lineage graph in final
   summary/config artifacts. Any target signal requires every component to keep
   strict mode, one unique application per dataset, full coverage, complete
-  lineage, and the same canonical lineage graph; legacy draft-backed final
-  reviews remain compatible.
+  lineage, and the same canonical lineage graph. Final review also requires the
+  acknowledgement-retained affirmative lineage decision and final consistency,
+  checks the current, broker-final, scale-up-, cutover-, route-, dispatch-,
+  send-, and acknowledgement-carried digests, then independently recomputes a
+  ninth canonical digest from the datasets entering final review. All nine
+  views remain in the flattened summary and sibling lineage-comparison config.
+  Legacy draft-backed final reviews remain compatible; thin target sidecars
+  fail closed until the acknowledgement handoff is complete.
 - Broker readiness now consumes that final reconciliation result as an explicit
   target-application lineage-consistency handoff. Nested final config and
   flattened final summary inputs both retain whether cross-stage consistency is
@@ -3378,8 +3384,18 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1849 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1854 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch final-roundtrip target-lineage gate: all 46 final-review
+tests pass, including rich acknowledgement comparison and flattened summary
+recovery, nine-view digest retention, mandatory final consistency, independent
+final canonical recomputation, legacy draft-sidecar compatibility, fail-closed
+thin target handling, and rejection of negative acknowledgement decisions or
+post-ack dataset drift. The full 95-test acknowledgement/final-review chain and
+the 73-test broker-readiness/wrapper chain pass against the richer final config.
+The repository now collects 1854 tests across 154 files; the full suite was not
+rerun for this slice.
 
 Latest broker-dispatch acknowledgement target-lineage gate: all 49
 acknowledgement reconciliation tests pass, including rich sender comparison and
@@ -3387,9 +3403,9 @@ flattened dispatch-summary recovery, eight-view digest retention, mandatory
 final consistency, independent acknowledgement canonical recomputation, legacy
 draft-sidecar compatibility, fail-closed thin target-sidecar handling, and
 rejection of post-send dataset or retained-decision drift. All 64 sender tests
-and all 41 final round-trip tests pass against the richer acknowledgement
+and all 46 final round-trip tests pass against the richer acknowledgement
 contract, including direct sender-config overlay precedence. The repository now
-collects 1849 tests across 154 files; the full suite was not rerun for this
+collects 1854 tests across 154 files; the full suite was not rerun for this
 slice.
 
 Latest broker-dispatch sender target-lineage gate: all 64 sender tests pass,

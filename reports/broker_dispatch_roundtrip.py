@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -47,6 +48,18 @@ BROKER_DISPATCH_ACK_LINEAGE_OUTPUT_COLUMNS = tuple(
 TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
 TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
     "mapping_application_path",
+    "mapping_application_id",
+    "mapping_application_sha256",
+    "mapping_scope_review_id",
+    "mapping_scope_review_sha256",
+    "target_intake_receipt_id",
+    "applied_mapping_sha256",
+)
+TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS: tuple[str, ...] = (
+    "source_file_sha256",
+    "source_header_sha256",
+    "mapping_draft_sha256",
+    "mapping_source",
     "mapping_application_id",
     "mapping_application_sha256",
     "mapping_scope_review_id",
@@ -381,6 +394,9 @@ def _roundtrip_orders(
 
 def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
     state = row.copy()
+    broker_vendor_market_data_batch_lineage = (
+        _broker_vendor_market_data_batch_lineage_state(state, config)
+    )
     strategy_portfolio = config.get("strategy_portfolio", {}) or {}
     upload = config.get("upload", {}) or {}
     dispatch = config.get("dispatch", {}) or {}
@@ -687,6 +703,14 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
         _apply_vendor_market_data_batch_config(state, vendor_market_data_batch)
     else:
         _copy_vendor_market_data_batch_fields(state)
+    broker_vendor_market_data_batch_lineage[
+        "roundtrip_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+    ] = _target_application_lineage_sha256(
+        state,
+        prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    for field, value in broker_vendor_market_data_batch_lineage.items():
+        state[field] = value
     return state
 
 
@@ -716,6 +740,143 @@ def _broker_vendor_market_data_batch_source(
         ):
             return {}, field_prefix
     return {}, "ack_broker_dispatch_roundtrip_vendor_market_data_batch"
+
+
+def _broker_vendor_market_data_batch_lineage_comparison_source(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    for key in (
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
+    ):
+        comparison = config.get(key)
+        if isinstance(comparison, dict) and comparison:
+            return comparison
+    return {}
+
+
+def _broker_vendor_market_data_batch_lineage_state(
+    row: pd.Series,
+    config: dict[str, Any],
+) -> dict[str, object]:
+    comparison = _broker_vendor_market_data_batch_lineage_comparison_source(config)
+    return {
+        "roundtrip_broker_vendor_market_data_batch_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(
+                    "roundtrip_broker_vendor_market_data_batch_lineage_match_required",
+                    row.get(
+                        "ack_broker_vendor_market_data_batch_lineage_match_required",
+                        False,
+                    ),
+                ),
+            )
+        ),
+        "roundtrip_broker_vendor_market_data_batch_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(
+                    "roundtrip_broker_vendor_market_data_batch_lineage_matches",
+                    row.get(
+                        "ack_broker_vendor_market_data_batch_lineage_matches",
+                        False,
+                    ),
+                ),
+            )
+        ),
+        "roundtrip_ack_vendor_market_data_batch_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("current_application_lineage_sha256", ""),
+                row.get(
+                    "roundtrip_ack_vendor_market_data_batch_application_lineage_sha256",
+                    "",
+                ),
+                row.get("ack_vendor_market_data_batch_application_lineage_sha256", ""),
+            )
+        ),
+        "roundtrip_ack_broker_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("broker_application_lineage_sha256", ""),
+                    row.get(
+                        "roundtrip_ack_broker_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                    row.get(
+                        "ack_broker_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("scaleup_carried_application_lineage_sha256", ""),
+                    row.get(
+                        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("cutover_carried_application_lineage_sha256", ""),
+                    row.get(
+                        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("route_carried_application_lineage_sha256", ""),
+                    row.get(
+                        "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("dispatch_carried_application_lineage_sha256", ""),
+                    row.get(
+                        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+        "send_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("send_carried_application_lineage_sha256", ""),
+                    row.get(
+                        "send_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+        "ack_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _sha256_text(
+                _first_text(
+                    comparison.get("ack_carried_application_lineage_sha256", ""),
+                    row.get(
+                        "ack_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+                        "",
+                    ),
+                )
+            )
+        ),
+    }
 
 
 def _broker_vendor_data_readiness_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -899,6 +1060,24 @@ def _apply_vendor_market_data_batch_config(
         vendor.get("target_application_coverage"),
         _number(state, f"{field_prefix}_target_application_coverage", 0.0),
     )
+    state[f"{field_prefix}_application_lineage_consistency_required"] = _to_bool(
+        vendor.get(
+            "application_lineage_consistency_required",
+            state.get(f"{field_prefix}_application_lineage_consistency_required", False),
+        )
+    )
+    state[f"{field_prefix}_application_lineage_consistent"] = _to_bool(
+        vendor.get(
+            "application_lineage_consistent",
+            state.get(f"{field_prefix}_application_lineage_consistent", False),
+        )
+    )
+    state[f"{field_prefix}_application_lineage_sha256"] = _sha256_text(
+        _first_text(
+            vendor.get("application_lineage_sha256", ""),
+            state.get(f"{field_prefix}_application_lineage_sha256", ""),
+        )
+    )
     state[f"{field_prefix}_comparison_accepted"] = _to_bool(
         comparison.get("accepted", state.get(f"{field_prefix}_comparison_accepted", False))
     )
@@ -956,6 +1135,9 @@ def _copy_vendor_market_data_batch_fields(
         "mapping_application_count",
         "unique_mapping_applications",
         "target_application_coverage",
+        "application_lineage_consistency_required",
+        "application_lineage_consistent",
+        "application_lineage_sha256",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -2855,13 +3037,56 @@ def _target_application_lineage_json(row: pd.Series) -> str:
     )
 
 
+def _target_application_lineage_sha256(
+    row: pd.Series,
+    *,
+    prefix: str = "vendor_market_data_batch",
+) -> str:
+    identities: list[dict[str, str]] = []
+    for dataset in _json_list(row.get(f"{prefix}_datasets_json", "")):
+        if not isinstance(dataset, dict):
+            return ""
+        identity = {
+            field: _object_text(dataset.get(field))
+            for field in TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS
+        }
+        if not all(identity.values()):
+            return ""
+        identities.append(identity)
+    if not identities:
+        return ""
+    canonical = json.dumps(
+        sorted(
+            identities,
+            key=lambda identity: json.dumps(
+                identity,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _sha256_text(value: object) -> str:
+    normalized = _object_text(value).lower()
+    if len(normalized) != 64 or any(
+        character not in "0123456789abcdef" for character in normalized
+    ):
+        return ""
+    return normalized
+
+
 def _broker_vendor_market_data_batch_active(*rows: pd.Series) -> bool:
     return _vendor_market_data_batch_active(*_broker_vendor_market_data_batch_rows(rows))
 
 
 def _broker_vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
-    for check in _vendor_market_data_batch_checks(*_broker_vendor_market_data_batch_rows(rows)):
+    broker_rows = _broker_vendor_market_data_batch_rows(rows)
+    for check in _vendor_market_data_batch_checks(*broker_rows):
         renamed = dict(check)
         renamed["check"] = str(renamed["check"]).replace(
             "vendor_market_data_batch",
@@ -2873,6 +3098,163 @@ def _broker_vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, 
                 "broker-readiness vendor market-data batch",
             )
         checks.append(renamed)
+    if not _target_application_batch_active(broker_rows):
+        return checks
+
+    ack_row = rows[-1] if rows else pd.Series(dtype=object)
+    prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
+    lineage_consistency_required = _to_bool(
+        ack_row.get(
+            f"{prefix}_application_lineage_consistency_required",
+            False,
+        )
+    )
+    lineage_consistent = _to_bool(
+        ack_row.get(f"{prefix}_application_lineage_consistent", False)
+    )
+    lineage_match_required = _to_bool(
+        ack_row.get(
+            "roundtrip_broker_vendor_market_data_batch_lineage_match_required",
+            False,
+        )
+    )
+    lineage_matches = _to_bool(
+        ack_row.get(
+            "roundtrip_broker_vendor_market_data_batch_lineage_matches",
+            False,
+        )
+    )
+    current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            "roundtrip_ack_vendor_market_data_batch_application_lineage_sha256",
+            "",
+        )
+    )
+    broker_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            "roundtrip_ack_broker_vendor_market_data_batch_application_lineage_sha256",
+            "",
+        )
+    )
+    application_lineage_sha256 = _sha256_text(
+        ack_row.get(f"{prefix}_application_lineage_sha256", "")
+    )
+    checks.extend(
+        [
+            _check(
+                f"{prefix}_retained_lineage_consistency_required",
+                lineage_consistency_required,
+                "is",
+                True,
+                lineage_consistency_required,
+                "final review evidence did not retain the acknowledgement lineage-consistency requirement",
+            ),
+            _check(
+                f"{prefix}_retained_application_lineage_consistent",
+                lineage_consistent,
+                "is",
+                True,
+                lineage_consistency_required and lineage_consistent,
+                "final review evidence did not retain the acknowledgement's consistent target lineage",
+            ),
+            _check(
+                f"{prefix}_lineage_match_required",
+                lineage_match_required,
+                "is",
+                True,
+                lineage_match_required,
+                "target-application final review requires the acknowledgement lineage comparison",
+            ),
+            _check(
+                f"{prefix}_lineage_matches",
+                lineage_matches,
+                "is",
+                True,
+                lineage_match_required and lineage_matches,
+                "acknowledgement target-application lineage comparison was not affirmative",
+            ),
+            _check(
+                f"{prefix}_source_lineage_sha256_matches",
+                current_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and current_lineage_sha256
+                    and broker_lineage_sha256
+                    and current_lineage_sha256 == broker_lineage_sha256
+                ),
+                "acknowledgement current/final target-lineage digests are missing or disagree",
+            ),
+            _check(
+                f"{prefix}_application_lineage_sha256_matches",
+                application_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and application_lineage_sha256
+                    and broker_lineage_sha256
+                    and application_lineage_sha256 == broker_lineage_sha256
+                ),
+                "acknowledgement vendor evidence does not carry the retained final target lineage",
+            ),
+        ]
+    )
+    carried_lineage = (
+        (
+            "scaleup",
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "scale-up-carried target lineage does not match broker-readiness proof",
+        ),
+        (
+            "cutover",
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "cutover-carried target lineage does not match broker-readiness proof",
+        ),
+        (
+            "route",
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "route-carried target lineage does not match broker-readiness proof",
+        ),
+        (
+            "dispatch",
+            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "dispatch-carried target lineage does not match broker-readiness proof",
+        ),
+        (
+            "send",
+            "send_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "send-carried target lineage does not match broker-readiness proof",
+        ),
+        (
+            "ack",
+            "ack_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "acknowledgement-carried target lineage does not match the send-packet proof",
+        ),
+        (
+            "roundtrip",
+            "roundtrip_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+            "final review's independently recomputed target lineage does not match acknowledgement proof",
+        ),
+    )
+    for stage, field, reason in carried_lineage:
+        carried_sha256 = _sha256_text(ack_row.get(field, ""))
+        checks.append(
+            _check(
+                f"{prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                reason,
+            )
+        )
     return checks
 
 
@@ -2909,6 +3291,9 @@ def _vendor_market_data_batch_projection(row: pd.Series, *, source_prefix: str) 
         "mapping_application_count",
         "unique_mapping_applications",
         "target_application_coverage",
+        "application_lineage_consistency_required",
+        "application_lineage_consistent",
+        "application_lineage_sha256",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -3378,6 +3763,7 @@ def _summary(
                 **_broker_vendor_data_readiness_summary_fields(proof_rows),
                 **_vendor_market_data_batch_summary_fields(proof_rows),
                 **_broker_vendor_market_data_batch_summary_fields(proof_rows),
+                **_broker_vendor_market_data_batch_lineage_summary_fields(ack_summary),
                 "route_dispatch_roundtrip_required": _dispatch_roundtrip_required(dispatch_summary, thresholds),
                 "route_dispatch_roundtrip_provided": _route_roundtrip_provided(*proof_rows),
                 "route_dispatch_roundtrip_ready": all(
@@ -3678,6 +4064,13 @@ def _vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...]) -> dic
             if _target_application_batch_active(rows)
             else False
         ),
+        "roundtrip_vendor_market_data_batch_application_lineage_sha256": (
+            _target_application_lineage_sha256(rows[-1])
+            if rows
+            and _target_application_batch_active(rows)
+            and _target_application_lineage_consistent(rows)
+            else ""
+        ),
         "roundtrip_vendor_market_data_batch_comparison_accepted": bool(
             rows
             and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
@@ -3700,6 +4093,40 @@ def _broker_vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...])
             "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
         ): value
         for key, value in fields.items()
+    }
+
+
+def _broker_vendor_market_data_batch_lineage_summary_fields(
+    ack_summary: pd.Series,
+) -> dict[str, object]:
+    fields = (
+        "roundtrip_ack_vendor_market_data_batch_application_lineage_sha256",
+        "roundtrip_ack_broker_vendor_market_data_batch_application_lineage_sha256",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        "send_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        "ack_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        "roundtrip_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+    )
+    return {
+        "roundtrip_broker_vendor_market_data_batch_lineage_match_required": _to_bool(
+            ack_summary.get(
+                "roundtrip_broker_vendor_market_data_batch_lineage_match_required",
+                False,
+            )
+        ),
+        "roundtrip_broker_vendor_market_data_batch_lineage_matches": _to_bool(
+            ack_summary.get(
+                "roundtrip_broker_vendor_market_data_batch_lineage_matches",
+                False,
+            )
+        ),
+        **{
+            field: _sha256_text(ack_summary.get(field, ""))
+            for field in fields
+        },
     }
 
 
@@ -3891,11 +4318,64 @@ def _vendor_market_data_batch_config(
         "application_lineage_consistent": _to_bool(
             summary[f"{field_prefix}_application_lineage_consistent"]
         ),
+        "application_lineage_sha256": _text(
+            summary,
+            f"{field_prefix}_application_lineage_sha256",
+        ),
         "comparison": {
             "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),
             "failed_checks": int(summary[f"{field_prefix}_comparison_failed_checks"]),
         },
         "datasets": _json_list(summary[f"{field_prefix}_datasets_json"]),
+    }
+
+
+def _broker_vendor_market_data_batch_lineage_config(
+    summary: pd.Series,
+) -> dict[str, object]:
+    return {
+        "required": _to_bool(
+            summary["roundtrip_broker_vendor_market_data_batch_lineage_match_required"]
+        ),
+        "matches": _to_bool(
+            summary["roundtrip_broker_vendor_market_data_batch_lineage_matches"]
+        ),
+        "current_application_lineage_sha256": _text(
+            summary,
+            "roundtrip_ack_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "broker_application_lineage_sha256": _text(
+            summary,
+            "roundtrip_ack_broker_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "scaleup_carried_application_lineage_sha256": _text(
+            summary,
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "cutover_carried_application_lineage_sha256": _text(
+            summary,
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "route_carried_application_lineage_sha256": _text(
+            summary,
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "dispatch_carried_application_lineage_sha256": _text(
+            summary,
+            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "send_carried_application_lineage_sha256": _text(
+            summary,
+            "send_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "ack_carried_application_lineage_sha256": _text(
+            summary,
+            "ack_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
+        "roundtrip_carried_application_lineage_sha256": _text(
+            summary,
+            "roundtrip_carried_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256",
+        ),
     }
 
 
@@ -4107,6 +4587,9 @@ def _config(
                 summary,
                 field_prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
             )
+        ),
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison": (
+            _broker_vendor_market_data_batch_lineage_config(summary)
         ),
         "roundtrip_broker_vendor_data_readiness": _broker_vendor_data_readiness_config(summary),
         "route_dispatch_roundtrip": {

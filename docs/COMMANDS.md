@@ -5266,9 +5266,19 @@ scope-review, target-intake, and applied-mapping lineage across dispatch, send,
 and acknowledgement components. Any target signal requires every component to
 retain `per_dataset_verified_target_application`, one distinct application per
 dataset, 100% coverage, complete lineage, and the same canonical lineage graph.
-This applies equally to nested component configs, flattened component-summary
-recovery, and broker-readiness sidecar hydration. If a component config carries
-`roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, the round-trip
+It must also retain the acknowledgement's affirmative lineage decision and
+final-consistency result. Final review checks the current, broker-final,
+scale-up-, cutover-, route-, dispatch-, send-, and acknowledgement-carried
+SHA-256 views, then independently recomputes a ninth digest from the carried
+dataset identities. The flattened summary and
+`roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+config retain all nine views, including
+`roundtrip_carried_application_lineage_sha256`. This applies equally to nested
+component configs and flattened component-summary recovery. Legacy draft
+sidecars remain compatible; target sidecars hydrated only from broker readiness
+fail closed until the acknowledgement comparison is supplied. If a component
+config carries `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`,
+the round-trip
 review prefers that block before falling back through ack-, dispatch-, and
 route-retained broker vendor-data blocks. If a component config carries
 broker-vendor wrapper readiness, the round-trip review fails closed when the
