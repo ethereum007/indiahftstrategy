@@ -3403,10 +3403,22 @@
   acknowledgement-retained affirmative lineage decision and final consistency,
   checks the current, broker-final, scale-up-, cutover-, route-, dispatch-,
   send-, and acknowledgement-carried digests, then independently recomputes a
-  ninth canonical digest from the datasets entering final review. All nine
-  views remain in the flattened summary and sibling lineage-comparison config.
-  Legacy draft-backed final reviews remain compatible; thin target sidecars
-  fail closed until the acknowledgement handoff is complete.
+  ninth canonical compatibility digest from the datasets entering final review.
+  Reconciled targets additionally require acknowledgement reconciliation's
+  complete sixteen-view final comparison. Round-trip review revalidates the
+  current, broker-final, historical scale-up-, cutover-, route-, dispatch-,
+  send-, ack-, final-review-, readiness-, scale-up-review-, cutover-review-,
+  route-enable-review-, dispatch-plan-review-, send-packet-review-, and
+  acknowledgement-reconciliation-review-carried digests, then independently
+  recomputes the canonical digest as view seventeen. The existing nine-view
+  comparison remains unchanged in the flattened summary and
+  `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block for broker-readiness compatibility. The complete seventeen-view
+  handoff is retained in flattened summary fields and the sibling
+  `roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Legacy draft-backed and generic non-reconciled final reviews
+  remain compatible; thin reconciled-target sidecars fail closed until
+  acknowledgement reconciliation supplies the complete final comparison.
 - Broker readiness now consumes the final reconciliation's complete nine-view
   target-application lineage handoff. Nested final config and flattened final
   summary inputs retain the required/matches decision, current and broker-final
@@ -3436,8 +3448,25 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1906 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1914 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch-roundtrip final target-lineage gate: all 54 roundtrip
+tests pass, including nested acknowledgement config and flattened
+acknowledgement-summary recovery of the complete sixteen-view handoff;
+mandatory final comparison for reconciled targets; independent seventeenth-view
+recomputation; missing, negative, inherited-digest,
+acknowledgement-review-digest, and post-ack dataset drift rejection; and generic
+non-reconciled target/draft compatibility. The historical nine-view roundtrip
+comparison remains unchanged for broker-readiness consumption, while the
+complete seventeen-view handoff is emitted under the sibling
+`roundtrip_final_*` comparison. All 73 broker-readiness tests pass, including a
+distinct-digest compatibility regression. The full 522-test broker-readiness ->
+scale-up -> cutover -> route-enable -> broker-dispatch -> broker-dispatch-send
+-> broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
+327.4 seconds. The repository now collects 1914 tests across 154 files. The
+full suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
 
 Latest broker-dispatch-acknowledgement final target-lineage gate: all 57
 acknowledgement tests pass, including nested sender-config and flattened

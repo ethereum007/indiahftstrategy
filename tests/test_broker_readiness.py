@@ -1459,6 +1459,51 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
     assert expected_checks <= passed
 
 
+def test_broker_readiness_uses_roundtrip_compatibility_lineage_before_roundtrip_final():
+    vendor = target_application_vendor_market_data_batch_config()
+    compatibility_sha256 = vendor["application_lineage_sha256"]
+    final_sha256 = "f" * 64
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor)
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": final_sha256,
+        "broker_application_lineage_sha256": final_sha256,
+        "ack_reconciliation_review_carried_application_lineage_sha256": final_sha256,
+        "carried_application_lineage_sha256": final_sha256,
+    }
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    lineage = report.config["dispatch_roundtrip"][
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert lineage["current_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["broker_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["roundtrip_carried_application_lineage_sha256"] == (
+        compatibility_sha256
+    )
+
+
 def test_broker_readiness_blocks_final_target_lineage_drift_from_current_vendor_batch():
     vendor = target_application_vendor_market_data_batch_config()
     final_vendor = json.loads(json.dumps(vendor))

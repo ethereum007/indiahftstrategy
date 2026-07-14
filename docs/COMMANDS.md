@@ -5340,10 +5340,24 @@ SHA-256 views, then independently recomputes a ninth digest from the carried
 dataset identities. The flattened summary and
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 config retain all nine views, including
-`roundtrip_carried_application_lineage_sha256`. This applies equally to nested
-component configs and flattened component-summary recovery. Legacy draft
-sidecars remain compatible; target sidecars hydrated only from broker readiness
-fail closed until the acknowledgement comparison is supplied. If a component
+`roundtrip_carried_application_lineage_sha256`. Reconciled targets additionally
+require acknowledgement reconciliation's complete sixteen-view comparison.
+Final review verifies its current, broker-final, scale-up-, cutover-, route-,
+dispatch-, send-, acknowledgement-, prior-roundtrip-, readiness-,
+scale-up-review-, cutover-review-, route-enable-review-, dispatch-plan-review-,
+send-packet-review-, and acknowledgement-reconciliation-review-carried digests,
+then independently recomputes view seventeen from the final-review datasets.
+The existing nine-view compatibility proof remains unchanged for broker
+readiness. The complete seventeen-view proof is emitted in flattened summary
+fields and
+`roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `ack_reconciliation_review_carried_application_lineage_sha256` retains
+acknowledgement view sixteen and `carried_application_lineage_sha256` is the
+fresh roundtrip-review digest. This applies equally to nested component configs
+and flattened component-summary recovery. Legacy draft and generic
+non-reconciled sidecars remain compatible; reconciled target sidecars hydrated
+only from broker readiness fail closed until the complete acknowledgement
+comparison is supplied. If a component
 config carries `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`,
 the round-trip
 review prefers that block before falling back through ack-, dispatch-, and
