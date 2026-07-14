@@ -3130,6 +3130,26 @@
   calibration-only evidence gate: it cannot authorize promotion, route, or
   submit, and the current source remains deterministic simulation rather than
   real provider observations, realized fills, or evidence of live edge.
+- Two or more distinct semantically verified completed shadow calibrations can
+  now advance through
+  `compare-provider-market-data-imbalance-live-dryrun-shadow-calibrations`.
+  The capability-free cohort core requires one exact runtime identity,
+  calibration contract, horizon/cost grid, and evidence class, then measures
+  cross-session coverage dispersion, directional mid-response range and sign,
+  adverse-selection-rate dispersion, cost break-even-rate dispersion, and
+  round-trip reference-cost dispersion. A one-session or over-dispersed cohort
+  remains valid evidence but is explicitly unstable; duplicate session IDs or
+  structurally incompatible grids are rejected. Stable and unstable cohorts
+  both emit write-once checks, session rows, horizon/cost stability tables,
+  config, runbook, receipt, and a manifest that recursively fingerprints every
+  source calibration proof graph. The semantic verifier reconstructs all
+  artifacts without rerunning a provider and drives `verified_stable`,
+  `verified_unstable`, and stale/inconsistent catalog states. All current
+  sources are explicitly `deterministic_simulation`, every reference-cost row
+  still requires external validation, and stability is not a performance,
+  promotion, routing, submission, or release gate. The core/report/CLI/catalog
+  boundary passes `22` focused tests, including upstream telemetry drift and a
+  freshly re-manifested authorization claim.
 
 ## Test Gate
 
@@ -3139,7 +3159,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1709 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1731 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest completed strategy-evidence read-verification gate: strategy evidence,
@@ -3219,6 +3239,20 @@ manifest/catalog compatibility passes (`68 passed`). The non-overlapping
 affected surface is therefore `199 passed`. The cost schedules remain
 explicitly subject to external validation, and no result is a performance,
 promotion, routing, or submission gate.
+
+Latest multi-session shadow calibration-stability gate: distinct session and
+receipt identity, exact runtime/config/evidence-class contracts, complete
+horizon and reference-cost grids, bounded coverage/directional/adverse-
+selection/cost dispersion, stable and verified-unstable outcomes, write-once
+artifacts, deterministic reconstruction, strict CLI exits, catalog
+stable/unstable/stale states, re-manifested authorization tamper, recursive
+launcher-telemetry drift, and direct capability audits pass together (`22
+passed`). The complete runtime-to-cohort surface passes (`94 passed`), the
+legacy shadow comparison plus shared manifest/catalog compatibility surface
+passes (`81 passed`), and the complete retained strategy-evidence suite passes
+(`59 passed`). The non-overlapping affected surface is therefore `234 passed`.
+The cohort is simulation-only and cannot establish live edge or authorize
+promotion, routing, submission, or release.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3391,18 +3425,12 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1709-test collection is fully green.
+1731-test collection is fully green.
 
 ## Next Build Targets
 
-1. Add a non-authorizing multi-session calibration-stability gate that consumes
-   only semantically verified completed shadow calibrations, requires distinct
-   session identities, compares horizon coverage, directional response,
-   adverse selection, and cost break-even stability, and cannot promote, route,
-   or submit. Keep deterministic simulation cohorts clearly separated from
-   future real-provider evidence.
-2. Add data adapters for the first real vendor export once files are available.
-3. Replace placeholder Arrow.money/iRage column maps once real export schemas
+1. Add data adapters for the first real vendor export once files are available.
+2. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-4. Replace the built-in upload review templates with broker-signed
+3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.

@@ -270,6 +270,11 @@ from reports.provider_market_data_imbalance_live_dryrun_shadow_calibration impor
     verify_provider_market_data_imbalance_live_dryrun_shadow_calibration,
     write_provider_market_data_imbalance_live_dryrun_shadow_calibration,
 )
+from reports.provider_market_data_imbalance_live_dryrun_shadow_calibration_stability import (
+    ProviderShadowCalibrationStabilityConfig,
+    verify_provider_shadow_calibration_stability,
+    write_provider_shadow_calibration_stability,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2582,6 +2587,82 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_shadow_calibration_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_shadow_calibration_stability = sub.add_parser(
+        "compare-provider-market-data-imbalance-live-dryrun-shadow-calibrations",
+        help=(
+            "Compare verified completed shadow calibrations without enabling "
+            "promotion, routing, or submission."
+        ),
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--calibration",
+        nargs="+",
+        required=True,
+    )
+    provider_shadow_calibration_stability.add_argument("--out", required=True)
+    provider_shadow_calibration_stability.add_argument(
+        "--min-sessions",
+        type=int,
+        default=2,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--min-session-coverage-ratio",
+        type=float,
+        default=0.5,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--max-horizon-coverage-range",
+        type=float,
+        default=0.25,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--max-directional-mid-range-ticks",
+        type=float,
+        default=2.0,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--allow-directional-sign-change",
+        action="store_true",
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--max-adverse-selection-rate-range",
+        type=float,
+        default=0.25,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--max-cost-break-even-rate-range",
+        type=float,
+        default=0.25,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--max-round-trip-cost-range-ticks",
+        type=float,
+        default=0.25,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=65_536,
+    )
+    provider_shadow_calibration_stability.add_argument(
+        "--fail-on-unstable",
+        action="store_true",
+    )
+    verify_provider_shadow_calibration_stability_parser = sub.add_parser(
+        "verify-provider-market-data-imbalance-live-dryrun-shadow-calibration-stability",
+        help=(
+            "Reconstruct a non-authorizing multi-session shadow calibration "
+            "stability cohort."
+        ),
+    )
+    verify_provider_shadow_calibration_stability_parser.add_argument(
+        "--stability",
+        required=True,
+    )
+    verify_provider_shadow_calibration_stability_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -6736,6 +6817,74 @@ def main(argv: list[str] | None = None) -> int:
             2
             if args.fail_on_breach
             and not (result.verified and result.completed)
+            else 0
+        )
+    if (
+        args.command
+        == "compare-provider-market-data-imbalance-live-dryrun-shadow-calibrations"
+    ):
+        result = write_provider_shadow_calibration_stability(
+            args.calibration,
+            args.out,
+            config=ProviderShadowCalibrationStabilityConfig(
+                min_sessions=args.min_sessions,
+                min_session_coverage_ratio=(
+                    args.min_session_coverage_ratio
+                ),
+                max_horizon_coverage_range=(
+                    args.max_horizon_coverage_range
+                ),
+                max_directional_mid_range_ticks=(
+                    args.max_directional_mid_range_ticks
+                ),
+                require_directional_sign_consistency=(
+                    not args.allow_directional_sign_change
+                ),
+                max_adverse_selection_rate_range=(
+                    args.max_adverse_selection_rate_range
+                ),
+                max_cost_break_even_rate_range=(
+                    args.max_cost_break_even_rate_range
+                ),
+                max_round_trip_cost_range_ticks=(
+                    args.max_round_trip_cost_range_ticks
+                ),
+                max_dependency_count=args.max_dependencies,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_unstable and not result.stable else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-live-dryrun-shadow-calibration-stability"
+    ):
+        result = verify_provider_shadow_calibration_stability(args.stability)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "stable": result.stable,
+                    "unstable": result.unstable,
+                    "manifest_current": result.manifest_current,
+                    "calibrations_current": result.calibrations_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "stability_evidence_only": (
+                        result.stability_evidence_only
+                    ),
+                    "non_authorizing": result.non_authorizing,
+                    "stability_dir": str(result.output_dir),
+                    "calibration_dirs": [
+                        str(path) for path in result.calibration_dirs
+                    ],
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.stable)
             else 0
         )
     if (
