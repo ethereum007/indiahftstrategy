@@ -4889,7 +4889,14 @@ the sender packet preserves the dataset/header/mapping proof as
 retained broker-readiness final dispatch round-trip vendor market-data batch
 proof, the sender packet preserves it as
 `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` config block. If
+`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` config block. For
+application-backed proof, send preparation also carries mapping mode,
+application count, uniqueness, coverage, and each dataset's application,
+scope-review, target-intake, and applied-mapping lineage. Any target signal
+requires `per_dataset_verified_target_application`, one distinct application
+per dataset, 100% coverage, and complete lineage. This applies to nested
+dispatch config, flattened dispatch summary recovery, and broker-readiness
+sidecar hydration. If
 the dispatch config retained broker-vendor wrapper readiness, the sender packet
 carries it as `dispatch_broker_vendor_data_readiness_*` fields plus
 `dispatch_broker_vendor_data_readiness` config, and fails closed when the

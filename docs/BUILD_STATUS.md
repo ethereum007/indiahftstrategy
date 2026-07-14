@@ -3297,6 +3297,12 @@
   lineage in dispatch summary and config. Any target signal must satisfy the
   one-distinct-application-per-dataset contract; legacy draft-backed batches
   remain compatible.
+- Broker dispatch send preparation now carries and revalidates that target
+  proof before non-submitting request envelopes can advance. Nested dispatch
+  config, flattened dispatch summary, and broker-readiness sidecar hydration
+  retain all application aggregates and per-dataset lineage in the send summary
+  and config. Target signals activate the same strict one-application-per-
+  dataset gate, while draft-backed packets retain their compatibility path.
 
 ## Test Gate
 
@@ -3306,8 +3312,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1809 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1812 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application broker-dispatch send gate: all 59 sender tests pass,
+including nested dispatch config, flattened dispatch summary recovery,
+broker-readiness sidecar hydration, complete aggregate and per-dataset lineage,
+and fail-closed rejection of downgraded or incomplete application proof. All 40
+acknowledgement reconciliation tests also pass against the richer send config.
+The repository now collects 1812 tests across 154 files; the full suite was not
+rerun for this slice.
 
 Latest target-application broker-dispatch planning gate: all 47 planning tests
 pass, including nested route config, flattened route summary recovery,

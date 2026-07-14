@@ -44,6 +44,16 @@ ACTION_QUEUE_COLUMNS = [
 BROKER_DISPATCH_LINEAGE_OUTPUT_COLUMNS = tuple(
     broker_dispatch_lineage_fields(empty_broker_dispatch_lineage()).keys()
 )
+TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
+TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
+    "mapping_application_path",
+    "mapping_application_id",
+    "mapping_application_sha256",
+    "mapping_scope_review_id",
+    "mapping_scope_review_sha256",
+    "target_intake_receipt_id",
+    "applied_mapping_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -791,6 +801,25 @@ def _apply_vendor_market_data_batch_config(
     state[f"{field_prefix}_mapping_sources"] = _object_text(
         vendor.get("mapping_sources", state.get(f"{fallback_prefix}_mapping_sources", ""))
     )
+    state[f"{field_prefix}_mapping_source_mode"] = _identity_key(
+        vendor.get("mapping_source_mode", state.get(f"{fallback_prefix}_mapping_source_mode", ""))
+    )
+    state[f"{field_prefix}_mapping_application_count"] = int(
+        _number_value(
+            vendor.get("mapping_application_count"),
+            _number(state, f"{fallback_prefix}_mapping_application_count", 0.0),
+        )
+    )
+    state[f"{field_prefix}_unique_mapping_applications"] = int(
+        _number_value(
+            vendor.get("unique_mapping_applications"),
+            _number(state, f"{fallback_prefix}_unique_mapping_applications", 0.0),
+        )
+    )
+    state[f"{field_prefix}_target_application_coverage"] = _number_value(
+        vendor.get("target_application_coverage"),
+        _number(state, f"{fallback_prefix}_target_application_coverage", 0.0),
+    )
     state[f"{field_prefix}_comparison_accepted"] = _to_bool(
         comparison.get("accepted", state.get(f"{fallback_prefix}_comparison_accepted", False))
     )
@@ -831,6 +860,10 @@ def _copy_vendor_market_data_batch_fields(
         "min_mapping_coverage",
         "unique_mapping_drafts",
         "mapping_sources",
+        "mapping_source_mode",
+        "mapping_application_count",
+        "unique_mapping_applications",
+        "target_application_coverage",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -2466,7 +2499,7 @@ def _broker_vendor_market_data_batch_active(dispatch_summary: pd.Series) -> bool
 def _broker_vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
     prefix = "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"
     manifest_run_type = _identity_key(dispatch_summary.get(f"{prefix}_manifest_run_type", ""))
-    return [
+    checks = [
         _check(
             f"{prefix}_manifest_run_type",
             manifest_run_type,
@@ -2500,6 +2533,97 @@ def _broker_vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list
             "dispatch broker-readiness vendor market-data batch is missing mapping draft provenance",
         ),
     ]
+    if _target_application_batch_active(dispatch_summary, prefix=prefix):
+        dataset_count = int(_number(dispatch_summary, f"{prefix}_dataset_count", 0.0))
+        mapping_application_count = int(
+            _number(dispatch_summary, f"{prefix}_mapping_application_count", 0.0)
+        )
+        unique_mapping_applications = int(
+            _number(dispatch_summary, f"{prefix}_unique_mapping_applications", 0.0)
+        )
+        target_application_coverage = _number(
+            dispatch_summary, f"{prefix}_target_application_coverage", 0.0
+        )
+        lineage_datasets = _target_application_lineage_dataset_count(
+            dispatch_summary,
+            prefix=prefix,
+        )
+        mapping_source_mode = _identity_key(
+            dispatch_summary.get(f"{prefix}_mapping_source_mode", "")
+        )
+        checks.extend(
+            [
+                _check(
+                    f"{prefix}_mapping_source_mode",
+                    mapping_source_mode,
+                    "==",
+                    TARGET_APPLICATION_BATCH_MODE,
+                    mapping_source_mode == TARGET_APPLICATION_BATCH_MODE,
+                    "dispatch broker-readiness vendor target applications are missing strict source mode",
+                ),
+                _check(
+                    f"{prefix}_mapping_application_count",
+                    mapping_application_count,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and mapping_application_count == dataset_count,
+                    "dispatch broker-readiness vendor target applications are not aligned one for one",
+                ),
+                _check(
+                    f"{prefix}_unique_mapping_applications",
+                    unique_mapping_applications,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and unique_mapping_applications == dataset_count,
+                    "dispatch broker-readiness vendor target applications are not distinct per dataset",
+                ),
+                _check(
+                    f"{prefix}_target_application_coverage",
+                    target_application_coverage,
+                    ">=",
+                    1.0,
+                    target_application_coverage >= 1.0,
+                    "dispatch broker-readiness vendor target-application coverage is incomplete",
+                ),
+                _check(
+                    f"{prefix}_application_lineage_datasets",
+                    lineage_datasets,
+                    "==",
+                    dataset_count,
+                    dataset_count > 0 and lineage_datasets == dataset_count,
+                    "dispatch broker-readiness vendor datasets are missing target-application lineage",
+                ),
+            ]
+        )
+    return checks
+
+
+def _target_application_batch_active(dispatch_summary: pd.Series, *, prefix: str) -> bool:
+    mapping_sources = {
+        value.strip().lower()
+        for value in _text(dispatch_summary, f"{prefix}_mapping_sources").split(";")
+        if value.strip()
+    }
+    return bool(
+        _identity_key(dispatch_summary.get(f"{prefix}_mapping_source_mode", ""))
+        == TARGET_APPLICATION_BATCH_MODE
+        or "verified_target_application" in mapping_sources
+        or int(_number(dispatch_summary, f"{prefix}_mapping_application_count", 0.0)) > 0
+        or _number(dispatch_summary, f"{prefix}_target_application_coverage", 0.0) > 0.0
+    )
+
+
+def _target_application_lineage_dataset_count(
+    dispatch_summary: pd.Series,
+    *,
+    prefix: str,
+) -> int:
+    datasets = _json_list(dispatch_summary.get(f"{prefix}_datasets_json", ""))
+    return sum(
+        isinstance(dataset, dict)
+        and all(_object_text(dataset.get(field, "")) for field in TARGET_APPLICATION_DATASET_LINEAGE_FIELDS)
+        for dataset in datasets
+    )
 
 
 def _shadow_broker_projection(dispatch_summary: pd.Series, *, source_prefix: str) -> pd.Series:
@@ -3213,6 +3337,18 @@ def _vendor_market_data_batch_summary_fields(dispatch_summary: pd.Series, *, fie
             _number(dispatch_summary, f"{field_prefix}_unique_mapping_drafts", 0.0)
         ),
         f"{field_prefix}_mapping_sources": _text(dispatch_summary, f"{field_prefix}_mapping_sources"),
+        f"{field_prefix}_mapping_source_mode": _identity_key(
+            dispatch_summary.get(f"{field_prefix}_mapping_source_mode", "")
+        ),
+        f"{field_prefix}_mapping_application_count": int(
+            _number(dispatch_summary, f"{field_prefix}_mapping_application_count", 0.0)
+        ),
+        f"{field_prefix}_unique_mapping_applications": int(
+            _number(dispatch_summary, f"{field_prefix}_unique_mapping_applications", 0.0)
+        ),
+        f"{field_prefix}_target_application_coverage": _number(
+            dispatch_summary, f"{field_prefix}_target_application_coverage", 0.0
+        ),
         f"{field_prefix}_comparison_accepted": _to_bool(
             dispatch_summary.get(f"{field_prefix}_comparison_accepted", False)
         ),
@@ -3257,6 +3393,14 @@ def _vendor_market_data_batch_config(summary: pd.Series, *, field_prefix: str) -
         "min_mapping_coverage": _jsonable(summary[f"{field_prefix}_min_mapping_coverage"]),
         "unique_mapping_drafts": int(summary[f"{field_prefix}_unique_mapping_drafts"]),
         "mapping_sources": _text(summary, f"{field_prefix}_mapping_sources"),
+        "mapping_source_mode": _text(summary, f"{field_prefix}_mapping_source_mode"),
+        "mapping_application_count": int(summary[f"{field_prefix}_mapping_application_count"]),
+        "unique_mapping_applications": int(
+            summary[f"{field_prefix}_unique_mapping_applications"]
+        ),
+        "target_application_coverage": _jsonable(
+            summary[f"{field_prefix}_target_application_coverage"]
+        ),
         "comparison": {
             "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),
             "failed_checks": int(summary[f"{field_prefix}_comparison_failed_checks"]),
@@ -3842,6 +3986,17 @@ def _vendor_market_data_batch_datasets(value: object) -> list[dict[str, object]]
                 "source_header_sha256": _object_text(item.get("source_header_sha256", "")),
                 "mapping_draft_sha256": _object_text(item.get("mapping_draft_sha256", "")),
                 "mapping_source": _object_text(item.get("mapping_source", "")),
+                "mapping_application_path": _object_text(item.get("mapping_application_path", "")),
+                "mapping_application_id": _object_text(item.get("mapping_application_id", "")),
+                "mapping_application_sha256": _object_text(
+                    item.get("mapping_application_sha256", "")
+                ),
+                "mapping_scope_review_id": _object_text(item.get("mapping_scope_review_id", "")),
+                "mapping_scope_review_sha256": _object_text(
+                    item.get("mapping_scope_review_sha256", "")
+                ),
+                "target_intake_receipt_id": _object_text(item.get("target_intake_receipt_id", "")),
+                "applied_mapping_sha256": _object_text(item.get("applied_mapping_sha256", "")),
             }
         )
     return rows
