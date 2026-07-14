@@ -327,6 +327,7 @@ def write_vendor_market_data_batch_pipeline(
     output_dir: str | Path,
     labels: list[str] | None = None,
     mapping_path: str | Path | None = None,
+    mapping_application_dirs: list[str | Path] | None = None,
     config: VendorMarketDataPipelineConfig | None = None,
     readiness_thresholds: DataReadinessThresholds | None = None,
     comparison_thresholds: DataReadinessComparisonThresholds | None = None,
@@ -341,8 +342,60 @@ def write_vendor_market_data_batch_pipeline(
     for path in paths:
         if not path.exists():
             raise FileNotFoundError(f"vendor market-data input not found: {path}")
+    if mapping_path is not None and mapping_application_dirs is not None:
+        raise ValueError(
+            "mapping_path and mapping_application_dirs are mutually exclusive"
+        )
+    if (
+        mapping_application_dirs is not None
+        and len(mapping_application_dirs) != len(paths)
+    ):
+        raise ValueError("mapping applications must match input paths one for one")
 
-    out = Path(output_dir)
+    resolved_labels = [
+        labels[idx] if labels is not None else path.stem
+        for idx, path in enumerate(paths)
+    ]
+    safe_labels = [_safe_label(label, idx) for idx, label in enumerate(resolved_labels)]
+    if len(set(safe_labels)) != len(safe_labels):
+        raise ValueError("labels must resolve to unique dataset directories")
+
+    out = Path(output_dir).resolve()
+    application_roots = (
+        [Path(application_dir).resolve() for application_dir in mapping_application_dirs]
+        if mapping_application_dirs is not None
+        else []
+    )
+    if len(set(application_roots)) != len(application_roots):
+        raise ValueError("mapping applications must be distinct per dataset")
+    approved_applications = (
+        [
+            approved_vendor_mapping_application_inputs(application_dir)
+            for application_dir in application_roots
+        ]
+        if application_roots
+        else []
+    )
+    if approved_applications:
+        for path, application in zip(paths, approved_applications, strict=True):
+            _validate_application_binding(path.resolve(), out, config, application)
+
+    effective_readiness_thresholds = readiness_thresholds or _readiness_thresholds(config)
+    if approved_applications:
+        effective_readiness_thresholds = replace(
+            effective_readiness_thresholds,
+            require_mapped_data=True,
+            require_reviewed_mapping_normalization=False,
+            require_target_application_normalization=True,
+        )
+    batch_mapping_source = (
+        "per_dataset_verified_target_application"
+        if approved_applications
+        else "provided"
+        if mapping_path is not None
+        else "per_dataset_vendor_intake_draft"
+    )
+
     out.mkdir(parents=True, exist_ok=True)
     dataset_rows = []
     dataset_manifest_paths = []
@@ -350,14 +403,24 @@ def write_vendor_market_data_batch_pipeline(
     readiness_dirs = []
     comparison_labels = []
     for idx, path in enumerate(paths):
-        label = labels[idx] if labels is not None else path.stem
-        dataset_dir = out / "datasets" / _safe_label(label, idx)
+        label = resolved_labels[idx]
+        dataset_dir = out / "datasets" / safe_labels[idx]
+        approved_application = (
+            approved_applications[idx]
+            if approved_applications
+            else None
+        )
         report = write_vendor_market_data_pipeline(
             path,
             output_dir=dataset_dir,
             mapping_path=mapping_path,
+            mapping_application_dir=(
+                approved_application.application_dir
+                if approved_application is not None
+                else None
+            ),
             config=config,
-            readiness_thresholds=readiness_thresholds,
+            readiness_thresholds=effective_readiness_thresholds,
         )
         dataset_action_rows.extend(
             _promote_action_rows(
@@ -387,6 +450,19 @@ def write_vendor_market_data_batch_pipeline(
                 "source_header_sha256": _text(row, "source_header_sha256"),
                 "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
                 "mapping_source": _text(row, "mapping_source"),
+                "mapping_application_path": _text(row, "mapping_application_path"),
+                "mapping_application_id": _text(row, "mapping_application_id"),
+                "mapping_application_sha256": _text(
+                    row,
+                    "mapping_application_sha256",
+                ),
+                "mapping_scope_review_id": _text(row, "mapping_scope_review_id"),
+                "mapping_scope_review_sha256": _text(
+                    row,
+                    "mapping_scope_review_sha256",
+                ),
+                "target_intake_receipt_id": _text(row, "target_intake_receipt_id"),
+                "applied_mapping_sha256": _text(row, "applied_mapping_sha256"),
                 "data_readiness_manifest_path": _text(row, "data_readiness_manifest_path"),
                 "recommendation": str(row.get("recommendation", "")),
             }
@@ -410,10 +486,20 @@ def write_vendor_market_data_batch_pipeline(
     datasets = pd.DataFrame(dataset_rows)
     action_queue = _batch_action_queue(dataset_action_rows, comparison.action_queue)
     summary = _batch_summary(datasets, comparison, config)
+    summary["mapping_source_mode"] = batch_mapping_source
     summary["blocked_action_count"] = int(len(action_queue))
     summary["ready_action_count"] = 0
     summary["next_gate"] = _primary_next_gate(action_queue)
     summary["next_gate_help_command"] = summary["next_gate"].map(_next_gate_help_command)
+    if approved_applications:
+        final_applications = [
+            approved_vendor_mapping_application_inputs(application.application_dir)
+            for application in approved_applications
+        ]
+        if final_applications != approved_applications:
+            raise RuntimeError(
+                "mapping application graph changed during vendor market-data batch"
+            )
     datasets.to_csv(out / "vendor_market_data_batch_datasets.csv", index=False)
     summary.to_csv(out / "vendor_market_data_batch_summary.csv", index=False)
     action_queue.to_csv(out / "vendor_market_data_batch_action_queue.csv", index=False)
@@ -421,7 +507,14 @@ def write_vendor_market_data_batch_pipeline(
         _batch_runbook_markdown(summary.iloc[0], datasets, action_queue),
         encoding="utf-8",
     )
-    batch_config = _batch_config(summary.iloc[0], datasets, action_queue, thresholds, config)
+    batch_config = _batch_config(
+        summary.iloc[0],
+        datasets,
+        action_queue,
+        thresholds,
+        effective_readiness_thresholds,
+        config,
+    )
     (out / "vendor_market_data_batch_config.json").write_text(
         json.dumps(batch_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -429,6 +522,39 @@ def write_vendor_market_data_batch_pipeline(
     inputs: dict[str, Any] = {"inputs": paths}
     if mapping_path is not None:
         inputs["mapping"] = mapping_path
+    if approved_applications:
+        inputs.update(
+            {
+                "mapping_applications": [
+                    application.application_dir
+                    for application in approved_applications
+                ],
+                "mapping_application_manifests": [
+                    application.application_dir / MANIFEST_NAME
+                    for application in approved_applications
+                ],
+                "mapping_application_receipts": [
+                    application.application_dir / MAPPING_APPLICATION_RECEIPT_FILE
+                    for application in approved_applications
+                ],
+                "mapping_scope_reviews": [
+                    application.scope_review_dir
+                    for application in approved_applications
+                ],
+                "target_intakes": [
+                    application.target_intake_dir
+                    for application in approved_applications
+                ],
+                "target_sources": [
+                    application.target_source_path
+                    for application in approved_applications
+                ],
+                "applied_mappings": [
+                    application.applied_mapping_path
+                    for application in approved_applications
+                ],
+            }
+        )
     inputs.update(
         _existing_paths(
             comparison_manifest=out / "comparison" / "manifest.json",
@@ -441,12 +567,10 @@ def write_vendor_market_data_batch_pipeline(
         run_type="vendor_market_data_batch_pipeline",
         parameters={
             "config": asdict(config),
-            "readiness_thresholds": asdict(readiness_thresholds)
-            if readiness_thresholds is not None
-            else asdict(_readiness_thresholds(config)),
+            "readiness_thresholds": asdict(effective_readiness_thresholds),
             "comparison_thresholds": asdict(thresholds),
             "labels": labels,
-            "mapping_source": "provided" if mapping_path is not None else "per_dataset_vendor_intake_draft",
+            "mapping_source": batch_mapping_source,
         },
         inputs=inputs,
     )
@@ -788,6 +912,9 @@ def _batch_runbook_markdown(
         f"- Dataset count: {int(_number_from_value(summary_row.get('dataset_count', 0)))}",
         f"- Ready datasets: {int(_number_from_value(summary_row.get('ready_datasets', 0)))}",
         f"- Failed datasets: {int(_number_from_value(summary_row.get('failed_datasets', 0)))}",
+        f"- Mapping source mode: {_value_text(summary_row.get('mapping_source_mode'))}",
+        f"- Mapping applications: {int(_number_from_value(summary_row.get('mapping_application_count', 0)))}",
+        f"- Target-application coverage: {_number_from_value(summary_row.get('target_application_coverage', 0.0)):.3f}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
         f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
         f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
@@ -846,12 +973,22 @@ def _datasets_table(datasets: pd.DataFrame) -> str:
     if datasets.empty:
         return "_None_"
     return _markdown_table(
-        ["Dataset", "Ready", "Rows", "Failed components", "Recommendation"],
+        [
+            "Dataset",
+            "Ready",
+            "Rows",
+            "Mapping source",
+            "Application ID",
+            "Failed components",
+            "Recommendation",
+        ],
         [
             [
                 _value_text(row.get("dataset")),
                 "yes" if _truthy(row.get("ready")) else "no",
                 str(int(_number_from_value(row.get("normalized_rows", 0)))),
+                _value_text(row.get("mapping_source")),
+                _value_text(row.get("mapping_application_id")),
                 str(int(_number_from_value(row.get("failed_components", 0)))),
                 _value_text(row.get("recommendation")),
             ]
@@ -909,6 +1046,19 @@ def _batch_summary(
                 "unique_header_fingerprints": _unique_count(datasets, "source_header_sha256"),
                 "unique_mapping_drafts": int(_number(comparison_row, "unique_mapping_drafts", fallback=0.0)),
                 "mapping_sources": _joined_values(datasets, "mapping_source"),
+                "mapping_application_count": _present_count(
+                    datasets,
+                    "mapping_application_id",
+                ),
+                "unique_mapping_applications": _unique_count(
+                    datasets,
+                    "mapping_application_id",
+                ),
+                "target_application_coverage": (
+                    _present_count(datasets, "mapping_application_id") / dataset_count
+                    if dataset_count
+                    else 0.0
+                ),
                 "comparison_accepted": accepted,
                 "comparison_ready_rate": _number(comparison_row, "ready_rate", fallback=0.0),
                 "comparison_failed_checks": int(_number(comparison_row, "total_failed_checks", fallback=0.0)),
@@ -1021,6 +1171,7 @@ def _batch_config(
     datasets: pd.DataFrame,
     action_queue: pd.DataFrame,
     thresholds: DataReadinessComparisonThresholds,
+    readiness_thresholds: DataReadinessThresholds,
     config: VendorMarketDataPipelineConfig,
 ) -> dict[str, Any]:
     primary_action = _first_action_record(action_queue)
@@ -1037,6 +1188,21 @@ def _batch_config(
             "source_header_sha256": str(item.get("source_header_sha256", "")),
             "mapping_draft_sha256": str(item.get("mapping_draft_sha256", "")),
             "mapping_source": str(item.get("mapping_source", "")),
+            "mapping_application_path": str(
+                item.get("mapping_application_path", "")
+            ),
+            "mapping_application_id": str(item.get("mapping_application_id", "")),
+            "mapping_application_sha256": str(
+                item.get("mapping_application_sha256", "")
+            ),
+            "mapping_scope_review_id": str(item.get("mapping_scope_review_id", "")),
+            "mapping_scope_review_sha256": str(
+                item.get("mapping_scope_review_sha256", "")
+            ),
+            "target_intake_receipt_id": str(
+                item.get("target_intake_receipt_id", "")
+            ),
+            "applied_mapping_sha256": str(item.get("applied_mapping_sha256", "")),
             "data_readiness_manifest_path": str(item.get("data_readiness_manifest_path", "")),
             "recommendation": str(item.get("recommendation", "")),
         }
@@ -1058,6 +1224,19 @@ def _batch_config(
         "unique_header_fingerprints": int(_number(row, "unique_header_fingerprints", fallback=0.0)),
         "unique_mapping_drafts": int(_number(row, "unique_mapping_drafts", fallback=0.0)),
         "mapping_sources": _text(row, "mapping_sources"),
+        "mapping_source_mode": _text(row, "mapping_source_mode"),
+        "mapping_application_count": int(
+            _number(row, "mapping_application_count", fallback=0.0)
+        ),
+        "unique_mapping_applications": int(
+            _number(row, "unique_mapping_applications", fallback=0.0)
+        ),
+        "target_application_coverage": _number(
+            row,
+            "target_application_coverage",
+            fallback=0.0,
+        ),
+        "data_readiness_thresholds": asdict(readiness_thresholds),
         "comparison": {
             "accepted": _truthy(row.get("comparison_accepted", False)),
             "ready_rate": _number(row, "comparison_ready_rate", fallback=0.0),
@@ -1184,6 +1363,13 @@ def _manifest_path(directory: Path) -> str:
 
 def _existing_paths(**paths: Path) -> dict[str, Path]:
     return {name: path for name, path in paths.items() if path.exists()}
+
+
+def _present_count(frame: pd.DataFrame, column: str) -> int:
+    if column not in frame.columns:
+        return 0
+    values = frame[column].dropna().astype(str).str.strip()
+    return int((values != "").sum())
 
 
 def _unique_count(frame: pd.DataFrame, column: str) -> int:

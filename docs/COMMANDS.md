@@ -7252,10 +7252,8 @@ retain the relevant review or application IDs, fingerprints, and evidence
 paths.
 
 An exact-source review cannot be reused for another file, and an application
-cannot be reused for another target. The multi-file batch pipeline does not yet
-accept applications because every dataset requires its own verified target
-application. Run the single-file command per target; per-application batch
-orchestration remains a separate, fail-closed boundary.
+cannot be reused for another target. In target-application batch mode, every
+input must carry its own distinct application as described below.
 
 Outputs:
 
@@ -7309,6 +7307,35 @@ python -m hft_cli pipeline-vendor-market-data-batch `
   --fail-on-breach
 ```
 
+To batch files covered by approved exact-header scopes, repeat
+`--mapping-application` once per input in the same order:
+
+```powershell
+python -m hft_cli pipeline-vendor-market-data-batch `
+  --input vendor\arrow_ticks_2026_06_10.csv vendor\arrow_ticks_2026_06_11.csv `
+  --mapping-application mappings\arrow_ticks_2026_06_10_application `
+  --mapping-application mappings\arrow_ticks_2026_06_11_application `
+  --label day1 `
+  --label day2 `
+  --out runs\vendor_data\arrow_ticks_applied_batch `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --min-datasets 2 `
+  --min-ready-rate 1 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+`--mapping` and batch `--mapping-application` are mutually exclusive. The
+application count must exactly match the input count; applications must be
+distinct and bound to their corresponding exact sources. The batch validates
+every application, source, adapter/kind identity, sanitized dataset label, and
+root evidence/output path before creating the output directory. A swapped,
+missing, duplicate, stale, or colliding application therefore cannot leave a
+partially authorized batch root.
+
 Batch outputs:
 
 ```text
@@ -7323,12 +7350,18 @@ manifest.json
 ```
 
 The batch summary adds `market`, `unique_source_files`,
-`unique_header_fingerprints`, and `mapping_sources`; the batch manifest
-fingerprints each dataset pipeline manifest plus the comparison manifest.
+`unique_header_fingerprints`, `mapping_sources`, `mapping_application_count`,
+`unique_mapping_applications`, and `target_application_coverage`. The batch
+manifest fingerprints each dataset pipeline manifest plus the comparison
+manifest. In application mode it also fingerprints every application,
+application manifest/receipt, scope review, target intake, exact source, and
+applied mapping, then re-verifies every application graph before sealing the
+root manifest.
 `vendor_market_data_batch_config.json` keeps the accepted dataset list,
-comparison thresholds, and per-dataset fingerprints together for walk-forward
-research handoff. The batch action queue promotes per-dataset pipeline blockers
-and comparison blockers to the batch root, including the exact
+comparison thresholds, per-dataset fingerprints, and application lineage
+together for walk-forward research handoff. The batch action queue promotes
+per-dataset pipeline blockers and comparison blockers to the batch root,
+including the exact
 `python -m hft_cli ... --help` next-gate command.
 `vendor_market_data_batch_config.json` also mirrors the promoted queue as
 `next_actions`, `ready_actions`, and `blocked_actions`, plus root-level

@@ -3072,7 +3072,16 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--input", nargs="+", required=True)
     vendor_market_data_batch.add_argument("--out", required=True)
     vendor_market_data_batch.add_argument("--label", action="append", dest="labels")
-    vendor_market_data_batch.add_argument("--mapping", default=None)
+    vendor_batch_mapping_source = (
+        vendor_market_data_batch.add_mutually_exclusive_group()
+    )
+    vendor_batch_mapping_source.add_argument("--mapping", default=None)
+    vendor_batch_mapping_source.add_argument(
+        "--mapping-application",
+        action="append",
+        dest="mapping_applications",
+        help="Repeat once per input, in input order, with a distinct verified target application.",
+    )
     vendor_market_data_batch.add_argument("--adapter", default="arrow_money")
     vendor_market_data_batch.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
     vendor_market_data_batch.add_argument("--output-file", default=None)
@@ -7499,6 +7508,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             labels=args.labels,
             mapping_path=args.mapping,
+            mapping_application_dirs=args.mapping_applications,
             config=VendorMarketDataPipelineConfig(
                 adapter=args.adapter,
                 kind=args.kind,

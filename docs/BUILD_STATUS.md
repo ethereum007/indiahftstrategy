@@ -3244,8 +3244,18 @@
   reviewed mapping. Pipeline summaries, config, and the root manifest retain
   the application, scope-review, target-intake, exact-source, and applied-mapping
   lineage. Output/evidence overlap, identity substitution, source drift, and
-  mixed mapping modes fail before pipeline output is created. Batch ingestion
-  intentionally remains closed because every dataset needs its own application.
+  mixed mapping modes fail before pipeline output is created.
+- Multi-file vendor onboarding now accepts one distinct target application per
+  dataset. The batch command aligns repeated `--mapping-application` arguments
+  with inputs, reconstructs every application graph, checks exact target and
+  adapter/kind identity, rejects duplicate applications and colliding sanitized
+  labels, and checks the batch root against all retained evidence before any
+  write. Each child is forced through strict target-application readiness. The
+  batch CSV/config/runbook expose application count, uniqueness, coverage, and
+  per-dataset lineage; the root manifest fingerprints every application,
+  scope-review, target-intake, target-source, and applied-mapping graph and
+  re-verifies them before sealing. Raw shared mappings and per-dataset
+  applications remain mutually exclusive.
 
 ## Test Gate
 
@@ -3255,8 +3265,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1794 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1796 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest per-dataset target-application batch gate: all 14 vendor onboarding
+tests pass. The new focused cases cover two distinct target files sharing one
+approved exact-header scope through separate applications, strict readiness,
+CLI argument alignment, root manifest/config/runbook lineage, and preflight
+refusal for count mismatch, mixed modes, swapped or duplicate
+applications, colliding labels, and evidence-path overlap. The expanded intake,
+mapping-review, scope-review, target-application, reviewed and target-applied
+normalization, readiness, comparison, mapped-data, onboarding, catalog,
+manifest, broker-vendor, broker-readiness, and shared CLI surface passes
+together (`236 passed`). The repository now collects 1796 tests across 154
+files; the full suite was not rerun for this slice.
 
 Latest target-application onboarding gate: all 12 focused onboarding tests
 pass, including normal and opaque-header target applications, strict readiness,

@@ -153,6 +153,27 @@ def target_mapping_application(
     return application_dir, scope_dir, intake_dir, source_path
 
 
+def target_mapping_application_batch(
+    tmp_path: Path,
+    label: str,
+    days: list[str],
+) -> tuple[list[Path], list[Path], Path]:
+    scope_dir, _ = _mapping_scope(tmp_path, label)
+    application_dirs = []
+    source_paths = []
+    for idx, day in enumerate(days, start=1):
+        intake_dir, source_path, _ = _target_intake(
+            tmp_path,
+            f"{label}_target_{idx}",
+            frame=_normal_ticks(day),
+        )
+        application_dir = tmp_path / f"{label}_application_{idx}"
+        write_vendor_mapping_application(scope_dir, intake_dir, application_dir)
+        application_dirs.append(application_dir)
+        source_paths.append(source_path)
+    return application_dirs, source_paths, scope_dir
+
+
 def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     raw = vendor_ticks("2026-06-10")
     raw_path = tmp_path / "arrow_ticks.csv"
@@ -694,6 +715,199 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
         ]
     )
     assert ready_code == 0
+
+
+def test_vendor_market_data_batch_uses_distinct_target_applications(tmp_path):
+    application_dirs, source_paths, scope_dir = target_mapping_application_batch(
+        tmp_path,
+        "batch_target",
+        ["2026-07-15", "2026-07-16"],
+    )
+    out_dir = tmp_path / "target_application_batch"
+
+    report = write_vendor_market_data_batch_pipeline(
+        source_paths,
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        mapping_application_dirs=application_dirs,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=1,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "vendor_market_data_batch_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert report.ready
+    assert summary["dataset_count"] == 2
+    assert summary["mapping_sources"] == "verified_target_application"
+    assert summary["mapping_application_count"] == 2
+    assert summary["unique_mapping_applications"] == 2
+    assert summary["target_application_coverage"] == 1.0
+    assert report.datasets["mapping_application_id"].nunique() == 2
+    assert set(report.datasets["mapping_application_path"]) == {
+        str(path.resolve()) for path in application_dirs
+    }
+    assert report.datasets["mapping_scope_review_id"].nunique() == 1
+    assert report.datasets["mapping_application_sha256"].str.len().eq(64).all()
+    assert report.datasets["applied_mapping_sha256"].str.len().eq(64).all()
+    assert "- Mapping applications: 2" in runbook
+    assert "- Target-application coverage: 1.000" in runbook
+    assert (
+        "- Mapping source mode: per_dataset_verified_target_application"
+        in runbook
+    )
+    assert "verified_target_application" in runbook
+    assert all(
+        len(manifest["inputs"][name]) == 2
+        for name in (
+            "mapping_applications",
+            "mapping_application_manifests",
+            "mapping_application_receipts",
+            "mapping_scope_reviews",
+            "target_intakes",
+            "target_sources",
+            "applied_mappings",
+        )
+    )
+    assert manifest["parameters"]["mapping_source"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert manifest["parameters"]["readiness_thresholds"][
+        "require_target_application_normalization"
+    ]
+    assert config["mapping_application_count"] == 2
+    assert config["unique_mapping_applications"] == 2
+    assert config["target_application_coverage"] == 1.0
+    assert config["mapping_source_mode"] == (
+        "per_dataset_verified_target_application"
+    )
+    assert config["data_readiness_thresholds"][
+        "require_target_application_normalization"
+    ]
+    assert {item["mapping_application_id"] for item in config["datasets"]} == set(
+        report.datasets["mapping_application_id"]
+    )
+    assert {item["mapping_scope_review_id"] for item in config["datasets"]} == {
+        report.datasets.iloc[0]["mapping_scope_review_id"]
+    }
+    assert scope_dir.resolve() != out_dir.resolve()
+    for label in ("day1", "day2"):
+        readiness = pd.read_csv(
+            out_dir
+            / "datasets"
+            / label
+            / "04_data_readiness"
+            / "data_readiness_summary.csv"
+        ).iloc[0]
+        assert bool(readiness["require_target_application_normalization"])
+        assert bool(readiness["mapped_data_target_application_bound"])
+
+    cli_out = tmp_path / "target_application_batch_cli"
+    cli_args = [
+        "pipeline-vendor-market-data-batch",
+        "--input",
+        *(str(path) for path in source_paths),
+        "--label",
+        "cli_day1",
+        "--label",
+        "cli_day2",
+        "--out",
+        str(cli_out),
+    ]
+    for application_dir in application_dirs:
+        cli_args.extend(["--mapping-application", str(application_dir)])
+    cli_args.extend(
+        [
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-datasets",
+            "2",
+            "--fail-on-blocked-actions",
+            "--fail-on-actions",
+        ]
+    )
+    assert main(cli_args) == 0
+
+
+def test_vendor_market_data_batch_rejects_invalid_application_alignment_before_output(
+    tmp_path,
+):
+    application_dirs, source_paths, _ = target_mapping_application_batch(
+        tmp_path,
+        "batch_binding",
+        ["2026-07-15", "2026-07-16"],
+    )
+
+    count_out = tmp_path / "batch_count_out"
+    with pytest.raises(ValueError, match="one for one"):
+        write_vendor_market_data_batch_pipeline(
+            source_paths,
+            output_dir=count_out,
+            mapping_application_dirs=application_dirs[:1],
+        )
+    assert not count_out.exists()
+
+    mutual_out = tmp_path / "batch_mutual_out"
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        write_vendor_market_data_batch_pipeline(
+            source_paths,
+            output_dir=mutual_out,
+            mapping_path=application_dirs[0] / "target_applied_vendor_mapping.csv",
+            mapping_application_dirs=application_dirs,
+        )
+    assert not mutual_out.exists()
+
+    swapped_out = tmp_path / "batch_swapped_out"
+    with pytest.raises(ValueError, match="exact target source"):
+        write_vendor_market_data_batch_pipeline(
+            source_paths,
+            output_dir=swapped_out,
+            mapping_application_dirs=list(reversed(application_dirs)),
+        )
+    assert not swapped_out.exists()
+
+    duplicate_out = tmp_path / "batch_duplicate_out"
+    with pytest.raises(ValueError, match="distinct per dataset"):
+        write_vendor_market_data_batch_pipeline(
+            [source_paths[0], source_paths[0]],
+            output_dir=duplicate_out,
+            labels=["copy1", "copy2"],
+            mapping_application_dirs=[application_dirs[0], application_dirs[0]],
+        )
+    assert not duplicate_out.exists()
+
+    labels_out = tmp_path / "batch_labels_out"
+    with pytest.raises(ValueError, match="unique dataset directories"):
+        write_vendor_market_data_batch_pipeline(
+            source_paths,
+            output_dir=labels_out,
+            labels=["day one", "day_one"],
+            mapping_application_dirs=application_dirs,
+        )
+    assert not labels_out.exists()
+
+    collision_out = application_dirs[0] / "batch"
+    with pytest.raises(ValueError, match="cannot modify mapping-application evidence"):
+        write_vendor_market_data_batch_pipeline(
+            source_paths,
+            output_dir=collision_out,
+            mapping_application_dirs=application_dirs,
+        )
+    assert not collision_out.exists()
 
 
 def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_path):
