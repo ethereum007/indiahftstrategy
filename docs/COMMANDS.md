@@ -2955,6 +2955,82 @@ routing, submission, or live release. Catalogs distinguish
 `verified_approved`, `verified_rejected`, and `stale_or_inconsistent` review
 evidence.
 
+## Exact-Header Mapping Reuse Review
+
+Seal a separate operator decision before reusing an approved canonical mapping
+across daily files. The decision binds the existing exact-source mapping review,
+canonical mapping bytes, adapter, data kind, and the seed source's ordered-header
+SHA-256. The operator decision must remain outside both evidence directories:
+
+```powershell
+python -m hft_cli review-vendor-mapping-scope `
+  --review mappings\arrow_ticks_review `
+  --decision mappings\arrow_ticks_scope_decision.csv `
+  --out mappings\arrow_ticks_exact_header_scope `
+  --fail-on-rejected
+```
+
+The one-row scope decision uses these columns:
+
+```text
+mapping_review_id
+mapping_review_sha256
+reviewed_mapping_sha256
+source_header_sha256
+adapter
+kind
+reuse_scope
+decision
+operator_id
+operator_role
+reviewed_at_utc
+vendor_documentation_checked
+schema_stability_confirmed
+field_semantics_stable_across_files_confirmed
+timestamp_semantics_stable_across_files_confirmed
+price_quantity_units_stable_across_files_confirmed
+transform_semantics_stable_across_files_confirmed
+partitioning_semantics_confirmed
+notes
+authorizes_header_scoped_application
+authorizes_routing
+authorizes_submission
+```
+
+Set `reuse_scope` to `exact_header` and `decision` to `approved` or
+`rejected`. Every semantic attestation must be explicitly true. An approval
+requires `authorizes_header_scoped_application=true`; a rejection requires it
+to be false. Routing and submission authorization must always be false.
+
+Outputs:
+
+```text
+scope_approved_vendor_mapping.csv
+vendor_mapping_scope_review_checks.csv
+vendor_mapping_scope_review_action_queue.csv
+vendor_mapping_scope_review_summary.csv
+vendor_mapping_scope_review_receipt.json
+vendor_mapping_scope_review_config.json
+vendor_mapping_scope_review_runbook.md
+manifest.json
+```
+
+Verify the base review graph, decision fingerprint, exact mapping bytes, every
+generated artifact, and all non-authorizing safety surfaces before use:
+
+```powershell
+python -m hft_cli verify-vendor-mapping-scope-review `
+  --scope-review mappings\arrow_ticks_exact_header_scope `
+  --fail-on-breach
+```
+
+A verified approval grants mapping application only when a future source has
+the exact same ordered header. It does not approve that future source, perform
+normalization, or authorize strategy research, routing, submission, or live
+release. Target-file binding and normalization evidence remain separate gates.
+Catalogs distinguish `verified_approved`, `verified_rejected`, and
+`stale_or_inconsistent` scope evidence.
+
 ## Reviewed Vendor Data Normalization
 
 Normalize the exact raw source with the exact canonical mapping from a verified

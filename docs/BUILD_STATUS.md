@@ -3201,6 +3201,18 @@
   graph in its root manifest. Exact-source approvals are intentionally not
   reused by the multi-file batch pipeline; broader schema-scoped approval is a
   separate future contract.
+- Exact-header mapping reuse now has that separate operator evidence contract.
+  A write-once scope review starts from a semantically verified approved
+  exact-source mapping review and binds its review ID/hash, canonical mapping
+  hash, ordered source-header hash, adapter, and data kind. Approval requires
+  explicit cross-file schema, field, timestamp, price/quantity-unit, transform,
+  and partitioning attestations. The verifier reconstructs the full upstream
+  graph and every artifact, checks the copied mapping byte for byte, and rejects
+  drift or re-manifested authority widening. Catalogs expose
+  `verified_approved`, `verified_rejected`, and `stale_or_inconsistent`. This
+  seal authorizes exact-header mapping application only; target-file
+  normalization, research, routing, submission, and live release remain
+  unauthorized.
 
 ## Test Gate
 
@@ -3210,8 +3222,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1759 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1770 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest exact-header mapping-scope gate: all 11 focused adversarial tests pass.
+The affected intake, mapping-review, reviewed-normalization, mapped-data,
+vendor/provider onboarding, market-data, data-readiness, catalog, manifest,
+shared CLI, and broker-vendor surface passes together (`166 passed`). Coverage
+includes approved and rejected write-once seals, strict CLI exit behavior,
+exact review/mapping/header/adapter/kind binding, complete cross-file semantic
+attestations, byte-identical mapping retention, upstream source and decision
+drift, path collisions, catalog states, and re-manifested authority widening.
+The repository now collects 1770 tests across 152 files; the full suite was not
+rerun for this slice.
 
 Latest review-bound onboarding/readiness gate: the strict readiness, exact-source
 pipeline, and reviewed-normalization suites pass together (`40 passed`). The
@@ -3223,7 +3246,7 @@ source consistency, exact source/adapter/kind enforcement before output,
 mutually exclusive mapping inputs, strict CLI handoff, missing/loose evidence
 repair routing, and an operator-approved manual mapping that supersedes blocked
 column inference without weakening the source binding. The repository now
-collects 1759 tests across 151 files; the full suite was not rerun for this
+collects 1759 tests across 151 files; the full suite was not rerun for that
 slice.
 
 Latest reviewed-normalization gate: all seven focused adversarial tests pass.

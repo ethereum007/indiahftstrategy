@@ -30,6 +30,11 @@ from adapters.vendor_mapping_review import (
     verify_vendor_mapping_review,
     write_vendor_mapping_review,
 )
+from adapters.vendor_mapping_scope_review import (
+    VendorMappingScopeReviewConfig,
+    verify_vendor_mapping_scope_review,
+    write_vendor_mapping_scope_review,
+)
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
@@ -3997,6 +4002,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_vendor_mapping_review_parser.add_argument("--review", required=True)
     verify_vendor_mapping_review_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    vendor_mapping_scope_review = sub.add_parser(
+        "review-vendor-mapping-scope",
+        help="Seal an operator decision for exact-header mapping reuse.",
+    )
+    vendor_mapping_scope_review.add_argument("--review", required=True)
+    vendor_mapping_scope_review.add_argument("--decision", required=True)
+    vendor_mapping_scope_review.add_argument("--out", required=True)
+    vendor_mapping_scope_review.add_argument(
+        "--output-mapping-file",
+        default="scope_approved_vendor_mapping.csv",
+    )
+    vendor_mapping_scope_review.add_argument("--fail-on-rejected", action="store_true")
+    verify_vendor_mapping_scope_review_parser = sub.add_parser(
+        "verify-vendor-mapping-scope-review",
+        help="Reconstruct an exact-header mapping scope review and retained approval.",
+    )
+    verify_vendor_mapping_scope_review_parser.add_argument(
+        "--scope-review",
+        required=True,
+    )
+    verify_vendor_mapping_scope_review_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -8615,6 +8644,44 @@ def main(argv: list[str] | None = None) -> int:
                     "normalization_only": result.normalization_only,
                     "non_routing": result.non_routing,
                     "review_dir": str(result.output_dir),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.approved)
+            else 0
+        )
+    if args.command == "review-vendor-mapping-scope":
+        result = write_vendor_mapping_scope_review(
+            args.review,
+            args.decision,
+            args.out,
+            config=VendorMappingScopeReviewConfig(
+                output_mapping_file=args.output_mapping_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_rejected and not result.approved else 0
+    if args.command == "verify-vendor-mapping-scope-review":
+        result = verify_vendor_mapping_scope_review(args.scope_review)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "sealed": result.sealed,
+                    "approved": result.approved,
+                    "rejected": result.rejected,
+                    "manifest_current": result.manifest_current,
+                    "mapping_review_current": result.mapping_review_current,
+                    "operator_decision_current": result.operator_decision_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "application_only": result.application_only,
+                    "non_routing": result.non_routing,
+                    "scope_review_dir": str(result.output_dir),
                     "error": result.error,
                 },
                 sort_keys=True,

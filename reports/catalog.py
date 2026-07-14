@@ -20,6 +20,10 @@ from adapters.reviewed_mapped_data import (
     RUN_TYPE as REVIEWED_MAPPED_DATA_RUN_TYPE,
     verify_reviewed_mapped_data_normalization,
 )
+from adapters.vendor_mapping_scope_review import (
+    RUN_TYPE as VENDOR_MAPPING_SCOPE_REVIEW_RUN_TYPE,
+    verify_vendor_mapping_scope_review,
+)
 from reports.evidence import (
     PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE,
     verify_strategy_evidence_review,
@@ -178,6 +182,7 @@ SUMMARY_FILES = [
     "calibrated_replay_summary.csv",
     "adapter_schema_summary.csv",
     "vendor_mapping_review_summary.csv",
+    "vendor_mapping_scope_review_summary.csv",
     "vendor_intake_summary.csv",
     "surface_quote_summary.csv",
     "sweep_summary.csv",
@@ -444,6 +449,12 @@ def _catalog_row(
         run_dir,
         str(manifest.get("run_type", "")),
     )
+    vendor_mapping_scope_review_verification = (
+        _vendor_mapping_scope_review_verification_fields(
+            run_dir,
+            str(manifest.get("run_type", "")),
+        )
+    )
     if (
         strategy_evidence_verification[
             "strategy_evidence_verification_required"
@@ -564,6 +575,16 @@ def _catalog_row(
     ):
         status_column = "reviewed_mapped_data_verification"
         status = False
+    if (
+        vendor_mapping_scope_review_verification[
+            "vendor_mapping_scope_review_verification_required"
+        ]
+        and not vendor_mapping_scope_review_verification[
+            "vendor_mapping_scope_review_verification_verified"
+        ]
+    ):
+        status_column = "vendor_mapping_scope_review_verification"
+        status = False
     inputs = manifest.get("inputs", {}) or {}
     input_stats = _input_stats(inputs)
     row = {
@@ -594,6 +615,7 @@ def _catalog_row(
         **vendor_intake_verification,
         **vendor_mapping_review_verification,
         **reviewed_mapped_data_verification,
+        **vendor_mapping_scope_review_verification,
         **_provider_lineage_selection_fields(
             run_dir,
             str(manifest.get("run_type", "")),
@@ -760,6 +782,59 @@ def _reviewed_mapped_data_verification_fields(
             ),
             f"{prefix}artifacts_consistent": verification.artifacts_consistent,
             f"{prefix}normalization_only": verification.normalization_only,
+            f"{prefix}non_routing": verification.non_routing,
+            f"{prefix}error": verification.error,
+        }
+    )
+    return fields
+
+
+def _vendor_mapping_scope_review_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == VENDOR_MAPPING_SCOPE_REVIEW_RUN_TYPE
+    prefix = "vendor_mapping_scope_review_verification_"
+    fields: dict[str, Any] = {
+        f"{prefix}required": required,
+        f"{prefix}status": "verification_required" if required else "not_applicable",
+        f"{prefix}verified": False,
+        f"{prefix}sealed": False,
+        f"{prefix}approved": False,
+        f"{prefix}rejected": False,
+        f"{prefix}manifest_current": False,
+        f"{prefix}mapping_review_current": False,
+        f"{prefix}operator_decision_current": False,
+        f"{prefix}artifacts_consistent": False,
+        f"{prefix}application_only": False,
+        f"{prefix}non_routing": False,
+        f"{prefix}error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = verify_vendor_mapping_scope_review(run_dir)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields[f"{prefix}status"] = "verification_error"
+        fields[f"{prefix}error"] = str(exc)
+        return fields
+    status = "stale_or_inconsistent"
+    if verification.verified:
+        status = "verified_approved" if verification.approved else "verified_rejected"
+    fields.update(
+        {
+            f"{prefix}status": status,
+            f"{prefix}verified": verification.verified,
+            f"{prefix}sealed": verification.sealed,
+            f"{prefix}approved": verification.approved,
+            f"{prefix}rejected": verification.rejected,
+            f"{prefix}manifest_current": verification.manifest_current,
+            f"{prefix}mapping_review_current": verification.mapping_review_current,
+            f"{prefix}operator_decision_current": (
+                verification.operator_decision_current
+            ),
+            f"{prefix}artifacts_consistent": verification.artifacts_consistent,
+            f"{prefix}application_only": verification.application_only,
             f"{prefix}non_routing": verification.non_routing,
             f"{prefix}error": verification.error,
         }

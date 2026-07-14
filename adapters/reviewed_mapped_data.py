@@ -73,6 +73,9 @@ class ApprovedMappingReviewInputs:
     kind: str
     mapping_review_id: str
     mapping_review_sha256: str
+    source_file_sha256: str
+    source_header_sha256: str
+    reviewed_mapping_sha256: str
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,9 @@ def approved_mapping_review_inputs(
         kind=str(review["kind"]),
         mapping_review_id=str(review["mapping_review_id"]),
         mapping_review_sha256=str(review["mapping_review_sha256"]),
+        source_file_sha256=str(review["source_sha256"]),
+        source_header_sha256=str(review["source_header_sha256"]),
+        reviewed_mapping_sha256=str(review["mapping_sha256"]),
     )
 
 
@@ -501,9 +507,18 @@ def _review_contract(review_root: Path) -> dict[str, Any]:
     review_id = _text(receipt.get("mapping_review_id"))
     review_sha256 = _text(receipt.get("mapping_review_sha256"))
     source_sha256 = _text(intake.get("source_file_sha256"))
+    source_header_sha256 = _text(intake.get("source_header_sha256"))
     mapping_sha256 = _text(mapping.get("reviewed_sha256"))
     if not all(
-        (adapter, kind, review_id, review_sha256, source_sha256, mapping_sha256)
+        (
+            adapter,
+            kind,
+            review_id,
+            review_sha256,
+            source_sha256,
+            source_header_sha256,
+            mapping_sha256,
+        )
     ):
         raise ValueError("mapping review identity or fingerprints are incomplete")
     if file_sha256(source_path) != source_sha256:
@@ -529,6 +544,7 @@ def _review_contract(review_root: Path) -> dict[str, Any]:
             review_root / MAPPING_REVIEW_RECEIPT_FILE
         ),
         "source_sha256": source_sha256,
+        "source_header_sha256": source_header_sha256,
         "mapping_sha256": mapping_sha256,
     }
 
