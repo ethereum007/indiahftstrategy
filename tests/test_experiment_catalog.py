@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 
@@ -193,6 +194,57 @@ def test_experiment_catalog_promotes_vendor_intake_action_queue(tmp_path):
     assert action_plan["blocked_action_count"] == 5
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["check"] == "unmapped_required:ask"
+
+
+def test_experiment_catalog_distinguishes_ready_blocked_and_stale_vendor_intakes(tmp_path):
+    complete = pd.DataFrame(
+        [
+            {
+                "exchange_ts": "2026-06-10 09:15:00",
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        ]
+    )
+    ready_source = tmp_path / "ready.csv"
+    blocked_source = tmp_path / "blocked.csv"
+    stale_source = tmp_path / "stale.csv"
+    complete.to_csv(ready_source, index=False)
+    pd.DataFrame([{"exchange_ts": "2026-06-10 09:15:00"}]).to_csv(
+        blocked_source,
+        index=False,
+    )
+    complete.to_csv(stale_source, index=False)
+    config = VendorCsvIntakeConfig(kind="ticks")
+    write_vendor_csv_intake_report(ready_source, output_dir=tmp_path / "ready_intake", config=config)
+    write_vendor_csv_intake_report(blocked_source, output_dir=tmp_path / "blocked_intake", config=config)
+    write_vendor_csv_intake_report(stale_source, output_dir=tmp_path / "stale_intake", config=config)
+    changed = complete.copy()
+    changed.loc[0, "best_ask"] = 100.10
+    changed.to_csv(stale_source, index=False)
+
+    report = catalog_experiment_runs([tmp_path])
+    rows = {
+        Path(str(row["run_dir"])).name: row
+        for row in report.catalog.to_dict(orient="records")
+    }
+
+    assert len(rows) == 3
+    assert rows["ready_intake"]["vendor_intake_verification_status"] == "verified_ready"
+    assert bool(rows["ready_intake"]["vendor_intake_verification_verified"])
+    assert bool(rows["ready_intake"]["summary_status"])
+    assert rows["blocked_intake"]["vendor_intake_verification_status"] == "verified_blocked"
+    assert bool(rows["blocked_intake"]["vendor_intake_verification_blocked"])
+    assert not bool(rows["blocked_intake"]["summary_status"])
+    assert rows["stale_intake"]["vendor_intake_verification_status"] == "stale_or_inconsistent"
+    assert not bool(rows["stale_intake"]["vendor_intake_verification_verified"])
+    assert not bool(rows["stale_intake"]["vendor_intake_verification_source_current"])
+    assert rows["stale_intake"]["summary_status_column"] == "vendor_intake_verification"
+    assert not bool(rows["stale_intake"]["summary_status"])
 
 
 def test_experiment_catalog_promotes_adapter_schema_action_queue(tmp_path):

@@ -8,6 +8,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from adapters.vendor_intake import (
+    RUN_TYPE as VENDOR_CSV_INTAKE_RUN_TYPE,
+    verify_vendor_csv_intake_report,
+)
 from reports.evidence import (
     PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE,
     verify_strategy_evidence_review,
@@ -417,6 +421,10 @@ def _catalog_row(
             str(manifest.get("run_type", "")),
         )
     )
+    vendor_intake_verification = _vendor_intake_verification_fields(
+        run_dir,
+        str(manifest.get("run_type", "")),
+    )
     if (
         strategy_evidence_verification[
             "strategy_evidence_verification_required"
@@ -511,6 +519,12 @@ def _catalog_row(
             "provider_live_dryrun_shadow_calibration_stability_verification"
         )
         status = False
+    if (
+        vendor_intake_verification["vendor_intake_verification_required"]
+        and not vendor_intake_verification["vendor_intake_verification_verified"]
+    ):
+        status_column = "vendor_intake_verification"
+        status = False
     inputs = manifest.get("inputs", {}) or {}
     input_stats = _input_stats(inputs)
     row = {
@@ -538,6 +552,7 @@ def _catalog_row(
         **provider_live_dryrun_shadow_verification,
         **provider_live_dryrun_shadow_calibration_verification,
         **provider_live_dryrun_shadow_calibration_stability_verification,
+        **vendor_intake_verification,
         **_provider_lineage_selection_fields(
             run_dir,
             str(manifest.get("run_type", "")),
@@ -552,6 +567,53 @@ def _catalog_row(
         else:
             row[key] = value
     return row
+
+
+def _vendor_intake_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == VENDOR_CSV_INTAKE_RUN_TYPE
+    prefix = "vendor_intake_verification_"
+    fields: dict[str, Any] = {
+        f"{prefix}required": required,
+        f"{prefix}status": "verification_required" if required else "not_applicable",
+        f"{prefix}verified": False,
+        f"{prefix}ready": False,
+        f"{prefix}blocked": False,
+        f"{prefix}manifest_current": False,
+        f"{prefix}source_current": False,
+        f"{prefix}artifacts_consistent": False,
+        f"{prefix}intake_only": False,
+        f"{prefix}non_authorizing": False,
+        f"{prefix}error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = verify_vendor_csv_intake_report(run_dir)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields[f"{prefix}status"] = "verification_error"
+        fields[f"{prefix}error"] = str(exc)
+        return fields
+    status = "stale_or_inconsistent"
+    if verification.verified:
+        status = "verified_ready" if verification.ready else "verified_blocked"
+    fields.update(
+        {
+            f"{prefix}status": status,
+            f"{prefix}verified": verification.verified,
+            f"{prefix}ready": verification.ready,
+            f"{prefix}blocked": verification.blocked,
+            f"{prefix}manifest_current": verification.manifest_current,
+            f"{prefix}source_current": verification.source_current,
+            f"{prefix}artifacts_consistent": verification.artifacts_consistent,
+            f"{prefix}intake_only": verification.intake_only,
+            f"{prefix}non_authorizing": verification.non_authorizing,
+            f"{prefix}error": verification.error,
+        }
+    )
+    return fields
 
 
 def _strategy_evidence_verification_fields(

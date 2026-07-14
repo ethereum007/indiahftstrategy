@@ -15,7 +15,11 @@ from adapters.order_reconciliation import ReconciliationThresholds, write_order_
 from adapters.order_upload_pack import OrderUploadPackConfig, write_order_upload_pack
 from adapters.orders import OrderStagingLimits, write_staged_orders
 from adapters.schema_audit import write_adapter_schema_audit
-from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
+from adapters.vendor_intake import (
+    VendorCsvIntakeConfig,
+    verify_vendor_csv_intake_report,
+    write_vendor_csv_intake_report,
+)
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
@@ -3915,6 +3919,12 @@ def main(argv: list[str] | None = None) -> int:
     vendor_intake.add_argument("--fail-on-breach", action="store_true")
     vendor_intake.add_argument("--fail-on-blocked-actions", action="store_true")
     vendor_intake.add_argument("--fail-on-actions", action="store_true")
+    verify_vendor_intake = sub.add_parser(
+        "verify-vendor-csv-intake",
+        help="Reconstruct a write-once vendor CSV intake and verify its source is current.",
+    )
+    verify_vendor_intake.add_argument("--intake", required=True)
+    verify_vendor_intake.add_argument("--fail-on-breach", action="store_true")
 
     mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
     mapped_export.add_argument("--export", required=True)
@@ -8418,6 +8428,32 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "verify-vendor-csv-intake":
+        result = verify_vendor_csv_intake_report(args.intake)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "blocked": result.blocked,
+                    "manifest_current": result.manifest_current,
+                    "source_current": result.source_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "intake_only": result.intake_only,
+                    "non_authorizing": result.non_authorizing,
+                    "intake_dir": str(result.output_dir),
+                    "source_path": "" if result.source_path is None else str(result.source_path),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.ready)
+            else 0
+        )
     if args.command == "map-broker-orders":
         result = write_mapped_order_export(
             args.export,

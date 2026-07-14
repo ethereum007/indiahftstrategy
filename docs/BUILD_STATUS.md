@@ -3151,6 +3151,18 @@
   boundary passes `22` focused tests, including upstream telemetry drift and a
   freshly re-manifested authorization claim.
 
+- Vendor CSV intake is now a write-once, source-current evidence boundary.
+  Each persisted Arrow.money/iRage-neutral profile emits a deterministic
+  `vendor_intake_receipt.json` binding the raw source fingerprint, inferred
+  kind, generated mapping draft, readiness outcome, settings, and explicit
+  intake-only/non-authorizing safety contract. `verify-vendor-csv-intake`
+  reconstructs every CSV/JSON/runbook artifact from the current source and
+  rejects source drift, artifact edits, path/config substitution, and mapping
+  tampering even after the manifest is regenerated. A complete mapping is
+  `verified_ready`; an honestly incomplete or ambiguous schema is
+  `verified_blocked`; stale or inconsistent evidence fails closed in
+  `catalog-runs`. No Arrow.money or iRage columns were invented by this slice.
+
 ## Test Gate
 
 Run from repo root:
@@ -3159,8 +3171,15 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1731 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1736 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest vendor-intake integrity gate: legacy and adversarial intake/catalog
+coverage passes together (`12 passed`), including write-once output, strict CLI
+verification, valid blocked evidence, source drift, and freshly re-manifested
+mapping tampering. The complete vendor intake/onboarding/market-data chain
+passes (`21 passed`); catalog, manifest, and data-readiness regressions pass
+(`97 passed`); shared adapter/CLI and broker-vendor readiness pass (`8 passed`).
 
 Latest completed strategy-evidence read-verification gate: strategy evidence,
 shared manifests, and experiment catalog pass together (`127 passed`). It

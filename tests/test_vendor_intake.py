@@ -1,9 +1,16 @@
 import json
 
 import pandas as pd
+import pytest
 
-from adapters.vendor_intake import VendorCsvIntakeConfig, profile_vendor_csv, write_vendor_csv_intake_report
+from adapters.vendor_intake import (
+    VendorCsvIntakeConfig,
+    profile_vendor_csv,
+    verify_vendor_csv_intake_report,
+    write_vendor_csv_intake_report,
+)
 from hft_cli import main
+from reports.manifest import write_experiment_manifest
 
 
 def test_vendor_intake_detects_tick_file_and_drafts_mapping():
@@ -292,3 +299,150 @@ def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):
         ]
     )
     assert gated_code == 2
+
+
+def test_vendor_intake_is_write_once_and_semantically_verified(tmp_path):
+    sample_path = tmp_path / "ticks.csv"
+    out_dir = tmp_path / "intake"
+    _complete_tick_sample().to_csv(sample_path, index=False)
+
+    report = write_vendor_csv_intake_report(
+        sample_path,
+        output_dir=out_dir,
+        config=VendorCsvIntakeConfig(adapter="arrow_money", kind="ticks"),
+    )
+    verification = verify_vendor_csv_intake_report(out_dir)
+    receipt = json.loads((out_dir / "vendor_intake_receipt.json").read_text(encoding="utf-8"))
+
+    assert report.ready
+    assert verification.verified
+    assert verification.ready
+    assert not verification.blocked
+    assert verification.manifest_current
+    assert verification.source_current
+    assert verification.artifacts_consistent
+    assert verification.intake_only
+    assert verification.non_authorizing
+    assert receipt["contract_version"] == "vendor_csv_intake/v1"
+    assert receipt["outcome"]["ready"]
+    assert receipt["safety"]["intake_only"]
+    assert not receipt["safety"]["authorizes_submission"]
+    assert len(receipt["intake_receipt_sha256"]) == 64
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_vendor_csv_intake_report(
+            sample_path,
+            output_dir=out_dir,
+            config=VendorCsvIntakeConfig(adapter="arrow_money", kind="ticks"),
+        )
+
+    assert (
+        main(
+            [
+                "verify-vendor-csv-intake",
+                "--intake",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+
+
+def test_vendor_intake_verifier_accepts_current_blocked_evidence(tmp_path):
+    sample_path = tmp_path / "partial_ticks.csv"
+    out_dir = tmp_path / "intake"
+    pd.DataFrame([{"exchange_ts": "2026-06-10 09:15:00", "best_bid": 100.0}]).to_csv(
+        sample_path,
+        index=False,
+    )
+
+    write_vendor_csv_intake_report(
+        sample_path,
+        output_dir=out_dir,
+        config=VendorCsvIntakeConfig(adapter="irage", kind="ticks"),
+    )
+    verification = verify_vendor_csv_intake_report(out_dir)
+
+    assert verification.verified
+    assert not verification.ready
+    assert verification.blocked
+    assert verification.source_current
+    assert verification.artifacts_consistent
+    assert (
+        main(
+            [
+                "verify-vendor-csv-intake",
+                "--intake",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+
+def test_vendor_intake_verifier_rejects_source_drift(tmp_path):
+    sample_path = tmp_path / "ticks.csv"
+    out_dir = tmp_path / "intake"
+    _complete_tick_sample().to_csv(sample_path, index=False)
+    write_vendor_csv_intake_report(
+        sample_path,
+        output_dir=out_dir,
+        config=VendorCsvIntakeConfig(kind="ticks"),
+    )
+
+    changed = _complete_tick_sample()
+    changed.loc[0, "best_bid"] = 99.5
+    changed.to_csv(sample_path, index=False)
+    verification = verify_vendor_csv_intake_report(out_dir)
+
+    assert not verification.verified
+    assert not verification.source_current
+    assert not verification.manifest_current
+    assert "source fingerprint is stale" in verification.error
+
+
+def test_vendor_intake_verifier_rejects_remanifested_mapping_tamper(tmp_path):
+    sample_path = tmp_path / "ticks.csv"
+    out_dir = tmp_path / "intake"
+    _complete_tick_sample().to_csv(sample_path, index=False)
+    config = VendorCsvIntakeConfig(kind="ticks")
+    write_vendor_csv_intake_report(sample_path, output_dir=out_dir, config=config)
+
+    mapping_path = out_dir / config.output_mapping_file
+    mapping = pd.read_csv(mapping_path)
+    mapping.loc[mapping["normalized_column"] == "bid", "source_column"] = "best_ask"
+    mapping.to_csv(mapping_path, index=False)
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    write_experiment_manifest(
+        out_dir,
+        run_type="vendor_csv_intake",
+        parameters=manifest["parameters"],
+        inputs={"sample": sample_path},
+        extra=manifest["extra"],
+    )
+
+    verification = verify_vendor_csv_intake_report(out_dir)
+
+    assert not verification.verified
+    assert verification.manifest_current
+    assert verification.source_current
+    assert not verification.artifacts_consistent
+    assert "semantic verification failed" in verification.error
+
+
+def _complete_tick_sample() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "exchange_ts": "2026-06-10 09:15:00",
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        ]
+    )

@@ -2839,6 +2839,7 @@ vendor_intake_source_profile.json
 vendor_intake_action_queue.csv
 vendor_intake_config.json
 vendor_intake_runbook.md
+vendor_intake_receipt.json
 vendor_mapping_draft.csv
 vendor_intake_summary.csv
 manifest.json
@@ -2846,7 +2847,9 @@ manifest.json
 
 The generated `vendor_mapping_draft.csv` uses `normalized_column`,
 `source_column`, `default_value`, `required`, and `transform` columns so it can
-be reviewed and then passed to `normalize-mapped-data`. The source profile and
+be reviewed and then passed to `normalize-mapped-data`. Keep the receipt-bound
+draft unchanged; if review requires corrections, write them to a separate
+reviewed mapping file before normalization. The source profile and
 manifest retain file, header, and mapping-draft SHA-256 fingerprints so a later
 Arrow.money/iRage sample can be matched exactly to the reviewed mapping.
 `vendor_intake_summary.csv` also exposes `failed_check_count`,
@@ -2860,6 +2863,22 @@ mapping or kind-selection actions, `next_gate`, `next_gate_help_command`,
 blockers directly back to `intake-vendor-csv --help`.
 Use `--fail-on-blocked-actions` to fail only when blocked intake actions exist,
 or `--fail-on-actions` when any raw-sample intake action should stop automation.
+The persisted intake directory is write-once. Verify that its source file is
+still current and reconstruct every generated artifact before using the draft:
+
+```powershell
+python -m hft_cli verify-vendor-csv-intake `
+  --intake mappings\arrow_ticks_intake `
+  --fail-on-breach
+```
+
+The verifier returns success under `--fail-on-breach` only for a semantically
+verified, mapping-ready intake. Without the gate, a current incomplete schema
+is reported as `verified_blocked`; changed source bytes, edited generated
+artifacts, or re-manifested mapping tampering are stale/inconsistent. Catalogs
+surface the same `verified_ready`, `verified_blocked`, and
+`stale_or_inconsistent` states. The receipt is intake-only: it does not
+authorize normalization, strategy research, routing, or order submission.
 
 ## Vendor Order Mapping Draft
 
