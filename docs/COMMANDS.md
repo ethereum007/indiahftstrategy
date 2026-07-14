@@ -3090,6 +3090,59 @@ does not execute or authorize normalization, strategy research, routing,
 submission, or live release. Catalogs report `verified_ready` or
 `stale_or_inconsistent` application evidence.
 
+## Target-Applied Vendor Data Normalization
+
+Normalize the exact target source with the exact mapping retained by a
+verified target application. Source path, mapping path, adapter, and data kind
+are all derived from the application and cannot be replaced on the command
+line:
+
+```powershell
+python -m hft_cli normalize-applied-vendor-mapping `
+  --application mappings\arrow_ticks_2026_07_15_application `
+  --out runs\data\arrow_ticks_2026_07_15_applied `
+  --timestamp-unit datetime `
+  --timestamp-tz Asia/Kolkata `
+  --fail-on-breach `
+  --fail-on-blocked-actions
+```
+
+Outputs:
+
+```text
+normalized_data.csv
+mapped_data_checks.csv
+mapped_data_application_checks.csv
+mapped_data_action_queue.csv
+mapped_data_summary.csv
+mapped_data_receipt.json
+mapped_data_config.json
+mapped_data_runbook.md
+manifest.json
+```
+
+The write-once operation reconstructs the mapping application before writing,
+then derives and records the exact source, ordered-header, mapping, intake,
+scope-review, adapter, and kind lineage. The application itself remains
+non-authorizing; explicit invocation of this command performs normalization
+only. Opaque vendor headers are accepted only when the earlier operator review,
+exact-header scope, and per-file application all verify.
+
+Reconstruct the normalized data and every retained input before downstream
+readiness checks consume it:
+
+```powershell
+python -m hft_cli verify-applied-vendor-mapping-normalization `
+  --normalization runs\data\arrow_ticks_2026_07_15_applied `
+  --fail-on-breach
+```
+
+Catalogs distinguish `verified_ready`, `verified_blocked`, and
+`stale_or_inconsistent`. Target-source drift, upstream application/scope drift,
+and edited artifacts remain invalid even when a new manifest is generated.
+This proof does not authorize strategy research, routing, submission, or live
+release.
+
 ## Reviewed Vendor Data Normalization
 
 Normalize the exact raw source with the exact canonical mapping from a verified
@@ -7465,6 +7518,14 @@ fails closed unless its summary explicitly retains a verified approved mapping
 review, exact source and reviewed-mapping fingerprints, normalization-only
 safety, and non-research/non-routing/non-submission claims. Failed checks route
 operators to `normalize-reviewed-mapped-data`.
+For a different target file covered by an approved exact-header scope, use
+`--require-target-application-normalization` instead. It requires the target
+application ID/hash, scope-review ID/hash, target-intake receipt, exact source
+and ordered-header fingerprints, target-applied mapping fingerprint, explicit
+normalization execution, and the application's preserved non-authorizing
+state. Failed checks route to `normalize-applied-vendor-mapping`. The reviewed
+and target-application strict modes are mutually exclusive because they prove
+different source-binding contracts.
 `data_readiness_action_queue.csv` flattens failed checks into blocked actions
 with the inferred upstream gate, `next_gate_help_command`, observed value,
 threshold, reason, and recommendation. `data_readiness_summary.csv` also

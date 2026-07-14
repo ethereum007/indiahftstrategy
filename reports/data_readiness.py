@@ -29,6 +29,7 @@ class DataReadinessThresholds:
     require_schema_audit: bool = False
     require_mapped_data: bool = False
     require_reviewed_mapping_normalization: bool = False
+    require_target_application_normalization: bool = False
     require_tick_diagnostics: bool = True
     require_chain_diagnostics: bool = False
     require_market_profile: bool = False
@@ -173,7 +174,10 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
     if (
         component == "vendor_intake"
         and provided
-        and thresholds.require_reviewed_mapping_normalization
+        and (
+            thresholds.require_reviewed_mapping_normalization
+            or thresholds.require_target_application_normalization
+        )
     ):
         ready = True
     row = _overall_row(frame) if provided else pd.Series(dtype=object)
@@ -211,6 +215,32 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
             row.get("operator_approved_mapping_required", False)
         ),
         "reviewed_normalization_only": _to_bool(row.get("reviewed_normalization_only", False)),
+        "target_application_bound": _to_bool(
+            row.get("target_application_bound", False)
+        ),
+        "mapping_application_verified": _to_bool(
+            row.get("mapping_application_verified", False)
+        ),
+        "mapping_application_ready": _to_bool(
+            row.get("mapping_application_ready", False)
+        ),
+        "mapping_application_id": _text(row, "mapping_application_id"),
+        "mapping_application_sha256": _text(row, "mapping_application_sha256"),
+        "mapping_scope_review_id": _text(row, "mapping_scope_review_id"),
+        "mapping_scope_review_sha256": _text(
+            row,
+            "mapping_scope_review_sha256",
+        ),
+        "target_intake_receipt_id": _text(row, "target_intake_receipt_id"),
+        "target_application_normalization_only": _to_bool(
+            row.get("target_application_normalization_only", False)
+        ),
+        "normalization_executed": _to_bool(
+            row.get("normalization_executed", False)
+        ),
+        "application_authorizes_normalization": _to_bool(
+            row.get("application_authorizes_normalization", False)
+        ),
         "authorizes_strategy_research": _to_bool(row.get("authorizes_strategy_research", False)),
         "authorizes_routing": _to_bool(row.get("authorizes_routing", False)),
         "authorizes_submission": _to_bool(row.get("authorizes_submission", False)),
@@ -227,6 +257,11 @@ def _checks(
     for row in items.itertuples(index=False):
         check_prefix = str(row.component)
         if (
+            row.component == "mapped_data"
+            and thresholds.require_target_application_normalization
+        ):
+            check_prefix = "mapped_data_target_application_normalization"
+        elif (
             row.component == "mapped_data"
             and thresholds.require_reviewed_mapping_normalization
         ):
@@ -320,6 +355,13 @@ def _checks(
     if thresholds.require_reviewed_mapping_normalization:
         checks.extend(
             _reviewed_mapping_checks(
+                summaries["mapped_data"],
+                summaries["vendor_intake"],
+            )
+        )
+    if thresholds.require_target_application_normalization:
+        checks.extend(
+            _target_application_mapping_checks(
                 summaries["mapped_data"],
                 summaries["vendor_intake"],
             )
@@ -443,6 +485,186 @@ def _explicit_bool_check(
     valid, actual = _strict_bool_value(row.get(field)) if present else (False, False)
     return _check(
         f"mapped_data_{field}",
+        actual if present else "missing",
+        "is",
+        expected,
+        bool(present and valid and actual == expected),
+        reason,
+    )
+
+
+def _target_application_mapping_checks(
+    summary: pd.DataFrame,
+    vendor_intake_summary: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    row = _overall_row(summary)
+    checks = [
+        _target_application_bool_check(
+            row,
+            "target_application_bound",
+            expected=True,
+            reason="mapped data is not bound to a verified target application",
+        ),
+        _target_application_bool_check(
+            row,
+            "mapping_application_verified",
+            expected=True,
+            reason="mapped data does not preserve mapping-application verification",
+        ),
+        _target_application_bool_check(
+            row,
+            "mapping_application_ready",
+            expected=True,
+            reason="mapped data does not preserve a ready mapping application",
+        ),
+        _target_application_bool_check(
+            row,
+            "exact_header_verified",
+            expected=True,
+            reason="mapped data does not preserve exact ordered-header verification",
+        ),
+        _target_application_bool_check(
+            row,
+            "operator_approved_mapping_required",
+            expected=True,
+            reason="target-applied normalization does not require an approved mapping",
+        ),
+        _target_application_bool_check(
+            row,
+            "target_application_normalization_only",
+            expected=True,
+            reason="mapped data is not restricted to target-applied normalization",
+        ),
+        _target_application_bool_check(
+            row,
+            "normalization_executed",
+            expected=True,
+            reason="target-applied mapped data does not prove normalization execution",
+        ),
+        _target_application_bool_check(
+            row,
+            "application_authorizes_normalization",
+            expected=False,
+            reason="the retained mapping application must remain non-authorizing",
+        ),
+        _target_application_bool_check(
+            row,
+            "authorizes_strategy_research",
+            expected=False,
+            reason="target-applied normalization must not authorize strategy research",
+        ),
+        _target_application_bool_check(
+            row,
+            "authorizes_routing",
+            expected=False,
+            reason="target-applied normalization must not authorize order routing",
+        ),
+        _target_application_bool_check(
+            row,
+            "authorizes_submission",
+            expected=False,
+            reason="target-applied normalization must not authorize order submission",
+        ),
+        _target_application_bool_check(
+            row,
+            "authorizes_live_release",
+            expected=False,
+            reason="target-applied normalization must not authorize live release",
+        ),
+    ]
+    for field, reason in (
+        (
+            "mapping_application_id",
+            "mapped data does not retain a mapping-application identity",
+        ),
+        (
+            "mapping_scope_review_id",
+            "mapped data does not retain a mapping-scope-review identity",
+        ),
+        (
+            "target_intake_receipt_id",
+            "mapped data does not retain a target-intake receipt identity",
+        ),
+    ):
+        value = _text(row, field)
+        checks.append(
+            _check(
+                f"mapped_data_target_application_{field}_present",
+                value,
+                "nonempty",
+                True,
+                bool(value),
+                reason,
+            )
+        )
+    for field, reason in (
+        (
+            "mapping_application_sha256",
+            "mapped data does not retain the mapping-application fingerprint",
+        ),
+        (
+            "mapping_scope_review_sha256",
+            "mapped data does not retain the mapping-scope-review fingerprint",
+        ),
+        (
+            "source_file_sha256",
+            "mapped data does not retain the exact target-source fingerprint",
+        ),
+        (
+            "source_header_sha256",
+            "mapped data does not retain the exact ordered-header fingerprint",
+        ),
+        (
+            "reviewed_mapping_sha256",
+            "mapped data does not retain the target-applied mapping fingerprint",
+        ),
+    ):
+        value = _text(row, field)
+        checks.append(
+            _check(
+                f"mapped_data_target_application_{field}_present",
+                value,
+                "is_sha256",
+                "64 lowercase hexadecimal characters",
+                _is_sha256(value),
+                reason,
+            )
+        )
+    if not vendor_intake_summary.empty:
+        intake_source_sha256 = _text(
+            _overall_row(vendor_intake_summary),
+            "source_file_sha256",
+        )
+        mapped_source_sha256 = _text(row, "source_file_sha256")
+        checks.append(
+            _check(
+                "mapped_data_target_application_vendor_source_consistency",
+                mapped_source_sha256,
+                "==",
+                intake_source_sha256,
+                bool(
+                    _is_sha256(mapped_source_sha256)
+                    and _is_sha256(intake_source_sha256)
+                    and mapped_source_sha256 == intake_source_sha256
+                ),
+                "vendor intake and target-applied normalization use different source files",
+            )
+        )
+    return checks
+
+
+def _target_application_bool_check(
+    row: pd.Series,
+    field: str,
+    *,
+    expected: bool,
+    reason: str,
+) -> dict[str, Any]:
+    present = field in row.index and not pd.isna(row.get(field))
+    valid, actual = _strict_bool_value(row.get(field)) if present else (False, False)
+    check_field = field.removeprefix("target_application_")
+    return _check(
+        f"mapped_data_target_application_{check_field}",
         actual if present else "missing",
         "is",
         expected,
@@ -654,6 +876,9 @@ def _summary(
                 "require_reviewed_mapping_normalization": bool(
                     thresholds.require_reviewed_mapping_normalization
                 ),
+                "require_target_application_normalization": bool(
+                    thresholds.require_target_application_normalization
+                ),
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
                 "expected_adapter": _identity(thresholds.expected_adapter),
@@ -705,6 +930,46 @@ def _summary(
                     items,
                     "mapped_data",
                     "reviewed_mapping_sha256",
+                ),
+                "mapped_data_target_application_bound": _component_bool(
+                    items,
+                    "mapped_data",
+                    "target_application_bound",
+                ),
+                "mapped_data_mapping_application_verified": _component_bool(
+                    items,
+                    "mapped_data",
+                    "mapping_application_verified",
+                ),
+                "mapped_data_mapping_application_ready": _component_bool(
+                    items,
+                    "mapped_data",
+                    "mapping_application_ready",
+                ),
+                "mapped_data_mapping_application_id": _component_text(
+                    items,
+                    "mapped_data",
+                    "mapping_application_id",
+                ),
+                "mapped_data_mapping_application_sha256": _component_text(
+                    items,
+                    "mapped_data",
+                    "mapping_application_sha256",
+                ),
+                "mapped_data_mapping_scope_review_id": _component_text(
+                    items,
+                    "mapped_data",
+                    "mapping_scope_review_id",
+                ),
+                "mapped_data_mapping_scope_review_sha256": _component_text(
+                    items,
+                    "mapped_data",
+                    "mapping_scope_review_sha256",
+                ),
+                "mapped_data_target_intake_receipt_id": _component_text(
+                    items,
+                    "mapped_data",
+                    "target_intake_receipt_id",
                 ),
                 "ready_action_count": 0,
                 "blocked_action_count": int(len(action_queue)),
@@ -935,6 +1200,8 @@ def _next_gate_for_check(check_name: str, component: str) -> str:
         return "pipeline-vendor-market-data"
     if check_name == "explicit_fee_model":
         return "market-profile-report"
+    if _is_target_application_mapping_check(check_name):
+        return "normalize-applied-vendor-mapping"
     if _is_reviewed_mapping_check(check_name):
         return "normalize-reviewed-mapped-data"
     return {
@@ -960,6 +1227,8 @@ def _primary_next_gate(action_queue: pd.DataFrame) -> str:
 
 
 def _action_recommendation(check_name: str, component: str, item_recommendation: str) -> str:
+    if _is_target_application_mapping_check(check_name):
+        return "normalize_with_verified_target_mapping_application"
     if _is_reviewed_mapping_check(check_name):
         return "normalize_with_verified_approved_mapping_review"
     if item_recommendation and item_recommendation != "accepted":
@@ -989,6 +1258,10 @@ def _is_reviewed_mapping_check(check_name: str) -> bool:
             "vendor_source_consistency",
         )
     )
+
+
+def _is_target_application_mapping_check(check_name: str) -> bool:
+    return check_name.startswith("mapped_data_target_application_")
 
 
 def _runbook_markdown(
@@ -1115,6 +1388,7 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
             "mapped_data": (
                 thresholds.require_mapped_data
                 or thresholds.require_reviewed_mapping_normalization
+                or thresholds.require_target_application_normalization
             ),
             "tick_diagnostics": thresholds.require_tick_diagnostics,
             "chain_diagnostics": thresholds.require_chain_diagnostics,
@@ -1449,6 +1723,13 @@ def _to_bool(value: object) -> bool:
 
 
 def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
+    if (
+        thresholds.require_reviewed_mapping_normalization
+        and thresholds.require_target_application_normalization
+    ):
+        raise ValueError(
+            "reviewed and target-application normalization requirements are mutually exclusive"
+        )
     expected_kind = _vendor_data_kind(thresholds.expected_vendor_data_kind)
     if expected_kind and expected_kind not in {"ticks", "chain", "orders", "fills"}:
         raise ValueError("expected_vendor_data_kind must be one of ticks, chain, orders, or fills")

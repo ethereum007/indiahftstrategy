@@ -8,6 +8,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from adapters.applied_mapped_data import (
+    RUN_TYPE as APPLIED_MAPPED_DATA_RUN_TYPE,
+    verify_applied_mapped_data_normalization,
+)
 from adapters.vendor_intake import (
     RUN_TYPE as VENDOR_CSV_INTAKE_RUN_TYPE,
     verify_vendor_csv_intake_report,
@@ -454,6 +458,10 @@ def _catalog_row(
         run_dir,
         str(manifest.get("run_type", "")),
     )
+    applied_mapped_data_verification = _applied_mapped_data_verification_fields(
+        run_dir,
+        str(manifest.get("run_type", "")),
+    )
     vendor_mapping_scope_review_verification = (
         _vendor_mapping_scope_review_verification_fields(
             run_dir,
@@ -587,6 +595,16 @@ def _catalog_row(
         status_column = "reviewed_mapped_data_verification"
         status = False
     if (
+        applied_mapped_data_verification[
+            "applied_mapped_data_verification_required"
+        ]
+        and not applied_mapped_data_verification[
+            "applied_mapped_data_verification_verified"
+        ]
+    ):
+        status_column = "applied_mapped_data_verification"
+        status = False
+    if (
         vendor_mapping_scope_review_verification[
             "vendor_mapping_scope_review_verification_required"
         ]
@@ -636,6 +654,7 @@ def _catalog_row(
         **vendor_intake_verification,
         **vendor_mapping_review_verification,
         **reviewed_mapped_data_verification,
+        **applied_mapped_data_verification,
         **vendor_mapping_scope_review_verification,
         **vendor_mapping_application_verification,
         **_provider_lineage_selection_fields(
@@ -803,6 +822,63 @@ def _reviewed_mapped_data_verification_fields(
                 verification.reviewed_mapping_current
             ),
             f"{prefix}artifacts_consistent": verification.artifacts_consistent,
+            f"{prefix}normalization_only": verification.normalization_only,
+            f"{prefix}non_routing": verification.non_routing,
+            f"{prefix}error": verification.error,
+        }
+    )
+    return fields
+
+
+def _applied_mapped_data_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == APPLIED_MAPPED_DATA_RUN_TYPE
+    prefix = "applied_mapped_data_verification_"
+    fields: dict[str, Any] = {
+        f"{prefix}required": required,
+        f"{prefix}status": "verification_required" if required else "not_applicable",
+        f"{prefix}verified": False,
+        f"{prefix}ready": False,
+        f"{prefix}blocked": False,
+        f"{prefix}manifest_current": False,
+        f"{prefix}mapping_application_current": False,
+        f"{prefix}source_current": False,
+        f"{prefix}applied_mapping_current": False,
+        f"{prefix}artifacts_consistent": False,
+        f"{prefix}target_bound": False,
+        f"{prefix}normalization_only": False,
+        f"{prefix}non_routing": False,
+        f"{prefix}error": "",
+    }
+    if not required:
+        return fields
+    try:
+        verification = verify_applied_mapped_data_normalization(run_dir)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        fields[f"{prefix}status"] = "verification_error"
+        fields[f"{prefix}error"] = str(exc)
+        return fields
+    status = "stale_or_inconsistent"
+    if verification.verified:
+        status = "verified_ready" if verification.ready else "verified_blocked"
+    fields.update(
+        {
+            f"{prefix}status": status,
+            f"{prefix}verified": verification.verified,
+            f"{prefix}ready": verification.ready,
+            f"{prefix}blocked": verification.blocked,
+            f"{prefix}manifest_current": verification.manifest_current,
+            f"{prefix}mapping_application_current": (
+                verification.mapping_application_current
+            ),
+            f"{prefix}source_current": verification.source_current,
+            f"{prefix}applied_mapping_current": (
+                verification.applied_mapping_current
+            ),
+            f"{prefix}artifacts_consistent": verification.artifacts_consistent,
+            f"{prefix}target_bound": verification.target_bound,
             f"{prefix}normalization_only": verification.normalization_only,
             f"{prefix}non_routing": verification.non_routing,
             f"{prefix}error": verification.error,

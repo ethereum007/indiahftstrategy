@@ -4,6 +4,11 @@ import argparse
 import json
 from pathlib import Path
 
+from adapters.applied_mapped_data import (
+    AppliedMappedDataConfig,
+    verify_applied_mapped_data_normalization,
+    write_applied_mapped_data_normalization,
+)
 from adapters.broker_readiness import BrokerReadinessThresholds, write_broker_readiness_report
 from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
@@ -1314,6 +1319,45 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_reviewed_mapped_data.add_argument("--normalization", required=True)
     verify_reviewed_mapped_data.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    applied_mapped_data = sub.add_parser(
+        "normalize-applied-vendor-mapping",
+        help=(
+            "Normalize only the target source and mapping retained by a verified "
+            "mapping application."
+        ),
+    )
+    applied_mapped_data.add_argument("--application", required=True)
+    applied_mapped_data.add_argument("--out", required=True)
+    applied_mapped_data.add_argument("--output-file", default="normalized_data.csv")
+    applied_mapped_data.add_argument("--timestamp-unit", default="ns")
+    applied_mapped_data.add_argument("--timestamp-tz", default=None)
+    applied_mapped_data.add_argument(
+        "--market",
+        default="india_nse_index_derivatives",
+    )
+    applied_mapped_data.add_argument("--no-filter-session", action="store_true")
+    applied_mapped_data.add_argument(
+        "--allow-missing-required",
+        action="store_true",
+    )
+    applied_mapped_data.add_argument("--fail-on-breach", action="store_true")
+    applied_mapped_data.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    applied_mapped_data.add_argument("--fail-on-actions", action="store_true")
+    verify_applied_mapped_data = sub.add_parser(
+        "verify-applied-vendor-mapping-normalization",
+        help=(
+            "Reconstruct target-applied normalization and its retained mapping "
+            "application."
+        ),
+    )
+    verify_applied_mapped_data.add_argument("--normalization", required=True)
+    verify_applied_mapped_data.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -3140,6 +3184,10 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--require-mapped-data", action="store_true")
     data_readiness.add_argument(
         "--require-reviewed-mapping-normalization",
+        action="store_true",
+    )
+    data_readiness.add_argument(
+        "--require-target-application-normalization",
         action="store_true",
     )
     data_readiness.add_argument("--skip-tick-diagnostics", action="store_true")
@@ -5614,6 +5662,62 @@ def main(argv: list[str] | None = None) -> int:
             if args.fail_on_breach and not (result.verified and result.ready)
             else 0
         )
+    if args.command == "normalize-applied-vendor-mapping":
+        result = write_applied_mapped_data_normalization(
+            args.application,
+            output_dir=args.out,
+            config=AppliedMappedDataConfig(
+                output_filename=args.output_file,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                filter_session=not args.no_filter_session,
+                market=args.market,
+                require_all_mapped=not args.allow_missing_required,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                (result.action_queue["queue_status"].astype(str) == "blocked").sum()
+            )
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "verify-applied-vendor-mapping-normalization":
+        result = verify_applied_mapped_data_normalization(args.normalization)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "blocked": result.blocked,
+                    "manifest_current": result.manifest_current,
+                    "mapping_application_current": (
+                        result.mapping_application_current
+                    ),
+                    "source_current": result.source_current,
+                    "applied_mapping_current": result.applied_mapping_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "target_bound": result.target_bound,
+                    "normalization_only": result.normalization_only,
+                    "non_routing": result.non_routing,
+                    "normalization_dir": str(result.output_dir),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach and not (result.verified and result.ready)
+            else 0
+        )
     if args.command == "plan-market-data-source":
         result = write_market_data_source_plan(
             args.out,
@@ -7549,6 +7653,9 @@ def main(argv: list[str] | None = None) -> int:
                 require_mapped_data=args.require_mapped_data,
                 require_reviewed_mapping_normalization=(
                     args.require_reviewed_mapping_normalization
+                ),
+                require_target_application_normalization=(
+                    args.require_target_application_normalization
                 ),
                 require_tick_diagnostics=not args.skip_tick_diagnostics,
                 require_chain_diagnostics=args.require_chain_diagnostics,

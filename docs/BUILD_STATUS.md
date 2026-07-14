@@ -3222,6 +3222,19 @@
   intake, and upstream scope drift as well as re-manifested safety widening;
   catalogs expose `verified_ready` and `stale_or_inconsistent`. This boundary
   records that normalization has not run and remains unauthorized.
+- Target-applied mapped-data normalization now consumes that per-file proof.
+  The write-once command derives source, mapping, adapter, and kind only from a
+  semantically verified target application, reruns canonical normalization,
+  and retains the application, scope-review, target-intake, exact source,
+  ordered-header, and mapping fingerprints in the standard `mapped_data_*`
+  handoff. Its verifier reconstructs the entire output and upstream application
+  graph, classifies honest data-quality failures as `verified_blocked`, and
+  rejects source/application drift or re-manifested artifact and authority
+  tampering. A separate strict data-readiness mode requires this lineage and
+  routes gaps to `normalize-applied-vendor-mapping`; it cannot be combined with
+  the exact-source review mode. The application itself remains non-authorizing,
+  and normalization still grants no strategy-research, routing, submission, or
+  live-release authority.
 
 ## Test Gate
 
@@ -3231,8 +3244,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1781 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1791 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-applied normalization gate: all 10 focused adversarial tests pass.
+The affected target normalization, data-readiness, mapped-data, intake,
+mapping-review, scope-review, target-application, reviewed-normalization,
+vendor-onboarding, catalog, manifest, and shared CLI suites pass together
+(`168 passed`). Coverage includes
+different-file and opaque-header normalization, write-once/path isolation,
+strict CLI and readiness behavior, catalog classification, mutually exclusive
+strict readiness contracts, target-source and upstream scope drift, and
+verified blocked data-quality evidence, plus re-manifested normalized-data or
+authority tampering. The repository now collects 1791 tests across 154 files;
+the full suite was not rerun for this
+slice.
 
 Latest target mapping-application gate: all 11 focused adversarial tests pass.
 The affected intake, mapping-review, scope-review, target-application,
