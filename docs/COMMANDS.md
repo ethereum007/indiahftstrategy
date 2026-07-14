@@ -4477,18 +4477,26 @@ application uniqueness, target coverage, and per-dataset application,
 scope-review, target-intake, and applied-mapping lineage. Any target signal
 activates strict cutover checks requiring
 `per_dataset_verified_target_application`, one distinct application per
-dataset, 100% coverage, and complete lineage. The same contract applies when
-cutover reconstructs the batch from flattened scale-up summary fields or a
-broker-readiness config sidecar; legacy draft-backed proof keeps the existing
-provenance checks.
+dataset, 100% coverage, and complete lineage. Cutover additionally requires
+the affirmative scale-up current/final lineage decision, verifies the two
+upstream SHA-256 digests and the scale-up-carried digest, and independently
+recomputes the canonical digest from the datasets it received. The scale-up
+final dispatch/send/ack consistency decision and current, broker-final,
+scale-up-carried, and cutover-carried digests remain visible in
+`cutover_summary.csv` and the
+`scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+config block. The same contract applies when cutover reconstructs the batch
+from flattened scale-up summary fields or a broker-readiness config sidecar;
+legacy draft-backed proof keeps the existing provenance checks.
 When the scale-up config includes both
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
 and the older `broker_readiness.dispatch_roundtrip.vendor_market_data_batch`
 block, cutover prefers the broker-specific block. For older or thin scale-up
 configs, cutover also reads the resolved broker-readiness config sidecar and
 hydrates missing broker vendor-data proof from
-`dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch` before
-revalidating and carrying it downstream. Cutover also carries
+`dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch` plus
+its sibling `vendor_market_data_batch_lineage_comparison` before revalidating
+and carrying it downstream. Cutover also carries
 `broker_readiness.broker_vendor_data_readiness` into
 `scaleup_broker_vendor_data_readiness_*` summary fields and fails closed if the
 wrapper readiness sidecar is failed even when the nested vendor batch is valid.

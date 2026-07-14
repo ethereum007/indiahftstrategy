@@ -3284,8 +3284,15 @@
   config retain mode, count, uniqueness, coverage, and each dataset's complete
   application/scope-review/target-intake/applied-mapping graph. Any target
   signal requires strict mode, one unique application per dataset, full
-  coverage, and complete lineage before route enable can inherit the proof;
-  legacy draft-backed handoffs keep their existing compatibility path.
+  coverage, complete lineage, an affirmative scale-up current/final match, and
+  final dispatch/send/ack consistency when that final-stage decision is marked
+  required before route enable can inherit the proof. Cutover verifies the
+  upstream current, broker-final, and scale-up-carried SHA-256 digests,
+  independently recomputes the canonical digest from
+  its carried datasets, and retains all four digest views in summary/config
+  artifacts. Broker-readiness sidecar hydration includes the lineage
+  comparison as well as the target batch. Legacy draft-backed handoffs keep
+  their existing compatibility path.
 - Route enable now carries and revalidates that target-application batch before
   dry-run broker dispatch can inherit it. Current cutover config, flattened
   cutover summary, and broker-readiness sidecar inputs all retain mapping mode,
@@ -3349,14 +3356,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1826 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1828 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest cutover target-lineage gate: all 49 cutover tests pass, including rich
+scale-up config, flattened summary, and broker-readiness sidecar recovery;
+final consistency and current/final decision carry; upstream digest checks;
+independent cutover canonical recomputation; and fail-closed rejection of
+carried dataset drift despite unchanged upstream success flags. All 47
+route-enable tests pass against the richer cutover artifacts. The repository
+now collects 1828 tests across 154 files; the full suite was not rerun for this
+slice.
 
 Latest controlled scale-up target-lineage gate: all 84 scale-up tests pass,
 including broker-readiness sidecar hydration, final consistency carry, exact
 current/final digest agreement, canonical carried-batch recomputation, and
 fail-closed rejection when carried application identity drifts despite upstream
-success flags. All 47 cutover tests pass against the richer scale-up config.
+success flags. All 47 then-current cutover tests passed against the richer
+scale-up config.
 The repository now collects 1826 tests across 154 files; the full suite was not
 rerun for this slice.
 
