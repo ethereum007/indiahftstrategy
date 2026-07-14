@@ -265,6 +265,11 @@ from reports.provider_market_data_imbalance_live_dryrun_shadow_evaluator import 
     verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
     write_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
 )
+from reports.provider_market_data_imbalance_live_dryrun_shadow_calibration import (
+    ProviderMarketDataImbalanceLiveDryrunShadowCalibrationConfig,
+    verify_provider_market_data_imbalance_live_dryrun_shadow_calibration,
+    write_provider_market_data_imbalance_live_dryrun_shadow_calibration,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
     verify_provider_broker_lineage_migration_audit,
@@ -2515,6 +2520,68 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
     )
     verify_provider_market_data_imbalance_live_dryrun_shadow_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration = (
+        sub.add_parser(
+            "calibrate-provider-market-data-imbalance-live-dryrun-shadow",
+            help=(
+                "Measure deterministic shadow markouts, adverse selection, "
+                "and externally-unvalidated India reference cost hurdles."
+            ),
+        )
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--shadow",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--out",
+        required=True,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--horizons-ns",
+        nargs="+",
+        type=int,
+        default=[0, 250_000_000, 500_000_000],
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--max-horizon-overshoot-ns",
+        type=int,
+        default=250_000_000,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--min-covered-observations-per-horizon",
+        type=int,
+        default=1,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--min-coverage-ratio",
+        type=float,
+        default=0.5,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--max-dependencies",
+        type=int,
+        default=32_768,
+    )
+    provider_market_data_imbalance_live_dryrun_shadow_calibration.add_argument(
+        "--fail-on-incomplete",
+        action="store_true",
+    )
+    verify_provider_shadow_calibration_parser = sub.add_parser(
+        "verify-provider-market-data-imbalance-live-dryrun-shadow-calibration",
+        help=(
+            "Reconstruct shadow markouts and cost sensitivity from the current "
+            "non-authorizing shadow proof graph."
+        ),
+    )
+    verify_provider_shadow_calibration_parser.add_argument(
+        "--calibration",
+        required=True,
+    )
+    verify_provider_shadow_calibration_parser.add_argument(
         "--fail-on-breach",
         action="store_true",
     )
@@ -6597,6 +6664,68 @@ def main(argv: list[str] | None = None) -> int:
                         ""
                         if result.handoff_dir is None
                         else str(result.handoff_dir)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.completed)
+            else 0
+        )
+    if (
+        args.command
+        == "calibrate-provider-market-data-imbalance-live-dryrun-shadow"
+    ):
+        result = (
+            write_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+                args.shadow,
+                args.out,
+                config=(
+                    ProviderMarketDataImbalanceLiveDryrunShadowCalibrationConfig(
+                        horizons_ns=tuple(args.horizons_ns),
+                        max_horizon_overshoot_ns=(
+                            args.max_horizon_overshoot_ns
+                        ),
+                        min_covered_observations_per_horizon=(
+                            args.min_covered_observations_per_horizon
+                        ),
+                        min_coverage_ratio=args.min_coverage_ratio,
+                        max_dependency_count=args.max_dependencies,
+                    )
+                ),
+            )
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_incomplete and not result.completed else 0
+    if (
+        args.command
+        == "verify-provider-market-data-imbalance-live-dryrun-shadow-calibration"
+    ):
+        result = (
+            verify_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+                args.calibration
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "completed": result.completed,
+                    "insufficient": result.insufficient,
+                    "manifest_current": result.manifest_current,
+                    "shadow_current": result.shadow_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "calibration_only": result.calibration_only,
+                    "non_authorizing": result.non_authorizing,
+                    "calibration_dir": str(result.output_dir),
+                    "shadow_dir": (
+                        ""
+                        if result.shadow_dir is None
+                        else str(result.shadow_dir)
                     ),
                     "error": result.error,
                 },

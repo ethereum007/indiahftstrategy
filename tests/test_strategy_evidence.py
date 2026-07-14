@@ -45,6 +45,10 @@ from reports.provider_market_data_imbalance_live_dryrun_shadow_evaluator import 
     verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
     write_provider_market_data_imbalance_live_dryrun_shadow_evaluation,
 )
+from reports.provider_market_data_imbalance_live_dryrun_shadow_calibration import (
+    verify_provider_market_data_imbalance_live_dryrun_shadow_calibration,
+    write_provider_market_data_imbalance_live_dryrun_shadow_calibration,
+)
 
 
 def _manifest_input_paths(value):
@@ -3141,6 +3145,127 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
             runtime_shadow_dir,
         )
 
+    runtime_calibration_dir = tmp_path / "runtime_shadow_calibration"
+    assert (
+        main(
+            [
+                "calibrate-provider-market-data-imbalance-live-dryrun-shadow",
+                "--shadow",
+                str(runtime_shadow_dir),
+                "--out",
+                str(runtime_calibration_dir),
+                "--fail-on-incomplete",
+            ]
+        )
+        == 0
+    )
+    runtime_calibration_receipt_path = (
+        runtime_calibration_dir
+        / "provider_market_data_imbalance_live_dryrun_shadow_calibration_receipt.json"
+    )
+    runtime_calibration_receipt = json.loads(
+        runtime_calibration_receipt_path.read_text(encoding="utf-8")
+    )
+    assert runtime_calibration_receipt["completed"] is True
+    assert runtime_calibration_receipt["insufficient"] is False
+    for field in (
+        "provider_network_called",
+        "provider_backend_loaded",
+        "credential_environment_read",
+        "credential_values_stored",
+        "execution_engine_loaded",
+        "order_object_created",
+        "live_position_created",
+        "broker_order_api_imported",
+        "broker_order_api_called",
+        "broker_api_called",
+        "routing_enabled",
+        "submission_enabled",
+        "authorizes_submission",
+        "performance_gate_enabled",
+        "authorizes_promotion",
+        "strategy_promoted",
+        "release_approved",
+    ):
+        assert runtime_calibration_receipt["safety"][field] is False
+    for field in (
+        "calibration_only",
+        "shadow_source_only",
+        "deterministic_reconstruction",
+        "cost_rates_require_external_validation",
+        "requires_real_provider_observations",
+        "requires_separate_promotion_review",
+    ):
+        assert runtime_calibration_receipt["safety"][field] is True
+    runtime_cost_sensitivity = pd.read_csv(
+        runtime_calibration_dir
+        / "provider_market_data_imbalance_live_dryrun_shadow_cost_sensitivity.csv"
+    )
+    assert set(runtime_cost_sensitivity["cost_scenario"]) == {
+        "nse_index_futures_reference",
+        "nse_index_options_reference",
+    }
+    assert set(runtime_cost_sensitivity["reference_status"]) == {
+        "repository_reference_requires_external_validation"
+    }
+    serialized_calibration = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in runtime_calibration_dir.rglob("*")
+        if path.is_file()
+    )
+    assert runtime_api_key not in serialized_calibration
+    assert runtime_api_secret not in serialized_calibration
+    runtime_calibration_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+            runtime_calibration_dir
+        )
+    )
+    assert runtime_calibration_verification.verified
+    assert runtime_calibration_verification.completed
+    assert not runtime_calibration_verification.insufficient
+    assert runtime_calibration_verification.manifest_current
+    assert runtime_calibration_verification.shadow_current
+    assert runtime_calibration_verification.artifacts_consistent
+    assert runtime_calibration_verification.calibration_only
+    assert runtime_calibration_verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-provider-market-data-imbalance-live-dryrun-shadow-calibration",
+                "--calibration",
+                str(runtime_calibration_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+    runtime_calibration_catalog = catalog_experiment_runs(
+        [runtime_calibration_dir]
+    )
+    runtime_calibration_row = runtime_calibration_catalog.catalog.iloc[0]
+    assert bool(runtime_calibration_row["summary_status"])
+    assert (
+        runtime_calibration_row[
+            "provider_live_dryrun_shadow_calibration_verification_status"
+        ]
+        == "verified_completed"
+    )
+    assert bool(
+        runtime_calibration_row[
+            "provider_live_dryrun_shadow_calibration_verification_verified"
+        ]
+    )
+    assert int(
+        runtime_calibration_catalog.summary.iloc[0][
+            "provider_live_dryrun_shadow_calibration_verification_completed_runs"
+        ]
+    ) == 1
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+            runtime_shadow_dir,
+            runtime_calibration_dir,
+        )
+
     certificate_source.write_text(
         "source\nchanged_after_release_review\n",
         encoding="utf-8",
@@ -3196,6 +3321,20 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     )
     assert not stale_runtime_shadow_verification.verified
     assert not stale_runtime_shadow_verification.launcher_current
+    stale_runtime_calibration_verification = (
+        verify_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+            runtime_calibration_dir
+        )
+    )
+    assert not stale_runtime_calibration_verification.verified
+    assert not stale_runtime_calibration_verification.shadow_current
+    assert not verify_experiment_manifest(
+        runtime_calibration_dir / "manifest.json",
+        expected_run_type=(
+            "provider_market_data_imbalance_live_dryrun_shadow_calibration"
+        ),
+        require_input_fingerprints=True,
+    ).passed
     assert not verify_experiment_manifest(
         runtime_shadow_dir / "manifest.json",
         expected_run_type=(
@@ -3287,6 +3426,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     assert verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
         runtime_shadow_dir
     ).verified
+    assert verify_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+        runtime_calibration_dir
+    ).verified
     cataloged = catalog_experiment_runs([out_dir])
     cataloged_row = cataloged.catalog.iloc[0]
     assert bool(cataloged_row["summary_status"])
@@ -3360,6 +3502,9 @@ def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
     ).verified
     assert not verify_provider_market_data_imbalance_live_dryrun_shadow_evaluation(
         runtime_shadow_dir
+    ).verified
+    assert not verify_provider_market_data_imbalance_live_dryrun_shadow_calibration(
+        runtime_calibration_dir
     ).verified
     assert not verify_experiment_manifest(
         release_manifest_path,

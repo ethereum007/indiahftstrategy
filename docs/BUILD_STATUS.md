@@ -3108,6 +3108,28 @@
   simulation, uses a synthetic one-unit lot size unless explicitly configured,
   and provides no claim of realized fills, live edge, Arrow.money/iRage
   behavior, or production instrument metadata.
+- A semantically verified completed shadow evaluation can now advance through
+  `calibrate-provider-market-data-imbalance-live-dryrun-shadow`. The pure core
+  binds each accepted, non-routable, non-submitted shadow intent to its exact
+  source feature and measures forward directional mid and microprice response,
+  executable liquidation-touch markout, gross touch PnL, adverse selection,
+  observation coverage, and latency/horizon sensitivity. It also computes
+  break-even sensitivity under separate repository-reference NSE index-futures
+  and index-options cost schedules. Every cost row is explicitly labeled
+  `repository_reference_requires_external_validation`; these rates are not
+  represented as current exchange or broker terms. Completed and
+  insufficient-coverage runs both emit write-once checks, markouts, cost rows,
+  horizon and cost summaries, config, runbook, receipt, and recursive manifest.
+  `verify-provider-market-data-imbalance-live-dryrun-shadow-calibration`
+  deterministically reconstructs the entire artifact set from the current
+  recursive shadow proof graph, while catalog ingestion distinguishes
+  `verified_completed`, `verified_insufficient`, and stale or inconsistent
+  results and suppresses stale summary status. The core/report/CLI/catalog
+  boundary passes `23` focused tests and both retained audit/certificate proof
+  variants pass the complete recursive drift chain (`2 passed`). This is a
+  calibration-only evidence gate: it cannot authorize promotion, route, or
+  submit, and the current source remains deterministic simulation rather than
+  real provider observations, realized fills, or evidence of live edge.
 
 ## Test Gate
 
@@ -3117,7 +3139,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1686 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1709 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest completed strategy-evidence read-verification gate: strategy evidence,
@@ -3184,6 +3206,19 @@ together (`49 passed`). Both retained-proof variants pass the complete
 release-to-shadow chain inside the green complete strategy-evidence suite (`59
 passed`), and shared manifest/catalog compatibility passes (`68 passed`). The
 non-overlapping affected surface is therefore `176 passed`.
+
+Latest shadow markout-calibration gate: exact feature/intent binding,
+directional mid and microprice response, executable-touch markout, adverse
+selection, bounded horizon coverage, repository-reference futures/options cost
+sensitivity, completed and insufficient outcomes, write-once artifacts,
+semantic reconstruction, strict CLI exits, catalog completed/insufficient/stale
+states, re-manifested authorization tamper, recursive source drift, and direct
+capability audits pass together (`23 passed`). Both retained-proof variants
+pass inside the complete strategy-evidence suite (`59 passed`), and shared
+manifest/catalog compatibility passes (`68 passed`). The non-overlapping
+affected surface is therefore `199 passed`. The cost schedules remain
+explicitly subject to external validation, and no result is a performance,
+promotion, routing, or submission gate.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
 strategy scorecard, generic route readiness, real provider route wrapper,
@@ -3356,15 +3391,16 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1655-test collection is fully green.
+1709-test collection is fully green.
 
 ## Next Build Targets
 
-1. Add a non-authorizing shadow-intent calibration and markout gate that consumes
-   only a semantically verified completed shadow receipt, measures forward
-   mid/microprice outcomes, adverse selection, latency sensitivity, and
-   India-specific cost break-even, and cannot promote, route, or submit. Keep
-   simulation results clearly separated from real-provider evidence.
+1. Add a non-authorizing multi-session calibration-stability gate that consumes
+   only semantically verified completed shadow calibrations, requires distinct
+   session identities, compares horizon coverage, directional response,
+   adverse selection, and cost break-even stability, and cannot promote, route,
+   or submit. Keep deterministic simulation cohorts clearly separated from
+   future real-provider evidence.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
