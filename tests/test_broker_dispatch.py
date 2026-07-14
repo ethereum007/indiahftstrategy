@@ -1516,6 +1516,50 @@ def test_broker_dispatch_carries_target_application_vendor_batch_from_route_summ
     assert carried["datasets"][1]["mapping_scope_review_id"] == "scope-review-1"
 
 
+def test_broker_dispatch_uses_cutover_compatibility_lineage_before_route_final():
+    compatibility_sha256 = "a" * 64
+    final_sha256 = "b" * 64
+    config = route_config()
+    config[
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": compatibility_sha256,
+        "broker_application_lineage_sha256": compatibility_sha256,
+        "scaleup_carried_application_lineage_sha256": compatibility_sha256,
+        "cutover_carried_application_lineage_sha256": compatibility_sha256,
+        "route_carried_application_lineage_sha256": compatibility_sha256,
+    }
+    config[
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": final_sha256,
+        "broker_application_lineage_sha256": final_sha256,
+        "scaleup_carried_application_lineage_sha256": final_sha256,
+        "cutover_carried_application_lineage_sha256": final_sha256,
+        "route_carried_application_lineage_sha256": final_sha256,
+        "carried_application_lineage_sha256": "c" * 64,
+    }
+
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=config,
+        upload_orders=upload_orders(),
+        thresholds=BrokerDispatchThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    lineage = report.config[
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert lineage["current_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["broker_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["route_carried_application_lineage_sha256"] == compatibility_sha256
+
+
 def test_broker_dispatch_blocks_incomplete_target_application_vendor_batch():
     vendor = target_application_vendor_market_data_batch_config(
         mapping_source_mode="legacy_application_mode",

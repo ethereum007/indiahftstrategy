@@ -4657,12 +4657,20 @@ per dataset, 100% coverage, complete lineage, an affirmative cutover lineage
 decision, and final dispatch/send/ack consistency when required. Route-enable
 verifies the current and broker-final digests, the scale-up-carried and
 cutover-carried digests, and a fresh canonical digest recomputed from its own
-datasets. All five views remain in the flattened summary and the
+datasets. Reconciled targets additionally require cutover's complete
+twelve-view final comparison. Route-enable revalidates the historical
+scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-, final-review-,
+readiness-, scale-up-review-, and cutover-review-carried digests against the
+final broker proof, then independently computes view thirteen. The original
+five-view compatibility comparison remains in the flattened summary and the
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-config block, including `route_carried_application_lineage_sha256`. This
-applies to current cutover config and flattened cutover summary recovery.
-Summary-only recovery prefers the current `cutover_*` columns before older
-`scaleup_*` compatibility fields. If cutover retained the
+config block, including `route_carried_application_lineage_sha256`; the full
+thirteen-view handoff is emitted as
+`route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+This applies to current cutover config and flattened cutover summary recovery.
+Summary-only recovery prefers the current `cutover_*` vendor columns and the
+cutover-produced `scaleup_*` final-lineage columns before older compatibility
+fields. If cutover retained the
 broker-vendor wrapper readiness state,
 route-enable carries it as `cutover_broker_vendor_data_readiness_*` audit
 fields plus `cutover_broker_vendor_data_readiness` config, and fails closed
@@ -4675,9 +4683,10 @@ configs, route-enable can also read the cutover manifest's
 `broker_readiness_config` input and hydrate missing broker vendor-data proof
 and wrapper readiness before revalidating them. Legacy draft-backed sidecars
 remain compatible. A target-application sidecar without the scale-up- and
-cutover-carried lineage digests fails closed; rerun controlled scale-up and
-cutover so route-enable receives the complete handoff rather than fabricating
-those decisions. `--upload-pack` and
+cutover-carried lineage digests or cutover's complete twelve-view final
+comparison fails closed; rerun controlled scale-up and cutover so route-enable
+receives the complete handoff rather than fabricating those decisions.
+`--upload-pack` and
 `--order-export` may point at a launch-pipeline root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
 summary, cutover config, cutover manifest when present, upload summary, and

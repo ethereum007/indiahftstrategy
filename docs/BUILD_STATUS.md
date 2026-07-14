@@ -3313,10 +3313,18 @@
   fail-closed contract and additionally requires the affirmative cutover
   lineage decision, final consistency when required, exact current/final,
   scale-up-carried, and cutover-carried digests, plus a fresh canonical digest
-  recomputed from the route-carried datasets. The packet, summary, and sibling
-  lineage-comparison config retain all five digest views. Legacy draft-backed
-  handoffs remain compatible; thin target sidecars fail until scale-up and
-  cutover produce the missing carried lineage decisions.
+  recomputed from the route-carried datasets. Reconciled targets now also
+  require cutover's complete twelve-view final comparison. Route enable
+  revalidates the current, broker-final, historical scale-up-, cutover-, route-,
+  dispatch-, send-, ack-, final-review-, readiness-, scale-up-review-, and
+  cutover-review-carried digests, then independently recomputes the canonical
+  digest as view thirteen. The original five-view compatibility comparison is
+  unchanged; the full handoff is retained in flattened summary fields and the
+  sibling
+  `route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Generic non-reconciled targets and legacy draft-backed handoffs
+  keep their compatibility paths; thin target sidecars fail until cutover
+  produces the complete final comparison.
 - Broker dispatch planning now preserves and independently gates the same
   application-backed vendor batch before any sender packet can be prepared.
   Nested route config, flattened route summary, and broker-readiness sidecar
@@ -3398,21 +3406,31 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1874 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1882 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest route-enable final target-lineage gate: all 59 route-enable tests pass,
+including nested cutover config and flattened cutover-summary recovery of the
+full twelve-view handoff; mandatory final comparison for reconciled targets;
+independent thirteenth-view recomputation; missing, negative, inherited-digest,
+and post-cutover dataset drift rejection; and generic non-reconciled
+target/draft compatibility. The complete 278-test broker-readiness -> scale-up
+-> cutover -> route-enable lineage chain passes in 149.6 seconds. All 166
+downstream broker-dispatch planning, send, and acknowledgement tests pass in
+153.8 seconds against the new route-scoped comparison, including a distinct-
+digest compatibility regression that prevents broker dispatch's legacy parser
+from confusing the historical route view with route enable's new review view.
+The repository now collects 1882 tests across 154 files. The full suite was not
+rerun for this slice; the preceding complete-suite attempt reached the
+30-minute command limit without emitting a failure, so the last completed
+full-suite baseline remains unchanged.
 
 Latest cutover final target-lineage gate: all 56 cutover tests pass, including
 nested scale-up config, flattened scale-up summary, and broker-readiness
 sidecar recovery of the full eleven-view handoff; mandatory final comparison
 for reconciled targets; independent twelfth-view recomputation; missing,
 negative, carried-digest, and post-scale-up dataset drift rejection; and
-generic non-reconciled target/draft compatibility. All 52 downstream
-route-enable tests pass unchanged. The complete 271-test broker-readiness ->
-scale-up -> cutover -> route-enable lineage chain passes in 167.6 seconds. The
-repository now collects 1874 tests across 154 files. A complete-suite run was
-attempted but reached the 30-minute command limit without emitting a failure;
-because pytest did not return a final result, the last completed full-suite
-baseline remains unchanged.
+generic non-reconciled target/draft compatibility.
 
 Latest controlled scale-up final target-lineage gate: all 91 scale-up tests
 pass, including rich-summary and broker-readiness-sidecar recovery of the full

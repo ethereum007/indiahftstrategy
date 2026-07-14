@@ -65,6 +65,28 @@ TARGET_APPLICATION_LINEAGE_IDENTITY_FIELDS: tuple[str, ...] = (
     "target_intake_receipt_id",
     "applied_mapping_sha256",
 )
+CUTOVER_FINAL_LINEAGE_COMPARISON_KEY = (
+    "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+CUTOVER_FINAL_LINEAGE_FIELD_PREFIX = (
+    "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+CUTOVER_FINAL_LINEAGE_SUMMARY_FIELD_PREFIX = (
+    "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+CUTOVER_FINAL_LINEAGE_DIGEST_FIELDS: tuple[str, ...] = (
+    "current_application_lineage_sha256",
+    "broker_application_lineage_sha256",
+    "scaleup_carried_application_lineage_sha256",
+    "cutover_carried_application_lineage_sha256",
+    "route_carried_application_lineage_sha256",
+    "dispatch_carried_application_lineage_sha256",
+    "send_carried_application_lineage_sha256",
+    "ack_carried_application_lineage_sha256",
+    "roundtrip_carried_application_lineage_sha256",
+    "readiness_carried_application_lineage_sha256",
+    "scaleup_review_carried_application_lineage_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -1362,16 +1384,171 @@ def _broker_vendor_market_data_batch_checks(cutover: dict[str, Any]) -> list[dic
             ]
         )
         if lineage_consistency_required:
-            checks.append(
-                _check(
-                    f"{prefix}_application_lineage_consistent",
-                    lineage_consistent,
-                    "is",
-                    True,
-                    lineage_consistent,
-                    "cutover final dispatch/send/ack target lineage was not consistent",
-                )
+            checks.extend(
+                [
+                    _check(
+                        f"{prefix}_application_lineage_consistent",
+                        lineage_consistent,
+                        "is",
+                        True,
+                        lineage_consistent,
+                        "cutover final dispatch/send/ack target lineage was not consistent",
+                    ),
+                    *_broker_vendor_final_lineage_checks(
+                        cutover,
+                        route_lineage_sha256=route_carried_lineage_sha256,
+                    ),
+                ]
             )
+    return checks
+
+
+def _broker_vendor_final_lineage_checks(
+    cutover: dict[str, Any],
+    *,
+    route_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    source_prefix = CUTOVER_FINAL_LINEAGE_FIELD_PREFIX
+    prefix = source_prefix
+    lineage_match_required = _to_bool(
+        cutover[f"{source_prefix}_lineage_match_required"]
+    )
+    lineage_matches = _to_bool(cutover[f"{source_prefix}_lineage_matches"])
+    final_broker_lineage_sha256 = _sha256_text(
+        cutover[f"{source_prefix}_broker_application_lineage_sha256"]
+    )
+    final_current_lineage_sha256 = _sha256_text(
+        cutover[f"{source_prefix}_current_application_lineage_sha256"]
+    )
+    cutover_broker_lineage_sha256 = _sha256_text(
+        cutover["broker_vendor_market_data_batch_application_lineage_sha256"]
+    )
+    cutover_lineage_sha256 = _sha256_text(
+        cutover[
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+        ]
+    )
+    checks = [
+        _check(
+            f"{prefix}_final_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "reconciled target route enable requires cutover's final lineage comparison",
+        ),
+        _check(
+            f"{prefix}_final_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "cutover did not reconcile every final target-lineage view",
+        ),
+        _check(
+            f"{prefix}_final_source_lineage_sha256_matches",
+            final_current_lineage_sha256,
+            "==",
+            final_broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and final_current_lineage_sha256
+                and final_broker_lineage_sha256
+                and final_current_lineage_sha256 == final_broker_lineage_sha256
+            ),
+            "cutover's final source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{prefix}_final_broker_lineage_sha256_matches",
+            cutover_broker_lineage_sha256,
+            "==",
+            final_broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and cutover_broker_lineage_sha256
+                and final_broker_lineage_sha256
+                and cutover_broker_lineage_sha256 == final_broker_lineage_sha256
+            ),
+            "cutover's current/final broker digest does not match its final comparison",
+        ),
+        _check(
+            f"{prefix}_final_application_lineage_sha256_matches",
+            cutover_lineage_sha256,
+            "==",
+            final_broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and cutover_lineage_sha256
+                and final_broker_lineage_sha256
+                and cutover_lineage_sha256 == final_broker_lineage_sha256
+            ),
+            "cutover's independently recomputed batch digest does not match final comparison",
+        ),
+    ]
+    carried_fields = (
+        ("prior_scaleup", "scaleup_carried_application_lineage_sha256"),
+        ("prior_cutover", "cutover_carried_application_lineage_sha256"),
+        ("route", "route_carried_application_lineage_sha256"),
+        ("dispatch", "dispatch_carried_application_lineage_sha256"),
+        ("send", "send_carried_application_lineage_sha256"),
+        ("ack", "ack_carried_application_lineage_sha256"),
+        ("roundtrip", "roundtrip_carried_application_lineage_sha256"),
+        ("readiness", "readiness_carried_application_lineage_sha256"),
+        ("scaleup_review", "scaleup_review_carried_application_lineage_sha256"),
+    )
+    for stage, field in carried_fields:
+        carried_sha256 = _sha256_text(cutover[f"{source_prefix}_{field}"])
+        checks.append(
+            _check(
+                f"{prefix}_final_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                final_broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and final_broker_lineage_sha256
+                    and carried_sha256 == final_broker_lineage_sha256
+                ),
+                (
+                    f"cutover's {stage.replace('_', '-')} target lineage does not "
+                    "match final broker proof"
+                ),
+            )
+        )
+    cutover_review_lineage_sha256 = _sha256_text(
+        cutover[f"{source_prefix}_carried_application_lineage_sha256"]
+    )
+    checks.extend(
+        [
+            _check(
+                f"{prefix}_final_cutover_review_carried_lineage_sha256_matches",
+                cutover_review_lineage_sha256,
+                "==",
+                final_broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and cutover_review_lineage_sha256
+                    and final_broker_lineage_sha256
+                    and cutover_review_lineage_sha256 == final_broker_lineage_sha256
+                ),
+                "cutover's carried review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{prefix}_route_enable_review_carried_lineage_sha256_matches",
+                route_lineage_sha256,
+                "==",
+                final_broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and route_lineage_sha256
+                    and final_broker_lineage_sha256
+                    and route_lineage_sha256 == final_broker_lineage_sha256
+                ),
+                "route enable's independently recomputed target lineage does not match final broker proof",
+            ),
+        ]
+    )
     return checks
 
 
@@ -2157,6 +2334,7 @@ def _broker_vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> d
         f"{field_prefix}_application_lineage_consistent": vendor[
             "application_lineage_consistent"
         ],
+        **_broker_vendor_final_lineage_packet_fields(cutover),
         "cutover_broker_vendor_market_data_batch_lineage_match_required": cutover[
             "broker_vendor_market_data_batch_lineage_match_required"
         ],
@@ -2182,6 +2360,27 @@ def _broker_vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> d
         f"{field_prefix}_comparison_failed_checks": vendor["comparison_failed_checks"],
         f"{field_prefix}_datasets_json": json.dumps(vendor["datasets"], sort_keys=True),
     }
+
+
+def _broker_vendor_final_lineage_packet_fields(
+    cutover: dict[str, Any],
+) -> dict[str, Any]:
+    source_prefix = CUTOVER_FINAL_LINEAGE_FIELD_PREFIX
+    field_prefix = CUTOVER_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{field_prefix}_lineage_match_required": cutover[
+            f"{source_prefix}_lineage_match_required"
+        ],
+        f"{field_prefix}_lineage_matches": cutover[
+            f"{source_prefix}_lineage_matches"
+        ],
+        f"{field_prefix}_cutover_review_carried_application_lineage_sha256": cutover[
+            f"{source_prefix}_carried_application_lineage_sha256"
+        ],
+    }
+    for field in CUTOVER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{field_prefix}_{field}"] = cutover[f"{source_prefix}_{field}"]
+    return fields
 
 
 def _broker_vendor_data_readiness_packet_fields(cutover: dict[str, Any]) -> dict[str, Any]:
@@ -2731,6 +2930,7 @@ def _broker_vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[s
         f"{field_prefix}_application_lineage_consistent": _to_bool(
             packet[f"{field_prefix}_application_lineage_consistent"]
         ),
+        **_broker_vendor_final_lineage_summary_fields(packet),
         "cutover_broker_vendor_market_data_batch_lineage_match_required": _to_bool(
             packet["cutover_broker_vendor_market_data_batch_lineage_match_required"]
         ),
@@ -2762,6 +2962,30 @@ def _broker_vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[s
         f"{field_prefix}_comparison_failed_checks": int(packet[f"{field_prefix}_comparison_failed_checks"]),
         f"{field_prefix}_datasets_json": str(packet[f"{field_prefix}_datasets_json"]),
     }
+
+
+def _broker_vendor_final_lineage_summary_fields(
+    packet: pd.Series,
+) -> dict[str, Any]:
+    field_prefix = CUTOVER_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{field_prefix}_lineage_match_required": _to_bool(
+            packet[f"{field_prefix}_lineage_match_required"]
+        ),
+        f"{field_prefix}_lineage_matches": _to_bool(
+            packet[f"{field_prefix}_lineage_matches"]
+        ),
+        f"{field_prefix}_cutover_review_carried_application_lineage_sha256": str(
+            packet[
+                f"{field_prefix}_cutover_review_carried_application_lineage_sha256"
+            ]
+        ),
+    }
+    for field in CUTOVER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{field_prefix}_{field}"] = str(
+            packet[f"{field_prefix}_{field}"]
+        )
+    return fields
 
 
 def _broker_vendor_data_readiness_summary_fields(packet: pd.Series) -> dict[str, Any]:
@@ -2962,6 +3186,9 @@ def _config(
                 ]
             ),
         },
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison": (
+            _broker_vendor_route_final_lineage_config(packet)
+        ),
         "cutover_vendor_market_data_batch": _vendor_market_data_batch_config(packet),
         "broker_resume_gate": {
             "ready": _to_bool(packet["broker_resume_gate_ready"]),
@@ -3357,6 +3584,29 @@ def _broker_vendor_market_data_batch_config(packet: pd.Series) -> dict[str, Any]
     }
 
 
+def _broker_vendor_route_final_lineage_config(
+    packet: pd.Series,
+) -> dict[str, Any]:
+    field_prefix = CUTOVER_FINAL_LINEAGE_FIELD_PREFIX
+    config: dict[str, Any] = {
+        "required": _to_bool(packet[f"{field_prefix}_lineage_match_required"]),
+        "matches": _to_bool(packet[f"{field_prefix}_lineage_matches"]),
+        "cutover_review_carried_application_lineage_sha256": str(
+            packet[
+                f"{field_prefix}_cutover_review_carried_application_lineage_sha256"
+            ]
+        ),
+        "carried_application_lineage_sha256": str(
+            packet[
+                "route_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+            ]
+        ),
+    }
+    for field in CUTOVER_FINAL_LINEAGE_DIGEST_FIELDS:
+        config[field] = str(packet[f"{field_prefix}_{field}"])
+    return config
+
+
 def _broker_vendor_data_readiness_config(packet: pd.Series) -> dict[str, Any]:
     return {
         "provided": _to_bool(packet["cutover_broker_vendor_data_readiness_provided"]),
@@ -3651,6 +3901,7 @@ def _cutover_state(
     lineage_comparison = _broker_vendor_market_data_batch_lineage_comparison_source(
         config
     )
+    final_lineage_comparison = _broker_vendor_final_lineage_comparison_source(config)
     broker_vendor_market_data_batch_state = _vendor_market_data_batch_state(
         broker_vendor_market_data_batch,
         row=row,
@@ -4292,6 +4543,10 @@ def _cutover_state(
                 )
             )
         ),
+        **_broker_vendor_final_lineage_state_fields(
+            final_lineage_comparison,
+            row,
+        ),
         "broker_vendor_data_readiness": _broker_vendor_data_readiness_state(
             broker_vendor_data_readiness,
             row=row,
@@ -4479,13 +4734,56 @@ def _broker_vendor_market_data_batch_lineage_comparison_source(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     for key in (
-        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
         "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
     ):
         comparison = config.get(key)
         if isinstance(comparison, dict) and comparison:
             return comparison
     return {}
+
+
+def _broker_vendor_final_lineage_comparison_source(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    comparison = config.get(CUTOVER_FINAL_LINEAGE_COMPARISON_KEY)
+    return comparison if isinstance(comparison, dict) else {}
+
+
+def _broker_vendor_final_lineage_state_fields(
+    comparison: dict[str, Any],
+    row: pd.Series,
+) -> dict[str, Any]:
+    prefix = CUTOVER_FINAL_LINEAGE_FIELD_PREFIX
+    summary_prefix = CUTOVER_FINAL_LINEAGE_SUMMARY_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(f"{summary_prefix}_lineage_match_required", False),
+            )
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(f"{summary_prefix}_lineage_matches", False),
+            )
+        ),
+        f"{prefix}_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("carried_application_lineage_sha256", ""),
+                row.get(f"{prefix}_application_lineage_sha256", ""),
+            )
+        ),
+    }
+    for field in CUTOVER_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            _first_text(
+                comparison.get(field, ""),
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    return fields
 
 
 def _broker_vendor_market_data_batch_row_prefix(row: pd.Series) -> str:

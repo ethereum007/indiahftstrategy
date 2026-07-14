@@ -3672,8 +3672,8 @@ def _broker_vendor_market_data_batch_lineage_comparison_source(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     for key in (
-        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
         "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison",
     ):
         comparison = config.get(key)
