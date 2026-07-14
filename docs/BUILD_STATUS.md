@@ -3311,6 +3311,14 @@
   target-intake/applied-mapping lineage in acknowledgement summary and config.
   Any target signal must satisfy the strict one-distinct-application-per-dataset
   contract; legacy draft-backed acknowledgement packets remain compatible.
+- Final broker dispatch round-trip review now reconciles that target proof
+  across dispatch, send, and acknowledgement components before dry-run bridge
+  evidence can be trusted. It retains mapping mode, application count,
+  uniqueness, coverage, and the complete per-dataset lineage graph in final
+  summary/config artifacts. Any target signal requires every component to keep
+  strict mode, one unique application per dataset, full coverage, complete
+  lineage, and the same canonical lineage graph; legacy draft-backed final
+  reviews remain compatible.
 
 ## Test Gate
 
@@ -3320,8 +3328,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1815 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1818 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest target-application final broker round-trip gate: all 41 final-review
+tests pass, including nested component config, flattened component-summary
+recovery, broker-readiness sidecar hydration, complete aggregate and
+per-dataset lineage, exact canonical lineage agreement across dispatch/send/ack,
+and fail-closed rejection of downgraded, incomplete, or drifted application
+proof. All 7 broker vendor-data readiness tests and all 60 broker-readiness
+tests also pass against the richer final contract. The repository now collects
+1818 tests across 154 files; the full suite was not rerun for this slice.
 
 Latest target-application broker-dispatch acknowledgement gate: all 43
 acknowledgement reconciliation tests pass, including nested dispatch config,

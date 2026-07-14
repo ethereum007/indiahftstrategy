@@ -44,6 +44,16 @@ BROKER_DISPATCH_ACK_LINEAGE_OUTPUT_COLUMNS = tuple(
         empty_broker_dispatch_ack_lineage()
     ).keys()
 )
+TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
+TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
+    "mapping_application_path",
+    "mapping_application_id",
+    "mapping_application_sha256",
+    "mapping_scope_review_id",
+    "mapping_scope_review_sha256",
+    "target_intake_receipt_id",
+    "applied_mapping_sha256",
+)
 
 
 @dataclass(frozen=True)
@@ -870,6 +880,25 @@ def _apply_vendor_market_data_batch_config(
     state[f"{field_prefix}_mapping_sources"] = _object_text(
         vendor.get("mapping_sources", state.get(f"{field_prefix}_mapping_sources", ""))
     )
+    state[f"{field_prefix}_mapping_source_mode"] = _identity_key(
+        vendor.get("mapping_source_mode", state.get(f"{field_prefix}_mapping_source_mode", ""))
+    )
+    state[f"{field_prefix}_mapping_application_count"] = int(
+        _number_value(
+            vendor.get("mapping_application_count"),
+            _number(state, f"{field_prefix}_mapping_application_count", 0.0),
+        )
+    )
+    state[f"{field_prefix}_unique_mapping_applications"] = int(
+        _number_value(
+            vendor.get("unique_mapping_applications"),
+            _number(state, f"{field_prefix}_unique_mapping_applications", 0.0),
+        )
+    )
+    state[f"{field_prefix}_target_application_coverage"] = _number_value(
+        vendor.get("target_application_coverage"),
+        _number(state, f"{field_prefix}_target_application_coverage", 0.0),
+    )
     state[f"{field_prefix}_comparison_accepted"] = _to_bool(
         comparison.get("accepted", state.get(f"{field_prefix}_comparison_accepted", False))
     )
@@ -923,6 +952,10 @@ def _copy_vendor_market_data_batch_fields(
         "min_mapping_coverage",
         "unique_mapping_drafts",
         "mapping_sources",
+        "mapping_source_mode",
+        "mapping_application_count",
+        "unique_mapping_applications",
+        "target_application_coverage",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -2565,7 +2598,7 @@ def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]
     comparison_accepted = bool(
         rows and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
     )
-    return [
+    checks = [
         _check(
             "vendor_market_data_batch_provided",
             provided,
@@ -2655,6 +2688,171 @@ def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]
             "vendor market-data batch comparison has failed checks",
         ),
     ]
+    if _target_application_batch_active(rows):
+        dataset_count = _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_dataset_count",
+        )
+        mapping_application_count = _vendor_market_data_batch_counter_min(
+            rows,
+            "vendor_market_data_batch_mapping_application_count",
+        )
+        unique_mapping_applications = _vendor_market_data_batch_counter_min(
+            rows,
+            "vendor_market_data_batch_unique_mapping_applications",
+        )
+        target_application_coverage = _vendor_market_data_batch_number_min(
+            rows,
+            "vendor_market_data_batch_target_application_coverage",
+        )
+        lineage_datasets = min(
+            (_target_application_lineage_dataset_count(row) for row in rows),
+            default=0,
+        )
+        mapping_source_mode_valid = bool(
+            rows
+            and all(
+                _identity_key(row.get("vendor_market_data_batch_mapping_source_mode", ""))
+                == TARGET_APPLICATION_BATCH_MODE
+                for row in rows
+            )
+        )
+        mapping_application_count_valid = bool(
+            rows
+            and all(
+                int(_number(row, "vendor_market_data_batch_dataset_count", 0.0)) > 0
+                and int(_number(row, "vendor_market_data_batch_mapping_application_count", 0.0))
+                == int(_number(row, "vendor_market_data_batch_dataset_count", 0.0))
+                for row in rows
+            )
+        )
+        unique_mapping_applications_valid = bool(
+            rows
+            and all(
+                int(_number(row, "vendor_market_data_batch_dataset_count", 0.0)) > 0
+                and int(_number(row, "vendor_market_data_batch_unique_mapping_applications", 0.0))
+                == int(_number(row, "vendor_market_data_batch_dataset_count", 0.0))
+                for row in rows
+            )
+        )
+        lineage_complete = bool(
+            rows
+            and all(
+                _target_application_lineage_dataset_count(row)
+                == int(_number(row, "vendor_market_data_batch_dataset_count", 0.0))
+                > 0
+                for row in rows
+            )
+        )
+        lineage_consistent = _target_application_lineage_consistent(rows)
+        checks.extend(
+            [
+                _check(
+                    "vendor_market_data_batch_mapping_source_mode",
+                    _target_application_mapping_source_modes(rows),
+                    "==",
+                    TARGET_APPLICATION_BATCH_MODE,
+                    mapping_source_mode_valid,
+                    "vendor target applications are missing strict source mode in one or more components",
+                ),
+                _check(
+                    "vendor_market_data_batch_mapping_application_count",
+                    mapping_application_count,
+                    "==",
+                    dataset_count,
+                    mapping_application_count_valid,
+                    "vendor target applications are not aligned one for one in every component",
+                ),
+                _check(
+                    "vendor_market_data_batch_unique_mapping_applications",
+                    unique_mapping_applications,
+                    "==",
+                    dataset_count,
+                    unique_mapping_applications_valid,
+                    "vendor target applications are not distinct per dataset in every component",
+                ),
+                _check(
+                    "vendor_market_data_batch_target_application_coverage",
+                    target_application_coverage,
+                    ">=",
+                    1.0,
+                    target_application_coverage >= 1.0,
+                    "vendor target-application coverage is incomplete in one or more components",
+                ),
+                _check(
+                    "vendor_market_data_batch_application_lineage_datasets",
+                    lineage_datasets,
+                    "==",
+                    dataset_count,
+                    lineage_complete,
+                    "vendor datasets are missing target-application lineage in one or more components",
+                ),
+                _check(
+                    "vendor_market_data_batch_application_lineage_consistent",
+                    lineage_consistent,
+                    "is",
+                    True,
+                    lineage_consistent,
+                    "vendor target-application lineage differs across dispatch, send, and acknowledgement proof",
+                ),
+            ]
+        )
+    return checks
+
+
+def _target_application_batch_active(rows: tuple[pd.Series, ...]) -> bool:
+    return any(
+        _identity_key(row.get("vendor_market_data_batch_mapping_source_mode", ""))
+        == TARGET_APPLICATION_BATCH_MODE
+        or "verified_target_application"
+        in {
+            value.strip().lower()
+            for value in _text(row, "vendor_market_data_batch_mapping_sources").split(";")
+            if value.strip()
+        }
+        or int(_number(row, "vendor_market_data_batch_mapping_application_count", 0.0)) > 0
+        or _number(row, "vendor_market_data_batch_target_application_coverage", 0.0) > 0.0
+        for row in rows
+    )
+
+
+def _target_application_mapping_source_modes(rows: tuple[pd.Series, ...]) -> str:
+    modes = [
+        _identity_key(row.get("vendor_market_data_batch_mapping_source_mode", ""))
+        for row in rows
+    ]
+    if not any(modes):
+        return ""
+    return ";".join(sorted({mode or "missing" for mode in modes}))
+
+
+def _target_application_lineage_dataset_count(row: pd.Series) -> int:
+    datasets = _json_list(row.get("vendor_market_data_batch_datasets_json", ""))
+    return sum(
+        isinstance(dataset, dict)
+        and all(_object_text(dataset.get(field, "")) for field in TARGET_APPLICATION_DATASET_LINEAGE_FIELDS)
+        for dataset in datasets
+    )
+
+
+def _target_application_lineage_consistent(rows: tuple[pd.Series, ...]) -> bool:
+    canonical_lineage = [_target_application_lineage_json(row) for row in rows]
+    return bool(
+        rows
+        and all(canonical_lineage)
+        and len(set(canonical_lineage)) == 1
+    )
+
+
+def _target_application_lineage_json(row: pd.Series) -> str:
+    datasets = _json_list(row.get("vendor_market_data_batch_datasets_json", ""))
+    if not datasets:
+        return ""
+    return json.dumps(
+        sorted(datasets, key=lambda dataset: _object_text(dataset.get("dataset", ""))),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
 
 
 def _broker_vendor_market_data_batch_active(*rows: pd.Series) -> bool:
@@ -2707,6 +2905,10 @@ def _vendor_market_data_batch_projection(row: pd.Series, *, source_prefix: str) 
         "min_mapping_coverage",
         "unique_mapping_drafts",
         "mapping_sources",
+        "mapping_source_mode",
+        "mapping_application_count",
+        "unique_mapping_applications",
+        "target_application_coverage",
         "comparison_accepted",
         "comparison_failed_checks",
         "datasets_json",
@@ -3447,6 +3649,27 @@ def _vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...]) -> dic
             rows,
             "mapping_sources",
         ),
+        "roundtrip_vendor_market_data_batch_mapping_source_mode": (
+            _target_application_mapping_source_modes(rows)
+        ),
+        "roundtrip_vendor_market_data_batch_mapping_application_count": (
+            _vendor_market_data_batch_counter_min(
+                rows,
+                "vendor_market_data_batch_mapping_application_count",
+            )
+        ),
+        "roundtrip_vendor_market_data_batch_unique_mapping_applications": (
+            _vendor_market_data_batch_counter_min(
+                rows,
+                "vendor_market_data_batch_unique_mapping_applications",
+            )
+        ),
+        "roundtrip_vendor_market_data_batch_target_application_coverage": (
+            _vendor_market_data_batch_number_min(
+                rows,
+                "vendor_market_data_batch_target_application_coverage",
+            )
+        ),
         "roundtrip_vendor_market_data_batch_comparison_accepted": bool(
             rows
             and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
@@ -3646,6 +3869,14 @@ def _vendor_market_data_batch_config(
         "min_mapping_coverage": _jsonable(summary[f"{field_prefix}_min_mapping_coverage"]),
         "unique_mapping_drafts": int(summary[f"{field_prefix}_unique_mapping_drafts"]),
         "mapping_sources": _text(summary, f"{field_prefix}_mapping_sources"),
+        "mapping_source_mode": _text(summary, f"{field_prefix}_mapping_source_mode"),
+        "mapping_application_count": int(summary[f"{field_prefix}_mapping_application_count"]),
+        "unique_mapping_applications": int(
+            summary[f"{field_prefix}_unique_mapping_applications"]
+        ),
+        "target_application_coverage": _jsonable(
+            summary[f"{field_prefix}_target_application_coverage"]
+        ),
         "comparison": {
             "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),
             "failed_checks": int(summary[f"{field_prefix}_comparison_failed_checks"]),
@@ -4749,6 +4980,17 @@ def _vendor_market_data_batch_datasets(value: object) -> list[dict[str, object]]
                 "source_header_sha256": _object_text(item.get("source_header_sha256", "")),
                 "mapping_draft_sha256": _object_text(item.get("mapping_draft_sha256", "")),
                 "mapping_source": _object_text(item.get("mapping_source", "")),
+                "mapping_application_path": _object_text(item.get("mapping_application_path", "")),
+                "mapping_application_id": _object_text(item.get("mapping_application_id", "")),
+                "mapping_application_sha256": _object_text(
+                    item.get("mapping_application_sha256", "")
+                ),
+                "mapping_scope_review_id": _object_text(item.get("mapping_scope_review_id", "")),
+                "mapping_scope_review_sha256": _object_text(
+                    item.get("mapping_scope_review_sha256", "")
+                ),
+                "target_intake_receipt_id": _object_text(item.get("target_intake_receipt_id", "")),
+                "applied_mapping_sha256": _object_text(item.get("applied_mapping_sha256", "")),
             }
         )
     return rows

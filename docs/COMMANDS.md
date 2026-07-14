@@ -5188,7 +5188,14 @@ aggregate is partial, unready, or dirty. It also retains
 plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
 from the broker-readiness component proof chain and
 `roundtrip_broker_vendor_data_readiness` reconciled from the wrapper proof
-chain. If a component config carries
+chain. For application-backed proof, final review reconciles mapping mode,
+application count, uniqueness, coverage, and every dataset's application,
+scope-review, target-intake, and applied-mapping lineage across dispatch, send,
+and acknowledgement components. Any target signal requires every component to
+retain `per_dataset_verified_target_application`, one distinct application per
+dataset, 100% coverage, complete lineage, and the same canonical lineage graph.
+This applies equally to nested component configs, flattened component-summary
+recovery, and broker-readiness sidecar hydration. If a component config carries
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, the round-trip
 review prefers that block before falling back through ack-, dispatch-, and
 route-retained broker vendor-data blocks. If a component config carries
