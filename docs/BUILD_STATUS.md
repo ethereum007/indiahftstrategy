@@ -3354,10 +3354,19 @@
   dataset gate, require the affirmative dispatch-retained lineage decision and
   final consistency when marked required, verify the current, broker-final,
   scale-up-, cutover-, route-, and dispatch-carried digests, and independently
-  recompute a seventh canonical digest from the send-carried datasets. All seven
-  views remain in the flattened summary and sibling lineage-comparison config.
-  Draft-backed packets retain their compatibility path; thin target sidecars
-  fail until the intervening gates provide every carried lineage view.
+  recompute a seventh canonical digest from the send-carried datasets.
+  Reconciled targets now also require broker dispatch's complete fourteen-view
+  final comparison. Send preparation revalidates the current, broker-final,
+  historical scale-up-, cutover-, route-, dispatch-, send-, ack-, final-review-,
+  readiness-, scale-up-review-, cutover-review-, route-enable-review-, and
+  dispatch-plan-review-carried digests, then independently recomputes the
+  canonical digest as view fifteen. The existing seven-view compatibility
+  comparison is unchanged; the full handoff is retained in flattened summary
+  fields and the sibling
+  `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Draft-backed and generic non-reconciled packets retain their
+  compatibility paths; thin target sidecars fail until broker dispatch
+  provides the complete final comparison.
 - Broker dispatch acknowledgement reconciliation now preserves and independently
   gates the send-retained target proof before accepted acknowledgement evidence
   can advance. Nested send/dispatch config, flattened dispatch summary, and
@@ -3415,20 +3424,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1890 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1898 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest broker-dispatch final target-lineage gate: all 60 broker-dispatch tests
-pass, including nested route config and flattened route-summary recovery of the
-full thirteen-view handoff; mandatory final comparison for reconciled targets;
-independent fourteenth-view recomputation; missing, negative, inherited-digest,
-and post-route dataset drift rejection; and generic non-reconciled target/draft
-compatibility. The complete 338-test broker-readiness -> scale-up -> cutover ->
-route-enable -> broker-dispatch lineage chain passes in 203.2 seconds. All 174
-broker-dispatch planning, send, and acknowledgement tests pass in 169.9 seconds,
-including a distinct-digest compatibility regression that prevents send
-preparation's legacy parser from confusing the historical dispatch view with
-broker dispatch's new review view. The repository now collects 1890 tests
+Latest broker-dispatch-send final target-lineage gate: all 72 send-preparation
+tests pass, including nested dispatch config and flattened dispatch-summary
+recovery of the full fourteen-view handoff; mandatory final comparison for
+reconciled targets; independent fifteenth-view recomputation; missing,
+negative, inherited-digest, and post-dispatch dataset drift rejection; and
+generic non-reconciled target/draft compatibility. The complete 410-test
+broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch ->
+broker-dispatch-send lineage chain passes in 280.1 seconds. All 182
+broker-dispatch planning, send, and acknowledgement tests pass in 143.5 seconds,
+including a distinct-digest compatibility regression that prevents
+acknowledgement's legacy parser from confusing the historical send view with
+send preparation's new review view. The repository now collects 1898 tests
 across 154 files. The full suite was not rerun for this slice; the preceding
 complete-suite attempt reached the 30-minute command limit without emitting a
 failure, so the last completed full-suite baseline remains unchanged.

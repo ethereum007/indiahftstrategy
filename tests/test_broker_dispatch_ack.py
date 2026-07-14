@@ -1456,6 +1456,52 @@ def test_broker_dispatch_ack_carries_target_application_vendor_batch_from_dispat
     assert carried["datasets"][1]["mapping_scope_review_id"] == "scope-review-1"
 
 
+def test_broker_dispatch_ack_uses_dispatch_compatibility_lineage_before_send_final():
+    compatibility_sha256 = "a" * 64
+    final_sha256 = "b" * 64
+    config = dispatch_config()
+    config[
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": compatibility_sha256,
+        "broker_application_lineage_sha256": compatibility_sha256,
+        "scaleup_carried_application_lineage_sha256": compatibility_sha256,
+        "cutover_carried_application_lineage_sha256": compatibility_sha256,
+        "route_carried_application_lineage_sha256": compatibility_sha256,
+        "dispatch_carried_application_lineage_sha256": compatibility_sha256,
+        "send_carried_application_lineage_sha256": compatibility_sha256,
+    }
+    config[
+        "send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": final_sha256,
+        "broker_application_lineage_sha256": final_sha256,
+        "dispatch_carried_application_lineage_sha256": final_sha256,
+        "send_carried_application_lineage_sha256": final_sha256,
+        "dispatch_plan_review_carried_application_lineage_sha256": final_sha256,
+        "carried_application_lineage_sha256": "c" * 64,
+    }
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert report.passed
+    lineage = report.config[
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert lineage["current_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["broker_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["send_carried_application_lineage_sha256"] == compatibility_sha256
+
+
 def test_broker_dispatch_ack_blocks_incomplete_target_application_vendor_batch():
     vendor = target_application_vendor_market_data_batch_config(
         mapping_source_mode="legacy_application_mode",
