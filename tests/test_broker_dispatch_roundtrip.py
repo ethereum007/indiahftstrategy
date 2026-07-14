@@ -1968,6 +1968,58 @@ def test_broker_dispatch_roundtrip_carries_target_application_vendor_batch():
     assert expected_checks <= passed
 
 
+def test_broker_dispatch_roundtrip_uses_ack_compatibility_lineage_before_ack_final():
+    compatibility_sha256 = "a" * 64
+    final_sha256 = "b" * 64
+    ack_config = route_enable_config()
+    ack_config[
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": compatibility_sha256,
+        "broker_application_lineage_sha256": compatibility_sha256,
+        "scaleup_carried_application_lineage_sha256": compatibility_sha256,
+        "cutover_carried_application_lineage_sha256": compatibility_sha256,
+        "route_carried_application_lineage_sha256": compatibility_sha256,
+        "dispatch_carried_application_lineage_sha256": compatibility_sha256,
+        "send_carried_application_lineage_sha256": compatibility_sha256,
+        "ack_carried_application_lineage_sha256": compatibility_sha256,
+    }
+    ack_config[
+        "ack_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": final_sha256,
+        "broker_application_lineage_sha256": final_sha256,
+        "send_carried_application_lineage_sha256": final_sha256,
+        "ack_carried_application_lineage_sha256": final_sha256,
+        "send_packet_review_carried_application_lineage_sha256": final_sha256,
+        "carried_application_lineage_sha256": "c" * 64,
+    }
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=route_enable_config(),
+        send_config=route_enable_config(),
+        ack_config=ack_config,
+    )
+
+    assert report.passed
+    lineage = report.config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert lineage["current_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["broker_application_lineage_sha256"] == compatibility_sha256
+    assert lineage["ack_carried_application_lineage_sha256"] == compatibility_sha256
+
+
 def test_broker_dispatch_roundtrip_carries_target_application_batch_from_component_summaries():
     vendor = target_application_vendor_market_data_batch_config()
     dispatch_input = with_broker_vendor_batch_summary(

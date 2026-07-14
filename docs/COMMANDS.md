@@ -5005,8 +5005,9 @@ seven-view compatibility handoff remains in the flattened send summary and the
 config block, including `send_carried_application_lineage_sha256`; the full
 fifteen-view handoff is emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Acknowledgement reconciliation continues to consume the compatibility artifact
-until its own full-contract upgrade. This applies to nested dispatch config and
+Acknowledgement reconciliation consumes that complete final comparison for
+reconciled targets while retaining the seven-view compatibility artifact for
+its historical eight-view output. This applies to nested dispatch config and
 flattened dispatch summary recovery. Legacy draft-backed broker-readiness
 sidecars and generic non-reconciled targets remain compatible; a reconciled
 target-application sidecar without broker dispatch's complete fourteen-view
@@ -5163,14 +5164,26 @@ evidence can advance. With `--send`, reconciliation consumes the sender's
 lineage-comparison config, verifies the current and broker-final digests plus
 the scale-up-, cutover-, route-, dispatch-, and send-carried digests, and then
 independently recomputes an eighth canonical digest from the datasets entering
-the acknowledgement record. All eight views are retained in the flattened ack
+the acknowledgement record. Reconciled targets additionally require the
+sender's complete fifteen-view comparison. Reconciliation verifies its current,
+broker-final, scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-,
+final-review-, readiness-, scale-up-review-, cutover-review-, route-enable-review-,
+dispatch-plan-review-, and send-packet-review-carried digests, then independently
+recomputes view sixteen from the acknowledgement-carried datasets. The existing
+eight-view compatibility proof is retained unchanged in the flattened ack
 summary and
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
-including `ack_carried_application_lineage_sha256`. This applies to nested
-send/dispatch config, flattened dispatch summary recovery, and
-broker-readiness sidecar hydration. Legacy draft-backed sidecars remain
-compatible; a target-application sidecar without every carried digest fails
-closed and must be regenerated through the sender handoff. When
+including `ack_carried_application_lineage_sha256`; broker-dispatch round-trip
+continues to consume this stable contract. The complete sixteen-view proof is
+emitted in flattened summary fields and
+`ack_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `send_packet_review_carried_application_lineage_sha256` retains sender
+view fifteen and `carried_application_lineage_sha256` is the fresh
+acknowledgement-review digest. This applies to nested send/dispatch config,
+flattened dispatch summary recovery, and broker-readiness sidecar hydration.
+Legacy draft-backed and generic non-reconciled sidecars remain compatible; a
+reconciled target-application sidecar without the complete sender comparison
+fails closed and must be regenerated through the sender handoff. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
 ack-stage block. If the dispatch config retained broker-vendor wrapper

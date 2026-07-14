@@ -3376,11 +3376,23 @@
   Any target signal must satisfy the strict one-distinct-application-per-dataset
   contract, retain the affirmative sender lineage decision and final consistency,
   and match the current, broker-final, scale-up-, cutover-, route-, dispatch-, and
-  send-carried digests. Reconciliation then independently recomputes an eighth
-  canonical digest from the acknowledgement-carried datasets. All eight views
-  remain in the flattened summary and sibling lineage-comparison config. Legacy
-  draft-backed acknowledgement packets remain compatible; thin target sidecars
-  fail closed until the complete sender handoff is supplied.
+  send-carried digests. Reconciliation still independently recomputes the
+  eighth canonical compatibility digest from the acknowledgement-carried
+  datasets. Reconciled targets additionally require send preparation's complete
+  fifteen-view final comparison. Acknowledgement reconciliation revalidates the
+  current, broker-final, historical scale-up-, cutover-, route-, dispatch-,
+  send-, ack-, final-review-, readiness-, scale-up-review-, cutover-review-,
+  route-enable-review-, dispatch-plan-review-, and send-packet-review-carried
+  digests, then independently recomputes the canonical digest as view sixteen.
+  The existing eight-view comparison remains unchanged in the flattened summary
+  and
+  `ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block for broker-dispatch round-trip compatibility. The complete
+  sixteen-view handoff is retained in flattened summary fields and the sibling
+  `ack_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Legacy draft-backed and generic non-reconciled acknowledgement
+  packets remain compatible; thin reconciled-target sidecars fail closed until
+  send preparation supplies the complete final comparison.
 - Final broker dispatch round-trip review now reconciles that target proof
   across dispatch, send, and acknowledgement components before dry-run bridge
   evidence can be trusted. It retains mapping mode, application count,
@@ -3424,8 +3436,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1898 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1906 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch-acknowledgement final target-lineage gate: all 57
+acknowledgement tests pass, including nested sender-config and flattened
+dispatch-summary recovery of the complete fifteen-view handoff; mandatory final
+comparison for reconciled targets; independent sixteenth-view recomputation;
+missing, negative, inherited-digest, fresh-ack-digest, and post-send dataset
+drift rejection; and generic non-reconciled target/draft compatibility. The
+historical eight-view acknowledgement comparison remains byte-for-byte
+compatible for broker-dispatch round-trip consumption, while the complete
+sixteen-view handoff is emitted under the sibling `ack_final_*` comparison.
+The full 467-test broker-readiness -> scale-up -> cutover -> route-enable ->
+broker-dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement chain
+passes in 303.7 seconds. All 47 broker-dispatch round-trip tests pass against
+the compatibility handoff. The repository now collects 1906 tests across 154
+files. The full suite was not rerun for this slice; the last completed
+full-suite baseline remains unchanged.
 
 Latest broker-dispatch-send final target-lineage gate: all 72 send-preparation
 tests pass, including nested dispatch config and flattened dispatch-summary
