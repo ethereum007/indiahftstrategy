@@ -2880,6 +2880,81 @@ surface the same `verified_ready`, `verified_blocked`, and
 `stale_or_inconsistent` states. The receipt is intake-only: it does not
 authorize normalization, strategy research, routing, or order submission.
 
+## Vendor Mapping Review
+
+Seal an operator-reviewed vendor mapping against the exact write-once intake,
+raw source, and candidate mapping before normalization. The candidate mapping
+and operator decision must be separate files outside the intake directory:
+
+```powershell
+python -m hft_cli review-vendor-mapping `
+  --intake mappings\arrow_ticks_intake `
+  --mapping mappings\arrow_ticks_candidate.csv `
+  --decision mappings\arrow_ticks_decision.csv `
+  --out mappings\arrow_ticks_review `
+  --fail-on-rejected
+```
+
+The mapping uses `normalized_column`, `source_column`, `default_value`,
+`required`, and `transform`. The one-row decision uses these columns:
+
+```text
+intake_receipt_id
+source_file_sha256
+mapping_candidate_sha256
+adapter
+kind
+decision
+operator_id
+operator_role
+reviewed_at_utc
+vendor_documentation_checked
+source_columns_confirmed
+field_semantics_confirmed
+timestamp_semantics_confirmed
+price_quantity_units_confirmed
+transform_semantics_confirmed
+notes
+authorizes_routing
+authorizes_submission
+```
+
+Set `decision` to `approved` or `rejected`. An approval requires every
+attestation field to be true and both authorization fields to be explicitly
+false. The candidate must cover the intake contract exactly, reference only
+columns present in the profiled source header, preserve required fields, and
+use a transform supported by `normalize-mapped-data`. An honestly incomplete
+mapping can be sealed as rejected evidence; it cannot be approved.
+
+Outputs:
+
+```text
+reviewed_vendor_mapping.csv
+vendor_mapping_review_checks.csv
+vendor_mapping_review_action_queue.csv
+vendor_mapping_review_summary.csv
+vendor_mapping_review_receipt.json
+vendor_mapping_review_config.json
+vendor_mapping_review_runbook.md
+manifest.json
+```
+
+Verify the retained intake/source graph, candidate and decision fingerprints,
+canonical mapping, and every generated artifact before normalization:
+
+```powershell
+python -m hft_cli verify-vendor-mapping-review `
+  --review mappings\arrow_ticks_review `
+  --fail-on-breach
+```
+
+The receipt is an operator-attested review record, not a cryptographic
+signature or vendor endorsement. A verified approval authorizes only the exact
+reviewed mapping for normalization. It never authorizes strategy research,
+routing, submission, or live release. Catalogs distinguish
+`verified_approved`, `verified_rejected`, and `stale_or_inconsistent` review
+evidence.
+
 ## Vendor Order Mapping Draft
 
 Draft a reviewable mapping from the broker-neutral `broker_orders.csv` export

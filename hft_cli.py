@@ -20,6 +20,11 @@ from adapters.vendor_intake import (
     verify_vendor_csv_intake_report,
     write_vendor_csv_intake_report,
 )
+from adapters.vendor_mapping_review import (
+    VendorMappingReviewConfig,
+    verify_vendor_mapping_review,
+    write_vendor_mapping_review,
+)
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
@@ -3925,6 +3930,28 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_vendor_intake.add_argument("--intake", required=True)
     verify_vendor_intake.add_argument("--fail-on-breach", action="store_true")
+    vendor_mapping_review = sub.add_parser(
+        "review-vendor-mapping",
+        help="Seal an operator-attested mapping against a current vendor CSV intake.",
+    )
+    vendor_mapping_review.add_argument("--intake", required=True)
+    vendor_mapping_review.add_argument("--mapping", required=True)
+    vendor_mapping_review.add_argument("--decision", required=True)
+    vendor_mapping_review.add_argument("--out", required=True)
+    vendor_mapping_review.add_argument(
+        "--output-mapping-file",
+        default="reviewed_vendor_mapping.csv",
+    )
+    vendor_mapping_review.add_argument("--fail-on-rejected", action="store_true")
+    verify_vendor_mapping_review_parser = sub.add_parser(
+        "verify-vendor-mapping-review",
+        help="Reconstruct a sealed vendor mapping review and verify all retained inputs.",
+    )
+    verify_vendor_mapping_review_parser.add_argument("--review", required=True)
+    verify_vendor_mapping_review_parser.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
 
     mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
     mapped_export.add_argument("--export", required=True)
@@ -8452,6 +8479,46 @@ def main(argv: list[str] | None = None) -> int:
             2
             if args.fail_on_breach
             and not (result.verified and result.ready)
+            else 0
+        )
+    if args.command == "review-vendor-mapping":
+        result = write_vendor_mapping_review(
+            args.intake,
+            args.mapping,
+            args.decision,
+            args.out,
+            config=VendorMappingReviewConfig(
+                output_mapping_file=args.output_mapping_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_rejected and not result.approved else 0
+    if args.command == "verify-vendor-mapping-review":
+        result = verify_vendor_mapping_review(args.review)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "sealed": result.sealed,
+                    "approved": result.approved,
+                    "rejected": result.rejected,
+                    "manifest_current": result.manifest_current,
+                    "intake_current": result.intake_current,
+                    "mapping_candidate_current": result.mapping_candidate_current,
+                    "operator_decision_current": result.operator_decision_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "normalization_only": result.normalization_only,
+                    "non_routing": result.non_routing,
+                    "review_dir": str(result.output_dir),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.approved)
             else 0
         )
     if args.command == "map-broker-orders":

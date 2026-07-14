@@ -3162,6 +3162,21 @@
   `verified_ready`; an honestly incomplete or ambiguous schema is
   `verified_blocked`; stale or inconsistent evidence fails closed in
   `catalog-runs`. No Arrow.money or iRage columns were invented by this slice.
+- Vendor mapping review now closes the gap between a receipt-bound intake draft
+  and mapped-data normalization. A provider-neutral, write-once review seals an
+  approved or rejected operator decision against the exact intake receipt,
+  source bytes, candidate mapping, adapter, and data kind. Approval requires
+  explicit vendor-documentation, source-column, field-semantic, timestamp,
+  price/quantity-unit, and transform attestations plus non-routing and
+  non-submission declarations. The semantic verifier reconstructs every
+  artifact and the retained intake/source graph; catalogs expose
+  `verified_approved`, `verified_rejected`, and `stale_or_inconsistent`.
+  Approval authorizes only exact-mapping normalization, never strategy
+  research, routing, submission, or live release. The eight-test adversarial
+  gate covers opaque blocked schemas, invalid approval, valid rejection,
+  upstream source drift, candidate tampering after re-manifesting, write-once
+  output, unknown operator claims, strict CLI behavior, and catalog
+  classification.
 
 ## Test Gate
 
@@ -3171,8 +3186,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1736 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1744 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest vendor-mapping review gate: all eight focused adversarial tests pass.
+The broader intake, mapping, onboarding, market-data, data-readiness, catalog,
+manifest, shared adapter/CLI, and broker-vendor surface passes together (`131
+passed`). This covers approved and rejected seals, exact operator/source/hash
+bindings, opaque provider columns, invalid approval, unknown operator claims,
+write-once output, strict CLI behavior, upstream source drift, re-manifested
+candidate tampering, and approved/rejected/stale catalog states. Real
+Arrow.money/iRage schema approval remains intentionally blocked on retained
+vendor documentation and an operator decision; no vendor columns or semantics
+were invented.
 
 Latest vendor-intake integrity gate: legacy and adversarial intake/catalog
 coverage passes together (`12 passed`), including write-once output, strict CLI

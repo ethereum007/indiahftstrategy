@@ -15,6 +15,21 @@ from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 
 
+MAPPED_DATA_TRANSFORMS = frozenset(
+    {
+        "identity",
+        "none",
+        "string",
+        "uppercase",
+        "lowercase",
+        "int",
+        "float",
+        "side_text",
+        "side_signed",
+    }
+)
+
+
 @dataclass(frozen=True)
 class MappedDataConfig:
     adapter: str = "normalized"
