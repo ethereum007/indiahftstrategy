@@ -4584,8 +4584,10 @@ final review, binds it to the established nineteen-view anchors, and
 independently computes view twenty-eight. The additive result is emitted under
 `cutover_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established twenty-view `cutover_final_*` handoff remains unchanged for
-route enable. Generic targets that do not require final consistency and legacy
-draft-backed proof keep the existing provenance checks.
+route-enable compatibility. Route enable now consumes the additive twenty-
+eight-view sibling while retaining that established twenty-view contract.
+Generic targets that do not require final consistency and legacy draft-backed
+proof keep the existing provenance checks.
 When the scale-up config includes both
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
 and the older `broker_readiness.dispatch_roundtrip.vendor_market_data_batch`
@@ -4750,11 +4752,15 @@ cutover-final-review-carried digests, then independently computes view
 twenty-one. Flattened `cutover_final_*` fields retain the complete input and
 `route_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 retains all twenty-one views. This applies to current cutover config and
-flattened cutover summary recovery. Cutover may additionally carry the
-twenty-eight-view `cutover_complete_final_*` sibling; route enable deliberately
-continues to authorize from the established twenty-view input until its own
-boundary is upgraded. A distinct-digest regression guards that compatibility
-contract.
+flattened cutover summary recovery. Reconciled targets also require cutover's
+twenty-eight-view `cutover_complete_final_*` sibling. Route enable accepts it
+from nested cutover config or flattened `scaleup_complete_final_*` summary
+fields, revalidates every historical stage and review digest through cutover-
+complete-final review, binds it to the established twenty-view anchors, and
+independently computes view twenty-nine. The additive result is emitted under
+`route_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established twenty-one-view `route_final_*` handoff remains unchanged for
+broker dispatch.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
@@ -4935,7 +4941,11 @@ config block. The complete input is retained in flattened `route_final_*`
 fields and the twenty-two-view handoff is emitted as
 `dispatch_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The same contract applies to nested route config and flattened route summary
-recovery. Send preparation deliberately continues to read the fourteen-view
+recovery. Route enable may additionally carry the twenty-nine-view
+`route_complete_final_*` sibling; broker dispatch deliberately continues to
+authorize from the established twenty-one-view input until its own boundary is
+upgraded, and a distinct-digest regression guards that compatibility contract.
+Send preparation deliberately continues to read the fourteen-view
 dispatch compatibility key and ignores the new twenty-two-view sibling; a
 distinct-digest regression locks that boundary until send preparation's
 final-lineage contract is upgraded. If
