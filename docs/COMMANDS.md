@@ -5070,13 +5070,13 @@ fields and the twenty-three-view handoff is emitted as
 `send_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established fifteen-view handoff is still emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Acknowledgement reconciliation consumes that complete final comparison for
-reconciled targets while retaining the seven-view compatibility artifact for
-its historical eight-view output. It deliberately ignores the new
-twenty-three-view `send_final_*` sibling until acknowledgement's boundary is
-upgraded, preserving the established fifteen-to-sixteen-view contract when both
-proofs are present. This applies to nested dispatch config and flattened
-dispatch summary recovery. Legacy draft-backed broker-readiness
+Acknowledgement reconciliation consumes both the established fifteen-view and
+new twenty-three-view comparisons for reconciled targets while retaining the
+seven-view compatibility artifact for its historical eight-view output. It
+preserves the established fifteen-to-sixteen-view contract and independently
+extends the new final proof from view twenty-three to view twenty-four. This
+applies to nested dispatch config and flattened dispatch summary recovery.
+Legacy draft-backed broker-readiness
 sidecars and generic non-reconciled targets remain compatible; a reconciled
 target-application sidecar without broker dispatch's complete fourteen- and
 twenty-two-view comparisons fails closed and must be regenerated through
@@ -5233,7 +5233,8 @@ lineage-comparison config, verifies the current and broker-final digests plus
 the scale-up-, cutover-, route-, dispatch-, and send-carried digests, and then
 independently recomputes an eighth canonical digest from the datasets entering
 the acknowledgement record. Reconciled targets additionally require the
-sender's complete fifteen-view comparison. Reconciliation verifies its current,
+sender's complete fifteen-view compatibility comparison and complete
+twenty-three-view final comparison. Reconciliation verifies its current,
 broker-final, scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-,
 final-review-, readiness-, scale-up-review-, cutover-review-, route-enable-review-,
 dispatch-plan-review-, and send-packet-review-carried digests, then independently
@@ -5247,10 +5248,18 @@ emitted in flattened summary fields and
 `ack_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
 where `send_packet_review_carried_application_lineage_sha256` retains sender
 view fifteen and `carried_application_lineage_sha256` is the fresh
-acknowledgement-review digest. This applies to nested send/dispatch config,
+acknowledgement-review digest. Reconciliation also consumes the nested
+`send_final_*` config or flattened `dispatch_final_*` sender-summary fields,
+retains them as flattened `send_final_*` acknowledgement fields, verifies every
+historical digest through
+`dispatch_final_review_carried_application_lineage_sha256`, retains send view
+twenty-three as `send_final_review_carried_application_lineage_sha256`, and
+recomputes acknowledgement view twenty-four. The result is emitted as
+`ack_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+This applies to nested send/dispatch config,
 flattened dispatch summary recovery, and broker-readiness sidecar hydration.
 Legacy draft-backed and generic non-reconciled sidecars remain compatible; a
-reconciled target-application sidecar without the complete sender comparison
+reconciled target-application sidecar without both complete sender comparisons
 fails closed and must be regenerated through the sender handoff. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
@@ -5425,7 +5434,10 @@ fresh roundtrip-review digest. This applies equally to nested component configs
 and flattened component-summary recovery. Legacy draft and generic
 non-reconciled sidecars remain compatible; reconciled target sidecars hydrated
 only from broker readiness fail closed until the complete acknowledgement
-comparison is supplied. If a component
+comparison is supplied. Round-trip review deliberately continues to consume
+the established `ack_final_*` sixteen-view proof and ignores the new
+`ack_complete_final_*` twenty-four-view sibling until its boundary is upgraded.
+If a component
 config carries `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`,
 the round-trip
 review prefers that block before falling back through ack-, dispatch-, and

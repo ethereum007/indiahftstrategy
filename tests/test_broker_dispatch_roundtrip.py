@@ -2051,6 +2051,77 @@ def test_broker_dispatch_roundtrip_carries_target_application_vendor_batch():
     assert expected_checks <= passed
 
 
+def test_broker_dispatch_roundtrip_ignores_ack_complete_final_lineage_until_upgrade():
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    dispatch_config = route_enable_config()
+    dispatch_config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    send_config = route_enable_config()
+    send_config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    ack_config = route_enable_config()
+    ack_config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    ack_config[
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor)
+    ack_config[
+        "ack_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = ack_final_target_application_lineage_comparison(vendor)
+    complete_final_sha256 = "f" * 64
+    complete_final_fields = (
+        "current_application_lineage_sha256",
+        "broker_application_lineage_sha256",
+        "scaleup_carried_application_lineage_sha256",
+        "cutover_carried_application_lineage_sha256",
+        "route_carried_application_lineage_sha256",
+        "dispatch_carried_application_lineage_sha256",
+        "send_carried_application_lineage_sha256",
+        "ack_carried_application_lineage_sha256",
+        "roundtrip_carried_application_lineage_sha256",
+        "readiness_carried_application_lineage_sha256",
+        "scaleup_review_carried_application_lineage_sha256",
+        "cutover_review_carried_application_lineage_sha256",
+        "route_enable_review_carried_application_lineage_sha256",
+        "dispatch_plan_review_carried_application_lineage_sha256",
+        "send_packet_review_carried_application_lineage_sha256",
+        "ack_reconciliation_review_carried_application_lineage_sha256",
+        "roundtrip_final_review_carried_application_lineage_sha256",
+        "broker_readiness_review_carried_application_lineage_sha256",
+        "scaleup_final_review_carried_application_lineage_sha256",
+        "cutover_final_review_carried_application_lineage_sha256",
+        "route_final_review_carried_application_lineage_sha256",
+        "dispatch_final_review_carried_application_lineage_sha256",
+        "send_final_review_carried_application_lineage_sha256",
+        "carried_application_lineage_sha256",
+    )
+    ack_config[
+        "ack_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = {
+        "required": True,
+        "matches": True,
+        **{field: complete_final_sha256 for field in complete_final_fields},
+    }
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=dispatch_config,
+        send_config=send_config,
+        ack_config=ack_config,
+    )
+
+    assert report.passed
+    final_lineage = report.config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert final_lineage["broker_application_lineage_sha256"] == lineage_sha256
+    assert final_lineage["carried_application_lineage_sha256"] == lineage_sha256
+    assert final_lineage["broker_application_lineage_sha256"] != complete_final_sha256
+
+
 def test_broker_dispatch_roundtrip_uses_ack_compatibility_lineage_before_ack_final():
     compatibility_sha256 = "a" * 64
     final_sha256 = "b" * 64
