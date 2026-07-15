@@ -3508,7 +3508,7 @@
   recomputes acknowledgement view thirty-two. The additive result is emitted as
   `ack_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   The established view-twenty-four `ack_complete_final_*` handoff remains
-  unchanged for round-trip compatibility.
+  unchanged as an independent round-trip compatibility anchor.
   Legacy draft-backed and generic non-reconciled acknowledgement packets remain
   compatible; thin reconciled-target sidecars fail closed until send preparation
   supplies the established comparisons plus the additive view-thirty-one proof.
@@ -3543,11 +3543,18 @@
   review digests, binds them to the established sixteen-view anchors, and
   independently recomputes view twenty-five. The new handoff is emitted under
   `roundtrip_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  Acknowledgement reconciliation may additionally carry the view-thirty-two
-  `ack_extended_complete_final_*` sibling; final round-trip review deliberately
-  ignores that additive proof and continues to consume the established
-  view-twenty-four handoff. A distinct-digest regression locks this compatibility
-  boundary.
+  Final review now also consumes acknowledgement reconciliation's view-thirty-two
+  `ack_extended_complete_final_*` sibling from nested config or flattened
+  `send_complete_final_*` acknowledgement-summary fields. It revalidates every
+  inherited stage and review digest through acknowledgement-extended-complete-
+  final review, binds the additive proof to the established view-twenty-four
+  broker and acknowledgement-complete-final anchors, and independently
+  recomputes view thirty-three. The additive output is emitted under
+  `roundtrip_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  The established view-twenty-five `roundtrip_complete_final_*` handoff remains
+  unchanged for broker-readiness compatibility, and a distinct-digest
+  regression proves broker readiness continues to consume view twenty-five
+  rather than the additive view-thirty-three sibling.
   Legacy draft-backed and generic non-reconciled final reviews remain
   compatible; thin reconciled-target sidecars fail closed until acknowledgement
   reconciliation supplies both complete comparisons.
@@ -3601,8 +3608,29 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2019 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2026 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch round-trip extended complete-final target-lineage gate:
+all 68 round-trip tests and all 87 broker-readiness tests pass. Reconciled
+targets now require acknowledgement view thirty-two in addition to the
+established view-twenty-four compatibility proof. Final round-trip review
+validates every inherited stage and review digest, binds the additive proof to
+the established broker and acknowledgement-complete-final anchors, and
+independently recomputes view thirty-three. Missing or negative proof,
+inherited-view drift, compatibility-anchor drift, sender-complete-final-review
+drift, acknowledgement-extended-complete-final-review drift, and fresh
+round-trip recomputation drift all fail closed. Nested acknowledgement config
+and flattened acknowledgement summary recovery both carry the new proof. The
+established view-twenty-five `roundtrip_complete_final_*` handoff remains
+unchanged, and a distinct-digest regression proves broker readiness continues
+to consume view twenty-five rather than the new
+`roundtrip_extended_complete_final_*` sibling. The full 634-test
+broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch ->
+broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-dispatch-
+roundtrip chain passes in 610.9 seconds. The repository collects 2026 tests
+across 154 files. The full suite was not rerun for this slice; the last
+completed full-suite baseline remains unchanged.
 
 Latest broker-dispatch acknowledgement extended complete-final target-lineage
 gate: all 71 acknowledgement tests and all 62 round-trip tests pass.
@@ -3615,9 +3643,10 @@ inherited-view drift, compatibility-anchor drift, dispatch-complete-final-
 review drift, send-complete-final-review drift, and fresh acknowledgement
 recomputation drift all fail closed. Nested sender config, flattened sender
 summary recovery, and sender sidecar merging all carry the new proof. The
-established view-twenty-four `ack_complete_final_*` handoff remains unchanged,
-and a distinct-digest regression proves round-trip review continues to consume
-view twenty-four rather than the new `ack_extended_complete_final_*` sibling.
+established view-twenty-four `ack_complete_final_*` handoff remains unchanged
+as an independent compatibility anchor, and a distinct-digest regression now
+proves round-trip review consumes the new `ack_extended_complete_final_*`
+sibling while preserving view twenty-four.
 The full 627-test broker-readiness -> scale-up -> cutover -> route-enable ->
 broker-dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement ->
 broker-dispatch-roundtrip chain passes in 533.4 seconds. The repository collects

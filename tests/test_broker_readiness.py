@@ -823,6 +823,36 @@ def roundtrip_complete_final_target_application_lineage_comparison(
     return comparison
 
 
+def roundtrip_view_33_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    comparison = roundtrip_complete_final_target_application_lineage_comparison(
+        vendor
+    )
+    for field in tuple(comparison):
+        if field.endswith("_sha256"):
+            comparison[field] = lineage_sha256
+    comparison.update(
+        {
+            "roundtrip_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "scaleup_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "cutover_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "route_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "dispatch_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "send_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "ack_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def with_broker_vendor_batch_summary(
     summary,
     vendor,
@@ -1691,6 +1721,56 @@ def test_broker_readiness_carries_final_target_application_lineage_consistency()
     )
     passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
     assert expected_checks <= passed
+
+
+def test_broker_readiness_preserves_view_25_when_roundtrip_view_33_differs():
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    config[
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor)
+    config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(vendor)
+    config[
+        "roundtrip_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_complete_final_target_application_lineage_comparison(vendor)
+    config[
+        "roundtrip_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_view_33_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256="f" * 64,
+    )
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    complete_final_lineage = report.config["dispatch_roundtrip"][
+        "broker_readiness_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert complete_final_lineage["broker_application_lineage_sha256"] == lineage_sha256
+    assert (
+        complete_final_lineage[
+            "roundtrip_complete_final_review_carried_application_lineage_sha256"
+        ]
+        == lineage_sha256
+    )
+    assert complete_final_lineage["carried_application_lineage_sha256"] == lineage_sha256
+    assert complete_final_lineage["broker_application_lineage_sha256"] != "f" * 64
 
 
 def test_broker_readiness_blocks_roundtrip_complete_final_lineage_drift():
