@@ -3820,13 +3820,23 @@ Target-backed scale-up now also requires broker readiness to carry a successful
 current/final lineage comparison. Scale-up validates the two upstream SHA-256
 digests, recomputes the canonical digest from the carried dataset identities,
 and fails closed if either digest disagrees. When final consistency is required,
-scale-up also requires the broker-readiness ten-view final comparison, verifies
-its current, broker-final, prior scale-up-, cutover-, route-, dispatch-, send-,
-ack-, final-review-, and readiness-carried digests plus the final batch's
-declared digest, then treats its independent recomputation as view eleven.
-Missing or negative final decisions, blank or mismatched views, and post-
-readiness dataset drift block promotion. Generic target onboarding without a
-final reconciliation keeps the current/final/recomputed compatibility path.
+scale-up continues to require the broker-readiness ten-view compatibility
+comparison, verifies its current, broker-final, prior scale-up-, cutover-,
+route-, dispatch-, send-, acknowledgement-, final-review-, and
+readiness-carried digests plus the final batch's declared digest, then treats
+its independent recomputation as view eleven. Reconciled targets additionally
+require
+`broker_readiness_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+from nested readiness config or its flattened `roundtrip_final_*` summary
+projection. Scale-up revalidates the current, broker-final, historical
+scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-, roundtrip-,
+readiness-, scale-up-review-, cutover-review-, route-enable-review-,
+dispatch-plan-review-, send-packet-review-, acknowledgement-reconciliation-
+review-, roundtrip-final-review-, and broker-readiness-review-carried digests,
+then independently recomputes view nineteen. Missing or negative final
+decisions, blank or mismatched views, and post-readiness dataset drift block
+promotion. Generic target onboarding without a final reconciliation keeps the
+current/final/recomputed compatibility path.
 The summary retains final-consistency, match, and digest fields;
 `broker_readiness.dispatch_roundtrip.vendor_market_data_batch` retains the
 consistency state and recomputed digest, while
@@ -3834,7 +3844,14 @@ consistency state and recomputed digest, while
 retains the current, broker-final, and scale-up-carried digests for cutover. The
 sibling
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-retains all ten broker-readiness views plus the new scale-up-carried digest.
+retains all ten broker-readiness views plus the scale-up-carried compatibility
+digest. That eleven-view block remains unchanged for cutover. The complete
+nineteen-view proof is emitted in flattened `broker_readiness_final_*` summary
+fields and
+`broker_readiness.dispatch_roundtrip.scaleup_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `broker_readiness_review_carried_application_lineage_sha256` retains
+broker-readiness view eighteen and `carried_application_lineage_sha256` is the
+fresh scale-up digest.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4522,7 +4539,10 @@ final-review-, readiness-, and scale-up-review-carried digests, and makes its
 own canonical recomputation view twelve. The original four-view block remains
 unchanged; flattened summary fields and the sibling
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-retain all twelve views. The same contract applies when cutover reconstructs
+retain all twelve views. Scale-up's separate nineteen-view `scaleup_final_*`
+sibling is not substituted for this compatibility key; cutover continues to
+consume the established eleven-view block until its own final-lineage contract
+is upgraded. The same contract applies when cutover reconstructs
 the batch from flattened scale-up summary fields or a broker-readiness config
 sidecar. Generic targets that do not require final consistency and legacy
 draft-backed proof keep the existing provenance checks.

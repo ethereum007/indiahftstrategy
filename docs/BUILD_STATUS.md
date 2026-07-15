@@ -3276,13 +3276,21 @@
   requires the broker-readiness current/final lineage-match decision for every
   target-backed batch and recomputes the canonical lineage digest from the
   carried datasets. When broker readiness marks final reconciliation required,
-  scale-up additionally requires its complete ten-view decision, validates the
-  current, broker-final, prior scale-up-, cutover-, route-, dispatch-, send-,
-  ack-, final-review-, and readiness-carried digests plus the final batch's
-  declared digest, and makes its own recomputation view eleven. All upstream
-  views and the new scale-up-carried digest remain visible in summary and
-  sibling config artifacts. Generic target onboarding keeps the established
-  three-view path; legacy draft-backed batches remain compatible.
+  scale-up still validates the complete ten-view compatibility decision and
+  makes its own recomputation view eleven. Reconciled targets now additionally
+  require broker readiness's complete eighteen-view final comparison. Scale-up
+  revalidates the current, broker-final, historical scale-up-, cutover-, route-,
+  dispatch-, send-, ack-, roundtrip-, readiness-, scale-up-review-,
+  cutover-review-, route-enable-review-, dispatch-plan-review-,
+  send-packet-review-, acknowledgement-reconciliation-review-,
+  roundtrip-final-review-, and broker-readiness-review-carried digests, then
+  independently recomputes the canonical digest as view nineteen. The existing
+  eleven-view comparison remains unchanged for cutover compatibility. The
+  complete nineteen-view handoff is retained in flattened
+  `broker_readiness_final_*` summary fields and the sibling
+  `scaleup_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+  config block. Generic target onboarding keeps the established three-view
+  path; legacy draft-backed batches remain compatible.
 - Cutover now preserves and independently gates the same application-backed
   broker vendor batch from scale-up config, flattened scale-up summary, or a
   broker-readiness config sidecar. Its authorization, summary, and nested
@@ -3459,8 +3467,25 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1921 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1928 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest controlled scale-up final target-lineage gate: all 98 scale-up tests
+pass, including nested broker-readiness config and flattened readiness-summary
+recovery of the complete eighteen-view handoff; mandatory final comparison for
+reconciled targets; independent nineteenth-view recomputation; missing,
+negative, inherited-digest, readiness-review-digest, and post-readiness dataset
+drift rejection; and generic non-reconciled target/draft compatibility. The
+historical eleven-view scale-up comparison remains unchanged for cutover, while
+the complete nineteen-view handoff is emitted under the sibling
+`scaleup_final_*` comparison. All 57 cutover tests pass, including a
+distinct-digest regression proving cutover continues to consume only the
+compatibility key. The full 536-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch -> broker-dispatch-send ->
+broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
+350.5 seconds. The repository now collects 1928 tests across 154 files. The
+full suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
 
 Latest broker-readiness final target-lineage gate: all 79 broker-readiness
 tests pass, including nested roundtrip config and flattened roundtrip-summary
