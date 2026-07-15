@@ -4532,19 +4532,26 @@ final dispatch/send/ack consistency decision and current, broker-final,
 scale-up-carried, and cutover-carried digests remain visible in
 `cutover_summary.csv` and the
 `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-config block. When final consistency is required, cutover additionally requires
-the scale-up eleven-view final comparison, revalidates its current,
-broker-final, prior scale-up-, cutover-, route-, dispatch-, send-, ack-,
-final-review-, readiness-, and scale-up-review-carried digests, and makes its
-own canonical recomputation view twelve. The original four-view block remains
-unchanged; flattened summary fields and the sibling
+config block. When final consistency is required, cutover continues to require
+the scale-up eleven-view compatibility comparison, revalidates it, and makes
+its own canonical recomputation view twelve. The original four-view block and
+full twelve-view handoff remain unchanged in flattened summary fields and the
+sibling
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-retain all twelve views. Scale-up's separate nineteen-view `scaleup_final_*`
-sibling is not substituted for this compatibility key; cutover continues to
-consume the established eleven-view block until its own final-lineage contract
-is upgraded. The same contract applies when cutover reconstructs
-the batch from flattened scale-up summary fields or a broker-readiness config
-sidecar. Generic targets that do not require final consistency and legacy
+retain all twelve views. Reconciled targets additionally require scale-up's
+nineteen-view `scaleup_final_*` comparison. Cutover revalidates its current,
+broker-final, prior scale-up-, cutover-, route-, dispatch-, send-, ack-,
+roundtrip-, readiness-, scale-up-review-, cutover-review-, route-enable-review-,
+dispatch-plan-review-, send-packet-review-, acknowledgement-reconciliation-review-,
+roundtrip-final-review-, broker-readiness-review-, and
+scale-up-final-review-carried digests, then independently computes view twenty.
+Flattened `scaleup_final_*` fields retain the complete input and
+`cutover_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+retains all twenty views. The same contract applies when cutover reconstructs
+the batch from flattened scale-up summary fields. A broker-readiness config
+sidecar can hydrate the batch and compatibility comparisons, but cannot mint
+scale-up's final review; a reconciled target relying only on that sidecar fails
+closed. Generic targets that do not require final consistency and legacy
 draft-backed proof keep the existing provenance checks.
 When the scale-up config includes both
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
@@ -4555,7 +4562,8 @@ hydrates missing broker vendor-data proof from
 `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch` plus
 its sibling `vendor_market_data_batch_lineage_comparison` and, when present,
 `broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison` before
-revalidating and carrying it downstream. Cutover also carries
+revalidating and carrying it downstream. This hydration does not create the
+nineteen-view `scaleup_final_*` proof. Cutover also carries
 `broker_readiness.broker_vendor_data_readiness` into
 `scaleup_broker_vendor_data_readiness_*` summary fields and fails closed if the
 wrapper readiness sidecar is failed even when the nested vendor batch is valid.
@@ -4702,6 +4710,10 @@ config block, including `route_carried_application_lineage_sha256`; the full
 thirteen-view handoff is emitted as
 `route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 This applies to current cutover config and flattened cutover summary recovery.
+Route enable deliberately continues to read the twelve-view cutover
+compatibility key. It does not substitute the new twenty-view
+`cutover_final_*` sibling; a distinct-digest regression locks that boundary
+until route enable's final-lineage contract is upgraded.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the

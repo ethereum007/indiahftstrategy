@@ -84,6 +84,40 @@ def cutover_final_target_application_lineage_comparison(vendor, **overrides):
     return comparison
 
 
+def cutover_complete_final_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    return {
+        "required": True,
+        "matches": True,
+        "current_application_lineage_sha256": lineage_sha256,
+        "broker_application_lineage_sha256": lineage_sha256,
+        "scaleup_carried_application_lineage_sha256": lineage_sha256,
+        "cutover_carried_application_lineage_sha256": lineage_sha256,
+        "route_carried_application_lineage_sha256": lineage_sha256,
+        "dispatch_carried_application_lineage_sha256": lineage_sha256,
+        "send_carried_application_lineage_sha256": lineage_sha256,
+        "ack_carried_application_lineage_sha256": lineage_sha256,
+        "roundtrip_carried_application_lineage_sha256": lineage_sha256,
+        "readiness_carried_application_lineage_sha256": lineage_sha256,
+        "scaleup_review_carried_application_lineage_sha256": lineage_sha256,
+        "cutover_review_carried_application_lineage_sha256": lineage_sha256,
+        "route_enable_review_carried_application_lineage_sha256": lineage_sha256,
+        "dispatch_plan_review_carried_application_lineage_sha256": lineage_sha256,
+        "send_packet_review_carried_application_lineage_sha256": lineage_sha256,
+        "ack_reconciliation_review_carried_application_lineage_sha256": lineage_sha256,
+        "roundtrip_final_review_carried_application_lineage_sha256": lineage_sha256,
+        "broker_readiness_review_carried_application_lineage_sha256": lineage_sha256,
+        "scaleup_final_review_carried_application_lineage_sha256": lineage_sha256,
+        "carried_application_lineage_sha256": lineage_sha256,
+    }
+
+
 def cutover_summary(
     ready=True,
     max_orders=10,
@@ -1566,6 +1600,44 @@ def test_route_enable_carries_target_application_vendor_batch_from_cutover_confi
     }
     passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
     assert expected_checks <= passed
+
+
+def test_route_enable_preserves_cutover_compatibility_with_distinct_complete_final_digest():
+    config = cutover_config()
+    prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    vendor_input = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor_input["datasets"])
+    config[prefix] = vendor_input
+    config[
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor_input)
+    config[f"{prefix}_lineage_comparison"] = (
+        cutover_final_target_application_lineage_comparison(vendor_input)
+    )
+    config[
+        "cutover_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = cutover_complete_final_target_application_lineage_comparison(
+        vendor_input,
+        lineage_sha256="f" * 64,
+    )
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert report.ready
+    compatibility = report.config[f"{prefix}_lineage_comparison"]
+    route_final = report.config[
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert compatibility["broker_application_lineage_sha256"] == lineage_sha256
+    assert route_final["broker_application_lineage_sha256"] == lineage_sha256
+    assert route_final["carried_application_lineage_sha256"] == lineage_sha256
+    assert route_final["broker_application_lineage_sha256"] != "f" * 64
 
 
 def test_route_enable_carries_target_application_vendor_batch_from_cutover_summary():

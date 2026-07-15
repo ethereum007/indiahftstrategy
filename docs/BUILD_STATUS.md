@@ -3292,25 +3292,36 @@
   config block. Generic target onboarding keeps the established three-view
   path; legacy draft-backed batches remain compatible.
 - Cutover now preserves and independently gates the same application-backed
-  broker vendor batch from scale-up config, flattened scale-up summary, or a
-  broker-readiness config sidecar. Its authorization, summary, and nested
+  broker vendor batch from scale-up config or flattened scale-up summary. A
+  broker-readiness config sidecar may hydrate the underlying batch and
+  compatibility proof, but cannot substitute for scale-up's own final review.
+  Its authorization, summary, and nested
   config retain mode, count, uniqueness, coverage, and each dataset's complete
   application/scope-review/target-intake/applied-mapping graph. Any target
   signal requires strict mode, one unique application per dataset, full
   coverage, complete lineage, an affirmative scale-up current/final match, and
   final dispatch/send/ack consistency when that final-stage decision is marked
-  required before route enable can inherit the proof. Reconciled targets now
-  also require scale-up's complete eleven-view final comparison. Cutover
-  revalidates the current, broker-final, historical scale-up-, cutover-, route-,
-  dispatch-, send-, ack-, final-review-, readiness-, and scale-up-review-carried
-  digests, then independently recomputes the canonical digest from its carried
-  datasets as view twelve. The original four-view compatibility comparison is
-  unchanged; the full handoff is retained in flattened summary fields and the
-  sibling
+  required before route enable can inherit the proof. Cutover continues to
+  validate scale-up's eleven-view compatibility comparison and independently
+  recomputes view twelve without changing that route-enable contract.
+  Reconciled targets now additionally require scale-up's complete nineteen-view
+  final comparison. Cutover revalidates the current, broker-final, historical
+  scale-up-, cutover-, route-, dispatch-, send-, ack-, roundtrip-, readiness-,
+  scale-up-review-, cutover-review-, route-enable-review-, dispatch-plan-review-,
+  send-packet-review-, acknowledgement-reconciliation-review-,
+  roundtrip-final-review-, broker-readiness-review-, and
+  scale-up-final-review-carried digests, then independently recomputes the
+  canonical digest as view twenty. The original four-view comparison and full
+  twelve-view compatibility handoff remain unchanged in flattened summary
+  fields and the sibling
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-  config block. Broker-readiness sidecar hydration includes both lineage
-  comparisons as well as the target batch. Generic non-reconciled targets and
-  legacy draft-backed handoffs keep their existing compatibility paths.
+  config block. The complete input is retained in flattened `scaleup_final_*`
+  fields and the twenty-view output is emitted under
+  `cutover_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  A reconciled target hydrated only from a broker-readiness sidecar fails
+  closed until controlled scale-up emits the nineteen-view proof. Generic
+  non-reconciled targets and legacy draft-backed handoffs keep their existing
+  compatibility paths.
 - Route enable now carries and revalidates that target-application batch before
   dry-run broker dispatch can inherit it. Current cutover config, flattened
   cutover summary, and broker-readiness sidecar inputs all retain mapping mode,
@@ -3330,9 +3341,12 @@
   unchanged; the full handoff is retained in flattened summary fields and the
   sibling
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-  config block. Generic non-reconciled targets and legacy draft-backed handoffs
-  keep their compatibility paths; thin target sidecars fail until cutover
-  produces the complete final comparison.
+  config block. Route enable deliberately continues to consume cutover's
+  twelve-view compatibility key; the new twenty-view `cutover_final_*` sibling
+  is not substituted until route enable's contract is upgraded. Generic
+  non-reconciled targets and legacy draft-backed handoffs keep their
+  compatibility paths; thin target sidecars fail until cutover produces the
+  complete compatibility comparison.
 - Broker dispatch planning now preserves and independently gates the same
   application-backed vendor batch before any sender packet can be prepared.
   Nested route config, flattened route summary, and broker-readiness sidecar
@@ -3467,8 +3481,25 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1928 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1935 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest cutover final target-lineage gate: all 63 cutover tests pass. Reconciled
+targets must now supply scale-up's complete nineteen-view proof; cutover
+revalidates every historical stage and review digest, binds it to the existing
+twelve-view compatibility anchor, and independently recomputes view twenty.
+Missing or negative proof, inherited-view drift, compatibility-anchor drift,
+scale-up-final-review drift, and post-scale-up dataset drift all fail closed.
+Broker-readiness sidecars may hydrate the underlying target batch but cannot
+manufacture scale-up's final review. The established twelve-view cutover key
+remains unchanged for route enable, and all 60 route-enable tests pass,
+including a distinct-digest regression proving the new twenty-view sibling is
+not substituted early. The full 543-test broker-readiness -> scale-up ->
+cutover -> route-enable -> broker-dispatch -> broker-dispatch-send ->
+broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
+595 seconds. The repository now collects 1935 tests across 154 files. The full
+suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
 
 Latest controlled scale-up final target-lineage gate: all 98 scale-up tests
 pass, including nested broker-readiness config and flattened readiness-summary
