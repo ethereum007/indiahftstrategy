@@ -3874,9 +3874,9 @@ twenty-seven. Flattened `broker_readiness_complete_final_*` summary fields
 retain the input and fresh review digests, while
 `broker_readiness.dispatch_roundtrip.scaleup_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 retains all twenty-seven views. The established nineteen-view `scaleup_final_*`
-handoff remains unchanged. Cutover deliberately continues to consume that
-nineteen-view contract and ignores the new sibling until its own boundary is
-upgraded; a distinct-digest regression guards this compatibility decision.
+handoff remains unchanged for compatibility. Cutover now consumes the additive
+twenty-seven-view sibling while retaining that established nineteen-view
+contract.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4576,11 +4576,16 @@ retains all twenty views. The same contract applies when cutover reconstructs
 the batch from flattened scale-up summary fields. A broker-readiness config
 sidecar can hydrate the batch and compatibility comparisons, but cannot mint
 scale-up's final review; a reconciled target relying only on that sidecar fails
-closed. Scale-up may additionally carry the twenty-seven-view
-`scaleup_complete_final_*` sibling; cutover intentionally ignores it until the
-cutover boundary is upgraded and continues to authorize only from the
-established nineteen-view input. Generic targets that do not require final
-consistency and legacy draft-backed proof keep the existing provenance checks.
+closed. Reconciled targets also require scale-up's twenty-seven-view
+`scaleup_complete_final_*` sibling. Cutover accepts it from nested scale-up
+config or flattened `broker_readiness_complete_final_*` summary fields,
+revalidates every historical stage and review digest through scale-up-complete-
+final review, binds it to the established nineteen-view anchors, and
+independently computes view twenty-eight. The additive result is emitted under
+`cutover_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established twenty-view `cutover_final_*` handoff remains unchanged for
+route enable. Generic targets that do not require final consistency and legacy
+draft-backed proof keep the existing provenance checks.
 When the scale-up config includes both
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
 and the older `broker_readiness.dispatch_roundtrip.vendor_market_data_batch`
@@ -4745,7 +4750,11 @@ cutover-final-review-carried digests, then independently computes view
 twenty-one. Flattened `cutover_final_*` fields retain the complete input and
 `route_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 retains all twenty-one views. This applies to current cutover config and
-flattened cutover summary recovery.
+flattened cutover summary recovery. Cutover may additionally carry the
+twenty-eight-view `cutover_complete_final_*` sibling; route enable deliberately
+continues to authorize from the established twenty-view input until its own
+boundary is upgraded. A distinct-digest regression guards that compatibility
+contract.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
