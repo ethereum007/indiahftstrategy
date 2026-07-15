@@ -3341,6 +3341,21 @@
   route-enable compatibility. Route enable now consumes the additive
   twenty-eight-view sibling while continuing to retain that established input
   contract.
+  Cutover now also consumes scale-up's view-thirty-five
+  `scaleup_extended_complete_final_*` sibling from nested config or flattened
+  `broker_readiness_extended_complete_final_*` summary fields. It revalidates
+  every inherited stage and review digest through roundtrip-extended-complete-
+  final, broker-readiness-extended-complete-final, and scale-up-extended-
+  complete-final review, binds the additive proof to the established view-
+  twenty-seven broker and scale-up-complete-final-review anchors, and
+  independently recomputes view thirty-six. The additive output is emitted
+  under
+  `cutover_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  The established view-twenty-eight `cutover_complete_final_*` handoff remains
+  unchanged for route enable. Distinct-digest regressions prove view-thirty-
+  five drift blocks cutover without rewriting view twenty-eight and prove
+  route enable ignores view thirty-six while deriving view twenty-nine from
+  view twenty-eight.
   A reconciled target hydrated only from a broker-readiness sidecar fails
   closed until controlled scale-up emits the nineteen-view proof. Generic
   non-reconciled targets and legacy draft-backed handoffs keep their existing
@@ -3607,9 +3622,9 @@
   recomputes view thirty-five. The additive result is emitted under
   `scaleup_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   The established view-twenty-seven `scaleup_complete_final_*` handoff remains
-  unchanged for cutover, and a distinct-digest regression proves cutover
-  continues to consume view twenty-seven rather than the additive
-  view-thirty-five sibling.
+  unchanged as cutover's compatibility anchor and the source for the
+  established view-twenty-eight output. Cutover now also consumes the additive
+  view-thirty-five sibling described below.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3628,8 +3643,29 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2040 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2047 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest cutover extended complete-final target-lineage gate: all 77 cutover
+tests and all 74 route-enable tests pass. Reconciled targets now require
+scale-up view thirty-five in addition to the established view-twenty-seven
+compatibility proof. Cutover validates every inherited stage and review
+digest, binds the additive proof to the established broker and scale-up-
+complete-final-review anchors, and independently recomputes view thirty-six.
+Missing or negative proof, inherited-view drift, compatibility-anchor drift,
+sender-complete-final-review drift, scale-up-extended-complete-final-review
+drift, and fresh cutover recomputation drift all fail closed. Nested scale-up
+config and flattened scale-up summary recovery both carry the new proof. The
+established view-twenty-eight `cutover_complete_final_*` handoff remains
+unchanged, and distinct-digest regressions prove cutover fails on view-thirty-
+five drift without rewriting view twenty-eight while route enable continues to
+derive view twenty-nine from view twenty-eight rather than the additive
+view-thirty-six sibling. The full 655-test broker-readiness -> scale-up ->
+cutover -> route-enable -> broker-dispatch -> broker-dispatch-send -> broker-
+dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in 439.9
+seconds. The repository collects 2047 tests across 154 files. The full suite
+was not rerun for this slice; the last completed full-suite baseline remains
+unchanged.
 
 Latest controlled-scale-up extended complete-final target-lineage gate: all 112
 controlled scale-up tests and all 71 cutover tests pass. Reconciled targets now
@@ -3643,9 +3679,10 @@ roundtrip-extended-complete-final-review drift, broker-readiness-extended-
 complete-final-review drift, and fresh scale-up recomputation drift all fail
 closed. Nested broker-readiness config and flattened broker-readiness summary
 recovery both carry the new proof. The established view-twenty-seven
-`scaleup_complete_final_*` handoff remains unchanged, and a distinct-digest
-regression proves cutover continues to consume view twenty-seven rather than
-the new `scaleup_extended_complete_final_*` sibling. The full 648-test
+`scaleup_complete_final_*` handoff remains unchanged. The subsequent cutover
+gate documented above consumes the additive `scaleup_extended_complete_final_*`
+sibling while retaining view twenty-seven as its compatibility anchor and the
+source for view twenty-eight. The full 648-test
 broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch ->
 broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-dispatch-
 roundtrip chain passes in 888.7 seconds. The repository collects 2040 tests

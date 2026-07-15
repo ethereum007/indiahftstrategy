@@ -132,6 +132,28 @@ SCALEUP_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS: tuple[str, ...] = (
 CUTOVER_COMPLETE_FINAL_LINEAGE_COMPARISON_KEY = (
     "cutover_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
 )
+SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_COMPARISON_KEY = (
+    "scaleup_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX = (
+    "scaleup_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_SUMMARY_FIELD_PREFIX = (
+    "broker_readiness_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS: tuple[str, ...] = (
+    *SCALEUP_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS,
+    "scaleup_complete_final_review_carried_application_lineage_sha256",
+    "cutover_complete_final_review_carried_application_lineage_sha256",
+    "route_complete_final_review_carried_application_lineage_sha256",
+    "dispatch_complete_final_review_carried_application_lineage_sha256",
+    "send_complete_final_review_carried_application_lineage_sha256",
+    "ack_extended_complete_final_review_carried_application_lineage_sha256",
+    "roundtrip_extended_complete_final_review_carried_application_lineage_sha256",
+)
+CUTOVER_EXTENDED_COMPLETE_FINAL_LINEAGE_COMPARISON_KEY = (
+    "cutover_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
 
 
 @dataclass(frozen=True)
@@ -2020,6 +2042,12 @@ def _broker_vendor_market_data_batch_checks(scaleup: dict[str, Any]) -> list[dic
                     cutover_lineage_sha256=cutover_carried_lineage_sha256,
                 )
             )
+            checks.extend(
+                _broker_vendor_scaleup_extended_complete_final_lineage_checks(
+                    scaleup,
+                    cutover_lineage_sha256=cutover_carried_lineage_sha256,
+                )
+            )
     return checks
 
 
@@ -2562,6 +2590,264 @@ def _broker_vendor_scaleup_complete_final_lineage_checks(
     return checks
 
 
+def _broker_vendor_scaleup_extended_complete_final_lineage_checks(
+    scaleup: dict[str, Any],
+    *,
+    cutover_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    source_prefix = SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX
+    compatibility_prefix = SCALEUP_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX
+    check_prefix = (
+        f"scaleup_{BROKER_FINAL_LINEAGE_FIELD_PREFIX}_"
+        "scaleup_extended_complete_final"
+    )
+    lineage_match_required = _to_bool(
+        scaleup[f"{source_prefix}_lineage_match_required"]
+    )
+    lineage_matches = _to_bool(scaleup[f"{source_prefix}_lineage_matches"])
+    broker_lineage_sha256 = _sha256_text(
+        scaleup[f"{source_prefix}_broker_application_lineage_sha256"]
+    )
+    current_lineage_sha256 = _sha256_text(
+        scaleup[f"{source_prefix}_current_application_lineage_sha256"]
+    )
+    compatibility_broker_lineage_sha256 = _sha256_text(
+        scaleup[f"{compatibility_prefix}_broker_application_lineage_sha256"]
+    )
+    compatibility_scaleup_complete_final_review_lineage_sha256 = _sha256_text(
+        scaleup[f"{compatibility_prefix}_carried_application_lineage_sha256"]
+    )
+    checks = [
+        _check(
+            f"{check_prefix}_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "reconciled target cutover requires scale-up's latest extended complete-final lineage comparison",
+        ),
+        _check(
+            f"{check_prefix}_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "scale-up did not match every latest extended complete-final target-lineage view",
+        ),
+        _check(
+            f"{check_prefix}_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "scale-up extended complete-final source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+            compatibility_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_broker_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_broker_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "cutover compatibility broker digest does not match scale-up's latest extended proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_scaleup_complete_final_review_carried_lineage_sha256_matches",
+            compatibility_scaleup_complete_final_review_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_scaleup_complete_final_review_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_scaleup_complete_final_review_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "cutover compatibility scale-up complete-final review does not match scale-up's latest extended proof",
+        ),
+    ]
+    carried_fields = (
+        ("prior_scaleup", "scaleup_carried_application_lineage_sha256"),
+        ("prior_cutover", "cutover_carried_application_lineage_sha256"),
+        ("route", "route_carried_application_lineage_sha256"),
+        ("dispatch", "dispatch_carried_application_lineage_sha256"),
+        ("send", "send_carried_application_lineage_sha256"),
+        ("ack", "ack_carried_application_lineage_sha256"),
+        ("roundtrip", "roundtrip_carried_application_lineage_sha256"),
+        ("readiness", "readiness_carried_application_lineage_sha256"),
+        ("scaleup_review", "scaleup_review_carried_application_lineage_sha256"),
+        ("cutover_review", "cutover_review_carried_application_lineage_sha256"),
+        (
+            "route_enable_review",
+            "route_enable_review_carried_application_lineage_sha256",
+        ),
+        (
+            "dispatch_plan_review",
+            "dispatch_plan_review_carried_application_lineage_sha256",
+        ),
+        (
+            "send_packet_review",
+            "send_packet_review_carried_application_lineage_sha256",
+        ),
+        (
+            "ack_reconciliation_review",
+            "ack_reconciliation_review_carried_application_lineage_sha256",
+        ),
+        (
+            "roundtrip_final_review",
+            "roundtrip_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "broker_readiness_review",
+            "broker_readiness_review_carried_application_lineage_sha256",
+        ),
+        (
+            "scaleup_final_review",
+            "scaleup_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "cutover_final_review",
+            "cutover_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "route_final_review",
+            "route_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "dispatch_final_review",
+            "dispatch_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "send_final_review",
+            "send_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "ack_complete_final_review",
+            "ack_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "roundtrip_complete_final_review",
+            "roundtrip_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "scaleup_complete_final_review",
+            "scaleup_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "cutover_complete_final_review",
+            "cutover_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "route_complete_final_review",
+            "route_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "dispatch_complete_final_review",
+            "dispatch_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "send_complete_final_review",
+            "send_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "ack_extended_complete_final_review",
+            "ack_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        (
+            "roundtrip_extended_complete_final_review",
+            "roundtrip_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+    )
+    for stage, field in carried_fields:
+        carried_sha256 = _sha256_text(scaleup[f"{source_prefix}_{field}"])
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"scale-up's {stage.replace('_', '-')} target lineage "
+                    "does not match latest extended complete-final broker proof"
+                ),
+            )
+        )
+    broker_readiness_extended_complete_final_review_lineage_sha256 = _sha256_text(
+        scaleup[
+            f"{source_prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256"
+        ]
+    )
+    scaleup_extended_complete_final_review_lineage_sha256 = _sha256_text(
+        scaleup[f"{source_prefix}_carried_application_lineage_sha256"]
+    )
+    cutover_extended_complete_final_review_lineage_sha256 = _sha256_text(
+        cutover_lineage_sha256
+    )
+    checks.extend(
+        [
+            _check(
+                f"{check_prefix}_broker_readiness_extended_complete_final_review_carried_lineage_sha256_matches",
+                broker_readiness_extended_complete_final_review_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and broker_readiness_extended_complete_final_review_lineage_sha256
+                    and broker_lineage_sha256
+                    and broker_readiness_extended_complete_final_review_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "scale-up's broker-readiness extended review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_scaleup_extended_complete_final_review_carried_lineage_sha256_matches",
+                scaleup_extended_complete_final_review_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and scaleup_extended_complete_final_review_lineage_sha256
+                    and broker_lineage_sha256
+                    and scaleup_extended_complete_final_review_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "scale-up's carried extended complete-final review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_cutover_extended_complete_final_review_carried_lineage_sha256_matches",
+                cutover_extended_complete_final_review_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and cutover_extended_complete_final_review_lineage_sha256
+                    and broker_lineage_sha256
+                    and cutover_extended_complete_final_review_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "cutover's independently recomputed target lineage does not match scale-up's latest extended proof",
+            ),
+        ]
+    )
+    return checks
+
+
 def _target_application_batch_active(vendor: dict[str, Any]) -> bool:
     mapping_sources = {
         value.strip().lower()
@@ -2766,6 +3052,9 @@ def _authorization(
                     scaleup
                 ),
                 **_broker_vendor_scaleup_complete_final_lineage_authorization_fields(
+                    scaleup
+                ),
+                **_broker_vendor_scaleup_extended_complete_final_lineage_authorization_fields(
                     scaleup
                 ),
                 **_vendor_market_data_batch_authorization_fields(scaleup),
@@ -3218,6 +3507,27 @@ def _broker_vendor_scaleup_complete_final_lineage_authorization_fields(
     return fields
 
 
+def _broker_vendor_scaleup_extended_complete_final_lineage_authorization_fields(
+    scaleup: dict[str, Any],
+) -> dict[str, Any]:
+    prefix = SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": scaleup[
+            f"{prefix}_lineage_match_required"
+        ],
+        f"{prefix}_lineage_matches": scaleup[f"{prefix}_lineage_matches"],
+        f"{prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256": scaleup[
+            f"{prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256"
+        ],
+        f"{prefix}_scaleup_extended_complete_final_review_carried_application_lineage_sha256": scaleup[
+            f"{prefix}_carried_application_lineage_sha256"
+        ],
+    }
+    for field in SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = scaleup[f"{prefix}_{field}"]
+    return fields
+
+
 def _broker_vendor_data_readiness_authorization_fields(scaleup: dict[str, Any]) -> dict[str, Any]:
     readiness = scaleup["broker_vendor_data_readiness"]
     return {
@@ -3363,6 +3673,9 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     authorization
                 ),
                 **_broker_vendor_scaleup_complete_final_lineage_summary_fields(
+                    authorization
+                ),
+                **_broker_vendor_scaleup_extended_complete_final_lineage_summary_fields(
                     authorization
                 ),
                 "scaleup_vendor_market_data_batch_provided": _to_bool(
@@ -4078,6 +4391,38 @@ def _broker_vendor_scaleup_complete_final_lineage_summary_fields(
     return fields
 
 
+def _broker_vendor_scaleup_extended_complete_final_lineage_summary_fields(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    prefix = SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            authorization[f"{prefix}_lineage_match_required"]
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            authorization[f"{prefix}_lineage_matches"]
+        ),
+        f"{prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256": str(
+            authorization[
+                f"{prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256"
+            ]
+        ),
+        f"{prefix}_scaleup_extended_complete_final_review_carried_application_lineage_sha256": str(
+            authorization[
+                f"{prefix}_scaleup_extended_complete_final_review_carried_application_lineage_sha256"
+            ]
+        ),
+        f"{prefix}_cutover_extended_complete_final_review_carried_application_lineage_sha256": str(
+            authorization[
+                "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+            ]
+        ),
+    }
+    for field in SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = str(authorization[f"{prefix}_{field}"])
+    return fields
+
+
 def _broker_vendor_data_readiness_summary_fields(authorization: pd.Series) -> dict[str, Any]:
     return {
         "scaleup_broker_vendor_data_readiness_provided": _to_bool(
@@ -4255,6 +4600,11 @@ def _config(
         ),
         CUTOVER_COMPLETE_FINAL_LINEAGE_COMPARISON_KEY: (
             _broker_vendor_cutover_complete_final_lineage_28_config(
+                authorization
+            )
+        ),
+        CUTOVER_EXTENDED_COMPLETE_FINAL_LINEAGE_COMPARISON_KEY: (
+            _broker_vendor_cutover_extended_complete_final_lineage_config(
                 authorization
             )
         ),
@@ -4807,6 +5157,34 @@ def _broker_vendor_cutover_complete_final_lineage_28_config(
     return config
 
 
+def _broker_vendor_cutover_extended_complete_final_lineage_config(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    prefix = SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX
+    config: dict[str, Any] = {
+        "required": _to_bool(authorization[f"{prefix}_lineage_match_required"]),
+        "matches": _to_bool(authorization[f"{prefix}_lineage_matches"]),
+        "broker_readiness_extended_complete_final_review_carried_application_lineage_sha256": str(
+            authorization[
+                f"{prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256"
+            ]
+        ),
+        "scaleup_extended_complete_final_review_carried_application_lineage_sha256": str(
+            authorization[
+                f"{prefix}_scaleup_extended_complete_final_review_carried_application_lineage_sha256"
+            ]
+        ),
+        "carried_application_lineage_sha256": str(
+            authorization[
+                "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+            ]
+        ),
+    }
+    for field in SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS:
+        config[field] = str(authorization[f"{prefix}_{field}"])
+    return config
+
+
 def _broker_vendor_data_readiness_config(authorization: pd.Series) -> dict[str, Any]:
     return {
         "provided": _to_bool(authorization["scaleup_broker_vendor_data_readiness_provided"]),
@@ -5106,6 +5484,57 @@ def _broker_vendor_scaleup_complete_final_lineage_state_fields(
     return fields
 
 
+def _broker_vendor_scaleup_extended_complete_final_lineage_state_fields(
+    comparison: dict[str, Any],
+    row: pd.Series,
+) -> dict[str, Any]:
+    prefix = SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_FIELD_PREFIX
+    summary_prefix = SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_SUMMARY_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(f"{summary_prefix}_lineage_match_required", False),
+            )
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(f"{summary_prefix}_lineage_matches", False),
+            )
+        ),
+        f"{prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "broker_readiness_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_broker_readiness_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("carried_application_lineage_sha256", ""),
+                row.get(
+                    f"{summary_prefix}_scaleup_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+    }
+    for field in SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            _first_text(
+                comparison.get(field, ""),
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    return fields
+
+
 def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
@@ -5143,6 +5572,12 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     ) or {}
     if not isinstance(scaleup_complete_final_lineage_comparison, dict):
         scaleup_complete_final_lineage_comparison = {}
+    scaleup_extended_complete_final_lineage_comparison = dispatch.get(
+        SCALEUP_EXTENDED_COMPLETE_FINAL_LINEAGE_COMPARISON_KEY,
+        {},
+    ) or {}
+    if not isinstance(scaleup_extended_complete_final_lineage_comparison, dict):
+        scaleup_extended_complete_final_lineage_comparison = {}
     broker_vendor_data_readiness = broker_readiness.get("broker_vendor_data_readiness", {}) or {}
     broker_vendor_market_data_batch = _broker_vendor_market_data_batch_source(dispatch)
     broker_vendor_market_data_batch_state = _vendor_market_data_batch_state(
@@ -5245,6 +5680,10 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
         ),
         **_broker_vendor_scaleup_complete_final_lineage_state_fields(
             scaleup_complete_final_lineage_comparison,
+            row,
+        ),
+        **_broker_vendor_scaleup_extended_complete_final_lineage_state_fields(
+            scaleup_extended_complete_final_lineage_comparison,
             row,
         ),
         "broker_vendor_data_readiness": _broker_vendor_data_readiness_state(

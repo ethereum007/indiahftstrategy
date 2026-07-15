@@ -3897,9 +3897,10 @@ thirty-five. The additive result is emitted under
 where `broker_readiness_extended_complete_final_review_carried_application_lineage_sha256`
 retains readiness view thirty-four and `carried_application_lineage_sha256` is
 the fresh scale-up digest. The established view-twenty-seven
-`scaleup_complete_final_*` handoff remains unchanged for cutover; a distinct-
-digest regression verifies view thirty-five cannot alter cutover's view-
-twenty-eight proof.
+`scaleup_complete_final_*` handoff remains unchanged as cutover's compatibility
+anchor and the source for the established view-twenty-eight proof. Cutover now
+also consumes view thirty-five and emits the additive view-thirty-six proof
+described in the cutover section below.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4609,6 +4610,19 @@ independently computes view twenty-eight. The additive result is emitted under
 The established twenty-view `cutover_final_*` handoff remains unchanged for
 route-enable compatibility. Route enable now consumes the additive twenty-
 eight-view sibling while retaining that established twenty-view contract.
+Cutover now also requires scale-up's view-thirty-five
+`scaleup_extended_complete_final_*` sibling. It accepts the proof from nested
+scale-up config or flattened `broker_readiness_extended_complete_final_*`
+summary fields, revalidates every inherited stage and review digest through
+roundtrip-extended-complete-final, broker-readiness-extended-complete-final,
+and scale-up-extended-complete-final review, and binds it to the established
+view-twenty-seven broker and scale-up-complete-final-review anchors. Cutover's
+fresh canonical digest becomes view thirty-six under
+`cutover_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Missing or negative proof, any inherited digest drift, either compatibility-
+anchor drift, or disagreement with cutover's recomputed datasets fails closed.
+The established view-twenty-eight `cutover_complete_final_*` output remains
+unchanged for route enable.
 Generic targets that do not require final consistency and legacy draft-backed
 proof keep the existing provenance checks.
 When the scale-up config includes both
@@ -4786,6 +4800,10 @@ The established twenty-one-view `route_final_*` handoff remains unchanged for
 broker-dispatch compatibility. Broker dispatch now consumes the additive
 twenty-nine-view sibling while retaining that established twenty-one-view
 contract.
+The additive cutover view-thirty-six sibling is intentionally not a route-
+enable dependency yet. Route enable continues to derive view twenty-nine from
+the established cutover view twenty-eight; a distinct-digest compatibility
+regression proves an adjacent view-thirty-six block cannot rewrite that output.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
