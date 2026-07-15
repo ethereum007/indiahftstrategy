@@ -3445,10 +3445,16 @@ view twenty-five as
 `roundtrip_complete_final_review_carried_application_lineage_sha256`, and
 independently recomputes view twenty-six. The result is emitted under
 `dispatch_roundtrip.broker_readiness_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Broker readiness deliberately does not consume the additive
-`roundtrip_extended_complete_final_*` view-thirty-three sibling; a
-distinct-digest regression proves the established view-twenty-five input
-remains authoritative for this compatibility path.
+Broker readiness now also consumes nested `roundtrip_extended_complete_final_*`
+view-thirty-three config or flattened `ack_extended_complete_final_*` summary
+fields. It verifies every inherited stage and review digest through
+roundtrip-extended-complete-final review, requires agreement with the
+established view-twenty-five broker and roundtrip-complete-final anchors, and
+independently recomputes view thirty-four. The additive result is emitted under
+`dispatch_roundtrip.broker_readiness_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `roundtrip_extended_complete_final_review_carried_application_lineage_sha256`
+retains round-trip view thirty-three and `carried_application_lineage_sha256`
+is the fresh readiness digest.
 The established eighteen-view `broker_readiness_final_*` handoff remains
 unchanged for controlled scale-up. Controlled scale-up now consumes the
 additive twenty-six-view sibling while preserving the established handoff for
@@ -3880,7 +3886,11 @@ retain the input and fresh review digests, while
 retains all twenty-seven views. The established nineteen-view `scaleup_final_*`
 handoff remains unchanged for compatibility. Cutover now consumes the additive
 twenty-seven-view sibling while retaining that established nineteen-view
-contract.
+contract. Broker readiness may additionally carry the view-thirty-four
+`broker_readiness_extended_complete_final_*` sibling. Controlled scale-up
+deliberately continues to consume the established view-twenty-six proof; a
+distinct-digest regression verifies view thirty-four cannot alter view
+twenty-seven.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -5540,8 +5550,9 @@ where `ack_extended_complete_final_review_carried_application_lineage_sha256`
 retains acknowledgement view thirty-two and
 `carried_application_lineage_sha256` is the fresh round-trip digest. The
 established view-twenty-five `roundtrip_complete_final_*` handoff remains
-unchanged for broker-readiness compatibility, and a distinct-digest regression
-verifies broker readiness ignores view thirty-three.
+unchanged as an independent compatibility anchor. Broker readiness consumes
+view thirty-three and emits additive view thirty-four while preserving view
+twenty-five; a distinct-digest regression locks that boundary.
 This applies equally to nested component configs and flattened component-summary
 recovery. Legacy draft and generic non-reconciled sidecars remain compatible;
 reconciled target sidecars hydrated only from broker readiness fail closed until

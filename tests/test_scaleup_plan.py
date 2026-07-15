@@ -111,6 +111,36 @@ def broker_readiness_complete_final_target_application_lineage_comparison(
     return comparison
 
 
+def broker_readiness_view_34_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    comparison = broker_readiness_complete_final_target_application_lineage_comparison(
+        vendor
+    )
+    for field in tuple(comparison):
+        if field.endswith("_sha256"):
+            comparison[field] = lineage_sha256
+    comparison.update(
+        {
+            "scaleup_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "cutover_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "route_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "dispatch_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "send_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "ack_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "roundtrip_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def evidence_summary(ready=True, strategy="lead_lag_taker", market="india_nse_index_derivatives"):
     return pd.DataFrame(
         [
@@ -2361,6 +2391,71 @@ def test_scaleup_plan_carries_target_application_vendor_market_data_batch():
     ]
     assert len(source_mode) == 1
     assert source_mode["passed"].astype(bool).all()
+
+
+def test_scaleup_plan_preserves_view_27_when_broker_readiness_view_34_differs():
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    broker_readiness = broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+    )
+    broker_readiness = with_target_application_vendor_batch(broker_readiness)
+    comparison = broker_readiness_view_34_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256="f" * 64,
+    )
+    prefix = (
+        "roundtrip_extended_complete_final_"
+        "broker_dispatch_roundtrip_vendor_market_data_batch"
+    )
+    broker_readiness.loc[0, f"{prefix}_lineage_match_required"] = comparison[
+        "required"
+    ]
+    broker_readiness.loc[0, f"{prefix}_lineage_matches"] = comparison["matches"]
+    for field, value in comparison.items():
+        if field in {"required", "matches"}:
+            continue
+        if field == "carried_application_lineage_sha256":
+            field = (
+                "broker_readiness_extended_complete_final_review_"
+                "carried_application_lineage_sha256"
+            )
+        broker_readiness.loc[0, f"{prefix}_{field}"] = value
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness,
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    scaleup_complete_final_lineage = report.config["broker_readiness"][
+        "dispatch_roundtrip"
+    ][
+        "scaleup_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert (
+        scaleup_complete_final_lineage["broker_application_lineage_sha256"]
+        == lineage_sha256
+    )
+    assert (
+        scaleup_complete_final_lineage[
+            "broker_readiness_complete_final_review_carried_application_lineage_sha256"
+        ]
+        == lineage_sha256
+    )
+    assert (
+        scaleup_complete_final_lineage["carried_application_lineage_sha256"]
+        == lineage_sha256
+    )
+    assert scaleup_complete_final_lineage["broker_application_lineage_sha256"] != (
+        "f" * 64
+    )
 
 
 def test_scaleup_plan_blocks_broker_readiness_complete_final_lineage_drift():
