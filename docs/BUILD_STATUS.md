@@ -3332,21 +3332,27 @@
   fail-closed contract and additionally requires the affirmative cutover
   lineage decision, final consistency when required, exact current/final,
   scale-up-carried, and cutover-carried digests, plus a fresh canonical digest
-  recomputed from the route-carried datasets. Reconciled targets now also
-  require cutover's complete twelve-view final comparison. Route enable
-  revalidates the current, broker-final, historical scale-up-, cutover-, route-,
-  dispatch-, send-, ack-, final-review-, readiness-, scale-up-review-, and
-  cutover-review-carried digests, then independently recomputes the canonical
-  digest as view thirteen. The original five-view compatibility comparison is
-  unchanged; the full handoff is retained in flattened summary fields and the
-  sibling
+  recomputed from the route-carried datasets. Route enable continues to
+  validate cutover's twelve-view compatibility comparison and independently
+  recomputes view thirteen without changing broker dispatch's contract.
+  Reconciled targets now additionally require cutover's complete twenty-view
+  final comparison. Route enable revalidates the current, broker-final,
+  historical scale-up-, cutover-, route-, dispatch-, send-, ack-, roundtrip-,
+  readiness-, scale-up-review-, cutover-review-, route-enable-review-,
+  dispatch-plan-review-, send-packet-review-,
+  acknowledgement-reconciliation-review-, roundtrip-final-review-,
+  broker-readiness-review-, scale-up-final-review-, and
+  cutover-final-review-carried digests, then independently recomputes the
+  canonical digest as view twenty-one. The original five-view comparison and
+  full thirteen-view compatibility handoff remain unchanged in flattened
+  summary fields and the sibling
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-  config block. Route enable deliberately continues to consume cutover's
-  twelve-view compatibility key; the new twenty-view `cutover_final_*` sibling
-  is not substituted until route enable's contract is upgraded. Generic
-  non-reconciled targets and legacy draft-backed handoffs keep their
+  config block. The complete input is retained in flattened `cutover_final_*`
+  fields and the twenty-one-view output is emitted under
+  `route_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Generic non-reconciled targets and legacy draft-backed handoffs keep their
   compatibility paths; thin target sidecars fail until cutover produces the
-  complete compatibility comparison.
+  complete twenty-view comparison.
 - Broker dispatch planning now preserves and independently gates the same
   application-backed vendor batch before any sender packet can be prepared.
   Nested route config, flattened route summary, and broker-readiness sidecar
@@ -3365,9 +3371,12 @@
   existing six-view compatibility comparison is unchanged; the full handoff is
   retained in flattened summary fields and the sibling
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-  config block. Legacy draft-backed and generic non-reconciled batches remain
+  config block. Dispatch planning deliberately continues to consume route
+  enable's thirteen-view compatibility key; the new twenty-one-view
+  `route_final_*` sibling is not substituted until dispatch planning's contract
+  is upgraded. Legacy draft-backed and generic non-reconciled batches remain
   compatible; thin target sidecars fail until route enable produces the
-  complete final comparison.
+  complete compatibility comparison.
 - Broker dispatch send preparation now carries and revalidates that target
   proof before non-submitting request envelopes can advance. Nested dispatch
   config, flattened dispatch summary, and broker-readiness sidecar hydration
@@ -3481,8 +3490,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1935 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1942 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest route-enable final target-lineage gate: all 66 route-enable tests pass.
+Reconciled targets must now supply cutover's complete twenty-view proof; route
+enable revalidates every historical stage and review digest, binds it to the
+existing thirteen-view compatibility path, and independently recomputes view
+twenty-one. Missing or negative proof, inherited-view drift,
+compatibility-anchor drift, cutover-final-review drift, and post-cutover dataset
+drift all fail closed. The established thirteen-view route key remains
+unchanged for broker dispatch, and all 61 broker-dispatch tests pass, including
+a distinct-digest regression proving the new twenty-one-view sibling is not
+substituted early. The full 550-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch -> broker-dispatch-send ->
+broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
+541 seconds. The repository now collects 1942 tests across 154 files. The full
+suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
 
 Latest cutover final target-lineage gate: all 63 cutover tests pass. Reconciled
 targets must now supply scale-up's complete nineteen-view proof; cutover

@@ -4699,21 +4699,25 @@ per dataset, 100% coverage, complete lineage, an affirmative cutover lineage
 decision, and final dispatch/send/ack consistency when required. Route-enable
 verifies the current and broker-final digests, the scale-up-carried and
 cutover-carried digests, and a fresh canonical digest recomputed from its own
-datasets. Reconciled targets additionally require cutover's complete
-twelve-view final comparison. Route-enable revalidates the historical
-scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-, final-review-,
-readiness-, scale-up-review-, and cutover-review-carried digests against the
-final broker proof, then independently computes view thirteen. The original
-five-view compatibility comparison remains in the flattened summary and the
+datasets. Route-enable continues to require cutover's twelve-view compatibility
+comparison, revalidates it, and independently computes view thirteen. The
+original five-view comparison and full thirteen-view compatibility handoff
+remain in the flattened summary and the
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 config block, including `route_carried_application_lineage_sha256`; the full
 thirteen-view handoff is emitted as
 `route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-This applies to current cutover config and flattened cutover summary recovery.
-Route enable deliberately continues to read the twelve-view cutover
-compatibility key. It does not substitute the new twenty-view
-`cutover_final_*` sibling; a distinct-digest regression locks that boundary
-until route enable's final-lineage contract is upgraded.
+Reconciled targets additionally require cutover's twenty-view
+`cutover_final_*` comparison. Route-enable revalidates its current,
+broker-final, prior scale-up-, cutover-, route-, dispatch-, send-, ack-,
+roundtrip-, readiness-, scale-up-review-, cutover-review-, route-enable-review-,
+dispatch-plan-review-, send-packet-review-, acknowledgement-reconciliation-review-,
+roundtrip-final-review-, broker-readiness-review-, scale-up-final-review-, and
+cutover-final-review-carried digests, then independently computes view
+twenty-one. Flattened `cutover_final_*` fields retain the complete input and
+`route_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+retains all twenty-one views. This applies to current cutover config and
+flattened cutover summary recovery.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
@@ -4728,10 +4732,10 @@ route-enable prefers the cutover-specific block. For older or thin cutover
 configs, route-enable can also read the cutover manifest's
 `broker_readiness_config` input and hydrate missing broker vendor-data proof
 and wrapper readiness before revalidating them. Legacy draft-backed sidecars
-remain compatible. A target-application sidecar without the scale-up- and
-cutover-carried lineage digests or cutover's complete twelve-view final
-comparison fails closed; rerun controlled scale-up and cutover so route-enable
-receives the complete handoff rather than fabricating those decisions.
+remain compatible. A reconciled target-application sidecar without cutover's
+complete twenty-view comparison fails closed; rerun controlled scale-up and
+cutover so route-enable receives the complete handoff rather than fabricating
+those decisions.
 `--upload-pack` and
 `--order-export` may point at a launch-pipeline root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
@@ -4889,7 +4893,10 @@ config block, including `dispatch_carried_application_lineage_sha256`; the full
 fourteen-view handoff is emitted as
 `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The same contract applies to nested route config and flattened route summary
-recovery. If
+recovery. Dispatch planning deliberately continues to read the thirteen-view
+route compatibility key. It does not substitute the new twenty-one-view
+`route_final_*` sibling; a distinct-digest regression locks that boundary until
+dispatch planning's final-lineage contract is upgraded. If
 route-enable carried the broker-vendor wrapper readiness state, dispatch
 planning carries it as `route_broker_vendor_data_readiness_*` fields plus
 `route_broker_vendor_data_readiness` config, and fails closed when the wrapper
