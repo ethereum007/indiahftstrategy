@@ -4951,11 +4951,8 @@ binds it to the established twenty-one-view anchors, and independently
 computes view thirty. The additive result is emitted under
 `dispatch_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established twenty-two-view `dispatch_final_*` handoff remains unchanged
-for send preparation.
-Send preparation deliberately continues to read the fourteen-view
-dispatch compatibility key and ignores the new twenty-two-view sibling; a
-distinct-digest regression locks that boundary until send preparation's
-final-lineage contract is upgraded. If
+for send-preparation compatibility. Send preparation now consumes the additive
+thirty-view sibling while retaining that established input contract. If
 route-enable carried the broker-vendor wrapper readiness state, dispatch
 planning carries it as `route_broker_vendor_data_readiness_*` fields plus
 `route_broker_vendor_data_readiness` config, and fails closed when the wrapper
@@ -5122,11 +5119,17 @@ compatibility handoff remain in the flattened send summary and the
 config block; the complete input is retained in flattened `dispatch_final_*`
 fields and the twenty-three-view handoff is emitted as
 `send_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Broker dispatch may additionally carry the thirty-view
-`dispatch_complete_final_*` sibling; send preparation deliberately continues
-to authorize from the established twenty-two-view input until its own boundary
-is upgraded, and a distinct-digest regression guards that compatibility
-contract.
+Send preparation now additionally requires broker dispatch's thirty-view
+`dispatch_complete_final_*` sibling. It accepts the proof from nested dispatch
+config or flattened `route_complete_final_*` dispatch-summary fields,
+revalidates every historical stage and review digest through
+acknowledgement-complete-final, roundtrip-complete-final, and
+dispatch-complete-final review, binds it to the established twenty-two-view
+anchors, and independently computes view thirty-one. The additive result is
+emitted as
+`send_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established twenty-three-view `send_final_*` handoff remains unchanged for
+acknowledgement compatibility.
 The established fifteen-view handoff is still emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Acknowledgement reconciliation consumes both the established fifteen-view and
@@ -5134,11 +5137,15 @@ new twenty-three-view comparisons for reconciled targets while retaining the
 seven-view compatibility artifact for its historical eight-view output. It
 preserves the established fifteen-to-sixteen-view contract and independently
 extends the new final proof from view twenty-three to view twenty-four. This
+stage deliberately ignores the additive thirty-one-view `send_complete_final_*`
+sibling until its own boundary is upgraded; a distinct-digest regression locks
+the twenty-three-view authorization contract. This
 applies to nested dispatch config and flattened dispatch summary recovery.
 Legacy draft-backed broker-readiness
 sidecars and generic non-reconciled targets remain compatible; a reconciled
 target-application sidecar without broker dispatch's complete fourteen- and
-twenty-two-view comparisons fails closed and must be regenerated through
+twenty-two-view comparisons plus its additive thirty-view proof fails closed
+and must be regenerated through
 scale-up, cutover, route-enable, and dispatch planning. If
 the dispatch config retained broker-vendor wrapper readiness, the sender packet
 carries it as `dispatch_broker_vendor_data_readiness_*` fields plus
