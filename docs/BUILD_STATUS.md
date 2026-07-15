@@ -3290,7 +3290,17 @@
   `broker_readiness_final_*` summary fields and the sibling
   `scaleup_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
   config block. Generic target onboarding keeps the established three-view
-  path; legacy draft-backed batches remain compatible.
+  path; legacy draft-backed batches remain compatible. Controlled scale-up now
+  also consumes broker readiness's complete twenty-six-view sibling from nested
+  config or flattened `roundtrip_complete_final_*` summary fields. It
+  revalidates every historical stage and review digest through acknowledgement-
+  complete-final, roundtrip-complete-final, and broker-readiness-complete-final
+  review, binds the proof to the established eighteen-view anchors, and
+  independently recomputes view twenty-seven. The new output is retained in
+  flattened `broker_readiness_complete_final_*` summary fields and
+  `scaleup_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  The established nineteen-view handoff remains unchanged for cutover, which
+  deliberately ignores the new sibling until its own boundary is upgraded.
 - Cutover now preserves and independently gates the same application-backed
   broker vendor batch from scale-up config or flattened scale-up summary. A
   broker-readiness config sidecar may hydrate the underlying batch and
@@ -3508,8 +3518,8 @@
   and independently recomputes view twenty-six. The new sibling is emitted as
   `broker_readiness_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
   while the established eighteen-view readiness handoff remains byte-for-byte
-  compatible for controlled scale-up. Scale-up deliberately ignores the new
-  sibling until its own boundary is upgraded.
+  compatible for controlled scale-up. Controlled scale-up now consumes the new
+  sibling while preserving that established handoff for cutover.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3528,11 +3538,30 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1977 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1984 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest broker-readiness complete-final target-lineage gate: all 86
-broker-readiness tests and all 99 controlled-scale-up tests pass. Reconciled
+Latest controlled-scale-up complete-final target-lineage gate: all 105
+controlled-scale-up tests and all 64 cutover tests pass. Reconciled targets now
+must supply broker readiness's complete twenty-six-view proof in addition to
+the established eighteen-view compatibility proof. Scale-up validates every
+historical stage and review digest, binds the two contracts, and independently
+recomputes view twenty-seven. Missing or negative proof, inherited-view drift,
+compatibility-anchor drift, route-final-review drift, broker-readiness-complete-
+final-review drift, and fresh scale-up recomputation drift all fail closed.
+Direct flattened summaries and `broker_readiness_config.json` sidecar hydration
+both carry the new proof. The established nineteen-view `scaleup_final_*`
+handoff remains unchanged, and a distinct-digest regression proves cutover
+continues to consume view nineteen rather than the new
+`scaleup_complete_final_*` sibling. The full 592-test broker-readiness ->
+scale-up -> cutover -> route-enable -> broker-dispatch -> broker-dispatch-send
+-> broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
+326.1 seconds. The repository collects 1984 tests across 154 files. The full
+suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
+
+The broker-readiness complete-final target-lineage gate remains green: all 86
+broker-readiness tests and all 105 controlled-scale-up tests pass. Reconciled
 targets must now supply round-trip review's complete twenty-five-view proof in
 addition to the established seventeen-view compatibility proof; readiness
 validates every historical stage and review digest, binds both contracts, and
@@ -3541,12 +3570,12 @@ inherited-view drift, compatibility-anchor drift, route-final-review drift,
 roundtrip-complete-final-review drift, and post-roundtrip dataset drift all fail
 closed. Nested round-trip config and flattened round-trip summary recovery both
 carry the new proof. The established eighteen-view `broker_readiness_final_*`
-handoff remains unchanged for controlled scale-up, and a distinct-digest
-regression proves the new `broker_readiness_complete_final_*` sibling is not
-substituted early. The full 585-test broker-readiness -> scale-up -> cutover ->
+handoff remains unchanged while controlled scale-up consumes the additive
+`broker_readiness_complete_final_*` sibling. The full 592-test
+broker-readiness -> scale-up -> cutover ->
 route-enable -> broker-dispatch -> broker-dispatch-send ->
 broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
-347.9 seconds. The repository now collects 1977 tests across 154 files. The
+326.1 seconds. The repository now collects 1984 tests across 154 files. The
 full suite was not rerun for this slice; the last completed full-suite baseline
 remains unchanged.
 
