@@ -3500,9 +3500,16 @@
   mismatched carried views, and post-final dataset drift fail closed. Direct
   generic onboarding proof and legacy draft-backed batches retain their
   compatibility paths and do not claim final reconciliation. Broker readiness
-  deliberately continues to consume the established seventeen-view
-  `roundtrip_final_*` proof and ignores the new twenty-five-view
-  `roundtrip_complete_final_*` sibling until its own boundary is upgraded.
+  now also consumes round-trip review's complete twenty-five-view sibling from
+  nested `roundtrip_complete_final_*` config or flattened
+  `ack_complete_final_*` summary. It revalidates every historical stage and
+  review digest through acknowledgement-complete-final and roundtrip-complete-
+  final review, binds the new proof to the established seventeen-view anchors,
+  and independently recomputes view twenty-six. The new sibling is emitted as
+  `broker_readiness_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+  while the established eighteen-view readiness handoff remains byte-for-byte
+  compatible for controlled scale-up. Scale-up deliberately ignores the new
+  sibling until its own boundary is upgraded.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3521,8 +3528,27 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1970 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1977 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-readiness complete-final target-lineage gate: all 86
+broker-readiness tests and all 99 controlled-scale-up tests pass. Reconciled
+targets must now supply round-trip review's complete twenty-five-view proof in
+addition to the established seventeen-view compatibility proof; readiness
+validates every historical stage and review digest, binds both contracts, and
+independently recomputes view twenty-six. Missing or negative proof,
+inherited-view drift, compatibility-anchor drift, route-final-review drift,
+roundtrip-complete-final-review drift, and post-roundtrip dataset drift all fail
+closed. Nested round-trip config and flattened round-trip summary recovery both
+carry the new proof. The established eighteen-view `broker_readiness_final_*`
+handoff remains unchanged for controlled scale-up, and a distinct-digest
+regression proves the new `broker_readiness_complete_final_*` sibling is not
+substituted early. The full 585-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch -> broker-dispatch-send ->
+broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in
+347.9 seconds. The repository now collects 1977 tests across 154 files. The
+full suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
 
 Latest broker-dispatch-roundtrip complete-final target-lineage gate: all 61
 round-trip tests and all 80 broker-readiness tests pass. Reconciled targets must

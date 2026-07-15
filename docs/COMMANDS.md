@@ -3435,10 +3435,19 @@ fields and
 where `roundtrip_final_review_carried_application_lineage_sha256` retains
 roundtrip view seventeen and `carried_application_lineage_sha256` is the fresh
 broker-readiness digest. Missing, negative, blank, mismatched, or
-post-final-drifted proof fails closed. Broker readiness deliberately continues
-to consume the established `roundtrip_final_*` seventeen-view proof and ignores
-the new `roundtrip_complete_final_*` twenty-five-view sibling until its boundary
-is upgraded.
+post-final-drifted proof fails closed. Broker readiness now also requires the
+round-trip `roundtrip_complete_final_*` twenty-five-view sibling for reconciled
+targets, accepting nested config or flattened `ack_complete_final_*` summary
+recovery. It verifies every historical stage and review digest, anchors the
+complete proof to the established seventeen-view contract, retains
+`ack_complete_final_review_carried_application_lineage_sha256`, retains round-trip
+view twenty-five as
+`roundtrip_complete_final_review_carried_application_lineage_sha256`, and
+independently recomputes view twenty-six. The result is emitted under
+`dispatch_roundtrip.broker_readiness_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established eighteen-view `broker_readiness_final_*` handoff remains
+unchanged for controlled scale-up, which ignores the new sibling until its own
+boundary is upgraded.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -3854,7 +3863,11 @@ fields and
 `broker_readiness.dispatch_roundtrip.scaleup_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
 where `broker_readiness_review_carried_application_lineage_sha256` retains
 broker-readiness view eighteen and `carried_application_lineage_sha256` is the
-fresh scale-up digest.
+fresh scale-up digest. Broker readiness may also carry the sibling
+`broker_readiness_complete_final_*` twenty-six-view proof; controlled scale-up
+continues to consume only the established eighteen-view contract until its
+boundary is upgraded, with a distinct-digest regression guarding against early
+substitution.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
