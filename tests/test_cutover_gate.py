@@ -116,6 +116,38 @@ def scaleup_complete_final_target_application_lineage_comparison(
     return comparison
 
 
+def scaleup_view_35_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    comparison = scaleup_complete_final_target_application_lineage_comparison(
+        vendor
+    )
+    for field in tuple(comparison):
+        if field.endswith("_sha256"):
+            comparison[field] = lineage_sha256
+    comparison.update(
+        {
+            "scaleup_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "cutover_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "route_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "dispatch_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "send_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "ack_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "roundtrip_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "broker_readiness_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "carried_application_lineage_sha256": lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def add_scaleup_final_target_application_lineage(config, vendor, **overrides):
     dispatch = config["broker_readiness"]["dispatch_roundtrip"]
     dispatch[
@@ -1705,6 +1737,60 @@ def test_cutover_gate_carries_target_application_vendor_batch_from_scaleup_confi
             f"{extended_check_prefix}_{stage}_carried_lineage_sha256_matches"
         )
     assert expected_extended_checks <= passed
+
+
+def test_cutover_gate_preserves_view_28_when_scaleup_view_35_differs():
+    config = scaleup_config()
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch[
+        "broker_dispatch_roundtrip_vendor_market_data_batch"
+    ] = vendor
+    dispatch["vendor_market_data_batch_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    dispatch[
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = final_target_application_lineage_comparison(vendor)
+    add_scaleup_final_target_application_lineage(config, vendor)
+    dispatch[
+        "scaleup_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = scaleup_view_35_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256="f" * 64,
+    )
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert report.ready
+    cutover_extended_complete_final = report.config[
+        "cutover_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert (
+        cutover_extended_complete_final["broker_application_lineage_sha256"]
+        == lineage_sha256
+    )
+    assert (
+        cutover_extended_complete_final[
+            "scaleup_complete_final_review_carried_application_lineage_sha256"
+        ]
+        == lineage_sha256
+    )
+    assert (
+        cutover_extended_complete_final["carried_application_lineage_sha256"]
+        == lineage_sha256
+    )
+    assert cutover_extended_complete_final[
+        "broker_application_lineage_sha256"
+    ] != ("f" * 64)
 
 
 def test_cutover_gate_blocks_scaleup_complete_final_lineage_drift():

@@ -3886,11 +3886,20 @@ retain the input and fresh review digests, while
 retains all twenty-seven views. The established nineteen-view `scaleup_final_*`
 handoff remains unchanged for compatibility. Cutover now consumes the additive
 twenty-seven-view sibling while retaining that established nineteen-view
-contract. Broker readiness may additionally carry the view-thirty-four
-`broker_readiness_extended_complete_final_*` sibling. Controlled scale-up
-deliberately continues to consume the established view-twenty-six proof; a
-distinct-digest regression verifies view thirty-four cannot alter view
-twenty-seven.
+contract. Controlled scale-up now also consumes broker readiness's
+view-thirty-four `broker_readiness_extended_complete_final_*` sibling from
+nested readiness config or flattened `roundtrip_extended_complete_final_*`
+summary fields. It revalidates every inherited stage and review digest,
+requires agreement with the established view-twenty-six broker and broker-
+readiness-complete-final-review anchors, and independently recomputes view
+thirty-five. The additive result is emitted under
+`broker_readiness.dispatch_roundtrip.scaleup_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `broker_readiness_extended_complete_final_review_carried_application_lineage_sha256`
+retains readiness view thirty-four and `carried_application_lineage_sha256` is
+the fresh scale-up digest. The established view-twenty-seven
+`scaleup_complete_final_*` handoff remains unchanged for cutover; a distinct-
+digest regression verifies view thirty-five cannot alter cutover's view-
+twenty-eight proof.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
