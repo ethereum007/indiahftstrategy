@@ -5052,28 +5052,35 @@ current/final match decision, and final dispatch/send/ack consistency when that
 decision is marked required. Send preparation verifies the current and
 broker-final digests, the scale-up-, cutover-, route-, and dispatch-carried
 digests, then independently recomputes a seventh canonical digest from the
-datasets entering the request packet. Reconciled targets additionally require
-broker dispatch's complete fourteen-view final comparison. Send preparation
-revalidates the historical scale-up-, cutover-, route-, dispatch-, send-,
-acknowledgement-, final-review-, readiness-, scale-up-review-, cutover-review-,
-route-enable-review-, and dispatch-plan-review-carried digests against the
-final broker proof, then independently computes view fifteen. The existing
-seven-view compatibility handoff remains in the flattened send summary and the
+datasets entering the request packet. Reconciled targets continue to require
+broker dispatch's complete fourteen-view compatibility comparison and now
+additionally require its complete twenty-two-view final comparison. Send
+preparation revalidates the historical scale-up-, cutover-, route-, dispatch-,
+send-, acknowledgement-, roundtrip-, readiness-, scale-up-review-,
+cutover-review-, route-enable-review-, dispatch-plan-review-,
+send-packet-review-, acknowledgement-reconciliation-review-,
+roundtrip-final-review-, broker-readiness-review-, scale-up-final-review-,
+cutover-final-review-, route-final-review-, and dispatch-final-review-carried
+digests against the final broker proof, then independently computes view
+twenty-three. The existing seven-view comparison and full fifteen-view
+compatibility handoff remain in the flattened send summary and the
 `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-config block, including `send_carried_application_lineage_sha256`; the full
-fifteen-view handoff is emitted as
+config block; the complete input is retained in flattened `dispatch_final_*`
+fields and the twenty-three-view handoff is emitted as
+`send_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established fifteen-view handoff is still emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Acknowledgement reconciliation consumes that complete final comparison for
 reconciled targets while retaining the seven-view compatibility artifact for
-its historical eight-view output. Send preparation deliberately ignores broker
-dispatch's new twenty-two-view `dispatch_final_*` sibling until this boundary
-is upgraded, preserving the established fourteen-to-fifteen-view contract even
-when both proofs are present. This applies to nested dispatch config and
-flattened dispatch summary recovery. Legacy draft-backed broker-readiness
+its historical eight-view output. It deliberately ignores the new
+twenty-three-view `send_final_*` sibling until acknowledgement's boundary is
+upgraded, preserving the established fifteen-to-sixteen-view contract when both
+proofs are present. This applies to nested dispatch config and flattened
+dispatch summary recovery. Legacy draft-backed broker-readiness
 sidecars and generic non-reconciled targets remain compatible; a reconciled
-target-application sidecar without broker dispatch's complete fourteen-view
-final comparison fails closed and must be regenerated through scale-up,
-cutover, route-enable, and dispatch planning. If
+target-application sidecar without broker dispatch's complete fourteen- and
+twenty-two-view comparisons fails closed and must be regenerated through
+scale-up, cutover, route-enable, and dispatch planning. If
 the dispatch config retained broker-vendor wrapper readiness, the sender packet
 carries it as `dispatch_broker_vendor_data_readiness_*` fields plus
 `dispatch_broker_vendor_data_readiness` config, and fails closed when the
