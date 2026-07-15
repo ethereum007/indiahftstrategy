@@ -5132,14 +5132,17 @@ The established twenty-three-view `send_final_*` handoff remains unchanged for
 acknowledgement compatibility.
 The established fifteen-view handoff is still emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Acknowledgement reconciliation consumes both the established fifteen-view and
-new twenty-three-view comparisons for reconciled targets while retaining the
+Acknowledgement reconciliation consumes the established fifteen-view and
+twenty-three-view comparisons plus the additive thirty-one-view
+`send_complete_final_*` sibling for reconciled targets while retaining the
 seven-view compatibility artifact for its historical eight-view output. It
-preserves the established fifteen-to-sixteen-view contract and independently
-extends the new final proof from view twenty-three to view twenty-four. This
-stage deliberately ignores the additive thirty-one-view `send_complete_final_*`
-sibling until its own boundary is upgraded; a distinct-digest regression locks
-the twenty-three-view authorization contract. This
+preserves the established fifteen-to-sixteen-view contract, independently
+extends the final proof from view twenty-three to view twenty-four, and validates
+the additive sender proof before independently emitting view thirty-two under
+`ack_extended_complete_final_*`. The established twenty-three-view proof remains
+an independent compatibility anchor, and round-trip review continues to consume
+view twenty-four rather than the additive view thirty-two. Distinct-digest
+regressions lock both boundaries. This
 applies to nested dispatch config and flattened dispatch summary recovery.
 Legacy draft-backed broker-readiness
 sidecars and generic non-reconciled targets remain compatible; a reconciled
@@ -5322,11 +5325,23 @@ historical digest through
 twenty-three as `send_final_review_carried_application_lineage_sha256`, and
 recomputes acknowledgement view twenty-four. The result is emitted as
 `ack_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Reconciliation now also consumes nested `send_complete_final_*` config or
+flattened `dispatch_complete_final_*` sender-summary fields. It verifies every
+inherited stage and review digest through dispatch-complete-final and
+send-complete-final review, requires agreement with the established
+view-twenty-three broker and send-final-review anchors, and independently
+recomputes acknowledgement view thirty-two. The additive result is emitted as
+`ack_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `send_complete_final_review_carried_application_lineage_sha256` retains
+sender view thirty-one and `carried_application_lineage_sha256` is the fresh
+acknowledgement digest. The established view-twenty-four `ack_complete_final_*`
+handoff remains unchanged for round-trip compatibility.
 This applies to nested send/dispatch config,
 flattened dispatch summary recovery, and broker-readiness sidecar hydration.
 Legacy draft-backed and generic non-reconciled sidecars remain compatible; a
-reconciled target-application sidecar without both complete sender comparisons
-fails closed and must be regenerated through the sender handoff. When
+reconciled target-application sidecar without the established sender
+comparisons and additive view-thirty-one proof fails closed and must be
+regenerated through the sender handoff. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
 ack-stage block. If the dispatch config retained broker-vendor wrapper
@@ -5506,6 +5521,11 @@ view twenty-four as
 `ack_complete_final_review_carried_application_lineage_sha256`, and recomputes
 round-trip view twenty-five. The result is emitted as
 `roundtrip_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Acknowledgement config may additionally contain the view-thirty-two
+`ack_extended_complete_final_*` sibling. Round-trip review deliberately ignores
+that additive proof and remains bound to the established view-twenty-four
+`ack_complete_final_*` input; a distinct-digest regression verifies this
+compatibility contract.
 This applies equally to nested component configs and flattened component-summary
 recovery. Legacy draft and generic non-reconciled sidecars remain compatible;
 reconciled target sidecars hydrated only from broker readiness fail closed until
