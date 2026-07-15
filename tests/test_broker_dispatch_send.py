@@ -144,6 +144,34 @@ def dispatch_complete_final_target_application_lineage_comparison(
     return comparison
 
 
+def dispatch_view_30_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    comparison = dispatch_complete_final_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256=lineage_sha256,
+    )
+    comparison.update(
+        {
+            "dispatch_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "send_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "ack_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "roundtrip_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "scaleup_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "cutover_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "route_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def add_dispatch_complete_final_target_application_lineage(
     config,
     vendor,
@@ -2018,6 +2046,52 @@ def test_broker_dispatch_send_blocks_dispatch_complete_final_lineage_drift():
     assert send_complete_final["broker_application_lineage_sha256"] == (
         complete_final_sha256
     )
+    assert send_complete_final["carried_application_lineage_sha256"] == (
+        lineage_sha256
+    )
+
+
+def test_broker_dispatch_send_preserves_view_22_when_dispatch_view_30_differs():
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    config = dispatch_config()
+    input_prefix = "route_broker_dispatch_roundtrip_vendor_market_data_batch"
+    config[input_prefix] = vendor
+    config[f"{input_prefix}_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    config[
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = dispatch_final_target_application_lineage_comparison(vendor)
+    add_dispatch_complete_final_target_application_lineage(config, vendor)
+    config[
+        "dispatch_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = dispatch_view_30_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256="f" * 64,
+    )
+
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=config,
+    )
+
+    assert report.ready
+    send_final = report.config[
+        "send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    send_complete_final = report.config[
+        "send_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert send_final["broker_application_lineage_sha256"] == lineage_sha256
+    assert send_final["carried_application_lineage_sha256"] == lineage_sha256
+    assert send_complete_final["broker_application_lineage_sha256"] == (
+        lineage_sha256
+    )
+    assert send_complete_final[
+        "dispatch_final_review_carried_application_lineage_sha256"
+    ] == lineage_sha256
     assert send_complete_final["carried_application_lineage_sha256"] == (
         lineage_sha256
     )

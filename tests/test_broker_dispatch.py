@@ -165,6 +165,9 @@ def add_route_complete_final_target_application_lineage(
         vendor,
         **overrides,
     )
+    config[
+        "route_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = route_view_29_target_application_lineage_comparison(vendor)
 
 
 def resume_route_proof(
@@ -897,9 +900,13 @@ def with_route_broker_vendor_batch_summary(summary, vendor):
         route_complete_final = (
             route_complete_final_target_application_lineage_comparison(vendor)
         )
+        route_view_29 = route_view_29_target_application_lineage_comparison(vendor)
         final_prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
         complete_final_prefix = (
             "cutover_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+        )
+        extended_complete_final_prefix = (
+            "cutover_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
         )
         result.loc[
             0,
@@ -950,6 +957,25 @@ def with_route_broker_vendor_batch_summary(summary, vendor):
                 "carried_application_lineage_sha256",
             }:
                 result.loc[0, f"{complete_final_prefix}_{field}"] = value
+        result.loc[
+            0,
+            f"{extended_complete_final_prefix}_lineage_match_required",
+        ] = route_view_29["required"]
+        result.loc[
+            0,
+            f"{extended_complete_final_prefix}_lineage_matches",
+        ] = route_view_29["matches"]
+        for field, value in route_view_29.items():
+            if field not in {
+                "required",
+                "matches",
+                "carried_application_lineage_sha256",
+            }:
+                result.loc[0, f"{extended_complete_final_prefix}_{field}"] = value
+        result.loc[
+            0,
+            f"{extended_complete_final_prefix}_route_complete_final_review_carried_application_lineage_sha256",
+        ] = route_view_29["carried_application_lineage_sha256"]
     return result
 
 
@@ -1688,6 +1714,59 @@ def test_broker_dispatch_carries_target_application_vendor_batch_from_route_conf
         "carried_application_lineage_sha256",
     ):
         assert dispatch_complete_final[field] == lineage_sha256
+    route_extended_complete_prefix = (
+        "route_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+    )
+    extended_complete_final_digest_fields = (
+        "current_application_lineage_sha256",
+        "broker_application_lineage_sha256",
+        "scaleup_carried_application_lineage_sha256",
+        "cutover_carried_application_lineage_sha256",
+        "route_carried_application_lineage_sha256",
+        "dispatch_carried_application_lineage_sha256",
+        "send_carried_application_lineage_sha256",
+        "ack_carried_application_lineage_sha256",
+        "roundtrip_carried_application_lineage_sha256",
+        "readiness_carried_application_lineage_sha256",
+        "scaleup_review_carried_application_lineage_sha256",
+        "cutover_review_carried_application_lineage_sha256",
+        "route_enable_review_carried_application_lineage_sha256",
+        "dispatch_plan_review_carried_application_lineage_sha256",
+        "send_packet_review_carried_application_lineage_sha256",
+        "ack_reconciliation_review_carried_application_lineage_sha256",
+        "roundtrip_final_review_carried_application_lineage_sha256",
+        "broker_readiness_review_carried_application_lineage_sha256",
+        "scaleup_final_review_carried_application_lineage_sha256",
+        "cutover_final_review_carried_application_lineage_sha256",
+        "route_final_review_carried_application_lineage_sha256",
+        "dispatch_final_review_carried_application_lineage_sha256",
+        "send_final_review_carried_application_lineage_sha256",
+        "ack_complete_final_review_carried_application_lineage_sha256",
+        "roundtrip_complete_final_review_carried_application_lineage_sha256",
+    )
+    for field in (
+        *extended_complete_final_digest_fields,
+        "scaleup_complete_final_review_carried_application_lineage_sha256",
+        "cutover_complete_final_review_carried_application_lineage_sha256",
+        "route_complete_final_review_carried_application_lineage_sha256",
+        "dispatch_complete_final_review_carried_application_lineage_sha256",
+    ):
+        assert summary[f"{route_extended_complete_prefix}_{field}"] == (
+            lineage_sha256
+        )
+    dispatch_extended_complete_final = report.config[
+        "dispatch_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert dispatch_extended_complete_final["required"]
+    assert dispatch_extended_complete_final["matches"]
+    for field in (
+        *extended_complete_final_digest_fields,
+        "scaleup_complete_final_review_carried_application_lineage_sha256",
+        "cutover_complete_final_review_carried_application_lineage_sha256",
+        "route_complete_final_review_carried_application_lineage_sha256",
+        "carried_application_lineage_sha256",
+    ):
+        assert dispatch_extended_complete_final[field] == lineage_sha256
     expected_checks = {
         f"{prefix}_mapping_source_mode",
         f"{prefix}_mapping_application_count",
@@ -1745,6 +1824,48 @@ def test_broker_dispatch_carries_target_application_vendor_batch_from_route_conf
         f"{prefix}_route_final_route_final_review_carried_lineage_sha256_matches",
         f"{prefix}_route_final_dispatch_final_review_carried_lineage_sha256_matches",
     }
+    extended_check_prefix = f"{prefix}_route_complete_final"
+    expected_checks.update(
+        {
+            f"{extended_check_prefix}_lineage_match_required",
+            f"{extended_check_prefix}_lineage_matches",
+            f"{extended_check_prefix}_source_lineage_sha256_matches",
+            f"{extended_check_prefix}_compatibility_broker_lineage_sha256_matches",
+            f"{extended_check_prefix}_compatibility_route_final_review_carried_lineage_sha256_matches",
+            f"{extended_check_prefix}_scaleup_complete_final_review_carried_lineage_sha256_matches",
+            f"{extended_check_prefix}_cutover_complete_final_review_carried_lineage_sha256_matches",
+            f"{extended_check_prefix}_route_complete_final_review_carried_lineage_sha256_matches",
+            f"{extended_check_prefix}_dispatch_complete_final_review_carried_lineage_sha256_matches",
+        }
+    )
+    for stage in (
+        "prior_scaleup",
+        "prior_cutover",
+        "route",
+        "dispatch",
+        "send",
+        "ack",
+        "roundtrip",
+        "readiness",
+        "scaleup_review",
+        "cutover_review",
+        "route_enable_review",
+        "dispatch_plan_review",
+        "send_packet_review",
+        "ack_reconciliation_review",
+        "roundtrip_final_review",
+        "broker_readiness_review",
+        "scaleup_final_review",
+        "cutover_final_review",
+        "route_final_review",
+        "dispatch_final_review",
+        "send_final_review",
+        "ack_complete_final_review",
+        "roundtrip_complete_final_review",
+    ):
+        expected_checks.add(
+            f"{extended_check_prefix}_{stage}_carried_lineage_sha256_matches"
+        )
     passed = set(report.checks.loc[report.checks["passed"].astype(bool), "check"])
     assert expected_checks <= passed
 
@@ -1799,7 +1920,7 @@ def test_broker_dispatch_blocks_route_complete_final_lineage_drift():
     )
 
 
-def test_broker_dispatch_preserves_view_21_contract_when_route_view_29_differs():
+def test_broker_dispatch_blocks_route_view_29_lineage_drift():
     config = route_config()
     input_prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
     vendor_input = target_application_vendor_market_data_batch_config()
@@ -1826,7 +1947,16 @@ def test_broker_dispatch_preserves_view_21_contract_when_route_view_29_differs()
         thresholds=BrokerDispatchThresholds(require_dispatch_roundtrip=True),
     )
 
-    assert report.ready
+    assert not report.ready
+    check_prefix = (
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final"
+    )
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+        f"{check_prefix}_compatibility_route_final_review_carried_lineage_sha256_matches",
+        f"{check_prefix}_dispatch_complete_final_review_carried_lineage_sha256_matches",
+    } <= failed
     dispatch_final = report.config[
         "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ]
@@ -1844,6 +1974,112 @@ def test_broker_dispatch_preserves_view_21_contract_when_route_view_29_differs()
     assert dispatch_complete_final["carried_application_lineage_sha256"] == (
         lineage_sha256
     )
+    dispatch_extended_complete_final = report.config[
+        "dispatch_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert dispatch_extended_complete_final["broker_application_lineage_sha256"] == (
+        "f" * 64
+    )
+    assert dispatch_extended_complete_final[
+        "carried_application_lineage_sha256"
+    ] == lineage_sha256
+
+
+def test_broker_dispatch_requires_route_view_29_lineage_for_reconciled_target():
+    config = route_config()
+    input_prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    vendor = target_application_vendor_market_data_batch_config()
+    config[input_prefix] = vendor
+    config[f"{input_prefix}_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    config[
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = route_final_target_application_lineage_comparison(vendor)
+    add_route_complete_final_target_application_lineage(config, vendor)
+    config.pop(
+        "route_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    )
+
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=config,
+        upload_orders=upload_orders(),
+        thresholds=BrokerDispatchThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    check_prefix = (
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final"
+    )
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        f"{check_prefix}_lineage_match_required",
+        f"{check_prefix}_lineage_matches",
+    } <= failed
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_failed_check"),
+    [
+        (
+            "required",
+            False,
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final_lineage_match_required",
+        ),
+        (
+            "matches",
+            False,
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final_lineage_matches",
+        ),
+        (
+            "current_application_lineage_sha256",
+            "f" * 64,
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final_source_lineage_sha256_matches",
+        ),
+        (
+            "route_final_review_carried_application_lineage_sha256",
+            "f" * 64,
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final_route_final_review_carried_lineage_sha256_matches",
+        ),
+        (
+            "carried_application_lineage_sha256",
+            "f" * 64,
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch_route_complete_final_route_complete_final_review_carried_lineage_sha256_matches",
+        ),
+    ],
+)
+def test_broker_dispatch_blocks_invalid_route_view_29_lineage(
+    field,
+    value,
+    expected_failed_check,
+):
+    config = route_config()
+    input_prefix = "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+    vendor = target_application_vendor_market_data_batch_config()
+    config[input_prefix] = vendor
+    config[f"{input_prefix}_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    config[
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = route_final_target_application_lineage_comparison(vendor)
+    add_route_complete_final_target_application_lineage(config, vendor)
+    route_view_29 = config[
+        "route_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    route_view_29[field] = value
+
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=config,
+        upload_orders=upload_orders(),
+        thresholds=BrokerDispatchThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert expected_failed_check in failed
 
 
 def test_broker_dispatch_carries_target_application_vendor_batch_from_route_summary():

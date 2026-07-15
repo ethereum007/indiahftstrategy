@@ -4760,7 +4760,9 @@ complete-final review, binds it to the established twenty-view anchors, and
 independently computes view twenty-nine. The additive result is emitted under
 `route_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established twenty-one-view `route_final_*` handoff remains unchanged for
-broker dispatch.
+broker-dispatch compatibility. Broker dispatch now consumes the additive
+twenty-nine-view sibling while retaining that established twenty-one-view
+contract.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
@@ -4941,10 +4943,15 @@ config block. The complete input is retained in flattened `route_final_*`
 fields and the twenty-two-view handoff is emitted as
 `dispatch_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The same contract applies to nested route config and flattened route summary
-recovery. Route enable may additionally carry the twenty-nine-view
-`route_complete_final_*` sibling; broker dispatch deliberately continues to
-authorize from the established twenty-one-view input until its own boundary is
-upgraded, and a distinct-digest regression guards that compatibility contract.
+recovery. Reconciled targets also require route enable's twenty-nine-view
+`route_complete_final_*` sibling. Broker dispatch accepts it from nested route
+config or flattened `cutover_complete_final_*` summary fields, revalidates
+every historical stage and review digest through route-complete-final review,
+binds it to the established twenty-one-view anchors, and independently
+computes view thirty. The additive result is emitted under
+`dispatch_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established twenty-two-view `dispatch_final_*` handoff remains unchanged
+for send preparation.
 Send preparation deliberately continues to read the fourteen-view
 dispatch compatibility key and ignores the new twenty-two-view sibling; a
 distinct-digest regression locks that boundary until send preparation's
@@ -5115,6 +5122,11 @@ compatibility handoff remain in the flattened send summary and the
 config block; the complete input is retained in flattened `dispatch_final_*`
 fields and the twenty-three-view handoff is emitted as
 `send_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Broker dispatch may additionally carry the thirty-view
+`dispatch_complete_final_*` sibling; send preparation deliberately continues
+to authorize from the established twenty-two-view input until its own boundary
+is upgraded, and a distinct-digest regression guards that compatibility
+contract.
 The established fifteen-view handoff is still emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Acknowledgement reconciliation consumes both the established fifteen-view and
