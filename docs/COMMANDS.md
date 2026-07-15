@@ -4881,22 +4881,27 @@ dataset, 100% coverage, complete lineage, an affirmative route-retained lineage
 decision, and final dispatch/send/ack consistency when required. Dispatch
 planning verifies the current and broker-final digests, the scale-up-, cutover-,
 and route-carried digests, and a fresh canonical digest recomputed from its own
-datasets. Reconciled targets additionally require route enable's complete
-thirteen-view final comparison. Dispatch planning revalidates the historical
-scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-, final-review-,
-readiness-, scale-up-review-, cutover-review-, and route-enable-review-carried
-digests against the final broker proof, then independently computes view
-fourteen. The existing six-view compatibility handoff remains in the flattened
-summary and the
-`route_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
-config block, including `dispatch_carried_application_lineage_sha256`; the full
-fourteen-view handoff is emitted as
-`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+datasets. Reconciled targets continue to require route enable's complete
+thirteen-view compatibility comparison and now additionally require its
+complete twenty-one-view final comparison. Dispatch planning revalidates the
+historical scale-up-, cutover-, route-, dispatch-, send-, acknowledgement-,
+roundtrip-, readiness-, scale-up-review-, cutover-review-, route-enable-review-,
+dispatch-plan-review-, send-packet-review-,
+acknowledgement-reconciliation-review-, roundtrip-final-review-,
+broker-readiness-review-, scale-up-final-review-, cutover-final-review-, and
+route-final-review-carried digests against the final broker proof, then
+independently computes view twenty-two. The existing six-view comparison and
+full fourteen-view compatibility handoff remain in flattened summary fields
+and the
+`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+config block. The complete input is retained in flattened `route_final_*`
+fields and the twenty-two-view handoff is emitted as
+`dispatch_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The same contract applies to nested route config and flattened route summary
-recovery. Dispatch planning deliberately continues to read the thirteen-view
-route compatibility key. It does not substitute the new twenty-one-view
-`route_final_*` sibling; a distinct-digest regression locks that boundary until
-dispatch planning's final-lineage contract is upgraded. If
+recovery. Send preparation deliberately continues to read the fourteen-view
+dispatch compatibility key and ignores the new twenty-two-view sibling; a
+distinct-digest regression locks that boundary until send preparation's
+final-lineage contract is upgraded. If
 route-enable carried the broker-vendor wrapper readiness state, dispatch
 planning carries it as `route_broker_vendor_data_readiness_*` fields plus
 `route_broker_vendor_data_readiness` config, and fails closed when the wrapper
@@ -5060,7 +5065,10 @@ fifteen-view handoff is emitted as
 `send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Acknowledgement reconciliation consumes that complete final comparison for
 reconciled targets while retaining the seven-view compatibility artifact for
-its historical eight-view output. This applies to nested dispatch config and
+its historical eight-view output. Send preparation deliberately ignores broker
+dispatch's new twenty-two-view `dispatch_final_*` sibling until this boundary
+is upgraded, preserving the established fourteen-to-fifteen-view contract even
+when both proofs are present. This applies to nested dispatch config and
 flattened dispatch summary recovery. Legacy draft-backed broker-readiness
 sidecars and generic non-reconciled targets remain compatible; a reconciled
 target-application sidecar without broker dispatch's complete fourteen-view
