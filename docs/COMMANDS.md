@@ -3435,7 +3435,10 @@ fields and
 where `roundtrip_final_review_carried_application_lineage_sha256` retains
 roundtrip view seventeen and `carried_application_lineage_sha256` is the fresh
 broker-readiness digest. Missing, negative, blank, mismatched, or
-post-final-drifted proof fails closed.
+post-final-drifted proof fails closed. Broker readiness deliberately continues
+to consume the established `roundtrip_final_*` seventeen-view proof and ignores
+the new `roundtrip_complete_final_*` twenty-five-view sibling until its boundary
+is upgraded.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -5418,8 +5421,9 @@ dataset identities. The flattened summary and
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 config retain all nine views, including
 `roundtrip_carried_application_lineage_sha256`. Reconciled targets additionally
-require acknowledgement reconciliation's complete sixteen-view comparison.
-Final review verifies its current, broker-final, scale-up-, cutover-, route-,
+require acknowledgement reconciliation's complete sixteen-view compatibility
+comparison and complete twenty-four-view final comparison. Final review verifies
+its current, broker-final, scale-up-, cutover-, route-,
 dispatch-, send-, acknowledgement-, prior-roundtrip-, readiness-,
 scale-up-review-, cutover-review-, route-enable-review-, dispatch-plan-review-,
 send-packet-review-, and acknowledgement-reconciliation-review-carried digests,
@@ -5430,13 +5434,19 @@ fields and
 `roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
 where `ack_reconciliation_review_carried_application_lineage_sha256` retains
 acknowledgement view sixteen and `carried_application_lineage_sha256` is the
-fresh roundtrip-review digest. This applies equally to nested component configs
-and flattened component-summary recovery. Legacy draft and generic
-non-reconciled sidecars remain compatible; reconciled target sidecars hydrated
-only from broker readiness fail closed until the complete acknowledgement
-comparison is supplied. Round-trip review deliberately continues to consume
-the established `ack_final_*` sixteen-view proof and ignores the new
-`ack_complete_final_*` twenty-four-view sibling until its boundary is upgraded.
+fresh roundtrip-review digest. Final review also consumes the nested
+`ack_complete_final_*` config or flattened `send_final_*` acknowledgement
+summary, retains it as flattened `ack_complete_final_*` fields, verifies every
+historical digest through
+`send_final_review_carried_application_lineage_sha256`, retains acknowledgement
+view twenty-four as
+`ack_complete_final_review_carried_application_lineage_sha256`, and recomputes
+round-trip view twenty-five. The result is emitted as
+`roundtrip_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+This applies equally to nested component configs and flattened component-summary
+recovery. Legacy draft and generic non-reconciled sidecars remain compatible;
+reconciled target sidecars hydrated only from broker readiness fail closed until
+both complete acknowledgement comparisons are supplied.
 If a component
 config carries `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`,
 the round-trip
