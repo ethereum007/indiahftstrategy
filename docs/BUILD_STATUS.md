@@ -3435,13 +3435,23 @@
   extended-complete-final-review anchors, and independently recomputes view
   forty-one under
   `roundtrip_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  The established view-thirty-two input and view-thirty-three output remain
-  unchanged for broker-readiness compatibility. Distinct-digest regressions
+  Broker readiness now consumes that view-forty-one sibling from nested
+  roundtrip config or flattened `ack_latest_extended_complete_final_*` summary
+  fields. It revalidates every inherited stage and review digest, binds the
+  proof to the established view-thirty-three broker and roundtrip-extended-
+  complete-final-review anchors, and independently recomputes view forty-two
+  under
+  `broker_readiness_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  The established view-thirty-four output remains unchanged for controlled
+  scale-up compatibility, and controlled scale-up continues to derive view
+  thirty-five from view thirty-four until its next lineage-gate upgrade.
+  Distinct-digest regressions
   prove view-thirty-eight drift blocks send without rewriting view thirty-one,
   view-thirty-nine drift blocks acknowledgement without rewriting view thirty-
   two, view-forty drift blocks final roundtrip without rewriting view thirty-
-  three, and broker readiness ignores additive view forty-one while deriving
-  view thirty-four from view thirty-three.
+  three, view-forty-one drift blocks broker readiness without rewriting view
+  thirty-four, and controlled scale-up ignores additive view forty-two while
+  deriving view thirty-five from view thirty-four.
   Generic non-reconciled targets and legacy draft-backed handoffs keep their
   compatibility paths; thin target sidecars fail until cutover produces the
   complete twenty-view comparison.
@@ -3667,6 +3677,19 @@
   unchanged as cutover's compatibility anchor and the source for the
   established view-twenty-eight output. Cutover now also consumes the additive
   view-thirty-five sibling described below.
+  Broker readiness additionally consumes final roundtrip's view-forty-one
+  `roundtrip_latest_extended_complete_final_*` sibling from nested config or
+  flattened `ack_latest_extended_complete_final_*` summary fields. It
+  revalidates every inherited stage and review digest through roundtrip-latest-
+  extended-complete-final review, binds the additive proof to the established
+  view-thirty-three broker and roundtrip-extended-complete-final-review anchors,
+  and independently recomputes view forty-two. The sibling is emitted as
+  `broker_readiness_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+  while the established view-thirty-four
+  `broker_readiness_extended_complete_final_*` handoff remains unchanged for
+  controlled scale-up. Controlled scale-up intentionally continues to consume
+  view thirty-four and emit view thirty-five; a compatibility regression proves
+  a distinct view-forty-two digest cannot rewrite that boundary.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3685,8 +3708,30 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2082 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2089 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-readiness latest extended complete-final target-lineage gate: all
+100 broker-readiness tests and all 113 controlled-scale-up tests pass.
+Reconciled targets now require final-roundtrip view forty-one in addition to the
+established view-thirty-three compatibility proof. Broker readiness validates
+every inherited stage and review digest, binds the additive proof to the
+established broker and roundtrip-extended-complete-final-review anchors, and
+independently recomputes view forty-two under the distinct
+`broker_readiness_latest_extended_complete_final_*` key. Missing or negative
+proof, inherited-view drift, compatibility-anchor drift, roundtrip-latest-
+extended-complete-final-review drift, and fresh broker-readiness recomputation
+drift all fail closed. Nested roundtrip config and flattened roundtrip summary
+recovery both carry the new proof. The established view-thirty-four
+`broker_readiness_extended_complete_final_*` handoff remains unchanged, and a
+distinct-digest regression proves controlled scale-up continues to derive view
+thirty-five from view thirty-four rather than additive view forty-two. The
+combined broker-readiness/scale-up gate passes 213 tests in 152.2 seconds. The
+full 697-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
+dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-
+dispatch-roundtrip chain passes in 513.1 seconds. The repository collects 2089
+tests across 154 files. The full suite was not rerun for this slice; the last
+completed full-suite baseline remains unchanged.
 
 Latest broker-dispatch-roundtrip extended complete-final target-lineage gate:
 all 75 broker-dispatch-roundtrip tests and all 94 broker-readiness tests pass.
@@ -3703,8 +3748,8 @@ acknowledgement config and flattened acknowledgement summary recovery both
 carry the new proof. The established view-thirty-three
 `roundtrip_extended_complete_final_*` handoff remains unchanged, and distinct-
 digest regressions prove final roundtrip fails on view-forty drift without
-rewriting view thirty-three while broker readiness continues to derive view
-thirty-four from view thirty-three rather than additive view forty-one. The
+rewriting view thirty-three. Broker readiness's subsequent view-forty-one gate
+and additive view-forty-two output are documented above. The
 complete roundtrip/readiness gate passes 169 tests in 207.9 seconds. The full
 690-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
 dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-

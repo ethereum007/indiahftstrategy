@@ -3459,6 +3459,21 @@ The established eighteen-view `broker_readiness_final_*` handoff remains
 unchanged for controlled scale-up. Controlled scale-up now consumes the
 additive twenty-six-view sibling while preserving the established handoff for
 cutover.
+Broker readiness additionally consumes nested
+`roundtrip_latest_extended_complete_final_*` view-forty-one config or flattened
+`ack_latest_extended_complete_final_*` summary fields. It revalidates every
+inherited stage and review digest through roundtrip-latest-extended-complete-
+final review, requires agreement with the established view-thirty-three broker
+and roundtrip-extended-complete-final-review anchors, and independently
+recomputes view forty-two. The additive result is emitted under
+`dispatch_roundtrip.broker_readiness_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `roundtrip_latest_extended_complete_final_review_carried_application_lineage_sha256`
+retains final roundtrip view forty-one and
+`carried_application_lineage_sha256` is the fresh readiness digest. The
+established view-thirty-four `broker_readiness_extended_complete_final_*`
+handoff remains unchanged for controlled scale-up. Controlled scale-up
+continues to consume view thirty-four and emit view thirty-five until its own
+lineage gate is upgraded; it ignores the additive view-forty-two sibling.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -4868,9 +4883,14 @@ canonical digest becomes additive view forty-one under
 Missing or negative proof, inherited digest drift, either compatibility-anchor
 drift, or disagreement with final roundtrip's recomputed datasets fails closed.
 The established view-thirty-three `roundtrip_extended_complete_final_*` output
-remains unchanged for broker readiness. Broker readiness intentionally ignores
-additive view forty-one and continues to derive view thirty-four from view
-thirty-three; distinct-digest regressions cover both compatibility boundaries.
+remains unchanged as broker readiness's compatibility anchor. Broker readiness
+now additionally consumes additive view forty-one, revalidates the complete
+lineage chain, and emits fresh view forty-two under
+`broker_readiness_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Its established view-thirty-four output remains unchanged. Controlled scale-up
+continues to derive view thirty-five from view thirty-four and intentionally
+ignores view forty-two; distinct-digest regressions cover both compatibility
+boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
