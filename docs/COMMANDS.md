@@ -3471,9 +3471,12 @@ where `roundtrip_latest_extended_complete_final_review_carried_application_linea
 retains final roundtrip view forty-one and
 `carried_application_lineage_sha256` is the fresh readiness digest. The
 established view-thirty-four `broker_readiness_extended_complete_final_*`
-handoff remains unchanged for controlled scale-up. Controlled scale-up
-continues to consume view thirty-four and emit view thirty-five until its own
-lineage gate is upgraded; it ignores the additive view-forty-two sibling.
+handoff remains unchanged for controlled-scale-up compatibility. Controlled
+scale-up now consumes the additive view-forty-two sibling and emits view
+forty-three under
+`broker_readiness.dispatch_roundtrip.scaleup_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-thirty-five `scaleup_extended_complete_final_*` output
+remains unchanged for cutover.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -3916,6 +3919,21 @@ the fresh scale-up digest. The established view-twenty-seven
 anchor and the source for the established view-twenty-eight proof. Cutover now
 also consumes view thirty-five and emits the additive view-thirty-six proof
 described in the cutover section below.
+Controlled scale-up additionally consumes broker readiness's view-forty-two
+`broker_readiness_latest_extended_complete_final_*` sibling from nested
+readiness config or flattened `roundtrip_latest_extended_complete_final_*`
+summary fields. It revalidates every inherited stage and review digest through
+broker-readiness-latest-extended-complete-final review, requires agreement with
+the established view-thirty-four broker and broker-readiness-extended-complete-
+final-review anchors, and independently recomputes view forty-three. The
+additive result is emitted under
+`broker_readiness.dispatch_roundtrip.scaleup_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+where `broker_readiness_latest_extended_complete_final_review_carried_application_lineage_sha256`
+retains readiness view forty-two and `carried_application_lineage_sha256` is
+the fresh scale-up digest. The established view-thirty-five
+`scaleup_extended_complete_final_*` handoff remains unchanged for cutover.
+Cutover continues to consume view thirty-five and emit view thirty-six until
+its own lineage gate advances; it ignores additive view forty-three.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4888,9 +4906,12 @@ now additionally consumes additive view forty-one, revalidates the complete
 lineage chain, and emits fresh view forty-two under
 `broker_readiness_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Its established view-thirty-four output remains unchanged. Controlled scale-up
-continues to derive view thirty-five from view thirty-four and intentionally
-ignores view forty-two; distinct-digest regressions cover both compatibility
-boundaries.
+now consumes view forty-two, revalidates the complete lineage chain, and emits
+fresh view forty-three under
+`scaleup_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Its established view-thirty-five output remains unchanged. Cutover continues to
+derive view thirty-six from view thirty-five and intentionally ignores view
+forty-three; distinct-digest regressions cover both compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
