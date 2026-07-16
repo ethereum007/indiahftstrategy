@@ -3428,13 +3428,20 @@
   the proof to the established view-thirty-one broker and send-complete-final-
   review anchors, and independently recomputes view forty under
   `ack_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  The established view-thirty-one input and view-thirty-two output remain
-  unchanged for final-roundtrip compatibility. Distinct-digest regressions
-  prove view-thirty-seven drift blocks broker dispatch without rewriting view
-  thirty, view-thirty-eight drift blocks send without rewriting view thirty-
-  one, view-thirty-nine drift blocks acknowledgement without rewriting view
-  thirty-two, and final roundtrip ignores additive view forty while deriving
-  view thirty-three from view thirty-two.
+  Final roundtrip review now consumes that view-forty sibling from nested
+  acknowledgement config or flattened `send_extended_complete_final_*`
+  summary fields. It revalidates every inherited stage and review digest, binds
+  the proof to the established view-thirty-two broker and acknowledgement-
+  extended-complete-final-review anchors, and independently recomputes view
+  forty-one under
+  `roundtrip_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  The established view-thirty-two input and view-thirty-three output remain
+  unchanged for broker-readiness compatibility. Distinct-digest regressions
+  prove view-thirty-eight drift blocks send without rewriting view thirty-one,
+  view-thirty-nine drift blocks acknowledgement without rewriting view thirty-
+  two, view-forty drift blocks final roundtrip without rewriting view thirty-
+  three, and broker readiness ignores additive view forty-one while deriving
+  view thirty-four from view thirty-three.
   Generic non-reconciled targets and legacy draft-backed handoffs keep their
   compatibility paths; thin target sidecars fail until cutover produces the
   complete twenty-view comparison.
@@ -3678,8 +3685,32 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2075 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2082 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch-roundtrip extended complete-final target-lineage gate:
+all 75 broker-dispatch-roundtrip tests and all 94 broker-readiness tests pass.
+Reconciled targets now require acknowledgement view forty in addition to the
+established view-thirty-two compatibility proof. Final roundtrip validates
+every inherited stage and review digest, binds the additive proof to the
+established broker and acknowledgement-extended-complete-final-review anchors,
+and independently recomputes view forty-one under the distinct
+`roundtrip_latest_extended_complete_final_*` key. Missing or negative proof,
+inherited-view drift, compatibility-anchor drift, roundtrip-extended-complete-
+final-review drift, acknowledgement-latest-extended-complete-final-review
+drift, and fresh roundtrip recomputation drift all fail closed. Nested
+acknowledgement config and flattened acknowledgement summary recovery both
+carry the new proof. The established view-thirty-three
+`roundtrip_extended_complete_final_*` handoff remains unchanged, and distinct-
+digest regressions prove final roundtrip fails on view-forty drift without
+rewriting view thirty-three while broker readiness continues to derive view
+thirty-four from view thirty-three rather than additive view forty-one. The
+complete roundtrip/readiness gate passes 169 tests in 207.9 seconds. The full
+690-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
+dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-
+dispatch-roundtrip chain passes in 624.7 seconds. The repository collects 2082
+tests across 154 files. The full suite was not rerun for this slice; the last
+completed full-suite baseline remains unchanged.
 
 Latest broker-dispatch-acknowledgement extended complete-final target-lineage
 gate: all 78 broker-dispatch-acknowledgement tests and all 69 broker-dispatch-
@@ -3695,9 +3726,9 @@ recomputation drift all fail closed. Nested send config, produced sender-config
 handoff, and flattened send summary recovery all carry the new proof. The
 established view-thirty-two `ack_extended_complete_final_*` handoff remains
 unchanged, and distinct-digest regressions prove acknowledgement fails on
-view-thirty-nine drift without rewriting view thirty-two while final roundtrip
-continues to derive view thirty-three from view thirty-two rather than additive
-view forty. The complete acknowledgement/roundtrip gate passes 147 tests in
+view-thirty-nine drift without rewriting view thirty-two. The subsequent final-
+roundtrip gate documented above consumes additive view forty while preserving
+the established view-thirty-three output. The complete acknowledgement/roundtrip gate passes 147 tests in
 127.9 seconds. The full 683-test broker-readiness -> scale-up -> cutover ->
 route-enable -> broker-dispatch -> broker-dispatch-send -> broker-dispatch-
 acknowledgement -> broker-dispatch-roundtrip chain passes in 462.1 seconds. The

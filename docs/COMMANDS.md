@@ -4853,9 +4853,24 @@ anchors. Its fresh canonical digest becomes additive view forty under
 Missing or negative proof, inherited digest drift, either compatibility-anchor
 drift, or disagreement with acknowledgement's recomputed datasets fails
 closed. The established view-thirty-two `ack_extended_complete_final_*` output
-remains unchanged for final roundtrip review. Final roundtrip intentionally
-ignores additive view forty and continues to derive view thirty-three from view
-thirty-two; distinct-digest regressions cover both compatibility boundaries.
+remains unchanged as final roundtrip's compatibility anchor and the source for
+the established view-thirty-three output. Final roundtrip now additionally
+requires the view-forty sibling from nested acknowledgement config or flattened
+`send_extended_complete_final_*` summary fields, revalidates every inherited
+stage and review digest through roundtrip-extended-complete-final, broker-
+readiness-extended-complete-final, scale-up-extended-complete-final, cutover-
+extended-complete-final, route-extended-complete-final, dispatch-extended-
+complete-final, send-extended-complete-final, and acknowledgement-latest-
+extended-complete-final review, then binds the proof to the view-thirty-two
+broker and acknowledgement-extended-complete-final-review anchors. Its fresh
+canonical digest becomes additive view forty-one under
+`roundtrip_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Missing or negative proof, inherited digest drift, either compatibility-anchor
+drift, or disagreement with final roundtrip's recomputed datasets fails closed.
+The established view-thirty-three `roundtrip_extended_complete_final_*` output
+remains unchanged for broker readiness. Broker readiness intentionally ignores
+additive view forty-one and continues to derive view thirty-four from view
+thirty-three; distinct-digest regressions cover both compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
