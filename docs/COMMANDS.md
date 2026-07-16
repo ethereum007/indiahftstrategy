@@ -4800,10 +4800,22 @@ The established twenty-one-view `route_final_*` handoff remains unchanged for
 broker-dispatch compatibility. Broker dispatch now consumes the additive
 twenty-nine-view sibling while retaining that established twenty-one-view
 contract.
-The additive cutover view-thirty-six sibling is intentionally not a route-
-enable dependency yet. Route enable continues to derive view twenty-nine from
-the established cutover view twenty-eight; a distinct-digest compatibility
-regression proves an adjacent view-thirty-six block cannot rewrite that output.
+Route enable now also requires cutover's view-thirty-six
+`cutover_extended_complete_final_*` sibling. It accepts the proof from nested
+cutover config or flattened `scaleup_extended_complete_final_*` summary fields,
+revalidates every inherited stage and review digest through roundtrip-extended-
+complete-final, broker-readiness-extended-complete-final, scale-up-extended-
+complete-final, and cutover-extended-complete-final review, and binds it to the
+established view-twenty-eight broker and cutover-complete-final-review anchors.
+Route enable's fresh canonical digest becomes view thirty-seven under
+`route_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Missing or negative proof, any inherited digest drift, either compatibility-
+anchor drift, or disagreement with route enable's recomputed datasets fails
+closed. The established view-twenty-nine `route_complete_final_*` output
+remains unchanged for broker dispatch. Broker dispatch intentionally ignores
+the additive view-thirty-seven sibling until its own gate is upgraded; a
+distinct-digest compatibility regression proves it continues to derive view
+thirty from view twenty-nine.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
