@@ -3480,7 +3480,11 @@ remains unchanged as cutover's compatibility anchor. Cutover separately
 consumes view forty-three and emits additive view forty-four under
 `cutover_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-thirty-six `cutover_extended_complete_final_*` output
-remains unchanged for route-enable.
+remains unchanged as route-enable's compatibility anchor. Route-enable
+separately consumes view forty-four and emits additive view forty-five under
+`route_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-thirty-seven `route_extended_complete_final_*` output
+remains unchanged for broker dispatch.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -3941,8 +3945,13 @@ nested scale-up config or flattened
 `broker_readiness_latest_extended_complete_final_*` summary fields, revalidates
 the complete inherited chain, and emits fresh view forty-four under
 `cutover_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Route-enable continues to consume established view thirty-six and intentionally
-ignores additive view forty-four until its own lineage gate advances.
+Route-enable now consumes additive view forty-four from nested cutover config
+or flattened `scaleup_latest_extended_complete_final_*` summary fields,
+revalidates the complete inherited chain, and emits fresh view forty-five under
+`route_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Broker dispatch continues to consume established view thirty-seven and
+intentionally ignores additive view forty-five until its own lineage gate
+advances.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4674,8 +4683,15 @@ scale-up-extended-complete-final-review anchors, and emits fresh view forty-four
 under
 `cutover_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-thirty-six `cutover_extended_complete_final_*` output
-remains unchanged for route-enable, which intentionally ignores additive view
-forty-four until its own gate advances.
+remains unchanged as route-enable's compatibility anchor. Route-enable
+additionally consumes view forty-four from nested cutover config or flattened
+`scaleup_latest_extended_complete_final_*` summary fields, revalidates the
+complete chain through cutover-latest-extended-complete-final review, and emits
+fresh view forty-five under
+`route_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-thirty-seven `route_extended_complete_final_*` output
+remains unchanged for broker dispatch, which intentionally ignores additive
+view forty-five until its own gate advances.
 Generic targets that do not require final consistency and legacy draft-backed
 proof keep the existing provenance checks.
 When the scale-up config includes both
@@ -4933,9 +4949,13 @@ Its established view-thirty-five output remains unchanged. Cutover now consumes
 view forty-three, revalidates the complete lineage chain, and emits fresh view
 forty-four under
 `cutover_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Its established view-thirty-six output remains unchanged. Route-enable derives
-view thirty-seven from view thirty-six and intentionally ignores view
-forty-four; distinct-digest regressions cover both compatibility boundaries.
+Its established view-thirty-six output remains unchanged. Route-enable now
+consumes view forty-four, revalidates the complete lineage chain, and emits
+fresh view forty-five under
+`route_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Its established view-thirty-seven output remains unchanged. Broker dispatch
+derives view thirty-eight from view thirty-seven and intentionally ignores view
+forty-five; distinct-digest regressions cover both compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
