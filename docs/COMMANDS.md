@@ -4825,9 +4825,23 @@ fresh canonical digest becomes additive view thirty-eight under
 Missing or negative proof, inherited digest drift, either compatibility-anchor
 drift, or disagreement with dispatch's recomputed datasets fails closed. The
 established view-thirty `dispatch_complete_final_*` output remains unchanged
-for send preparation. Send intentionally ignores additive view thirty-eight
-and continues to derive view thirty-one from view thirty; distinct-digest
-regressions cover both compatibility boundaries.
+as send preparation's compatibility anchor and the source for the established
+view-thirty-one output. Send preparation now additionally requires the view-
+thirty-eight sibling from nested dispatch config or flattened
+`route_extended_complete_final_*` summary fields, revalidates every inherited
+stage and review digest through roundtrip-extended-complete-final, broker-
+readiness-extended-complete-final, scale-up-extended-complete-final, cutover-
+extended-complete-final, route-extended-complete-final, and dispatch-extended-
+complete-final review, and binds it to the view-thirty broker and dispatch-
+complete-final-review anchors. Its fresh canonical digest becomes additive
+view thirty-nine under
+`send_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Missing or negative proof, inherited digest drift, either compatibility-anchor
+drift, or disagreement with send's recomputed datasets fails closed. The
+established view-thirty-one `send_complete_final_*` output remains unchanged
+for acknowledgement reconciliation. Acknowledgement intentionally ignores
+additive view thirty-nine and continues to derive view thirty-two from view
+thirty-one; distinct-digest regressions cover both compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the

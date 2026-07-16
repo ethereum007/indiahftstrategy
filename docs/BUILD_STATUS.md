@@ -3416,12 +3416,19 @@
   proof to the established view-twenty-nine broker and route-complete-final-
   review anchors, and independently recomputes view thirty-eight under
   `dispatch_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  The established view-twenty-nine input and view-thirty output remain
-  unchanged for send compatibility. Distinct-digest regressions prove view-
+  Send preparation now consumes that view-thirty-eight sibling from nested
+  dispatch config or flattened `route_extended_complete_final_*` summary
+  fields. It revalidates every inherited stage and review digest, binds the
+  proof to the established view-thirty broker and dispatch-complete-final-
+  review anchors, and independently recomputes view thirty-nine under
+  `send_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  The established view-thirty input and view-thirty-one output remain unchanged
+  for acknowledgement compatibility. Distinct-digest regressions prove view-
   thirty-six drift blocks route enable without rewriting view twenty-nine,
-  view-thirty-seven drift blocks broker dispatch without rewriting view
-  thirty, and send ignores additive view thirty-eight while deriving view
-  thirty-one from view thirty.
+  view-thirty-seven drift blocks broker dispatch without rewriting view thirty,
+  view-thirty-eight drift blocks send without rewriting view thirty-one, and
+  acknowledgement ignores additive view thirty-nine while deriving view
+  thirty-two from view thirty-one.
   Generic non-reconciled targets and legacy draft-backed handoffs keep their
   compatibility paths; thin target sidecars fail until cutover produces the
   complete twenty-view comparison.
@@ -3665,8 +3672,30 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2061 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2068 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch-send extended complete-final target-lineage gate: all 93
+broker-dispatch-send tests and all 72 broker-dispatch-acknowledgement tests
+pass. Reconciled targets now require broker-dispatch view thirty-eight in
+addition to the established view-thirty compatibility proof. Send preparation
+validates every inherited stage and review digest, binds the additive proof to
+the established broker and dispatch-complete-final-review anchors, and
+independently recomputes view thirty-nine. Missing or negative proof,
+inherited-view drift, compatibility-anchor drift, send-complete-final-review
+drift, dispatch-extended-complete-final-review drift, and fresh send
+recomputation drift all fail closed. Nested dispatch config and flattened
+dispatch summary recovery both carry the new proof. The established view-
+thirty-one `send_complete_final_*` handoff remains unchanged, and distinct-
+digest regressions prove send fails on view-thirty-eight drift without
+rewriting view thirty-one while acknowledgement continues to derive view
+thirty-two from view thirty-one rather than additive view thirty-nine. The
+complete send/acknowledgement gate passes 165 tests in 210.4 seconds. The full
+676-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
+dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-
+dispatch-roundtrip chain passes in 774.9 seconds. The repository collects 2068
+tests across 154 files. The full suite was not rerun for this slice; the last
+completed full-suite baseline remains unchanged.
 
 Latest broker-dispatch extended complete-final target-lineage gate: all 81
 broker-dispatch tests and all 87 broker-dispatch-send tests pass. Reconciled
@@ -3680,8 +3709,9 @@ complete-final-review drift, and fresh dispatch recomputation drift all fail
 closed. Nested route config and flattened route summary recovery both carry
 the new proof. The established view-thirty `dispatch_complete_final_*` handoff
 remains unchanged, and distinct-digest regressions prove dispatch fails on
-view-thirty-seven drift without rewriting view thirty while send continues to
-derive view thirty-one from view thirty rather than additive view thirty-eight.
+view-thirty-seven drift without rewriting view thirty. The subsequent send
+gate documented above consumes additive view thirty-eight while preserving the
+established view-thirty-one output.
 The complete dispatch/send gate passes 168 tests in 231.4 seconds. The full
 669-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
 dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-
