@@ -4839,9 +4839,23 @@ view thirty-nine under
 Missing or negative proof, inherited digest drift, either compatibility-anchor
 drift, or disagreement with send's recomputed datasets fails closed. The
 established view-thirty-one `send_complete_final_*` output remains unchanged
-for acknowledgement reconciliation. Acknowledgement intentionally ignores
-additive view thirty-nine and continues to derive view thirty-two from view
-thirty-one; distinct-digest regressions cover both compatibility boundaries.
+as acknowledgement's compatibility anchor and the source for the established
+view-thirty-two output. Acknowledgement now additionally requires the view-
+thirty-nine sibling from nested send config, the produced sender-config
+handoff, or flattened `dispatch_extended_complete_final_*` summary fields. It
+revalidates every inherited stage and review digest through roundtrip-extended-
+complete-final, broker-readiness-extended-complete-final, scale-up-extended-
+complete-final, cutover-extended-complete-final, route-extended-complete-final,
+dispatch-extended-complete-final, and send-extended-complete-final review, then
+binds the proof to the view-thirty-one broker and send-complete-final-review
+anchors. Its fresh canonical digest becomes additive view forty under
+`ack_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Missing or negative proof, inherited digest drift, either compatibility-anchor
+drift, or disagreement with acknowledgement's recomputed datasets fails
+closed. The established view-thirty-two `ack_extended_complete_final_*` output
+remains unchanged for final roundtrip review. Final roundtrip intentionally
+ignores additive view forty and continues to derive view thirty-three from view
+thirty-two; distinct-digest regressions cover both compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the

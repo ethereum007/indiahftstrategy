@@ -168,6 +168,36 @@ def ack_view_32_target_application_lineage_comparison(
     return comparison
 
 
+def ack_view_40_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    comparison = ack_view_32_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256=lineage_sha256,
+    )
+    comparison.update(
+        {
+            "ack_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "roundtrip_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "broker_readiness_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "scaleup_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "cutover_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "route_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "dispatch_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "send_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "carried_application_lineage_sha256": lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
@@ -2471,6 +2501,59 @@ def test_broker_dispatch_roundtrip_blocks_ack_view_32_drift_while_preserving_vie
         extended_complete_final_lineage["carried_application_lineage_sha256"]
         == lineage_sha256
     )
+
+
+def test_broker_dispatch_roundtrip_preserves_view_33_when_ack_view_40_differs():
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    dispatch_config = route_enable_config()
+    dispatch_config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    send_config = route_enable_config()
+    send_config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    ack_config = route_enable_config()
+    ack_config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    ack_config[
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = target_application_lineage_comparison(vendor)
+    ack_config[
+        "ack_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = ack_final_target_application_lineage_comparison(vendor)
+    add_ack_complete_final_target_application_lineage(ack_config, vendor)
+    ack_config[
+        "ack_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = ack_view_40_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256="f" * 64,
+    )
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=dispatch_config,
+        send_config=send_config,
+        ack_config=ack_config,
+    )
+
+    assert report.passed
+    roundtrip_view_33 = report.config[
+        "roundtrip_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert roundtrip_view_33["broker_application_lineage_sha256"] == lineage_sha256
+    assert (
+        roundtrip_view_33[
+            "ack_extended_complete_final_review_carried_application_lineage_sha256"
+        ]
+        == lineage_sha256
+    )
+    assert (
+        roundtrip_view_33["carried_application_lineage_sha256"]
+        == lineage_sha256
+    )
+    assert roundtrip_view_33["broker_application_lineage_sha256"] != "f" * 64
 
 
 def test_broker_dispatch_roundtrip_uses_ack_compatibility_lineage_before_ack_final():
