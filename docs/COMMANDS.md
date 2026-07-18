@@ -3488,8 +3488,13 @@ remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 consumes additive view forty-five and emits fresh view forty-six under
 `dispatch_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-thirty-eight `dispatch_extended_complete_final_*` output
-remains unchanged for sender compatibility, and sender preparation ignores
-view forty-six until its own lineage gate advances.
+remains unchanged for sender compatibility. Sender preparation consumes view
+forty-six, revalidates the inherited chain against the established view-thirty-
+eight anchors, and emits additive view forty-seven under
+`send_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-thirty-nine output remains unchanged for acknowledgement
+compatibility, and acknowledgement ignores view forty-seven until its own gate
+advances.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -3958,9 +3963,13 @@ Broker dispatch consumes additive view forty-five from nested route config or
 flattened `cutover_latest_extended_complete_final_*` summary fields, revalidates
 the complete inherited chain, and emits fresh view forty-six under
 `dispatch_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Its established view-thirty-eight output remains unchanged; sender preparation
-continues to consume view thirty-eight and intentionally ignores additive view
-forty-six until its own lineage gate advances.
+Its established view-thirty-eight output remains unchanged. Sender preparation
+now consumes additive view forty-six from nested dispatch config or flattened
+`route_latest_extended_complete_final_*` summary fields, revalidates the full
+chain, and emits fresh view forty-seven under
+`send_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Its established view-thirty-nine output remains unchanged, and acknowledgement
+continues to consume view thirty-nine rather than additive view forty-seven.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4706,7 +4715,13 @@ complete chain through route-latest-extended-complete-final review, and emits
 fresh view forty-six under
 `dispatch_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-thirty-eight output remains unchanged for sender
-compatibility; sender preparation ignores view forty-six until its own gate
+compatibility. Sender preparation additionally consumes view forty-six from
+nested dispatch config or flattened `route_latest_extended_complete_final_*`
+summary fields, revalidates the complete chain, and emits fresh view forty-
+seven under
+`send_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-thirty-nine output remains unchanged for acknowledgement
+compatibility; acknowledgement ignores view forty-seven until its own gate
 advances.
 Generic targets that do not require final consistency and legacy draft-backed
 proof keep the existing provenance checks.
@@ -4974,9 +4989,13 @@ consumes view forty-five, revalidates the complete lineage chain, and emits
 fresh view forty-six under
 `dispatch_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 It still derives established view thirty-eight from view thirty-seven. Sender
-preparation derives view thirty-nine from view thirty-eight and intentionally
-ignores view forty-six; distinct-digest regressions cover both compatibility
-boundaries.
+preparation now consumes view forty-six and emits additive view forty-seven
+under
+`send_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
+while preserving established view thirty-nine from view thirty-eight.
+Acknowledgement continues to derive view forty from view thirty-nine and
+intentionally ignores view forty-seven; distinct-digest regressions cover both
+compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
