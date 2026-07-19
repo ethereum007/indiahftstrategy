@@ -3913,8 +3913,17 @@
   send anchors, and emits a 62-field view sixty-three under
   `send_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   Its established view-fifty-five output remains unchanged. Acknowledgement
-  continues to consume view fifty-five and intentionally ignores additive
-  view sixty-three.
+  now consumes additive view sixty-three from nested sender config, a separate
+  sender-config handoff, or flattened
+  `dispatch_reconciled_current_latest_extended_complete_final_*` summary
+  fields, revalidates the same 37 inherited digest fields, nine latest/current
+  stage fields, seven current/reconciled transition fields, and fresh broker-
+  readiness, scale-up, cutover, route, dispatch, and send reviews against
+  established view-fifty-five broker and independently recomputed
+  acknowledgement anchors, and emits a 63-field view sixty-four under
+  `ack_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-fifty-six output remains unchanged. Roundtrip continues
+  to consume view fifty-six and intentionally ignores additive view sixty-four.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3933,10 +3942,38 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2236 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2243 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest sender-preparation reconciled current latest extended complete-final
+Latest acknowledgement verified-reconciled current latest extended complete-
+final target-lineage gate: all 99 acknowledgement tests and all 90 roundtrip
+tests pass. Reconciled targets now require sender view sixty-three in addition
+to established view-fifty-five compatibility proof. Acknowledgement validates
+the exact 62-field source contract: 37 inherited digest fields, nine latest/
+current stage fields, seven current/reconciled transition fields, the fresh
+broker-readiness, scale-up, cutover, route, dispatch, and send reconciled
+reviews, sender's generic reconciled review, and the source match decision. It
+binds that additive proof to the established view-fifty-five broker and an
+independently recomputed acknowledgement digest, then starts the explicitly
+named verified-reconciled epoch with a 63-field view sixty-four under the
+distinct `ack_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited or transition-field drift, either
+compatibility-anchor drift, explicit roundtrip-reconciled drift, generic-
+carried drift, and fresh acknowledgement recomputation drift all fail closed.
+Nested sender config, the separate sender-config hydration path, and flattened
+dispatch-reconciled summary recovery all carry the proof. Established view
+fifty-six remains unchanged, and a distinct-digest regression proves roundtrip
+continues to derive view fifty-seven from view fifty-six while ignoring
+additive view sixty-four. The focused 10-test proof, complete 189-test
+acknowledgement/roundtrip boundary across the two component runs, and full 851-
+test broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch
+-> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-dispatch-
+roundtrip chain pass; the authoritative full chain completed in 1319.9 seconds
+with explicit exit code zero. The repository collects 2243 tests across 154
+files. The full repository suite was not rerun for this slice; the last
+completed full-suite baseline remains unchanged.
+
+Immediately preceding sender-preparation reconciled current latest extended complete-final
 target-lineage gate: all 114 sender-preparation tests and all 93
 acknowledgement tests pass. Reconciled targets now require dispatch view sixty-
 two in addition to established view-fifty-four compatibility proof. Sender
