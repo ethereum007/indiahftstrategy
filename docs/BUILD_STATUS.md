@@ -3922,8 +3922,18 @@
   established view-fifty-five broker and independently recomputed
   acknowledgement anchors, and emits a 63-field view sixty-four under
   `ack_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  Its established view-fifty-six output remains unchanged. Roundtrip continues
-  to consume view fifty-six and intentionally ignores additive view sixty-four.
+  Its established view-fifty-six output remains unchanged. Roundtrip now
+  consumes additive view sixty-four from nested acknowledgement config or
+  flattened `send_reconciled_current_latest_extended_complete_final_*`
+  summary fields, revalidates the same 37 inherited digest fields, nine
+  latest/current stage fields, seven current/reconciled transition fields,
+  six reconciled stage reviews, and the acknowledgement verified-reconciled
+  review against the established view-fifty-six broker and independently
+  recomputed roundtrip anchors, and emits a 64-field view sixty-five under
+  `roundtrip_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-fifty-seven output remains unchanged. Broker readiness
+  continues to consume view fifty-seven and intentionally ignores additive
+  view sixty-five.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3942,10 +3952,38 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2243 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2250 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest acknowledgement verified-reconciled current latest extended complete-
+Latest roundtrip verified-reconciled current latest extended complete-final
+target-lineage gate: all 96 roundtrip tests and all 115 broker-readiness tests
+pass. Reconciled targets now require acknowledgement view sixty-four in
+addition to established view-fifty-six compatibility proof. Roundtrip validates
+the exact 63-field source contract: 37 inherited digest fields, nine latest/
+current stage fields, seven current/reconciled transition fields, the fresh
+broker-readiness, scale-up, cutover, route, dispatch, and send reconciled
+reviews, acknowledgement's explicit and generic verified-reconciled reviews,
+and the source match decision. It binds that additive proof to the established
+view-fifty-six broker and an independently recomputed roundtrip digest, then
+emits a 64-field view sixty-five under the distinct
+`roundtrip_verified_reconciled_current_latest_extended_complete_final_*` key.
+Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh roundtrip
+recomputation drift all fail closed. Nested acknowledgement config and
+flattened `send_reconciled_*` summary recovery both carry the proof.
+Established view fifty-seven remains unchanged, and a distinct-digest
+regression proves broker readiness continues to derive view fifty-eight from
+view fifty-seven while ignoring additive view sixty-five. The focused 11-test
+proof, complete 211-test roundtrip/readiness boundary across the two component
+runs, and full 858-test broker-readiness -> scale-up -> cutover -> route-enable
+-> broker-dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement
+-> broker-dispatch-roundtrip chain pass. The roundtrip suite completed in
+413.3 seconds, broker readiness in 164.1 seconds, and the authoritative full
+chain in 808.0 seconds with explicit exit code zero. The repository collects
+2250 tests across 154 files. The full repository suite was not rerun for this
+slice; the last completed full-suite baseline remains unchanged.
+
+Immediately preceding acknowledgement verified-reconciled current latest extended complete-
 final target-lineage gate: all 99 acknowledgement tests and all 90 roundtrip
 tests pass. Reconciled targets now require sender view sixty-three in addition
 to established view-fifty-five compatibility proof. Acknowledgement validates

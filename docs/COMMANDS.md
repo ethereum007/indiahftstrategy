@@ -4112,8 +4112,16 @@ revalidates the complete reconciled chain against the established view-fifty-
 five broker and independently recomputed acknowledgement anchors, and emits
 fresh view sixty-four under
 `ack_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-The established view-fifty-six handoff remains unchanged, and roundtrip
-continues to consume view fifty-six while ignoring additive view sixty-four.
+The established view-fifty-six handoff remains unchanged. Roundtrip now
+consumes additive view sixty-four from nested acknowledgement config or
+flattened `send_reconciled_current_latest_extended_complete_final_*` summary
+fields, revalidates the complete verified-reconciled chain against the
+established view-fifty-six broker and independently recomputed roundtrip
+anchors, and emits fresh view sixty-five under
+`roundtrip_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-fifty-seven handoff remains unchanged, and broker
+readiness continues to consume view fifty-seven while ignoring additive view
+sixty-five.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4945,7 +4953,16 @@ scale-up, cutover, route, dispatch, send, and acknowledgement anchors, and
 emits fresh view sixty-four under
 `ack_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-fifty-six output remains unchanged for roundtrip, which
-ignores additive view sixty-four.
+now consumes additive view sixty-four from nested acknowledgement config or
+flattened `send_reconciled_current_latest_extended_complete_final_*` summary
+fields. It revalidates all 37 inherited digest fields, nine latest/current
+stage fields, seven current/reconciled transition fields, six reconciled stage
+reviews, and acknowledgement's verified-reconciled review against the
+established broker and a fresh canonical recomputation, and emits a 64-field
+view sixty-five under
+`roundtrip_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-fifty-seven output remains unchanged for broker
+readiness, which intentionally ignores additive view sixty-five.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5310,9 +5327,13 @@ Acknowledgement continues to derive established view fifty-six from view
 fifty-five, now consumes additive view sixty-three, and starts the verified-
 reconciled epoch with fresh view sixty-four under
 `ack_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Roundtrip continues to consume view fifty-six and intentionally ignores
-additive view sixty-four; distinct-digest regressions cover all sixteen
-compatibility boundaries.
+Roundtrip continues to derive established view fifty-seven from view fifty-
+six, now consumes additive view sixty-four, and extends the verified-
+reconciled epoch with fresh view sixty-five under
+`roundtrip_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Broker readiness continues to derive view fifty-eight from view fifty-seven
+and intentionally ignores additive view sixty-five; distinct-digest
+regressions cover all seventeen compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
