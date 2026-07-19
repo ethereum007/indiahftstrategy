@@ -186,6 +186,34 @@ DISPATCH_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_46_DIGEST_FIELDS: tuple[str, ...
 SEND_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_47_COMPARISON_KEY = (
     "send_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
 )
+DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_COMPARISON_KEY = (
+    "dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_FIELD_PREFIX = (
+    "dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_SUMMARY_FIELD_PREFIX = (
+    "route_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_DIGEST_FIELDS: tuple[
+    str, ...
+] = DISPATCH_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_46_DIGEST_FIELDS
+DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_STAGE_FIELDS: tuple[
+    str, ...
+] = (
+    "broker_readiness_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "scaleup_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "cutover_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "route_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "dispatch_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "send_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "ack_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "roundtrip_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "broker_readiness_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+)
+SEND_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_55_COMPARISON_KEY = (
+    "send_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
 
 
 @dataclass(frozen=True)
@@ -717,6 +745,12 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
     broker_vendor_latest_extended_complete_final_lineage_46 = (
         _broker_vendor_latest_extended_complete_final_lineage_46_state(state, config)
     )
+    broker_vendor_current_latest_extended_complete_final_lineage_54 = (
+        _broker_vendor_current_latest_extended_complete_final_lineage_54_state(
+            state,
+            config,
+        )
+    )
     (
         broker_vendor_data_readiness,
         broker_vendor_data_readiness_prefix,
@@ -772,6 +806,8 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
     for field, value in broker_vendor_extended_complete_final_lineage_38.items():
         state[field] = value
     for field, value in broker_vendor_latest_extended_complete_final_lineage_46.items():
+        state[field] = value
+    for field, value in broker_vendor_current_latest_extended_complete_final_lineage_54.items():
         state[field] = value
     return state
 
@@ -840,6 +876,15 @@ def _broker_vendor_latest_extended_complete_final_lineage_46_comparison_source(
 ) -> dict[str, Any]:
     comparison = config.get(
         DISPATCH_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_46_COMPARISON_KEY
+    )
+    return comparison if isinstance(comparison, dict) else {}
+
+
+def _broker_vendor_current_latest_extended_complete_final_lineage_54_comparison_source(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    comparison = config.get(
+        DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_COMPARISON_KEY
     )
     return comparison if isinstance(comparison, dict) else {}
 
@@ -1269,6 +1314,103 @@ def _broker_vendor_latest_extended_complete_final_lineage_46_state(
         ),
     }
     for field in DISPATCH_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_46_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            _first_text(
+                comparison.get(field, ""),
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    return fields
+
+
+def _broker_vendor_current_latest_extended_complete_final_lineage_54_state(
+    row: pd.Series,
+    config: dict[str, Any],
+) -> dict[str, object]:
+    comparison = (
+        _broker_vendor_current_latest_extended_complete_final_lineage_54_comparison_source(
+            config
+        )
+    )
+    prefix = DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_FIELD_PREFIX
+    summary_prefix = (
+        DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_SUMMARY_FIELD_PREFIX
+    )
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(f"{summary_prefix}_lineage_match_required", False),
+            )
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(f"{summary_prefix}_lineage_matches", False),
+            )
+        ),
+        f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("carried_application_lineage_sha256", ""),
+                row.get(
+                    f"{summary_prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+    }
+    for field in (
+        *DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_DIGEST_FIELDS,
+        *DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_STAGE_FIELDS,
+    ):
         fields[f"{prefix}_{field}"] = _sha256_text(
             _first_text(
                 comparison.get(field, ""),
@@ -3471,6 +3613,10 @@ def _broker_vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list
                         dispatch_summary,
                         send_lineage_sha256=send_carried_lineage_sha256,
                     ),
+                    *_broker_vendor_current_latest_extended_complete_final_lineage_54_checks(
+                        dispatch_summary,
+                        send_lineage_sha256=send_carried_lineage_sha256,
+                    ),
                 ]
             )
     return checks
@@ -4666,6 +4812,274 @@ def _broker_vendor_latest_extended_complete_final_lineage_46_checks(
     return checks
 
 
+def _broker_vendor_current_latest_extended_complete_final_lineage_54_checks(
+    dispatch_summary: pd.Series,
+    *,
+    send_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    source_prefix = DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_FIELD_PREFIX
+    compatibility_prefix = DISPATCH_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_46_FIELD_PREFIX
+    check_prefix = (
+        f"{DISPATCH_FINAL_LINEAGE_FIELD_PREFIX}_"
+        "dispatch_current_latest_extended_complete_final"
+    )
+    lineage_match_required = _to_bool(
+        dispatch_summary.get(f"{source_prefix}_lineage_match_required", False)
+    )
+    lineage_matches = _to_bool(
+        dispatch_summary.get(f"{source_prefix}_lineage_matches", False)
+    )
+    broker_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{source_prefix}_broker_application_lineage_sha256",
+            "",
+        )
+    )
+    current_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{source_prefix}_current_application_lineage_sha256",
+            "",
+        )
+    )
+    compatibility_broker_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{compatibility_prefix}_broker_application_lineage_sha256",
+            "",
+        )
+    )
+    compatibility_send_latest_lineage_sha256 = _sha256_text(send_lineage_sha256)
+    checks = [
+        _check(
+            f"{check_prefix}_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "reconciled target send preparation requires broker dispatch's current latest extended complete-final lineage comparison",
+        ),
+        _check(
+            f"{check_prefix}_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "broker dispatch did not match every current latest extended complete-final target-lineage view",
+        ),
+        _check(
+            f"{check_prefix}_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "broker dispatch current latest extended complete-final source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+            compatibility_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_broker_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_broker_lineage_sha256 == broker_lineage_sha256
+            ),
+            "send compatibility broker digest does not match dispatch's current latest proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_send_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+            compatibility_send_latest_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_send_latest_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_send_latest_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "send compatibility latest review does not match dispatch's current proof",
+        ),
+    ]
+    for field in DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_DIGEST_FIELDS:
+        if field in {
+            "current_application_lineage_sha256",
+            "broker_application_lineage_sha256",
+        }:
+            continue
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        if stage == "scaleup":
+            stage = "prior_scaleup"
+        elif stage == "cutover":
+            stage = "prior_cutover"
+        carried_sha256 = _sha256_text(
+            dispatch_summary.get(f"{source_prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"broker dispatch's {stage.replace('_', '-')} target lineage "
+                    "does not match current latest extended complete-final broker proof"
+                ),
+            )
+        )
+    for field in DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_STAGE_FIELDS:
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        carried_sha256 = _sha256_text(
+            dispatch_summary.get(f"{source_prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"broker dispatch's {stage.replace('_', '-')} target lineage "
+                    "does not match current latest extended complete-final broker proof"
+                ),
+            )
+        )
+    scaleup_current_latest_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{source_prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    cutover_current_latest_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{source_prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    route_current_latest_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{source_prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    dispatch_current_latest_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(
+            f"{source_prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    dispatch_current_latest_generic_lineage_sha256 = _sha256_text(
+        dispatch_summary.get(f"{source_prefix}_carried_application_lineage_sha256", "")
+    )
+    send_current_latest_lineage_sha256 = _sha256_text(send_lineage_sha256)
+    checks.extend(
+        [
+            _check(
+                f"{check_prefix}_scaleup_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                scaleup_current_latest_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and scaleup_current_latest_lineage_sha256
+                    and broker_lineage_sha256
+                    and scaleup_current_latest_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker dispatch's source scale-up current latest review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_cutover_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                cutover_current_latest_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and cutover_current_latest_lineage_sha256
+                    and broker_lineage_sha256
+                    and cutover_current_latest_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker dispatch's source cutover current latest review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_route_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                route_current_latest_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and route_current_latest_lineage_sha256
+                    and broker_lineage_sha256
+                    and route_current_latest_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker dispatch's source route current latest review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_dispatch_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                dispatch_current_latest_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and dispatch_current_latest_lineage_sha256
+                    and broker_lineage_sha256
+                    and dispatch_current_latest_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker dispatch's current latest review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_dispatch_current_latest_extended_complete_final_review_generic_carried_lineage_sha256_matches",
+                dispatch_current_latest_generic_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and dispatch_current_latest_generic_lineage_sha256
+                    and broker_lineage_sha256
+                    and dispatch_current_latest_generic_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker dispatch's generic current latest review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_send_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                send_current_latest_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and send_current_latest_lineage_sha256
+                    and broker_lineage_sha256
+                    and send_current_latest_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "send preparation's independently recomputed target lineage does not match dispatch's current latest proof",
+            ),
+        ]
+    )
+    return checks
+
+
 def _target_application_batch_active(dispatch_summary: pd.Series, *, prefix: str) -> bool:
     mapping_sources = {
         value.strip().lower()
@@ -5082,6 +5496,9 @@ def _summary(
                     dispatch_summary
                 ),
                 **_broker_vendor_latest_extended_complete_final_lineage_46_summary_fields(
+                    dispatch_summary
+                ),
+                **_broker_vendor_current_latest_extended_complete_final_lineage_54_summary_fields(
                     dispatch_summary
                 ),
                 **_vendor_market_data_batch_summary_fields(
@@ -5773,6 +6190,57 @@ def _broker_vendor_latest_extended_complete_final_lineage_46_summary_fields(
     return fields
 
 
+def _broker_vendor_current_latest_extended_complete_final_lineage_54_summary_fields(
+    dispatch_summary: pd.Series,
+) -> dict[str, object]:
+    prefix = DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_FIELD_PREFIX
+    send_lineage_sha256 = _target_application_lineage_sha256(
+        dispatch_summary,
+        prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            dispatch_summary.get(f"{prefix}_lineage_match_required", False)
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            dispatch_summary.get(f"{prefix}_lineage_matches", False)
+        ),
+        f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            dispatch_summary.get(
+                f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            dispatch_summary.get(
+                f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            dispatch_summary.get(
+                f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            dispatch_summary.get(
+                f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256": send_lineage_sha256,
+    }
+    for field in (
+        *DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_DIGEST_FIELDS,
+        *DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_STAGE_FIELDS,
+    ):
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            dispatch_summary.get(f"{prefix}_{field}", "")
+        )
+    return fields
+
+
 def _broker_vendor_data_readiness_summary_fields(
     dispatch_summary: pd.Series,
     *,
@@ -5978,6 +6446,48 @@ def _broker_vendor_send_latest_extended_complete_final_lineage_47_config(
         ),
     }
     for field in DISPATCH_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_46_DIGEST_FIELDS:
+        config[field] = _text(summary, f"{prefix}_{field}")
+    return config
+
+
+def _broker_vendor_send_current_latest_extended_complete_final_lineage_55_config(
+    summary: pd.Series,
+) -> dict[str, object]:
+    prefix = DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_FIELD_PREFIX
+    send_lineage_sha256 = _text(
+        summary,
+        f"{prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    )
+    config: dict[str, object] = {
+        "required": _to_bool(summary[f"{prefix}_lineage_match_required"]),
+        "matches": _to_bool(summary[f"{prefix}_lineage_matches"]),
+        "broker_readiness_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_broker_readiness_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "route_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "send_current_latest_extended_complete_final_review_carried_application_lineage_sha256": send_lineage_sha256,
+        "carried_application_lineage_sha256": send_lineage_sha256,
+    }
+    for field in (
+        *DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_DIGEST_FIELDS,
+        *DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_STAGE_FIELDS,
+    ):
         config[field] = _text(summary, f"{prefix}_{field}")
     return config
 
@@ -6259,6 +6769,11 @@ def _config(
         ),
         SEND_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_47_COMPARISON_KEY: (
             _broker_vendor_send_latest_extended_complete_final_lineage_47_config(
+                summary
+            )
+        ),
+        SEND_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_55_COMPARISON_KEY: (
+            _broker_vendor_send_current_latest_extended_complete_final_lineage_55_config(
                 summary
             )
         ),

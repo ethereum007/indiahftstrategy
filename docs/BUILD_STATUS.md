@@ -3840,8 +3840,15 @@
   latest anchors, and emits fresh view fifty-four under
   `dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   Its established view-forty-six output remains unchanged. Sender preparation
-  continues to authorize from view forty-six and intentionally ignores
-  additive view fifty-four until its own gate advances.
+  now consumes additive view fifty-four from nested dispatch config or
+  flattened `route_current_latest_extended_complete_final_*` summary fields,
+  revalidates every inherited and latest/current-stage digest against the
+  established view-forty-six broker and independently recomputed send-latest
+  anchors, and emits fresh view fifty-five under
+  `send_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-forty-seven output remains unchanged. Acknowledgement
+  continues to authorize from view forty-seven and intentionally ignores
+  additive view fifty-five until its own gate advances.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3860,8 +3867,33 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2173 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2180 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-dispatch-send current latest extended complete-final target-
+lineage gate: all 107 broker-dispatch-send tests and all 86 broker-dispatch-
+acknowledgement tests pass. Reconciled targets now require broker-dispatch view
+fifty-four in addition to established view-forty-six compatibility proof.
+Sender preparation validates all 37 inherited digest fields and nine
+latest/current stage fields, binds the additive proof to the established view-
+forty-six broker and independently recomputed send-latest anchors, retains
+source `scaleup_current_latest_*`, `cutover_current_latest_*`,
+`route_current_latest_*`, and `dispatch_current_latest_*` proof, and emits a
+54-field view fifty-five under the distinct
+`send_current_latest_extended_complete_final_*` key. Missing or negative
+proof, inherited-view drift, either compatibility-anchor drift, roundtrip-
+current-latest drift, source generic-carried drift, and fresh send
+recomputation drift all fail closed. Nested dispatch config and flattened
+dispatch summary recovery both carry the proof. Established view forty-seven
+remains unchanged, and a distinct-digest regression proves acknowledgement
+continues to derive view forty-eight from view forty-seven rather than additive
+view fifty-five. The focused 10-test proof and complete 193-test sender/
+acknowledgement boundary pass. The full 788-test broker-readiness -> scale-up ->
+cutover -> route-enable -> broker-dispatch -> broker-dispatch-send -> broker-
+dispatch-acknowledgement -> broker-dispatch-roundtrip chain passes in 578.8
+seconds. The repository collects 2180 tests across 154 files. The full
+repository suite was not rerun for this slice; the last completed full-suite
+baseline remains unchanged.
 
 Latest broker-dispatch current latest extended complete-final target-lineage
 gate: all 95 broker-dispatch tests and all 101 broker-dispatch-send tests pass.
