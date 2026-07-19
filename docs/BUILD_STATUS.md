@@ -3861,8 +3861,15 @@
   anchors, and emits fresh view fifty-seven under
   `roundtrip_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   Its established view-forty-nine output remains unchanged. Broker readiness
-  continues to authorize from view forty-nine and intentionally ignores
-  additive view fifty-seven until its own gate advances.
+  now consumes additive view fifty-seven from nested roundtrip config or
+  flattened `ack_reconciled_current_latest_extended_complete_final_*` summary
+  fields, revalidates the complete inherited, latest/current, and reconciled
+  chain against the established view-forty-nine broker and independently
+  recomputed broker-readiness anchors, and emits fresh view fifty-eight under
+  `broker_readiness_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-fifty output remains unchanged. Controlled scale-up
+  continues to consume view fifty and intentionally ignores additive view
+  fifty-eight.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3881,8 +3888,32 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2194 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2201 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest broker-readiness reconciled current latest extended complete-final
+target-lineage gate: all 114 broker-readiness tests and all 127 controlled
+scale-up tests pass. Reconciled targets now require roundtrip view fifty-seven
+in addition to established view-forty-nine compatibility proof. Broker
+readiness validates all 37 inherited digest fields, nine latest/current stage
+fields, seven current/reconciled transition fields, the roundtrip generic
+carried digest, and an independently recomputed broker-readiness digest. It
+binds the additive proof to the established view-forty-nine broker and fresh
+broker-readiness anchors, then emits a 57-field view fifty-eight under the
+distinct `broker_readiness_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited or transition-field drift, either
+compatibility-anchor drift, explicit roundtrip-reconciled drift, generic-
+carried drift, and fresh broker-readiness recomputation drift all fail closed.
+Nested roundtrip config and flattened roundtrip summary recovery both carry
+the proof. Established view fifty remains unchanged, and a distinct-digest
+regression proves controlled scale-up continues to derive view fifty-one from
+view fifty rather than additive view fifty-eight. The focused 10-test proof,
+complete 241-test broker-readiness/scale-up boundary, and full 809-test broker-
+readiness -> scale-up -> cutover -> route-enable -> broker-dispatch -> broker-
+dispatch-send -> broker-dispatch-acknowledgement -> broker-dispatch-roundtrip
+chain pass; the full chain completed in 580.8 seconds. The repository collects
+2201 tests across 154 files. The full repository suite was not rerun for this
+slice; the last completed full-suite baseline remains unchanged.
 
 Latest broker-dispatch-roundtrip reconciled current latest extended complete-
 final target-lineage gate: all 89 broker-dispatch-roundtrip tests and all 108
