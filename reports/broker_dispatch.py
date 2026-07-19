@@ -219,6 +219,47 @@ ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_STAGE_FIELDS: tuple[
 DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_COMPARISON_KEY = (
     "dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
 )
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_COMPARISON_KEY = (
+    "route_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_FIELD_PREFIX = (
+    "route_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SUMMARY_FIELD_PREFIX = (
+    "cutover_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_DIGEST_FIELDS: tuple[
+    str, ...
+] = ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_DIGEST_FIELDS
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_STAGE_FIELDS: tuple[
+    str, ...
+] = ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_STAGE_FIELDS
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CURRENT_STAGE_FIELDS: tuple[
+    str, ...
+] = (
+    "scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "roundtrip_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD = (
+    "broker_readiness_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD = (
+    "scaleup_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD = (
+    "cutover_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+)
+ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD = (
+    "route_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+)
+DISPATCH_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_62_COMPARISON_KEY = (
+    "dispatch_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
 
 
 @dataclass(frozen=True)
@@ -1448,6 +1489,10 @@ def _broker_vendor_market_data_batch_checks(route: dict[str, Any]) -> list[dict[
                         dispatch_lineage_sha256=dispatch_carried_lineage_sha256,
                     ),
                     *_broker_vendor_route_current_latest_extended_complete_final_lineage_53_checks(
+                        route,
+                        dispatch_lineage_sha256=dispatch_carried_lineage_sha256,
+                    ),
+                    *_broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_checks(
                         route,
                         dispatch_lineage_sha256=dispatch_carried_lineage_sha256,
                     ),
@@ -2747,6 +2792,264 @@ def _broker_vendor_route_current_latest_extended_complete_final_lineage_53_check
     return checks
 
 
+def _broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_checks(
+    route: dict[str, Any],
+    *,
+    dispatch_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    source_prefix = (
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_FIELD_PREFIX
+    )
+    compatibility_prefix = (
+        ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_FIELD_PREFIX
+    )
+    check_prefix = (
+        f"{ROUTE_FINAL_LINEAGE_FIELD_PREFIX}_"
+        "route_reconciled_current_latest_extended_complete_final"
+    )
+    lineage_match_required = _to_bool(
+        route[f"{source_prefix}_lineage_match_required"]
+    )
+    lineage_matches = _to_bool(route[f"{source_prefix}_lineage_matches"])
+    broker_lineage_sha256 = _sha256_text(
+        route[f"{source_prefix}_broker_application_lineage_sha256"]
+    )
+    current_lineage_sha256 = _sha256_text(
+        route[f"{source_prefix}_current_application_lineage_sha256"]
+    )
+    compatibility_broker_lineage_sha256 = _sha256_text(
+        route[f"{compatibility_prefix}_broker_application_lineage_sha256"]
+    )
+    compatibility_dispatch_current_lineage_sha256 = _sha256_text(
+        dispatch_lineage_sha256
+    )
+    checks = [
+        _check(
+            f"{check_prefix}_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "reconciled target dispatch planning requires route enable's reconciled current latest extended complete-final lineage comparison",
+        ),
+        _check(
+            f"{check_prefix}_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "route enable did not match every reconciled current latest extended complete-final target-lineage view",
+        ),
+        _check(
+            f"{check_prefix}_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "route reconciled current latest extended complete-final source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+            compatibility_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_broker_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_broker_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "dispatch compatibility broker digest does not match route's reconciled current proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_dispatch_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+            compatibility_dispatch_current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_dispatch_current_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_dispatch_current_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "dispatch compatibility current review does not match route's reconciled current proof",
+        ),
+    ]
+    for field in ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_DIGEST_FIELDS:
+        if field in {
+            "current_application_lineage_sha256",
+            "broker_application_lineage_sha256",
+        }:
+            continue
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        if stage == "scaleup":
+            stage = "prior_scaleup"
+        elif stage == "cutover":
+            stage = "prior_cutover"
+        carried_sha256 = _sha256_text(route[f"{source_prefix}_{field}"])
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"route enable's {stage.replace('_', '-')} target lineage "
+                    "does not match reconciled current latest extended complete-final broker proof"
+                ),
+            )
+        )
+    for field in (
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_STAGE_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CURRENT_STAGE_FIELDS,
+    ):
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        carried_sha256 = _sha256_text(route[f"{source_prefix}_{field}"])
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"route enable's {stage.replace('_', '-')} target lineage "
+                    "does not match reconciled current latest extended complete-final broker proof"
+                ),
+            )
+        )
+    broker_readiness_reconciled_lineage_sha256 = _sha256_text(
+        route[
+            f"{source_prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD}"
+        ]
+    )
+    scaleup_reconciled_lineage_sha256 = _sha256_text(
+        route[
+            f"{source_prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD}"
+        ]
+    )
+    cutover_reconciled_lineage_sha256 = _sha256_text(
+        route[
+            f"{source_prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD}"
+        ]
+    )
+    route_reconciled_lineage_sha256 = _sha256_text(
+        route[
+            f"{source_prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD}"
+        ]
+    )
+    route_reconciled_generic_lineage_sha256 = _sha256_text(
+        route[f"{source_prefix}_carried_application_lineage_sha256"]
+    )
+    dispatch_reconciled_lineage_sha256 = _sha256_text(dispatch_lineage_sha256)
+    checks.extend(
+        [
+            _check(
+                f"{check_prefix}_broker_readiness_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                broker_readiness_reconciled_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and broker_readiness_reconciled_lineage_sha256
+                    and broker_lineage_sha256
+                    and broker_readiness_reconciled_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker readiness's reconciled current review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_scaleup_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                scaleup_reconciled_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and scaleup_reconciled_lineage_sha256
+                    and broker_lineage_sha256
+                    and scaleup_reconciled_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "scale-up's reconciled current review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_cutover_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                cutover_reconciled_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and cutover_reconciled_lineage_sha256
+                    and broker_lineage_sha256
+                    and cutover_reconciled_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "cutover's reconciled current review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_route_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                route_reconciled_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and route_reconciled_lineage_sha256
+                    and broker_lineage_sha256
+                    and route_reconciled_lineage_sha256 == broker_lineage_sha256
+                ),
+                "route enable's reconciled current review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_route_reconciled_current_latest_extended_complete_final_review_generic_carried_lineage_sha256_matches",
+                route_reconciled_generic_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and route_reconciled_generic_lineage_sha256
+                    and broker_lineage_sha256
+                    and route_reconciled_generic_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "route enable's generic reconciled current review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_dispatch_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                dispatch_reconciled_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and dispatch_reconciled_lineage_sha256
+                    and broker_lineage_sha256
+                    and dispatch_reconciled_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "dispatch planning's independently recomputed target lineage does not match route's reconciled current proof",
+            ),
+        ]
+    )
+    return checks
+
+
 def _target_application_batch_active(vendor: dict[str, Any]) -> bool:
     mapping_sources = {
         value.strip().lower()
@@ -3618,6 +3921,10 @@ def _broker_vendor_market_data_batch_summary_fields(route: dict[str, Any]) -> di
             route,
             dispatch_lineage_sha256=dispatch_lineage_sha256,
         ),
+        **_broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_summary_fields(
+            route,
+            dispatch_lineage_sha256=dispatch_lineage_sha256,
+        ),
         "route_broker_vendor_market_data_batch_lineage_match_required": route[
             "broker_vendor_market_data_batch_lineage_match_required"
         ],
@@ -3799,6 +4106,42 @@ def _broker_vendor_route_current_latest_extended_complete_final_lineage_53_summa
     for field in (
         *ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_DIGEST_FIELDS,
         *ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_STAGE_FIELDS,
+    ):
+        fields[f"{prefix}_{field}"] = route[f"{prefix}_{field}"]
+    return fields
+
+
+def _broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_summary_fields(
+    route: dict[str, Any],
+    *,
+    dispatch_lineage_sha256: str,
+) -> dict[str, Any]:
+    prefix = (
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_FIELD_PREFIX
+    )
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": route[
+            f"{prefix}_lineage_match_required"
+        ],
+        f"{prefix}_lineage_matches": route[f"{prefix}_lineage_matches"],
+        f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD}": route[
+            f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD}"
+        ],
+        f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD}": route[
+            f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD}"
+        ],
+        f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD}": route[
+            f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD}"
+        ],
+        f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD}": route[
+            f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD}"
+        ],
+        f"{prefix}_dispatch_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": dispatch_lineage_sha256,
+    }
+    for field in (
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_DIGEST_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_STAGE_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CURRENT_STAGE_FIELDS,
     ):
         fields[f"{prefix}_{field}"] = route[f"{prefix}_{field}"]
     return fields
@@ -4131,6 +4474,52 @@ def _broker_vendor_dispatch_current_latest_extended_complete_final_lineage_54_co
     return config
 
 
+def _broker_vendor_dispatch_reconciled_current_latest_extended_complete_final_lineage_62_config(
+    summary: pd.Series,
+) -> dict[str, Any]:
+    prefix = (
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_FIELD_PREFIX
+    )
+    dispatch_lineage_sha256 = str(
+        summary[
+            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+        ]
+    )
+    config: dict[str, Any] = {
+        "required": _to_bool(summary[f"{prefix}_lineage_match_required"]),
+        "matches": _to_bool(summary[f"{prefix}_lineage_matches"]),
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD: str(
+            summary[
+                f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD}"
+            ]
+        ),
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD: str(
+            summary[
+                f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD}"
+            ]
+        ),
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD: str(
+            summary[
+                f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD}"
+            ]
+        ),
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD: str(
+            summary[
+                f"{prefix}_{ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD}"
+            ]
+        ),
+        "dispatch_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": dispatch_lineage_sha256,
+        "carried_application_lineage_sha256": dispatch_lineage_sha256,
+    }
+    for field in (
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_DIGEST_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_STAGE_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CURRENT_STAGE_FIELDS,
+    ):
+        config[field] = str(summary[f"{prefix}_{field}"])
+    return config
+
+
 def _broker_vendor_data_readiness_config(summary: pd.Series) -> dict[str, Any]:
     return {
         "provided": _to_bool(summary["route_broker_vendor_data_readiness_provided"]),
@@ -4397,6 +4786,11 @@ def _config(
         ),
         DISPATCH_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_54_COMPARISON_KEY: (
             _broker_vendor_dispatch_current_latest_extended_complete_final_lineage_54_config(
+                summary
+            )
+        ),
+        DISPATCH_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_62_COMPARISON_KEY: (
+            _broker_vendor_dispatch_reconciled_current_latest_extended_complete_final_lineage_62_config(
                 summary
             )
         ),
@@ -4712,6 +5106,11 @@ def _route_state(
     )
     route_current_latest_extended_complete_final_lineage_53_comparison = (
         _broker_vendor_route_current_latest_extended_complete_final_lineage_53_comparison_source(
+            config
+        )
+    )
+    route_reconciled_current_latest_extended_complete_final_lineage_61_comparison = (
+        _broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_comparison_source(
             config
         )
     )
@@ -5506,6 +5905,10 @@ def _route_state(
             route_current_latest_extended_complete_final_lineage_53_comparison,
             row,
         ),
+        **_broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_state_fields(
+            route_reconciled_current_latest_extended_complete_final_lineage_61_comparison,
+            row,
+        ),
         "broker_vendor_data_readiness": _broker_vendor_data_readiness_state(
             row,
             broker_vendor_data_readiness,
@@ -5643,6 +6046,15 @@ def _broker_vendor_route_current_latest_extended_complete_final_lineage_53_compa
 ) -> dict[str, Any]:
     comparison = config.get(
         ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_COMPARISON_KEY
+    )
+    return comparison if isinstance(comparison, dict) else {}
+
+
+def _broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_comparison_source(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    comparison = config.get(
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_COMPARISON_KEY
     )
     return comparison if isinstance(comparison, dict) else {}
 
@@ -6005,6 +6417,57 @@ def _broker_vendor_route_current_latest_extended_complete_final_lineage_53_state
     for field in (
         *ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_DIGEST_FIELDS,
         *ROUTE_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_53_STAGE_FIELDS,
+    ):
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            _first_text(
+                comparison.get(field, ""),
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    return fields
+
+
+def _broker_vendor_route_reconciled_current_latest_extended_complete_final_lineage_61_state_fields(
+    comparison: dict[str, Any],
+    row: pd.Series,
+) -> dict[str, Any]:
+    prefix = (
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_FIELD_PREFIX
+    )
+    summary_prefix = (
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SUMMARY_FIELD_PREFIX
+    )
+    route_review_field = (
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD
+    )
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(f"{summary_prefix}_lineage_match_required", False),
+            )
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(f"{summary_prefix}_lineage_matches", False),
+            )
+        ),
+        f"{prefix}_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("carried_application_lineage_sha256", ""),
+                row.get(f"{summary_prefix}_{route_review_field}", ""),
+            )
+        ),
+    }
+    for field in (
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_DIGEST_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_STAGE_FIELDS,
+        *ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CURRENT_STAGE_FIELDS,
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_BROKER_READINESS_REVIEW_FIELD,
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_SCALEUP_REVIEW_FIELD,
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_CUTOVER_REVIEW_FIELD,
+        ROUTE_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_61_ROUTE_REVIEW_FIELD,
     ):
         fields[f"{prefix}_{field}"] = _sha256_text(
             _first_text(

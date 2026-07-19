@@ -3895,8 +3895,17 @@
   sixty-one under
   `route_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   Its established view-fifty-three output remains unchanged. Broker dispatch
-  continues to consume view fifty-three and intentionally ignores additive
-  view sixty-one.
+  now consumes additive view sixty-one from nested route config or flattened
+  `cutover_reconciled_current_latest_extended_complete_final_*` summary
+  fields, revalidates the same 37 inherited digest fields, nine latest/current
+  stage fields, seven current/reconciled transition fields, and fresh broker-
+  readiness, scale-up, cutover, and route reviews against established view-
+  fifty-three broker and independently recomputed dispatch anchors, and emits
+  a 61-field view sixty-two under
+  `dispatch_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-fifty-four output remains unchanged. Sender preparation
+  continues to consume view fifty-four and intentionally ignores additive
+  view sixty-two.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3915,10 +3924,37 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2222 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2229 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest route-enable reconciled current latest extended complete-final target-
+Latest broker-dispatch reconciled current latest extended complete-final
+target-lineage gate: all 102 broker-dispatch tests and all 108 sender-
+preparation tests pass. Reconciled targets now require route view sixty-one in
+addition to established view-fifty-three compatibility proof. Broker dispatch
+validates the exact 60-field source contract: 37 inherited digest fields, nine
+latest/current stage fields, seven current/reconciled transition fields, the
+fresh broker-readiness, scale-up, cutover, and route reconciled reviews,
+route's generic reconciled review, and the source match decision. It binds
+that additive proof to the established view-fifty-three broker and an
+independently recomputed dispatch digest, then emits a 61-field view sixty-two
+under the distinct
+`dispatch_reconciled_current_latest_extended_complete_final_*` key. Missing
+or negative proof, inherited or transition-field drift, either compatibility-
+anchor drift, explicit roundtrip-reconciled drift, generic-carried drift, and
+fresh dispatch recomputation drift all fail closed. Nested route config and
+flattened route summary recovery both carry the proof. Established view fifty-
+four remains unchanged, and a distinct-digest regression proves sender
+preparation continues to derive view fifty-five from view fifty-four while
+ignoring additive view sixty-two. The focused 10-test proof, complete 210-test
+broker-dispatch/sender boundary across the two component runs, and full
+837-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
+dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-
+dispatch-roundtrip chain pass; the authoritative full chain completed in
+951.4 seconds with explicit exit code zero. The repository collects 2229 tests
+across 154 files. The full repository suite was not rerun for this slice; the
+last completed full-suite baseline remains unchanged.
+
+Immediately preceding route-enable reconciled current latest extended complete-final target-
 lineage gate: all 101 route-enable tests and all 96 broker-dispatch tests pass.
 Reconciled targets now require cutover view sixty in addition to established
 view-fifty-two compatibility proof. Route-enable validates the exact 59-field
