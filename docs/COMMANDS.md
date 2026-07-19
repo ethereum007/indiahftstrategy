@@ -4069,8 +4069,15 @@ revalidates the full inherited and reconciled chain against the established
 view-forty-nine broker and independently recomputed broker-readiness anchors,
 and emits fresh view fifty-eight under
 `broker_readiness_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-The established view-fifty handoff remains unchanged. Controlled scale-up
-continues to consume view fifty and ignores additive view fifty-eight.
+The established view-fifty handoff remains unchanged. Controlled scale-up now
+consumes additive view fifty-eight from nested broker-readiness config or
+flattened `roundtrip_reconciled_current_latest_extended_complete_final_*`
+summary fields, revalidates the inherited, latest/current, and reconciled
+chain against established view-fifty broker and independently recomputed
+scale-up anchors, and emits fresh view fifty-nine under
+`broker_readiness.dispatch_roundtrip.scaleup_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-fifty-one handoff remains unchanged, and cutover continues
+to consume view fifty-one while ignoring additive view fifty-nine.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4855,8 +4862,15 @@ fields, revalidates all 37 inherited digests plus the latest/current and
 reconciled stage fields, binds the proof to established view forty-nine, and
 emits fresh view fifty-eight under
 `broker_readiness_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-The established view-fifty output remains unchanged for controlled scale-up,
-which ignores additive view fifty-eight.
+The established view-fifty output remains unchanged. Controlled scale-up now
+consumes view fifty-eight from nested broker-readiness config or flattened
+`roundtrip_reconciled_current_latest_extended_complete_final_*` summary fields,
+revalidates all 37 inherited digest fields, nine latest/current stage fields,
+seven current/reconciled transition fields, and fresh broker-readiness and
+scale-up anchors, and emits fresh view fifty-nine under
+`scaleup_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-fifty-one output remains unchanged for cutover, which
+ignores additive view fifty-nine.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5199,9 +5213,13 @@ Broker readiness continues to derive established view fifty from view forty-
 nine, now consumes additive view fifty-seven, and emits fresh view fifty-eight
 under
 `broker_readiness_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Controlled scale-up continues to consume view fifty and intentionally ignores
-additive view fifty-eight; distinct-digest regressions cover all ten
-compatibility boundaries.
+Controlled scale-up continues to derive established view fifty-one from view
+fifty, now consumes additive view fifty-eight, and emits fresh view fifty-nine
+under
+`scaleup_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Cutover continues to consume view fifty-one and intentionally ignores additive
+view fifty-nine; distinct-digest regressions cover all eleven compatibility
+boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
