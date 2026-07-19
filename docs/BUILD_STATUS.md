@@ -3876,8 +3876,18 @@
   fifty broker and independently recomputed scale-up anchors, and emits fresh
   view fifty-nine under
   `scaleup_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  Its established view-fifty-one output remains unchanged. Cutover continues
-  to consume view fifty-one and intentionally ignores additive view fifty-nine.
+  Its established view-fifty-one output remains unchanged. Cutover now
+  consumes additive view fifty-nine from nested scale-up config or flattened
+  `broker_readiness_reconciled_current_latest_extended_complete_final_*`
+  summary fields, revalidates the same 37 inherited digest fields, nine
+  latest/current stage fields, seven current/reconciled transition fields,
+  and fresh broker-readiness and scale-up reviews against established view-
+  fifty-one broker and independently recomputed cutover anchors, and emits a
+  59-field view sixty under
+  `cutover_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-fifty-two output remains unchanged. Route-enable
+  continues to consume view fifty-two and intentionally ignores additive view
+  sixty.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3896,10 +3906,36 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2208 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2215 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest controlled-scale-up reconciled current latest extended complete-final
+Latest cutover reconciled current latest extended complete-final target-
+lineage gate: all 98 cutover tests and all 95 route-enable tests pass.
+Reconciled targets now require scale-up view fifty-nine in addition to
+established view-fifty-one compatibility proof. Cutover validates the exact
+58-field source contract: 37 inherited digest fields, nine latest/current
+stage fields, seven current/reconciled transition fields, broker readiness's
+fresh reconciled review, scale-up's fresh and generic reconciled reviews, and
+the source match decision. It binds that additive proof to the established
+view-fifty-one broker and an independently recomputed cutover digest, then
+emits a 59-field view sixty under the distinct
+`cutover_reconciled_current_latest_extended_complete_final_*` key. Missing or
+negative proof, inherited or transition-field drift, either compatibility-
+anchor drift, explicit roundtrip-reconciled drift, generic-carried drift, and
+fresh cutover recomputation drift all fail closed. Nested scale-up config and
+flattened scale-up summary recovery both carry the proof. Established view
+fifty-two remains unchanged, and a distinct-digest regression proves route-
+enable continues to derive view fifty-three from view fifty-two while
+ignoring additive view sixty. The focused 10-test proof, complete 193-test
+cutover/route-enable boundary, and full 823-test broker-readiness -> scale-up
+-> cutover -> route-enable -> broker-dispatch -> broker-dispatch-send ->
+broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain pass; the
+authoritative full chain completed in 509.21 seconds with explicit exit code
+zero. The repository collects 2215 tests across 154 files. The full repository
+suite was not rerun for this slice; the last completed full-suite baseline
+remains unchanged.
+
+Immediately preceding controlled-scale-up reconciled current latest extended complete-final
 target-lineage gate: all 133 controlled scale-up tests and all 92 cutover tests
 pass. Reconciled targets now require broker-readiness view fifty-eight in
 addition to established view-fifty compatibility proof. Controlled scale-up
