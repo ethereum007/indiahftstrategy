@@ -4030,8 +4030,16 @@ established view-forty-four broker and independently recomputed route-latest
 anchors, and emits fresh view fifty-three under
 `route_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-forty-five `route_latest_extended_complete_final_*`
-handoff remains unchanged. Broker dispatch intentionally continues to consume
-view forty-five and ignores additive view fifty-three until its gate advances.
+handoff remains unchanged. Broker dispatch now consumes additive view
+fifty-three from nested route config or flattened
+`cutover_current_latest_extended_complete_final_*` summary fields,
+revalidates the inherited and latest/current-stage chain against the
+established view-forty-five broker and independently recomputed dispatch-
+latest anchors, and emits fresh view fifty-four under
+`dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-six `dispatch_latest_extended_complete_final_*`
+handoff remains unchanged. Sender preparation continues to consume view
+forty-six and ignores additive view fifty-four until its gate advances.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4777,8 +4785,15 @@ the proof to the established view-forty-four broker and independently
 recomputed route-latest anchors, and emits fresh view fifty-three under
 `route_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-forty-five output remains unchanged. Broker dispatch
-continues to consume view forty-five and ignores additive view fifty-three
-until its gate advances.
+now also requires route-enable's view-fifty-three
+`route_current_latest_extended_complete_final_*` sibling from nested route
+config or flattened `cutover_current_latest_extended_complete_final_*`
+summary fields. It revalidates all inherited and latest/current-stage digests,
+binds the proof to the established view-forty-five broker and independently
+recomputed dispatch-latest anchors, and emits fresh view fifty-four under
+`dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-six output remains unchanged for sender
+preparation, which ignores additive view fifty-four until its gate advances.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5104,8 +5119,11 @@ Route-enable continues to derive view forty-five from view forty-four and
 now consumes additive view fifty-two to emit fresh view fifty-three under
 `route_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Broker dispatch continues to derive view forty-six from view forty-five and
-intentionally ignores additive view fifty-three; distinct-digest regressions
-cover all five compatibility boundaries.
+now consumes additive view fifty-three to emit fresh view fifty-four under
+`dispatch_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Sender preparation continues to derive view forty-seven from view forty-six
+and intentionally ignores additive view fifty-four; distinct-digest
+regressions cover all six compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
