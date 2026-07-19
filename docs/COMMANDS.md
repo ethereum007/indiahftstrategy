@@ -4006,8 +4006,16 @@ from nested roundtrip config or flattened
 full chain, retains inherited `broker_readiness_latest_*`, and emits fresh view
 fifty under
 `broker_readiness_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Its established view-forty-two output remains unchanged, and controlled scale-
-up continues to consume view forty-two rather than additive view fifty.
+Its established view-forty-two output remains unchanged. Controlled scale-up
+now also consumes additive view fifty from nested broker-readiness config or
+flattened `roundtrip_current_latest_extended_complete_final_*` summary fields,
+revalidates the full inherited and latest/current-stage chain against the
+established view-forty-three broker and scale-up-latest anchors, and emits fresh
+view fifty-one under
+`broker_readiness.dispatch_roundtrip.scaleup_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-three `scaleup_latest_extended_complete_final_*`
+handoff remains unchanged. Cutover intentionally continues to consume view
+forty-three and ignores additive view fifty-one until its gate advances.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -5060,8 +5068,12 @@ derive view forty-two from view forty-one as its compatibility path, consumes
 additive view forty-nine, and emits fresh view fifty under
 `broker_readiness_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
 while preserving established view forty-two. Controlled scale-up continues to
-derive view forty-three from view forty-two and intentionally ignores additive
-view fifty; distinct-digest regressions cover both compatibility boundaries.
+derive established view forty-three from view forty-two, now consumes additive
+view fifty, and emits fresh view fifty-one under
+`scaleup_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Cutover continues to derive view forty-four from view forty-three and
+intentionally ignores additive view fifty-one; distinct-digest regressions
+cover all three compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
