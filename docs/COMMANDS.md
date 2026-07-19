@@ -4046,8 +4046,16 @@ forty-six broker and independently recomputed send-latest anchors, and emits
 fresh view fifty-five under
 `send_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-forty-seven `send_latest_extended_complete_final_*`
-handoff remains unchanged. Acknowledgement continues to consume view forty-
-seven and ignores additive view fifty-five until its gate advances.
+handoff remains unchanged. Acknowledgement now consumes additive view fifty-
+five from nested sender config or flattened
+`dispatch_current_latest_extended_complete_final_*` summary fields,
+revalidates the inherited and latest/current-stage chain against the
+established view-forty-seven broker and independently recomputed
+acknowledgement anchors, and emits fresh view fifty-six under
+`ack_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-eight `ack_current_latest_extended_complete_final_*`
+handoff remains unchanged. Roundtrip continues to consume view forty-eight and
+ignores additive view fifty-six until its gate advances.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4808,9 +4816,16 @@ summary fields. It revalidates all inherited and latest/current-stage digests,
 binds the proof to the established view-forty-six broker and independently
 recomputed send-latest anchors, and emits fresh view fifty-five under
 `send_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-The established view-forty-seven output remains unchanged for
-acknowledgement, which ignores additive view fifty-five until its gate
-advances.
+The established view-forty-seven output remains unchanged. Acknowledgement
+now also requires sender's view-fifty-five
+`send_current_latest_extended_complete_final_*` sibling from nested sender
+config or flattened `dispatch_current_latest_extended_complete_final_*`
+summary fields. It revalidates all inherited and latest/current-stage digests,
+binds the proof to the established view-forty-seven broker and independently
+recomputed acknowledgement anchors, and emits fresh view fifty-six under
+`ack_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-eight output remains unchanged for roundtrip,
+which ignores additive view fifty-six until its gate advances.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5141,9 +5156,13 @@ now consumes additive view fifty-three to emit fresh view fifty-four under
 Sender preparation continues to derive view forty-seven from view forty-six
 and now consumes additive view fifty-four to emit fresh view fifty-five under
 `send_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Acknowledgement continues to derive view forty-eight from view forty-seven and
-intentionally ignores additive view fifty-five; distinct-digest regressions
-cover all seven compatibility boundaries.
+Acknowledgement continues to derive established view forty-eight from view
+forty-seven, now consumes additive view fifty-five, and emits fresh view
+fifty-six under
+`ack_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Roundtrip continues to derive view forty-nine from view forty-eight and
+intentionally ignores additive view fifty-six; distinct-digest regressions
+cover all eight compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
