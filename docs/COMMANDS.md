@@ -3498,8 +3498,14 @@ compatibility. Acknowledgement consumes view forty-seven, retains the inherited
 emits additive view forty-eight under
 `ack_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-forty output remains unchanged for roundtrip
-compatibility, and roundtrip ignores view forty-eight until its own gate
-advances.
+compatibility. Roundtrip consumes view forty-eight from nested acknowledgement
+config or flattened `send_latest_extended_complete_final_*` summary fields,
+revalidates the inherited chain against the established view-forty anchors,
+retains inherited `roundtrip_latest_*`, independently recomputes
+`roundtrip_current_latest_*`, and emits additive view forty-nine under
+`roundtrip_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-one output remains unchanged for broker-readiness
+compatibility, and broker readiness ignores additive view forty-nine.
 Generic onboarding target proof without a final cross-stage result and legacy
 draft-backed proof keep their compatibility paths. If the round-trip and
 current generic proofs are both active and either one signals target mode,
@@ -3979,7 +3985,14 @@ now consumes additive view forty-seven from nested send config or flattened
 full chain, and emits fresh view forty-eight under
 `ack_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Its established view-forty output remains unchanged, and roundtrip continues to
-consume view forty rather than additive view forty-eight.
+use it as the compatibility anchor. Roundtrip now consumes additive view forty-
+eight from nested acknowledgement config or flattened
+`send_latest_extended_complete_final_*` summary fields, revalidates the full
+chain, retains inherited `roundtrip_latest_*`, and emits fresh view forty-nine
+under
+`roundtrip_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Its established view-forty-one output remains unchanged, and broker readiness
+continues to consume view forty-one rather than additive view forty-nine.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -4737,7 +4750,13 @@ summary fields, revalidates the complete chain, and emits fresh view forty-
 eight under
 `ack_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-forty output remains unchanged for roundtrip
-compatibility; roundtrip ignores view forty-eight until its own gate advances.
+compatibility. Roundtrip additionally consumes view forty-eight from nested
+acknowledgement config or flattened `send_latest_extended_complete_final_*`
+summary fields, revalidates the complete chain, and emits fresh view forty-nine
+under
+`roundtrip_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-forty-one output remains unchanged for broker-readiness
+compatibility; broker readiness ignores additive view forty-nine.
 Generic targets that do not require final consistency and legacy draft-backed
 proof keep the existing provenance checks.
 When the scale-up config includes both
@@ -5012,8 +5031,12 @@ Acknowledgement now consumes view forty-seven and emits additive view forty-
 eight under
 `ack_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`,
 while preserving established view forty from view thirty-nine. Roundtrip
-continues to derive view forty-one from view forty and intentionally ignores
-view forty-eight; distinct-digest regressions cover both compatibility
+uses view forty as its compatibility anchor, consumes additive view forty-eight,
+and emits fresh view forty-nine under
+`roundtrip_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`
+while preserving established view forty-one. Broker readiness continues to
+derive view forty-two from view forty-one and intentionally ignores additive
+view forty-nine; distinct-digest regressions cover both compatibility
 boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
