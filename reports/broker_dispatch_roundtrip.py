@@ -192,6 +192,34 @@ ACK_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_48_DIGEST_FIELDS: tuple[str, 
 ROUNDTRIP_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_49_COMPARISON_KEY = (
     "roundtrip_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
 )
+ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_COMPARISON_KEY = (
+    "ack_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_FIELD_PREFIX = (
+    "ack_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_SUMMARY_FIELD_PREFIX = (
+    "send_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_DIGEST_FIELDS: tuple[
+    str, ...
+] = ACK_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_48_DIGEST_FIELDS
+ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_STAGE_FIELDS: tuple[
+    str, ...
+] = (
+    "broker_readiness_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "scaleup_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "cutover_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "route_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "dispatch_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "send_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "ack_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "roundtrip_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "broker_readiness_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+)
+ROUNDTRIP_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_57_COMPARISON_KEY = (
+    "roundtrip_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
 
 
 @dataclass(frozen=True)
@@ -541,6 +569,12 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
             config,
         )
     )
+    broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56 = (
+        _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_state(
+            state,
+            config,
+        )
+    )
     strategy_portfolio = config.get("strategy_portfolio", {}) or {}
     upload = config.get("upload", {}) or {}
     dispatch = config.get("dispatch", {}) or {}
@@ -865,6 +899,8 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
         state[field] = value
     for field, value in broker_vendor_current_latest_extended_complete_final_lineage_48.items():
         state[field] = value
+    for field, value in broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56.items():
+        state[field] = value
     return state
 
 
@@ -944,6 +980,15 @@ def _broker_vendor_current_latest_extended_complete_final_lineage_48_comparison_
 ) -> dict[str, Any]:
     comparison = config.get(
         ACK_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_48_COMPARISON_KEY
+    )
+    return comparison if isinstance(comparison, dict) else {}
+
+
+def _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_comparison_source(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    comparison = config.get(
+        ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_COMPARISON_KEY
     )
     return comparison if isinstance(comparison, dict) else {}
 
@@ -1297,6 +1342,127 @@ def _broker_vendor_current_latest_extended_complete_final_lineage_48_state(
         )
     )
     for field in ACK_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_48_DIGEST_FIELDS:
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            _first_text(
+                comparison.get(field, ""),
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    return fields
+
+
+def _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_state(
+    row: pd.Series,
+    config: dict[str, Any],
+) -> dict[str, object]:
+    comparison = (
+        _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_comparison_source(
+            config
+        )
+    )
+    prefix = ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_FIELD_PREFIX
+    summary_prefix = (
+        ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_SUMMARY_FIELD_PREFIX
+    )
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(f"{summary_prefix}_lineage_match_required", False),
+            )
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(f"{summary_prefix}_lineage_matches", False),
+            )
+        ),
+        f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get(
+                    "ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+                row.get(
+                    f"{summary_prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+        f"{prefix}_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("carried_application_lineage_sha256", ""),
+                row.get(
+                    f"{summary_prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                    "",
+                ),
+            )
+        ),
+    }
+    for field in (
+        *ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_DIGEST_FIELDS,
+        *ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_STAGE_FIELDS,
+    ):
         fields[f"{prefix}_{field}"] = _sha256_text(
             _first_text(
                 comparison.get(field, ""),
@@ -4903,6 +5069,233 @@ def _broker_vendor_current_latest_extended_complete_final_lineage_48_checks(
     return checks
 
 
+def _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_checks(
+    ack_row: pd.Series,
+    *,
+    roundtrip_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    source_prefix = ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_FIELD_PREFIX
+    compatibility_prefix = ACK_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_48_FIELD_PREFIX
+    check_prefix = (
+        "broker_dispatch_roundtrip_vendor_market_data_batch_"
+        "ack_reconciled_current_latest_extended_complete_final"
+    )
+    lineage_match_required = _to_bool(
+        ack_row.get(f"{source_prefix}_lineage_match_required", False)
+    )
+    lineage_matches = _to_bool(
+        ack_row.get(f"{source_prefix}_lineage_matches", False)
+    )
+    broker_lineage_sha256 = _sha256_text(
+        ack_row.get(f"{source_prefix}_broker_application_lineage_sha256", "")
+    )
+    current_lineage_sha256 = _sha256_text(
+        ack_row.get(f"{source_prefix}_current_application_lineage_sha256", "")
+    )
+    compatibility_broker_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{compatibility_prefix}_broker_application_lineage_sha256",
+            "",
+        )
+    )
+    compatibility_roundtrip_current_lineage_sha256 = _sha256_text(
+        roundtrip_lineage_sha256
+    )
+    checks = [
+        _check(
+            f"{check_prefix}_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "reconciled target round-trip review requires acknowledgement's reconciled current latest extended complete-final lineage comparison",
+        ),
+        _check(
+            f"{check_prefix}_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "acknowledgement did not match every reconciled current latest extended complete-final target-lineage view",
+        ),
+        _check(
+            f"{check_prefix}_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "acknowledgement reconciled current latest extended complete-final source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+            compatibility_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_broker_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_broker_lineage_sha256 == broker_lineage_sha256
+            ),
+            "round-trip compatibility broker digest does not match acknowledgement's reconciled current proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_roundtrip_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+            compatibility_roundtrip_current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_roundtrip_current_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_roundtrip_current_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "round-trip compatibility current latest review does not match acknowledgement's reconciled current proof",
+        ),
+    ]
+    for field in ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_DIGEST_FIELDS:
+        if field in {
+            "current_application_lineage_sha256",
+            "broker_application_lineage_sha256",
+        }:
+            continue
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        if stage == "scaleup":
+            stage = "prior_scaleup"
+        elif stage == "cutover":
+            stage = "prior_cutover"
+        carried_sha256 = _sha256_text(
+            ack_row.get(f"{source_prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"acknowledgement's {stage.replace('_', '-')} target lineage "
+                    "does not match reconciled current latest extended complete-final broker proof"
+                ),
+            )
+        )
+    for field in ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_STAGE_FIELDS:
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        carried_sha256 = _sha256_text(
+            ack_row.get(f"{source_prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"acknowledgement's {stage.replace('_', '-')} target lineage "
+                    "does not match reconciled current latest extended complete-final broker proof"
+                ),
+            )
+        )
+    scaleup_current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{source_prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    cutover_current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{source_prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    route_current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{source_prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    dispatch_current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{source_prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    send_current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{source_prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    ack_reconciled_current_lineage_sha256 = _sha256_text(
+        ack_row.get(
+            f"{source_prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    ack_reconciled_current_generic_lineage_sha256 = _sha256_text(
+        ack_row.get(f"{source_prefix}_carried_application_lineage_sha256", "")
+    )
+    roundtrip_reconciled_current_lineage_sha256 = _sha256_text(
+        roundtrip_lineage_sha256
+    )
+    for stage, carried_sha256 in (
+        ("scaleup_current_latest_extended_complete_final_review", scaleup_current_lineage_sha256),
+        ("cutover_current_latest_extended_complete_final_review", cutover_current_lineage_sha256),
+        ("route_current_latest_extended_complete_final_review", route_current_lineage_sha256),
+        ("dispatch_current_latest_extended_complete_final_review", dispatch_current_lineage_sha256),
+        ("send_current_latest_extended_complete_final_review", send_current_lineage_sha256),
+        (
+            "ack_reconciled_current_latest_extended_complete_final_review",
+            ack_reconciled_current_lineage_sha256,
+        ),
+        (
+            "ack_reconciled_current_latest_extended_complete_final_review_generic",
+            ack_reconciled_current_generic_lineage_sha256,
+        ),
+        (
+            "roundtrip_reconciled_current_latest_extended_complete_final_review",
+            roundtrip_reconciled_current_lineage_sha256,
+        ),
+    ):
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"{stage.replace('_', '-')} target lineage does not match "
+                    "acknowledgement's reconciled current proof"
+                ),
+            )
+        )
+    return checks
+
+
 def _broker_vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]]:
     checks: list[dict[str, object]] = []
     broker_rows = _broker_vendor_market_data_batch_rows(rows)
@@ -5108,6 +5501,12 @@ def _broker_vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, 
         )
         checks.extend(
             _broker_vendor_current_latest_extended_complete_final_lineage_48_checks(
+                ack_row,
+                roundtrip_lineage_sha256=roundtrip_lineage_sha256,
+            )
+        )
+        checks.extend(
+            _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_checks(
                 ack_row,
                 roundtrip_lineage_sha256=roundtrip_lineage_sha256,
             )
@@ -5630,6 +6029,9 @@ def _summary(
                     ack_summary
                 ),
                 **_broker_vendor_current_latest_extended_complete_final_lineage_48_summary_fields(
+                    ack_summary
+                ),
+                **_broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_summary_fields(
                     ack_summary
                 ),
                 "route_dispatch_roundtrip_required": _dispatch_roundtrip_required(dispatch_summary, thresholds),
@@ -6421,6 +6823,69 @@ def _broker_vendor_current_latest_extended_complete_final_lineage_48_summary_fie
     return fields
 
 
+def _broker_vendor_reconciled_current_latest_extended_complete_final_lineage_56_summary_fields(
+    ack_summary: pd.Series,
+) -> dict[str, object]:
+    prefix = ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_FIELD_PREFIX
+    roundtrip_lineage_sha256 = _target_application_lineage_sha256(
+        ack_summary,
+        prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    fields: dict[str, object] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            ack_summary.get(f"{prefix}_lineage_match_required", False)
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            ack_summary.get(f"{prefix}_lineage_matches", False)
+        ),
+        f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            ack_summary.get(
+                f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            ack_summary.get(
+                f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            ack_summary.get(
+                f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            ack_summary.get(
+                f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            ack_summary.get(
+                f"{prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _sha256_text(
+            ack_summary.get(
+                f"{prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+                "",
+            )
+        ),
+        f"{prefix}_roundtrip_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": roundtrip_lineage_sha256,
+    }
+    for field in (
+        *ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_DIGEST_FIELDS,
+        *ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_STAGE_FIELDS,
+    ):
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            ack_summary.get(f"{prefix}_{field}", "")
+        )
+    return fields
+
+
 def _broker_vendor_market_data_batch_lineage_config(
     summary: pd.Series,
 ) -> dict[str, object]:
@@ -6622,6 +7087,56 @@ def _broker_vendor_roundtrip_current_latest_extended_complete_final_lineage_49_c
         f"{prefix}_roundtrip_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
     )
     for field in ACK_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_48_DIGEST_FIELDS:
+        config[field] = _text(summary, f"{prefix}_{field}")
+    return config
+
+
+def _broker_vendor_roundtrip_reconciled_current_latest_extended_complete_final_lineage_57_config(
+    summary: pd.Series,
+) -> dict[str, object]:
+    prefix = ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_FIELD_PREFIX
+    roundtrip_lineage_sha256 = _text(
+        summary,
+        f"{prefix}_roundtrip_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    )
+    config: dict[str, object] = {
+        "required": _to_bool(summary[f"{prefix}_lineage_match_required"]),
+        "matches": _to_bool(summary[f"{prefix}_lineage_matches"]),
+        "broker_readiness_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_broker_readiness_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_scaleup_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_cutover_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "route_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_route_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_dispatch_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "send_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_send_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": _text(
+            summary,
+            f"{prefix}_ack_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+        ),
+        "roundtrip_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": roundtrip_lineage_sha256,
+        "carried_application_lineage_sha256": roundtrip_lineage_sha256,
+    }
+    for field in (
+        *ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_DIGEST_FIELDS,
+        *ACK_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_56_STAGE_FIELDS,
+    ):
         config[field] = _text(summary, f"{prefix}_{field}")
     return config
 
@@ -6856,6 +7371,11 @@ def _config(
         ),
         ROUNDTRIP_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_49_COMPARISON_KEY: (
             _broker_vendor_roundtrip_current_latest_extended_complete_final_lineage_49_config(
+                summary
+            )
+        ),
+        ROUNDTRIP_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_57_COMPARISON_KEY: (
+            _broker_vendor_roundtrip_reconciled_current_latest_extended_complete_final_lineage_57_config(
                 summary
             )
         ),
