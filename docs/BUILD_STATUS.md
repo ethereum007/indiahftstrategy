@@ -3932,8 +3932,15 @@
   recomputed roundtrip anchors, and emits a 64-field view sixty-five under
   `roundtrip_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
   Its established view-fifty-seven output remains unchanged. Broker readiness
-  continues to consume view fifty-seven and intentionally ignores additive
-  view sixty-five.
+  now consumes additive view sixty-five from nested roundtrip config or
+  flattened `ack_verified_reconciled_current_latest_extended_complete_final_*`
+  summary fields, revalidates the exact 64-field verified-reconciled chain
+  against the established view-fifty-seven broker and independently
+  recomputed readiness anchors, and emits a 65-field view sixty-six under
+  `broker_readiness_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-fifty-eight output remains unchanged. Controlled
+  scale-up continues to consume view fifty-eight and intentionally ignores
+  additive view sixty-six.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3952,10 +3959,38 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2250 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2257 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest roundtrip verified-reconciled current latest extended complete-final
+Latest broker-readiness verified-reconciled current latest extended complete-
+final target-lineage gate: all 121 broker-readiness tests and all 134 scale-up
+tests pass. Reconciled targets now require roundtrip view sixty-five in
+addition to established view-fifty-seven compatibility proof. Broker readiness
+validates the exact 64-field source contract: the required and match decisions,
+37 inherited digest fields, nine latest/current stage fields, seven current/
+reconciled transition fields, six reconciled stage reviews, acknowledgement
+and roundtrip verified-reconciled reviews, and the generic carried lineage
+digest. It binds that additive proof to the established view-fifty-seven
+broker and an independently recomputed broker-readiness digest, then emits a
+65-field view sixty-six under the distinct
+`broker_readiness_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh broker-
+readiness recomputation drift all fail closed. Nested roundtrip config and
+flattened `ack_verified_reconciled_*` summary recovery both carry the proof.
+Established view fifty-eight remains unchanged, and a distinct-digest
+regression proves controlled scale-up continues to derive view fifty-nine from
+view fifty-eight while ignoring additive view sixty-six. The focused 11-test
+proof, complete 255-test broker-readiness/scale-up boundary across the two
+component runs, and full 865-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch -> broker-dispatch-send -> broker-dispatch-
+acknowledgement -> broker-dispatch-roundtrip chain pass. Broker readiness
+completed in 278.6 seconds, scale-up in 117.3 seconds, and the authoritative
+full chain in 1193.2 seconds with explicit exit code zero. The repository
+collects 2257 tests across 154 files. The full repository suite was not rerun
+for this slice; the last completed full-suite baseline remains unchanged.
+
+Immediately preceding roundtrip verified-reconciled current latest extended complete-final
 target-lineage gate: all 96 roundtrip tests and all 115 broker-readiness tests
 pass. Reconciled targets now require acknowledgement view sixty-four in
 addition to established view-fifty-six compatibility proof. Roundtrip validates
