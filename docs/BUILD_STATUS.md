@@ -3959,9 +3959,16 @@
   against the established view-sixty broker and independently recomputed route
   anchors, and emits a 68-field view sixty-nine under
   `route_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  Its established view-sixty-one output remains unchanged. Broker dispatch
-  continues to consume view sixty-one and intentionally ignores additive view
-  sixty-nine.
+  Its established view-sixty-one output remains unchanged. Broker dispatch now
+  consumes additive view sixty-nine from nested route config or flattened
+  `cutover_verified_reconciled_current_latest_extended_complete_final_*`
+  summary fields, revalidates the exact 68-field verified-reconciled chain
+  against the established view-sixty-one broker and independently recomputed
+  dispatch anchors, and emits a 69-field view seventy under
+  `dispatch_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-sixty-two output remains unchanged. Sender preparation
+  continues to consume view sixty-two and intentionally ignores additive view
+  seventy.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3980,13 +3987,43 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2278 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2285 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest route-enable verified-reconciled current latest extended complete-final
-target-lineage gate: all 108 route-enable tests and all 103 broker-dispatch
-tests pass. Verified-reconciled targets now require cutover view sixty-eight in
-addition to established view-sixty compatibility proof. Route-enable validates
+Latest broker-dispatch verified-reconciled current latest extended complete-
+final target-lineage gate: all 109 broker-dispatch tests and all 115 sender-
+preparation tests pass. Verified-reconciled targets now require route view
+sixty-nine in addition to established view-sixty-one compatibility proof.
+Broker dispatch validates the exact 68-field source contract: the required and
+match decisions, 37 inherited digest fields, nine latest/current stage fields,
+seven current/reconciled transition fields, six reconciled stage reviews,
+acknowledgement, roundtrip, broker-readiness, scale-up, cutover, and route
+verified-reconciled reviews, and the generic carried lineage digest. It binds
+that additive proof to the established view-sixty-one broker and an
+independently recomputed dispatch digest, then emits a 69-field view seventy
+under the distinct
+`dispatch_verified_reconciled_current_latest_extended_complete_final_*` key.
+Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh dispatch
+recomputation drift all fail closed. Flattened route summary recovery and
+nested route config both carry the proof. Established view sixty-two remains
+unchanged, and a distinct-digest regression proves sender preparation
+continues to derive view sixty-three from view sixty-two while ignoring
+additive view seventy. The focused 10-test proof, complete 224-test broker-
+dispatch/sender boundary, and full 893-test broker-readiness -> scale-up ->
+cutover -> route-enable -> broker-dispatch -> broker-dispatch-send -> broker-
+dispatch-acknowledgement -> broker-dispatch-roundtrip chain pass. The focused
+proof completed in 31.2 seconds, the owning boundary in 295.2 seconds, and the
+authoritative full chain in 1522.4 seconds with explicit exit code zero; only
+the known pandas fragmentation warnings were emitted. The repository collects
+2285 tests across 154 files. The full repository suite was not rerun for this
+slice; the last completed full-suite baseline remains unchanged.
+
+Immediately preceding route-enable verified-reconciled current latest extended
+complete-final target-lineage gate: all 108 route-enable tests and all 103
+broker-dispatch tests pass. Verified-reconciled targets now require cutover view
+sixty-eight in addition to established view-sixty compatibility proof.
+Route-enable validates
 the exact 67-field source contract: the required and match decisions, 37
 inherited digest fields, nine latest/current stage fields, seven current/
 reconciled transition fields, six reconciled stage reviews, acknowledgement,
