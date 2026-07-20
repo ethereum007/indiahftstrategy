@@ -4024,8 +4024,23 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2364 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2365 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest provider scorecard chain-audit contract repair: the complete provider
+imbalance ops-launch fixture now models the current rehearsal-certificate
+selection contract, including covered-current active-lineage audit status,
+audit directory, chain and manifest SHA-256 identities, certificate/contract
+bindings, and the selection-bound decision. A new scorecard regression proves
+that certificate-manifest drift or a missing selection binding still blocks
+the certificate's lineage identity, keeps provider coverage at two of three
+required stages, and routes remediation back to rehearsal certification. The
+three targeted readiness/chain-audit/sidecar cases passed in 5.4 seconds, all
+15 scorecard tests passed in 15.5 seconds, the complete 85-test strategy-
+evidence -> scorecard -> research-family boundary passed in 238.2 seconds, and
+all 64 catalog tests passed in 63.4 seconds. Collection passes at 2365 tests
+across 155 files. The full repository and broker lifecycle chains were not
+rerun.
 
 Latest lead-lag source-lineage gate: `measure-leadlag` now turns the latency
 frontier into a reproducible research bundle with summary, config, runbook, and
@@ -4040,10 +4055,10 @@ invalidates the completed edge manifest. The focused 11-test boundary passed
 in 8.9 seconds, and the complete 105-test lead-lag -> manifest -> catalog owner
 boundary passed in 125.2 seconds. Collection passes at 2364 tests across 155
 files. An additional 84-test strategy-evidence, scorecard, and research-family
-pass completed 82 tests and reproduced two unrelated provider-imbalance
-ops-launch scorecard fixture failures in isolation; no scorecard code or tests
-are changed by this slice. The full repository and broker lifecycle chains
-were not rerun.
+pass exposed two stale provider-imbalance ops-launch fixture expectations;
+the subsequent scorecard chain-audit contract repair above restores that owner
+boundary. The full repository and broker lifecycle chains were not rerun for
+the lead-lag slice.
 
 Latest prospective temporal-proof launch gate: research-family plan rows can
 now declare a normalized walk-forward split-audit path and required policy

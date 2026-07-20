@@ -286,6 +286,27 @@ def complete_provider_imbalance_ops_launch_rows(
             item["summary_authorizes_submission"] = False
             item["summary_digitally_signed"] = False
             item["summary_certificate_sha256"] = "a" * 64
+            item["provider_active_lineage_chain_audit_status"] = (
+                "covered_current"
+            )
+            item["provider_active_lineage_chain_audit_dir"] = (
+                "runs/provider_imbalance_active_lineage_chain_audit"
+            )
+            item[
+                "provider_active_lineage_chain_audit_chain_digest_sha256"
+            ] = "b" * 64
+            item[
+                "provider_active_lineage_chain_audit_manifest_sha256"
+            ] = "c" * 64
+            item[
+                "provider_active_lineage_chain_audit_contract_sha256"
+            ] = "d" * 64
+            item[
+                "provider_active_lineage_chain_audit_certificate_manifest_sha256"
+            ] = "e" * 64
+            item[
+                "provider_active_lineage_chain_audit_selection_bound"
+            ] = True
         if item["run_type"] != "provider_market_data_imbalance_broker_dispatch_roundtrip":
             continue
         item["summary_dispatch_total_notional"] = 1500.0
@@ -924,6 +945,47 @@ def test_strategy_scorecard_blocks_retained_only_provider_rehearsal_candidate():
     assert int(score["provider_lineage_covered_run_type_count"]) == 2
     assert int(score["provider_lineage_selectable_runs"]) == 2
     assert int(score["provider_lineage_selection_blocked_runs"]) == 1
+    assert report.config["ready_action_count"] == 0
+    assert report.config["blocked_action_count"] == 1
+
+
+def test_strategy_scorecard_blocks_provider_rehearsal_without_current_chain_audit():
+    rows = complete_provider_imbalance_ops_launch_rows()
+    for item in rows:
+        if (
+            item["run_type"]
+            == "provider_market_data_imbalance_broker_rehearsal_certificate"
+        ):
+            item["provider_active_lineage_chain_audit_status"] = (
+                "certificate_manifest_drift"
+            )
+            item[
+                "provider_active_lineage_chain_audit_selection_bound"
+            ] = False
+
+    report = evaluate_strategy_scorecard(
+        pd.DataFrame(rows),
+        thresholds=StrategyScorecardThresholds(
+            profiles=("provider_market_data_imbalance_ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    failed_checks = set(str(score["evidence_failed_checks"]).split(";"))
+    certificate_run_type = (
+        "provider_market_data_imbalance_broker_rehearsal_certificate"
+    )
+    assert not report.ready
+    assert not bool(score["ready"])
+    assert f"provider_lineage_selectable:{certificate_run_type}" in failed_checks
+    assert f"provider_lineage_identity:{certificate_run_type}" in failed_checks
+    assert int(score["provider_lineage_covered_run_type_count"]) == 2
+    assert int(score["provider_lineage_selection_blocked_runs"]) == 1
+    assert score["next_gate"] == (
+        "certify-provider-market-data-imbalance-broker-rehearsal"
+    )
     assert report.config["ready_action_count"] == 0
     assert report.config["blocked_action_count"] == 1
 
