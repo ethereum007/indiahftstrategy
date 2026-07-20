@@ -358,6 +358,31 @@ def cutover_view_68_target_application_lineage_comparison(
     return comparison
 
 
+def cutover_view_76_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    cutover_lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    cutover_lineage_sha256 = cutover_lineage_sha256 or lineage_sha256
+    comparison = scaleup_view_75_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256=lineage_sha256,
+    )
+    comparison.update(
+        {
+            "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": cutover_lineage_sha256,
+            "carried_application_lineage_sha256": cutover_lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def add_scaleup_final_target_application_lineage(config, vendor, **overrides):
     dispatch = config["broker_readiness"]["dispatch_roundtrip"]
     dispatch[
@@ -384,6 +409,9 @@ def add_scaleup_final_target_application_lineage(config, vendor, **overrides):
     dispatch[
         "scaleup_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ] = scaleup_view_67_target_application_lineage_comparison(vendor)
+    dispatch[
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = scaleup_view_75_target_application_lineage_comparison(vendor)
 
 
 def scaleup_summary(
@@ -975,7 +1003,12 @@ def target_application_vendor_market_data_batch_config(**overrides):
     return config
 
 
-def with_scaleup_broker_vendor_batch_summary(summary, vendor):
+def with_scaleup_broker_vendor_batch_summary(
+    summary,
+    vendor,
+    *,
+    include_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage=True,
+):
     prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
     result = summary.copy()
     for key, value in vendor.items():
@@ -1205,6 +1238,39 @@ def with_scaleup_broker_vendor_batch_summary(summary, vendor):
                 0,
                 f"{scaleup_verified_reconciled_current_latest_extended_complete_final_prefix}_{field}",
             ] = value
+        if include_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage:
+            scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final = (
+                scaleup_view_75_target_application_lineage_comparison(vendor)
+            )
+            scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_prefix = (
+                "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_"
+                "broker_dispatch_roundtrip_vendor_market_data_batch"
+            )
+            result.loc[
+                0,
+                f"{scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_prefix}_lineage_match_required",
+            ] = scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final[
+                "required"
+            ]
+            result.loc[
+                0,
+                f"{scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_prefix}_lineage_matches",
+            ] = scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final[
+                "matches"
+            ]
+            for field, value in (
+                scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final.items()
+            ):
+                if field in {
+                    "required",
+                    "matches",
+                    "carried_application_lineage_sha256",
+                }:
+                    continue
+                result.loc[
+                    0,
+                    f"{scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_prefix}_{field}",
+                ] = value
     return result
 
 
@@ -2515,6 +2581,61 @@ def test_cutover_gate_carries_target_application_vendor_batch_from_scaleup_confi
         )
     assert expected_view_67_checks <= passed
 
+    scaleup_view_75_prefix = (
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_"
+        "broker_dispatch_roundtrip_vendor_market_data_batch"
+    )
+    source_view_75 = scaleup_view_75_target_application_lineage_comparison(vendor)
+    assert len(source_view_75) == 74
+    assert bool(summary[f"{scaleup_view_75_prefix}_lineage_match_required"])
+    assert bool(summary[f"{scaleup_view_75_prefix}_lineage_matches"])
+    for field, value in source_view_75.items():
+        if field in {"required", "matches", "carried_application_lineage_sha256"}:
+            continue
+        assert summary[f"{scaleup_view_75_prefix}_{field}"] == value
+    assert summary[
+        f"{scaleup_view_75_prefix}_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+    ] == expected_lineage_sha256
+
+    cutover_view_76 = report.config[
+        "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    expected_cutover_view_76 = (
+        cutover_view_76_target_application_lineage_comparison(vendor)
+    )
+    assert len(cutover_view_76) == 75
+    assert cutover_view_76 == expected_cutover_view_76
+
+    view_75_check_prefix = (
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_"
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final"
+    )
+    expected_view_75_checks = {
+        f"{view_75_check_prefix}_lineage_match_required",
+        f"{view_75_check_prefix}_lineage_matches",
+        f"{view_75_check_prefix}_source_lineage_sha256_matches",
+        f"{view_75_check_prefix}_compatibility_broker_lineage_sha256_matches",
+        f"{view_75_check_prefix}_compatibility_cutover_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+        f"{view_75_check_prefix}_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_review_generic_carried_lineage_sha256_matches",
+        f"{view_75_check_prefix}_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+    }
+    for field in set(source_view_75) - {
+        "required",
+        "matches",
+        "current_application_lineage_sha256",
+        "broker_application_lineage_sha256",
+        "carried_application_lineage_sha256",
+    }:
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        if stage == "scaleup":
+            stage = "prior_scaleup"
+        elif stage == "cutover":
+            stage = "prior_cutover"
+        expected_view_75_checks.add(
+            f"{view_75_check_prefix}_{stage}_carried_lineage_sha256_matches"
+        )
+    assert expected_view_75_checks <= passed
+
 
 def test_cutover_gate_blocks_scaleup_view_35_drift_while_preserving_view_28():
     config = scaleup_config()
@@ -2863,11 +2984,11 @@ def test_cutover_gate_blocks_scaleup_view_59_drift_while_preserving_view_52():
     assert cutover_view_60["carried_application_lineage_sha256"] == lineage_sha256
 
 
-def test_cutover_gate_ignores_additive_scaleup_view_75():
+def test_cutover_gate_blocks_scaleup_view_75_drift_while_preserving_view_68():
     config = scaleup_config()
     vendor = target_application_vendor_market_data_batch_config()
     lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
-    additive_lineage_sha256 = "f" * 64
+    drifted_lineage_sha256 = "f" * 64
     dispatch = config["broker_readiness"]["dispatch_roundtrip"]
     dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
     dispatch["vendor_market_data_batch_lineage_comparison"] = (
@@ -2877,24 +2998,24 @@ def test_cutover_gate_ignores_additive_scaleup_view_75():
         "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ] = final_target_application_lineage_comparison(vendor)
     add_scaleup_final_target_application_lineage(config, vendor)
-    additive_view_75 = scaleup_view_75_target_application_lineage_comparison(
+    drifted_view_75 = scaleup_view_75_target_application_lineage_comparison(
         vendor,
-        lineage_sha256=additive_lineage_sha256,
+        lineage_sha256=drifted_lineage_sha256,
     )
-    assert len(additive_view_75) == 74
+    assert len(drifted_view_75) == 74
     dispatch[
         "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
-    ] = additive_view_75
+    ] = drifted_view_75
     summary = with_scaleup_broker_vendor_batch_summary(scaleup_summary(), vendor)
     prefix = (
         "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_"
         "broker_dispatch_roundtrip_vendor_market_data_batch"
     )
-    summary.loc[0, f"{prefix}_lineage_match_required"] = additive_view_75[
+    summary.loc[0, f"{prefix}_lineage_match_required"] = drifted_view_75[
         "required"
     ]
-    summary.loc[0, f"{prefix}_lineage_matches"] = additive_view_75["matches"]
-    for field, value in additive_view_75.items():
+    summary.loc[0, f"{prefix}_lineage_matches"] = drifted_view_75["matches"]
+    for field, value in drifted_view_75.items():
         if field in {
             "required",
             "matches",
@@ -2912,7 +3033,17 @@ def test_cutover_gate_ignores_additive_scaleup_view_75():
         operator_review=operator_review(),
     )
 
-    assert report.ready
+    assert not report.ready
+    check_prefix = (
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_"
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final"
+    )
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+        f"{check_prefix}_compatibility_cutover_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+        f"{check_prefix}_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+    } <= failed
     cutover_view_68 = report.config[
         "cutover_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ]
@@ -2921,8 +3052,128 @@ def test_cutover_gate_ignores_additive_scaleup_view_75():
     )
     assert cutover_view_68["broker_application_lineage_sha256"] == lineage_sha256
     assert cutover_view_68["broker_application_lineage_sha256"] != (
-        additive_lineage_sha256
+        drifted_lineage_sha256
     )
+    cutover_view_76 = report.config[
+        "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert cutover_view_76 == cutover_view_76_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256=drifted_lineage_sha256,
+        cutover_lineage_sha256=lineage_sha256,
+    )
+
+
+def test_cutover_gate_requires_scaleup_view_75_lineage():
+    config = scaleup_config()
+    vendor = target_application_vendor_market_data_batch_config()
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    dispatch["vendor_market_data_batch_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    dispatch[
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = final_target_application_lineage_comparison(vendor)
+    add_scaleup_final_target_application_lineage(config, vendor)
+    dispatch.pop(
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    )
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    check_prefix = (
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_"
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final"
+    )
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        f"{check_prefix}_lineage_match_required",
+        f"{check_prefix}_lineage_matches",
+    } <= failed
+    cutover_view_68 = report.config[
+        "cutover_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert cutover_view_68["required"]
+    assert cutover_view_68["matches"]
+    cutover_view_76 = report.config[
+        "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert not cutover_view_76["required"]
+    assert not cutover_view_76["matches"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_failed_check"),
+    [
+        (
+            "required",
+            False,
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_match_required",
+        ),
+        (
+            "matches",
+            False,
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_matches",
+        ),
+        (
+            "current_application_lineage_sha256",
+            "f" * 64,
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_source_lineage_sha256_matches",
+        ),
+        (
+            "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+            "f" * 64,
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+        ),
+        (
+            "carried_application_lineage_sha256",
+            "f" * 64,
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_review_generic_carried_lineage_sha256_matches",
+        ),
+    ],
+)
+def test_cutover_gate_blocks_invalid_scaleup_view_75_lineage(
+    field,
+    value,
+    expected_failed_check,
+):
+    config = scaleup_config()
+    vendor = target_application_vendor_market_data_batch_config()
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    dispatch["vendor_market_data_batch_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    dispatch[
+        "broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = final_target_application_lineage_comparison(vendor)
+    add_scaleup_final_target_application_lineage(config, vendor)
+    scaleup_view_75 = dispatch[
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    scaleup_view_75[field] = value
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert expected_failed_check in failed
 
 
 def test_cutover_gate_blocks_scaleup_view_67_drift_while_preserving_view_60():
@@ -4219,6 +4470,30 @@ def test_cutover_gate_carries_target_application_vendor_batch_from_scaleup_summa
         "cutover_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
     ]
     assert cutover_view_68 == cutover_view_68_target_application_lineage_comparison(
+        vendor
+    )
+    confirmed_summary_prefix = (
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_"
+        "broker_dispatch_roundtrip_vendor_market_data_batch"
+    )
+    assert bool(
+        report.summary.iloc[0][
+            f"{confirmed_summary_prefix}_lineage_match_required"
+        ]
+    )
+    assert bool(
+        report.summary.iloc[0][f"{confirmed_summary_prefix}_lineage_matches"]
+    )
+    assert report.summary.iloc[0][
+        f"{confirmed_summary_prefix}_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+    ] == expected_lineage_sha256
+    assert report.summary.iloc[0][
+        f"{confirmed_summary_prefix}_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+    ] == expected_lineage_sha256
+    cutover_view_76 = report.config[
+        "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert cutover_view_76 == cutover_view_76_target_application_lineage_comparison(
         vendor
     )
 

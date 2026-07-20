@@ -3987,13 +3987,46 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2320 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2327 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest controlled-scale-up confirmed verified-reconciled current latest
-extended complete-final target-lineage gate: all 147 controlled-scale-up tests
-and all 106 cutover tests pass. Confirmed verified-reconciled targets now
-require broker-readiness view seventy-four in addition to established view-
+Latest cutover confirmed verified-reconciled current latest extended complete-
+final target-lineage gate: all 112 cutover tests and all 109 route-enable tests
+pass. Confirmed verified-reconciled targets now require controlled-scale-up
+view seventy-five in addition to established view-sixty-seven compatibility
+proof. Cutover validates the exact 74-field source contract: the required and
+match decisions, 37 inherited digest fields, nine latest/current stage fields,
+seven current/reconciled transition fields, six reconciled stage reviews, four
+verified-reconciled reviews from acknowledgement through controlled scale-up,
+seven confirmed verified-reconciled reviews from cutover through broker
+readiness, the confirmed controlled-scale-up review, and the generic carried
+lineage digest. It binds that additive proof to the established view-sixty-
+seven broker and an independently recomputed cutover digest, then extends the
+confirmed verified-reconciled epoch with a 75-field view seventy-six under the
+distinct
+`cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh cutover
+recomputation drift all fail closed. Nested controlled-scale-up config and
+flattened `broker_readiness_confirmed_verified_reconciled_*` summary recovery
+both carry the proof. Established view sixty-eight remains unchanged, and a
+distinct-digest regression proves route enablement continues to derive view
+sixty-nine from view sixty-eight while ignoring additive view seventy-six.
+The focused 10-test proof, complete 221-test cutover/route-enable boundary, and
+full 935-test broker-readiness -> scale-up -> cutover -> route-enable ->
+broker-dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement ->
+broker-dispatch-roundtrip chain pass. The focused proof completed in 10.7
+seconds, the owning boundary in 111.1 seconds, and the authoritative full chain
+in 1065.5 seconds with explicit exit code zero; only the known pandas
+fragmentation warnings were emitted. The repository collects 2327 tests
+across 154 files. The full repository suite was not rerun for this slice; the
+last completed full-suite baseline remains unchanged.
+
+Immediately preceding controlled-scale-up confirmed verified-reconciled
+current latest extended complete-final target-lineage gate: all 147 controlled-
+scale-up tests and all 106 cutover tests pass. Confirmed verified-reconciled
+targets now require broker-readiness view seventy-four in addition to
+established view-
 sixty-six compatibility proof. Controlled scale-up validates the exact 73-
 field source contract: the required and match decisions, 37 inherited digest
 fields, nine latest/current stage fields, seven current/reconciled transition
@@ -4023,14 +4056,14 @@ fragmentation warnings were emitted. The repository collects 2320 tests
 across 154 files. The full repository suite was not rerun for this slice; the
 last completed full-suite baseline remains unchanged.
 
-Immediately preceding broker-readiness confirmed verified-reconciled current
+Earlier broker-readiness confirmed verified-reconciled current
 latest extended complete-final target-lineage gate: all 128 broker-readiness
 tests and all 141 controlled-scale-up tests pass. Confirmed verified-reconciled
 targets now require roundtrip view seventy-three in addition to established
-view-sixty-five compatibility proof. Broker readiness validates the exact 72-field source
-contract: the required and match decisions, 37 inherited digest fields, nine
-latest/current stage fields, seven current/reconciled transition fields, six
-reconciled stage reviews, the acknowledgement and roundtrip verified-
+view-sixty-five compatibility proof. Broker readiness validates the exact 72-
+field source contract: the required and match decisions, 37 inherited digest
+fields, nine latest/current stage fields, seven current/reconciled transition
+fields, six reconciled stage reviews, the acknowledgement and roundtrip verified-
 reconciled reviews, six downstream verified-reconciled reviews from broker
 readiness through send, the confirmed acknowledgement and roundtrip reviews,
 and the generic carried lineage digest. It binds that additive proof to the

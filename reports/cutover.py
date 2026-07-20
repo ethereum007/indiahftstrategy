@@ -290,6 +290,32 @@ SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_SC
 CUTOVER_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_68_COMPARISON_KEY = (
     "cutover_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
 )
+SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_COMPARISON_KEY = (
+    "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_FIELD_PREFIX = (
+    "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SUMMARY_FIELD_PREFIX = (
+    "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_CONFIRMED_REVIEW_FIELDS: tuple[
+    str, ...
+] = (
+    "cutover_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "route_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "dispatch_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "send_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "ack_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+)
+SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD = (
+    "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+)
+CUTOVER_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_76_COMPARISON_KEY = (
+    "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
 
 
 @dataclass(frozen=True)
@@ -2208,6 +2234,12 @@ def _broker_vendor_market_data_batch_checks(scaleup: dict[str, Any]) -> list[dic
                     cutover_lineage_sha256=cutover_carried_lineage_sha256,
                 )
             )
+            checks.extend(
+                _broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_checks(
+                    scaleup,
+                    cutover_lineage_sha256=cutover_carried_lineage_sha256,
+                )
+            )
     return checks
 
 
@@ -3779,6 +3811,196 @@ def _broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_
     return checks
 
 
+def _broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_checks(
+    scaleup: dict[str, Any],
+    *,
+    cutover_lineage_sha256: str,
+) -> list[dict[str, object]]:
+    source_prefix = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_FIELD_PREFIX
+    )
+    compatibility_prefix = (
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_FIELD_PREFIX
+    )
+    check_prefix = (
+        f"scaleup_{BROKER_FINAL_LINEAGE_FIELD_PREFIX}_"
+        "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final"
+    )
+    lineage_match_required = _to_bool(
+        scaleup[f"{source_prefix}_lineage_match_required"]
+    )
+    lineage_matches = _to_bool(scaleup[f"{source_prefix}_lineage_matches"])
+    broker_lineage_sha256 = _sha256_text(
+        scaleup[f"{source_prefix}_broker_application_lineage_sha256"]
+    )
+    current_lineage_sha256 = _sha256_text(
+        scaleup[f"{source_prefix}_current_application_lineage_sha256"]
+    )
+    compatibility_broker_lineage_sha256 = _sha256_text(
+        scaleup[f"{compatibility_prefix}_broker_application_lineage_sha256"]
+    )
+    compatibility_cutover_verified_lineage_sha256 = _sha256_text(
+        cutover_lineage_sha256
+    )
+    checks = [
+        _check(
+            f"{check_prefix}_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "confirmed verified-reconciled target cutover requires scale-up's confirmed lineage comparison",
+        ),
+        _check(
+            f"{check_prefix}_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "scale-up did not match every confirmed verified-reconciled target-lineage view",
+        ),
+        _check(
+            f"{check_prefix}_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "scale-up confirmed verified-reconciled source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+            compatibility_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_broker_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_broker_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "cutover compatibility broker digest does not match scale-up's confirmed verified-reconciled proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_cutover_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+            compatibility_cutover_verified_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_cutover_verified_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_cutover_verified_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "cutover compatibility verified review does not match scale-up's confirmed verified-reconciled proof",
+        ),
+    ]
+    for field in SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_DIGEST_FIELDS:
+        if field in {
+            "current_application_lineage_sha256",
+            "broker_application_lineage_sha256",
+        }:
+            continue
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        if stage == "scaleup":
+            stage = "prior_scaleup"
+        elif stage == "cutover":
+            stage = "prior_cutover"
+        carried_sha256 = _sha256_text(scaleup[f"{source_prefix}_{field}"])
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"scale-up's {stage.replace('_', '-')} target lineage "
+                    "does not match confirmed verified-reconciled broker proof"
+                ),
+            )
+        )
+    for field in (
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_CURRENT_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_REVIEW_FIELDS,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ACK_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ROUNDTRIP_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_BROKER_READINESS_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_SCALEUP_REVIEW_FIELD,
+        *SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_CONFIRMED_REVIEW_FIELDS,
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD,
+    ):
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        carried_sha256 = _sha256_text(scaleup[f"{source_prefix}_{field}"])
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                (
+                    f"scale-up's {stage.replace('_', '-')} target lineage "
+                    "does not match confirmed verified-reconciled broker proof"
+                ),
+            )
+        )
+    scaleup_confirmed_generic_lineage_sha256 = _sha256_text(
+        scaleup[f"{source_prefix}_carried_application_lineage_sha256"]
+    )
+    cutover_confirmed_lineage_sha256 = _sha256_text(cutover_lineage_sha256)
+    checks.extend(
+        [
+            _check(
+                f"{check_prefix}_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_review_generic_carried_lineage_sha256_matches",
+                scaleup_confirmed_generic_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and scaleup_confirmed_generic_lineage_sha256
+                    and broker_lineage_sha256
+                    and scaleup_confirmed_generic_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "scale-up's generic confirmed verified-reconciled review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                cutover_confirmed_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and cutover_confirmed_lineage_sha256
+                    and broker_lineage_sha256
+                    and cutover_confirmed_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "cutover's independently recomputed target lineage does not match scale-up's confirmed verified-reconciled proof",
+            ),
+        ]
+    )
+    return checks
+
+
 def _target_application_batch_active(vendor: dict[str, Any]) -> bool:
     mapping_sources = {
         value.strip().lower()
@@ -3998,6 +4220,9 @@ def _authorization(
                     scaleup
                 ),
                 **_broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_final_lineage_67_authorization_fields(
+                    scaleup
+                ),
+                **_broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_authorization_fields(
                     scaleup
                 ),
                 **_vendor_market_data_batch_authorization_fields(scaleup),
@@ -4571,6 +4796,37 @@ def _broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_
     return fields
 
 
+def _broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_authorization_fields(
+    scaleup: dict[str, Any],
+) -> dict[str, Any]:
+    prefix = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_FIELD_PREFIX
+    )
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": scaleup[
+            f"{prefix}_lineage_match_required"
+        ],
+        f"{prefix}_lineage_matches": scaleup[f"{prefix}_lineage_matches"],
+        f"{prefix}_carried_application_lineage_sha256": scaleup[
+            f"{prefix}_carried_application_lineage_sha256"
+        ],
+    }
+    for field in (
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_DIGEST_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_CURRENT_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_REVIEW_FIELDS,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ACK_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ROUNDTRIP_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_BROKER_READINESS_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_SCALEUP_REVIEW_FIELD,
+        *SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_CONFIRMED_REVIEW_FIELDS,
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD,
+    ):
+        fields[f"{prefix}_{field}"] = scaleup[f"{prefix}_{field}"]
+    return fields
+
+
 def _broker_vendor_data_readiness_authorization_fields(scaleup: dict[str, Any]) -> dict[str, Any]:
     readiness = scaleup["broker_vendor_data_readiness"]
     return {
@@ -4731,6 +4987,9 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     authorization
                 ),
                 **_broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_final_lineage_67_summary_fields(
+                    authorization
+                ),
+                **_broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_summary_fields(
                     authorization
                 ),
                 "scaleup_vendor_market_data_batch_provided": _to_bool(
@@ -5611,6 +5870,41 @@ def _broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_
     return fields
 
 
+def _broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_summary_fields(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    prefix = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_FIELD_PREFIX
+    )
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            authorization[f"{prefix}_lineage_match_required"]
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            authorization[f"{prefix}_lineage_matches"]
+        ),
+        f"{prefix}_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": str(
+            authorization[
+                "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+            ]
+        ),
+    }
+    for field in (
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_DIGEST_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_CURRENT_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_REVIEW_FIELDS,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ACK_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ROUNDTRIP_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_BROKER_READINESS_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_SCALEUP_REVIEW_FIELD,
+        *SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_CONFIRMED_REVIEW_FIELDS,
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD,
+    ):
+        fields[f"{prefix}_{field}"] = str(authorization[f"{prefix}_{field}"])
+    return fields
+
+
 def _broker_vendor_data_readiness_summary_fields(authorization: pd.Series) -> dict[str, Any]:
     return {
         "scaleup_broker_vendor_data_readiness_provided": _to_bool(
@@ -5813,6 +6107,11 @@ def _config(
         ),
         CUTOVER_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_68_COMPARISON_KEY: (
             _broker_vendor_cutover_verified_reconciled_current_latest_extended_complete_final_lineage_68_config(
+                authorization
+            )
+        ),
+        CUTOVER_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_76_COMPARISON_KEY: (
+            _broker_vendor_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_76_config(
                 authorization
             )
         ),
@@ -6521,6 +6820,39 @@ def _broker_vendor_cutover_verified_reconciled_current_latest_extended_complete_
     return config
 
 
+def _broker_vendor_cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_76_config(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    prefix = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_FIELD_PREFIX
+    )
+    cutover_lineage_sha256 = str(
+        authorization[
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_application_lineage_sha256"
+        ]
+    )
+    config: dict[str, Any] = {
+        "required": _to_bool(authorization[f"{prefix}_lineage_match_required"]),
+        "matches": _to_bool(authorization[f"{prefix}_lineage_matches"]),
+        "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": cutover_lineage_sha256,
+        "carried_application_lineage_sha256": cutover_lineage_sha256,
+    }
+    for field in (
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_DIGEST_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_CURRENT_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_REVIEW_FIELDS,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ACK_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ROUNDTRIP_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_BROKER_READINESS_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_SCALEUP_REVIEW_FIELD,
+        *SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_CONFIRMED_REVIEW_FIELDS,
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD,
+    ):
+        config[field] = str(authorization[f"{prefix}_{field}"])
+    return config
+
+
 def _broker_vendor_data_readiness_config(authorization: pd.Series) -> dict[str, Any]:
     return {
         "provided": _to_bool(authorization["scaleup_broker_vendor_data_readiness_provided"]),
@@ -7085,6 +7417,60 @@ def _broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_
     return fields
 
 
+def _broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_state_fields(
+    comparison: dict[str, Any],
+    row: pd.Series,
+) -> dict[str, Any]:
+    prefix = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_FIELD_PREFIX
+    )
+    summary_prefix = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SUMMARY_FIELD_PREFIX
+    )
+    scaleup_review_field = (
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD
+    )
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _to_bool(
+            comparison.get(
+                "required",
+                row.get(f"{summary_prefix}_lineage_match_required", False),
+            )
+        ),
+        f"{prefix}_lineage_matches": _to_bool(
+            comparison.get(
+                "matches",
+                row.get(f"{summary_prefix}_lineage_matches", False),
+            )
+        ),
+        f"{prefix}_carried_application_lineage_sha256": _sha256_text(
+            _first_text(
+                comparison.get("carried_application_lineage_sha256", ""),
+                row.get(f"{summary_prefix}_{scaleup_review_field}", ""),
+            )
+        ),
+    }
+    for field in (
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_DIGEST_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_CURRENT_STAGE_FIELDS,
+        *SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_REVIEW_FIELDS,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ACK_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_ROUNDTRIP_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_BROKER_READINESS_REVIEW_FIELD,
+        SCALEUP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_67_SCALEUP_REVIEW_FIELD,
+        *SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_CONFIRMED_REVIEW_FIELDS,
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_SCALEUP_REVIEW_FIELD,
+    ):
+        fields[f"{prefix}_{field}"] = _sha256_text(
+            _first_text(
+                comparison.get(field, ""),
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    return fields
+
+
 def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
@@ -7164,6 +7550,15 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
         dict,
     ):
         scaleup_verified_reconciled_current_latest_extended_complete_final_lineage_67_comparison = {}
+    scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_comparison = dispatch.get(
+        SCALEUP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_75_COMPARISON_KEY,
+        {},
+    ) or {}
+    if not isinstance(
+        scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_comparison,
+        dict,
+    ):
+        scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_comparison = {}
     broker_vendor_data_readiness = broker_readiness.get("broker_vendor_data_readiness", {}) or {}
     broker_vendor_market_data_batch = _broker_vendor_market_data_batch_source(dispatch)
     broker_vendor_market_data_batch_state = _vendor_market_data_batch_state(
@@ -7286,6 +7681,10 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
         ),
         **_broker_vendor_scaleup_verified_reconciled_current_latest_extended_complete_final_lineage_67_state_fields(
             scaleup_verified_reconciled_current_latest_extended_complete_final_lineage_67_comparison,
+            row,
+        ),
+        **_broker_vendor_scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_state_fields(
+            scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_75_comparison,
             row,
         ),
         "broker_vendor_data_readiness": _broker_vendor_data_readiness_state(
