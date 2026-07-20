@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ class LeadLagEdgeAudit:
     summary: pd.DataFrame
     output_dir: Path | None = None
     provenance: pd.DataFrame = field(default_factory=pd.DataFrame)
+    candidate_config: dict[str, Any] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -96,6 +98,9 @@ def write_leadlag_edge_audit(
     cross_correlation = _read_required(source / "cross_correlation.csv")
     lag_profile = _read_required(source / "lag_profile.csv")
     latency_curve = _read_required(source / "latency_curve.csv")
+    measurement_config = _read_json_required(
+        source / "leadlag_measure_config.json"
+    )
     thresholds = thresholds or LeadLagEdgeThresholds()
     audit = evaluate_leadlag_edge(
         cross_correlation,
@@ -123,12 +128,26 @@ def write_leadlag_edge_audit(
     summary["measurement_input_fingerprint_matches"] = int(
         integrity.input_fingerprint_match_count
     )
+    candidate_config = _candidate_config(
+        measurement_config,
+        audit.metrics.iloc[0],
+        checks,
+        summary.iloc[0],
+        thresholds=thresholds,
+        strategy=strategy,
+        market=market,
+        provenance=provenance_row,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     audit.metrics.to_csv(out / "leadlag_edge_metrics.csv", index=False)
     checks.to_csv(out / "leadlag_edge_checks.csv", index=False)
     summary.to_csv(out / "leadlag_edge_summary.csv", index=False)
     provenance.to_csv(out / "leadlag_edge_measurement_provenance.csv", index=False)
+    (out / "candidate_config.json").write_text(
+        json.dumps(_jsonable(candidate_config), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     dependencies = manifest_dependency_paths(measurement_manifest)
     write_experiment_manifest(
         out,
@@ -145,6 +164,7 @@ def write_leadlag_edge_audit(
             "measurement_manifest_sha256": str(
                 provenance_row["manifest_sha256"]
             ),
+            "candidate_ready": bool(candidate_config["ready"]),
             "authorizes_submission": False,
         },
     )
@@ -154,7 +174,92 @@ def write_leadlag_edge_audit(
         summary=summary,
         output_dir=out,
         provenance=provenance,
+        candidate_config=candidate_config,
     )
+
+
+def _candidate_config(
+    measurement_config: dict[str, Any],
+    metrics: pd.Series,
+    checks: pd.DataFrame,
+    summary: pd.Series,
+    *,
+    thresholds: LeadLagEdgeThresholds,
+    strategy: str,
+    market: str,
+    provenance: pd.Series,
+) -> dict[str, Any]:
+    measurement = measurement_config.get("measurement", {})
+    if not isinstance(measurement, dict):
+        measurement = {}
+    instrument = measurement_config.get("instrument", {})
+    if not isinstance(instrument, dict):
+        instrument = {}
+    failed_checks = checks.loc[
+        ~checks["passed"].astype(bool), "check"
+    ].astype(str).tolist()
+    edge_metric_names = (
+        "best_lag_ns",
+        "best_abs_correlation",
+        "best_correlation_samples",
+        "event_count",
+        "update_rate",
+        "median_update_ns",
+        "best_latency_ns",
+        "best_latency_net_pnl",
+        "best_latency_fills",
+        "best_latency_fill_rate",
+        "best_latency_win_rate",
+        "best_latency_gross_pnl",
+        "best_latency_round_trip_cost",
+        "best_latency_avg_net_edge",
+        "best_latency_cost_drag_ratio",
+        "best_latency_net_edge_bps",
+        "max_profitable_latency_ns",
+    )
+    return {
+        "schema_version": 1,
+        "ready": bool(summary.get("passed", False)),
+        "strategy": strategy,
+        "market": market,
+        "source_run_type": RUN_TYPE,
+        "replay_defaults": {
+            "market": market,
+            "leader_tick": measurement.get("leader_tick_size"),
+            "laggard_tick": measurement.get("laggard_tick_size"),
+            "delta": measurement.get("delta"),
+            "trigger_ticks": measurement.get("innovation_ticks"),
+            "qty": instrument.get("lot_size"),
+        },
+        "edge_audit": {
+            "passed": bool(summary.get("passed", False)),
+            "measurement_manifest_current": bool(
+                summary.get("measurement_manifest_current", False)
+            ),
+            "measurement_manifest_sha256": str(
+                provenance.get("manifest_sha256", "")
+            ),
+            "measurement_path": str(provenance.get("measurement_path", "")),
+            "metrics": {
+                name: metrics.get(name) for name in edge_metric_names
+            },
+            "max_profitable_latency_ns": metrics.get(
+                "max_profitable_latency_ns"
+            ),
+            "thresholds": asdict(thresholds),
+            "economics": {
+                "cost_scope": measurement.get("cost_scope"),
+                "exit_touch": measurement.get("exit_touch"),
+                "win_rate_definition": measurement.get(
+                    "win_rate_definition"
+                ),
+            },
+        },
+        "failed_checks": failed_checks,
+        "authorizes_submission": False,
+        "next_gate": "walkforward-leadlag-replay",
+        "recommendation": str(summary.get("recommendation", "")),
+    }
 
 
 def _measurement_provenance(
@@ -492,6 +597,15 @@ def _read_required(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def _read_json_required(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"required lead-lag measure artifact missing: {path}")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"lead-lag measure config must be an object: {path}")
+    return value
+
+
 def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
@@ -508,3 +622,20 @@ def _to_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, np.generic):
+        return value.item()
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value

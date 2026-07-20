@@ -1367,6 +1367,13 @@
   measurement-provenance sidecar, and binds the raw dependencies transitively
   into the edge-audit manifest. Optional fill-rate, per-fill net-edge, and
   cost-drag thresholds also constrain the reported maximum viable latency.
+  Passed audits now emit a non-authorizing, measurement-bound candidate config
+  with replay defaults, conservative edge metrics, and that latency budget.
+- Lead-lag replay walk-forward preserves the edge candidate contract and fails
+  when feed plus order latency exceeds `max_profitable_latency_ns`. Candidate
+  promotion verifies the walk-forward manifest and exact candidate/summary,
+  then requires passed/current measurement evidence and respected latency
+  headroom by default, while retaining an explicit research-migration override.
 - Lead-lag edge, replay, replay walk-forward, promotion, order-plan,
   launch-pipeline, and sweep artifacts retain `lead_lag_taker` plus
   market-profile identity for proof/catalog review, and non-India lead-lag
@@ -4029,8 +4036,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2367 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2370 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest lead-lag edge-to-promotion binding gate: `audit-leadlag-edge` now emits
+a non-authorizing candidate contract containing measurement-derived replay
+defaults, conservative edge economics, measurement-manifest identity, and the
+maximum viable latency. Replay walk-forward preserves that contract, records
+feed-plus-order latency and headroom, and fails when execution latency exceeds
+the measured budget. Promotion now verifies the exact walk-forward manifest,
+candidate, summary, and transitive dependencies before requiring current edge
+evidence and respected latency headroom; unbound candidates stay research-only
+unless an explicit override is recorded. All 16 focused tests passed in 25.7
+seconds, all 41 lead-lag lane tests passed in 87.6 seconds, and all 69 manifest/
+catalog tests passed in 103.8 seconds. Collection passes at 2370 tests across
+155 files. The full repository and broker lifecycle chains were not rerun.
 
 Latest conservative lead-lag latency-economics gate: measurement curves now
 model live-arrival touch entry, opposite-touch predicted exit, and both entry

@@ -8,14 +8,39 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.leadlag_candidate_contract import (
+    candidate_replay_latency_ns,
+    edge_audit,
+    edge_audit_bound,
+    edge_latency_budget_ns,
+    edge_metrics,
+    latency_budget_respected,
+    latency_headroom_ns,
+    number,
+)
+from reports.manifest import (
+    ManifestIntegrity,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from strategies.run_leadlag_replay import LEAD_LAG_STRATEGY
+
+
+WALKFORWARD_RUN_TYPE = "leadlag_replay_walkforward"
+WALKFORWARD_REQUIRED_ARTIFACTS = (
+    "leadlag_replay_walkforward_folds.csv",
+    "leadlag_replay_walkforward_checks.csv",
+    "leadlag_replay_walkforward_summary.csv",
+    "candidate_config.json",
+)
 
 
 @dataclass(frozen=True)
 class LeadLagCandidatePromotionThresholds:
     require_walkforward_passed: bool = True
     require_candidate_ready: bool = True
+    require_edge_audit_bound: bool = True
     min_proof_pass_rate: float = 1.0
     min_total_fills: int = 1
     min_total_net_pnl: float = 0.0
@@ -70,10 +95,37 @@ def write_leadlag_candidate_promotion(
         raise FileNotFoundError(f"candidate_config.json not found: {candidate_path}")
 
     thresholds = thresholds or LeadLagCandidatePromotionThresholds()
-    report = evaluate_leadlag_candidate_promotion(
+    integrity = verify_experiment_manifest(
+        walkforward / "manifest.json",
+        expected_run_type=WALKFORWARD_RUN_TYPE,
+        required_artifacts=WALKFORWARD_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    source_config = json.loads(candidate_path.read_text(encoding="utf-8"))
+    base_report = evaluate_leadlag_candidate_promotion(
         pd.read_csv(summary_path),
-        json.loads(candidate_path.read_text(encoding="utf-8")),
+        source_config,
         thresholds=thresholds,
+    )
+    checks = pd.concat(
+        [_walkforward_manifest_check(integrity), base_report.checks],
+        ignore_index=True,
+    )
+    summary = _summary(base_report.candidate, checks)
+    summary["walkforward_manifest_current"] = bool(integrity.passed)
+    summary["walkforward_manifest_error"] = str(integrity.error)
+    candidate_config = _promotion_candidate_config(
+        base_report.candidate.iloc[0],
+        checks,
+        summary.iloc[0],
+        source_config,
+        thresholds,
+    )
+    report = LeadLagCandidatePromotionReport(
+        base_report.candidate,
+        checks,
+        summary,
+        candidate_config,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -84,6 +136,7 @@ def write_leadlag_candidate_promotion(
         json.dumps(_jsonable(report.candidate_config), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    dependencies = manifest_dependency_paths(walkforward / "manifest.json")
     write_experiment_manifest(
         out,
         run_type="promotion_report",
@@ -92,8 +145,17 @@ def write_leadlag_candidate_promotion(
             "market": str(report.summary.iloc[0].get("market", "")) if not report.summary.empty else "",
             "thresholds": asdict(thresholds),
         },
-        inputs={"walkforward": walkforward, "summary": summary_path, "candidate_config": candidate_path},
-        extra={"promotion_source": "leadlag_replay_walkforward"},
+        inputs={
+            "walkforward": walkforward,
+            "walkforward_manifest": walkforward / "manifest.json",
+            "walkforward_dependencies": dependencies,
+            "summary": summary_path,
+            "candidate_config": candidate_path,
+        },
+        extra={
+            "promotion_source": WALKFORWARD_RUN_TYPE,
+            "walkforward_manifest_current": bool(integrity.passed),
+        },
     )
     return LeadLagCandidatePromotionReport(
         report.candidate,
@@ -104,6 +166,28 @@ def write_leadlag_candidate_promotion(
     )
 
 
+def _walkforward_manifest_check(
+    integrity: ManifestIntegrity,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "check": "walkforward_manifest_current",
+                "value": float(bool(integrity.passed)),
+                "operator": "is",
+                "threshold": 1.0,
+                "passed": bool(integrity.passed),
+                "reason": (
+                    ""
+                    if integrity.passed
+                    else "lead-lag replay walk-forward manifest failed: "
+                    f"{integrity.error or 'verification_failed'}"
+                ),
+            }
+        ]
+    )
+
+
 def _checks(
     row: pd.Series,
     candidate_config: dict[str, Any],
@@ -111,6 +195,8 @@ def _checks(
 ) -> pd.DataFrame:
     walkforward_passed = _to_bool(row.get("passed", False))
     candidate_ready = _to_bool(candidate_config.get("ready", False))
+    audit_bound = edge_audit_bound(candidate_config)
+    budget_respected = latency_budget_respected(candidate_config)
     checks = [
         _check(
             "walkforward_passed",
@@ -127,6 +213,22 @@ def _checks(
             True,
             candidate_ready or not thresholds.require_candidate_ready,
             "source candidate_config.json is not ready",
+        ),
+        _check(
+            "edge_audit_bound",
+            audit_bound,
+            "is",
+            True,
+            audit_bound or not thresholds.require_edge_audit_bound,
+            "candidate is not bound to a passed, current lead-lag edge audit",
+        ),
+        _check(
+            "edge_latency_budget_respected",
+            budget_respected,
+            "is",
+            True,
+            budget_respected or not thresholds.require_edge_audit_bound,
+            "walk-forward replay latency exceeds or omits the measured edge budget",
         ),
         _threshold_check("proof_pass_rate", _float(row, "proof_pass_rate"), ">=", thresholds.min_proof_pass_rate),
         _threshold_check("total_fills", _float(row, "total_fills"), ">=", thresholds.min_total_fills),
@@ -151,6 +253,7 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
     if not isinstance(replay_defaults, dict):
         replay_defaults = {}
     scenario_key = _scenario_key(replay_defaults)
+    audit_metrics = edge_metrics(candidate_config)
     return {
         "scenario_key": scenario_key,
         "strategy": LEAD_LAG_STRATEGY,
@@ -174,6 +277,19 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
         "worst_drawdown": _float(row, "worst_drawdown"),
         "median_markout_mean": _float(row, "median_markout_mean"),
         "median_robust_score": _float(row, "median_robust_score"),
+        "edge_audit_bound": edge_audit_bound(candidate_config),
+        "edge_latency_budget_ns": edge_latency_budget_ns(candidate_config),
+        "total_replay_latency_ns": candidate_replay_latency_ns(candidate_config),
+        "edge_latency_headroom_ns": latency_headroom_ns(candidate_config),
+        "edge_best_latency_avg_net_edge": number(
+            audit_metrics.get("best_latency_avg_net_edge")
+        ),
+        "edge_best_latency_cost_drag_ratio": number(
+            audit_metrics.get("best_latency_cost_drag_ratio")
+        ),
+        "edge_best_latency_net_edge_bps": number(
+            audit_metrics.get("best_latency_net_edge_bps")
+        ),
     }
 
 
@@ -191,6 +307,18 @@ def _summary(candidate: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "market": str(row.get("market", "")),
                 "checks": int(len(checks)),
                 "failed_checks": failed,
+                "edge_audit_bound": _to_bool(
+                    row.get("edge_audit_bound", False)
+                ),
+                "edge_latency_budget_ns": row.get(
+                    "edge_latency_budget_ns", np.nan
+                ),
+                "total_replay_latency_ns": row.get(
+                    "total_replay_latency_ns", np.nan
+                ),
+                "edge_latency_headroom_ns": row.get(
+                    "edge_latency_headroom_ns", np.nan
+                ),
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_in_research",
             }
         ]
@@ -235,7 +363,26 @@ def _promotion_candidate_config(
             "worst_drawdown": _jsonable(candidate.get("worst_drawdown")),
             "median_markout_mean": _jsonable(candidate.get("median_markout_mean")),
             "median_robust_score": _jsonable(candidate.get("median_robust_score")),
+            "edge_latency_budget_ns": _jsonable(
+                candidate.get("edge_latency_budget_ns")
+            ),
+            "total_replay_latency_ns": _jsonable(
+                candidate.get("total_replay_latency_ns")
+            ),
+            "edge_latency_headroom_ns": _jsonable(
+                candidate.get("edge_latency_headroom_ns")
+            ),
+            "edge_best_latency_avg_net_edge": _jsonable(
+                candidate.get("edge_best_latency_avg_net_edge")
+            ),
+            "edge_best_latency_cost_drag_ratio": _jsonable(
+                candidate.get("edge_best_latency_cost_drag_ratio")
+            ),
+            "edge_best_latency_net_edge_bps": _jsonable(
+                candidate.get("edge_best_latency_net_edge_bps")
+            ),
         },
+        "edge_audit": _jsonable(edge_audit(source_config)),
         "source_candidate": _jsonable(source_config),
         "failed_checks": list(dict.fromkeys(failed_checks)),
         "thresholds": asdict(thresholds),

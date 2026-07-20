@@ -840,6 +840,7 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_promotion.add_argument("--out", required=True)
     leadlag_promotion.add_argument("--allow-unpassed-walkforward", action="store_true")
     leadlag_promotion.add_argument("--allow-unready-candidate", action="store_true")
+    leadlag_promotion.add_argument("--allow-unbound-edge-audit", action="store_true")
     leadlag_promotion.add_argument("--min-proof-pass-rate", type=float, default=1.0)
     leadlag_promotion.add_argument("--min-total-fills", type=int, default=1)
     leadlag_promotion.add_argument("--min-total-net-pnl", type=float, default=0.0)
@@ -5058,6 +5059,7 @@ def main(argv: list[str] | None = None) -> int:
             thresholds=LeadLagCandidatePromotionThresholds(
                 require_walkforward_passed=not args.allow_unpassed_walkforward,
                 require_candidate_ready=not args.allow_unready_candidate,
+                require_edge_audit_bound=not args.allow_unbound_edge_audit,
                 min_proof_pass_rate=args.min_proof_pass_rate,
                 min_total_fills=args.min_total_fills,
                 min_total_net_pnl=args.min_total_net_pnl,

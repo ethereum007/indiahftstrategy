@@ -108,6 +108,24 @@ def write_measure_dir(path):
         json.dumps(
             {
                 "run_type": MEASUREMENT_RUN_TYPE,
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "instrument": {
+                    "symbol": "LAGGARD-OPT",
+                    "kind": "option",
+                    "lot_size": 75,
+                    "tick": 0.05,
+                    "multiplier": 1.0,
+                },
+                "measurement": {
+                    "leader_tick_size": 0.05,
+                    "laggard_tick_size": 0.05,
+                    "delta": 1.0,
+                    "innovation_ticks": 2.0,
+                    "cost_scope": "round_trip_entry_and_predicted_exit",
+                    "exit_touch": "opposite_touch_shifted_by_delta",
+                    "win_rate_definition": "profitable_fills_over_fills",
+                },
                 "authorizes_submission": False,
             },
             indent=2,
@@ -240,9 +258,13 @@ def test_write_leadlag_edge_audit_outputs_report_files(tmp_path):
     assert (out_dir / "leadlag_edge_checks.csv").exists()
     assert (out_dir / "leadlag_edge_summary.csv").exists()
     assert (out_dir / "leadlag_edge_measurement_provenance.csv").exists()
+    assert (out_dir / "candidate_config.json").exists()
     assert (out_dir / "manifest.json").exists()
     summary = pd.read_csv(out_dir / "leadlag_edge_summary.csv")
     provenance = pd.read_csv(out_dir / "leadlag_edge_measurement_provenance.csv")
+    candidate = json.loads(
+        (out_dir / "candidate_config.json").read_text(encoding="utf-8")
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert summary.loc[0, "strategy"] == "lead_lag_taker"
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
@@ -253,6 +275,23 @@ def test_write_leadlag_edge_audit_outputs_report_files(tmp_path):
     )
     assert manifest["parameters"]["strategy"] == "lead_lag_taker"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    assert candidate["ready"]
+    assert not candidate["authorizes_submission"]
+    assert candidate["source_run_type"] == "leadlag_edge_audit"
+    assert candidate["replay_defaults"] == {
+        "delta": 1.0,
+        "laggard_tick": 0.05,
+        "leader_tick": 0.05,
+        "market": "india_nse_index_derivatives",
+        "qty": 75,
+        "trigger_ticks": 2.0,
+    }
+    assert candidate["edge_audit"]["measurement_manifest_current"]
+    assert candidate["edge_audit"]["max_profitable_latency_ns"] == 300_000
+    assert candidate["edge_audit"]["metrics"]["best_latency_avg_net_edge"] == 5.0
+    assert candidate["edge_audit"]["economics"]["cost_scope"] == (
+        "round_trip_entry_and_predicted_exit"
+    )
     integrity = verify_experiment_manifest(
         out_dir / "manifest.json",
         expected_run_type="leadlag_edge_audit",
@@ -261,6 +300,7 @@ def test_write_leadlag_edge_audit_outputs_report_files(tmp_path):
             "leadlag_edge_checks.csv",
             "leadlag_edge_summary.csv",
             "leadlag_edge_measurement_provenance.csv",
+            "candidate_config.json",
         ),
         require_input_fingerprints=True,
     )
@@ -284,6 +324,11 @@ def test_leadlag_edge_audit_fails_when_measurement_source_drifted(tmp_path):
     assert audit.summary.iloc[0]["measurement_manifest_error"] == "input_drift"
     assert not bool(audit.provenance.iloc[0]["passed"])
     assert audit.provenance.iloc[0]["error"] == "input_drift"
+    candidate = json.loads(
+        (out_dir / "candidate_config.json").read_text(encoding="utf-8")
+    )
+    assert not candidate["ready"]
+    assert candidate["failed_checks"] == ["measurement_manifest_current"]
 
 
 def test_leadlag_edge_manifest_tracks_raw_measurement_dependencies(tmp_path):

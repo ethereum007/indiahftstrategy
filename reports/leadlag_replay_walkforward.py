@@ -11,6 +11,12 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from reports.leadlag_candidate_contract import (
+    edge_audit,
+    edge_audit_bound,
+    edge_latency_budget_ns,
+    replay_latency_ns,
+)
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_leadlag_replay import LEAD_LAG_STRATEGY, LeadLagReplayResult, run_leadlag_replay
@@ -99,6 +105,8 @@ def write_leadlag_replay_walkforward(
         "qty": int(_coalesce(qty, replay_defaults.get("qty"), 75)),
         "flat_after_ns": int(_coalesce(flat_after_ns, replay_defaults.get("flat_after_ns"), 500_000_000)),
         "cooloff_ns": int(_coalesce(cooloff_ns, replay_defaults.get("cooloff_ns"), 0)),
+        "feed_latency_us": float(feed_latency_us),
+        "order_latency_us": float(order_latency_us),
         "markout_horizons_ns": _coalesce_list(
             markout_horizons_ns,
             replay_defaults.get("markout_horizons_ns"),
@@ -138,8 +146,8 @@ def write_leadlag_replay_walkforward(
             qty=replay_params["qty"],
             flat_after_ns=replay_params["flat_after_ns"],
             cooloff_ns=replay_params["cooloff_ns"],
-            feed_latency_us=feed_latency_us,
-            order_latency_us=order_latency_us,
+            feed_latency_us=replay_params["feed_latency_us"],
+            order_latency_us=replay_params["order_latency_us"],
             generic_buy_notional_rate=replay_params["generic_costs"]["buy_notional_rate"],
             generic_sell_notional_rate=replay_params["generic_costs"]["sell_notional_rate"],
             generic_per_unit_fee=replay_params["generic_costs"]["per_unit_fee"],
@@ -159,8 +167,18 @@ def write_leadlag_replay_walkforward(
         run_names=fold_labels,
     )
     folds = _merge_proof_metrics(pd.DataFrame(fold_rows), proof)
-    checks = _checks(folds, thresholds)
-    summary = _summary(folds, checks)
+    checks = _checks(
+        folds,
+        thresholds,
+        candidate=candidate,
+        replay_params=replay_params,
+    )
+    summary = _summary(
+        folds,
+        checks,
+        candidate=candidate,
+        replay_params=replay_params,
+    )
     summary["strategy"] = LEAD_LAG_STRATEGY
     summary["market"] = replay_params["market"]
     config = _candidate_config(
@@ -197,8 +215,8 @@ def write_leadlag_replay_walkforward(
             "qty": replay_params["qty"],
             "flat_after_ns": replay_params["flat_after_ns"],
             "cooloff_ns": replay_params["cooloff_ns"],
-            "feed_latency_us": feed_latency_us,
-            "order_latency_us": order_latency_us,
+            "feed_latency_us": replay_params["feed_latency_us"],
+            "order_latency_us": replay_params["order_latency_us"],
             "generic_costs": replay_params["generic_costs"],
             "max_position_lots": max_position_lots,
             "markout_horizons_ns": replay_params["markout_horizons_ns"],
@@ -294,7 +312,13 @@ def _merge_proof_metrics(folds: pd.DataFrame, proof: ProofReport) -> pd.DataFram
     return merged
 
 
-def _checks(folds: pd.DataFrame, thresholds: LeadLagReplayWalkForwardThresholds) -> pd.DataFrame:
+def _checks(
+    folds: pd.DataFrame,
+    thresholds: LeadLagReplayWalkForwardThresholds,
+    *,
+    candidate: dict[str, Any],
+    replay_params: dict[str, Any],
+) -> pd.DataFrame:
     proof_pass_rate = float(folds["proof_passed"].map(_to_bool).mean()) if not folds.empty else 0.0
     total_fills = int(pd.to_numeric(folds.get("fills", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
     total_net_pnl = float(pd.to_numeric(folds.get("net_pnl", pd.Series(dtype=float)), errors="coerce").fillna(0).sum())
@@ -317,15 +341,48 @@ def _checks(folds: pd.DataFrame, thresholds: LeadLagReplayWalkForwardThresholds)
                 thresholds.min_median_markout_mean,
             )
         )
+    candidate_edge_audit = edge_audit(candidate)
+    if candidate_edge_audit:
+        edge_current = edge_audit_bound(candidate)
+        rows.append(
+            {
+                "check": "edge_audit_current",
+                "value": float(edge_current),
+                "operator": "is",
+                "threshold": 1.0,
+                "passed": bool(edge_current),
+                "reason": (
+                    ""
+                    if edge_current
+                    else "candidate edge audit is not passed, current, and measurement-bound"
+                ),
+            }
+        )
+        rows.append(
+            _threshold_check(
+                "total_replay_latency_ns",
+                replay_latency_ns(replay_params),
+                "<=",
+                edge_latency_budget_ns(candidate),
+            )
+        )
     return pd.DataFrame(rows)
 
 
-def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
+def _summary(
+    folds: pd.DataFrame,
+    checks: pd.DataFrame,
+    *,
+    candidate: dict[str, Any],
+    replay_params: dict[str, Any],
+) -> pd.DataFrame:
     passed = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     net_pnl = pd.to_numeric(folds.get("net_pnl", pd.Series(dtype=float)), errors="coerce")
     fills = pd.to_numeric(folds.get("fills", pd.Series(dtype=float)), errors="coerce")
     proof_pass_rate = float(folds["proof_passed"].map(_to_bool).mean()) if not folds.empty else 0.0
+    latency_budget_ns = edge_latency_budget_ns(candidate)
+    total_replay_latency_ns = replay_latency_ns(replay_params)
     return pd.DataFrame(
         [
             {
@@ -343,6 +400,14 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "worst_drawdown": _numeric_reduce(folds, "max_drawdown", "max"),
                 "median_markout_mean": _numeric_reduce(folds, "markout_mean", "median"),
                 "median_robust_score": _numeric_reduce(folds, "robust_score", "median"),
+                "edge_audit_bound": edge_audit_bound(candidate),
+                "edge_latency_budget_ns": latency_budget_ns,
+                "total_replay_latency_ns": total_replay_latency_ns,
+                "edge_latency_headroom_ns": (
+                    latency_budget_ns - total_replay_latency_ns
+                    if not np.isnan(latency_budget_ns)
+                    else np.nan
+                ),
             }
         ]
     )
@@ -374,6 +439,8 @@ def _candidate_config(
         "qty": _jsonable(replay_params["qty"]),
         "flat_after_ns": _jsonable(replay_params["flat_after_ns"]),
         "cooloff_ns": _jsonable(replay_params["cooloff_ns"]),
+        "feed_latency_us": _jsonable(replay_params["feed_latency_us"]),
+        "order_latency_us": _jsonable(replay_params["order_latency_us"]),
         "markout_horizons_ns": _jsonable(replay_params["markout_horizons_ns"]),
         "generic_costs": _jsonable(replay_params["generic_costs"]),
     }
@@ -385,6 +452,16 @@ def _candidate_config(
         "total_fills": _jsonable(summary.get("total_fills")),
         "worst_drawdown": _jsonable(summary.get("worst_drawdown")),
         "median_markout_mean": _jsonable(summary.get("median_markout_mean")),
+        "edge_audit_bound": _jsonable(summary.get("edge_audit_bound")),
+        "edge_latency_budget_ns": _jsonable(
+            summary.get("edge_latency_budget_ns")
+        ),
+        "total_replay_latency_ns": _jsonable(
+            summary.get("total_replay_latency_ns")
+        ),
+        "edge_latency_headroom_ns": _jsonable(
+            summary.get("edge_latency_headroom_ns")
+        ),
     }
     return config
 

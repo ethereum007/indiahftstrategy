@@ -92,6 +92,18 @@ def write_us_candidate(path):
                 "strategy": "lead_lag_taker",
                 "source_run_type": "leadlag_edge_audit",
                 "failed_checks": [],
+                "edge_audit": {
+                    "passed": True,
+                    "measurement_manifest_current": True,
+                    "measurement_manifest_sha256": "a" * 64,
+                    "max_profitable_latency_ns": 100_000,
+                    "metrics": {
+                        "max_profitable_latency_ns": 100_000,
+                        "best_latency_avg_net_edge": 5.0,
+                        "best_latency_cost_drag_ratio": 0.2,
+                        "best_latency_net_edge_bps": 2.0,
+                    },
+                },
                 "replay_defaults": {
                     "market": "us_options_regular",
                     "leader_tick": 0.01,
@@ -190,7 +202,44 @@ def test_write_leadlag_replay_walkforward_inherits_us_generic_costs(tmp_path):
     assert float(report.summary.loc[0, "total_net_pnl"]) > 0.0
     assert config["replay_defaults"]["market"] == "us_options_regular"
     assert config["replay_defaults"]["generic_costs"]["per_order_fee"] == 0.01
+    assert config["edge_audit"]["max_profitable_latency_ns"] == 100_000
+    assert config["replay_walkforward"]["edge_audit_bound"]
+    assert config["replay_walkforward"]["edge_latency_headroom_ns"] == 100_000
     assert manifest["parameters"]["generic_costs"]["per_order_fee"] == 0.01
+
+
+def test_write_leadlag_replay_walkforward_blocks_latency_above_edge_budget(tmp_path):
+    leader, laggard = write_pair(tmp_path, "2026-06-10", us=True, label="us_day1")
+    candidate_dir = tmp_path / "us_edge"
+    out_dir = tmp_path / "us_leadlag_slow"
+    write_us_candidate(candidate_dir)
+
+    report = write_leadlag_replay_walkforward(
+        [leader],
+        [laggard],
+        output_dir=out_dir,
+        candidate_config=candidate_dir,
+        lot_size=1,
+        feed_latency_us=60.0,
+        order_latency_us=50.0,
+        proof_thresholds=ProofThresholds(min_net_pnl=-1000.0, min_fills=0),
+        thresholds=LeadLagReplayWalkForwardThresholds(
+            min_folds=1,
+            min_proof_pass_rate=0.0,
+            min_total_fills=0,
+            min_total_net_pnl=-1000.0,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert not report.passed
+    assert failed == {"total_replay_latency_ns"}
+    assert report.summary.iloc[0]["edge_latency_budget_ns"] == 100_000
+    assert report.summary.iloc[0]["total_replay_latency_ns"] == 110_000
+    assert report.summary.iloc[0]["edge_latency_headroom_ns"] == -10_000
+    assert not config["ready"]
+    assert "total_replay_latency_ns" in config["failed_checks"]
 
 
 def test_cli_leadlag_replay_walkforward_can_fail_on_breach(tmp_path):

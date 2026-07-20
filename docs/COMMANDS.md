@@ -1040,6 +1040,7 @@ leadlag_edge_metrics.csv
 leadlag_edge_checks.csv
 leadlag_edge_summary.csv
 leadlag_edge_measurement_provenance.csv
+candidate_config.json
 manifest.json
 ```
 
@@ -1051,6 +1052,10 @@ source change after the audit invalidates the audit manifest transitively.
 The optional fill-rate, average-net-edge, and cost-drag hurdles apply to every
 latency row when computing `max_profitable_latency_ns`; the reported latency
 budget therefore cannot include a slower point that violates those economics.
+The generated `candidate_config.json` carries the measured tick sizes, delta,
+innovation threshold, lot quantity, conservative edge metrics, measurement
+manifest identity, and `max_profitable_latency_ns`. It remains explicitly
+non-authorizing and points to replay walk-forward as the next gate.
 
 ## Lead-Lag Replay
 
@@ -1077,12 +1082,11 @@ python -m hft_cli walkforward-leadlag-replay `
   --laggards data\day1_atm_call.csv data\day2_atm_call.csv `
   --label day1 `
   --label day2 `
+  --candidate-config runs\leadlag_edge_2026_06_10 `
   --out runs\leadlag_replay_walkforward_2026_06_10 `
-  --market india_nse_index_derivatives `
-  --delta 0.5 `
-  --trigger-ticks 3 `
-  --qty 75 `
   --flat-after-ns 500000000 `
+  --feed-latency-us 40 `
+  --order-latency-us 60 `
   --markout-horizons-ns 100000000 1000000000 `
   --min-net-pnl 1 `
   --min-fills 10 `
@@ -1107,6 +1111,11 @@ manifest.json
 For US research, provide `--market us_equities_regular` or
 `--market us_options_regular` plus explicit generic fee flags, or supply a
 ready lead-lag `candidate_config.json` with `replay_defaults.generic_costs`.
+When the candidate carries an edge audit, walk-forward requires that audit to
+remain passed and measurement-current. It also checks that feed latency plus
+order latency, converted to nanoseconds, does not exceed the measured
+`max_profitable_latency_ns`; budget, realized latency, and headroom are retained
+in the summary and next candidate contract.
 
 ## Lead-Lag Candidate Promotion
 
@@ -1132,6 +1141,15 @@ promotion_summary.csv
 candidate_config.json
 manifest.json
 ```
+
+Promotion requires a passed, current, measurement-bound edge audit and a
+respected latency budget by default. `--allow-unbound-edge-audit` exists only
+for research migration or diagnosis; using it keeps the missing evidence
+visible in promotion checks and must not be treated as launch-grade proof.
+The promotion writer also verifies the walk-forward manifest and its exact
+summary/candidate artifacts before evaluating these gates. Artifact or source
+drift adds a failed `walkforward_manifest_current` check and is bound
+transitively into the promotion manifest.
 
 ## Lead-Lag Order Plan
 
