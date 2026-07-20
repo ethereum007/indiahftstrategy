@@ -897,33 +897,21 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
             source_prefix=broker_vendor_source_prefix,
         )
-    _apply_broker_vendor_market_data_batch_lineage_config(frame, config)
-    _apply_broker_vendor_roundtrip_final_lineage_config(frame, config)
-    _apply_broker_vendor_roundtrip_complete_final_lineage_config(frame, config)
-    _apply_broker_vendor_roundtrip_extended_complete_final_lineage_config(
-        frame,
-        config,
+    lineage_config_appliers = (
+        _apply_broker_vendor_market_data_batch_lineage_config,
+        _apply_broker_vendor_roundtrip_final_lineage_config,
+        _apply_broker_vendor_roundtrip_complete_final_lineage_config,
+        _apply_broker_vendor_roundtrip_extended_complete_final_lineage_config,
+        _apply_broker_vendor_roundtrip_latest_extended_complete_final_lineage_41_config,
+        _apply_broker_vendor_roundtrip_current_latest_extended_complete_final_lineage_49_config,
+        _apply_broker_vendor_roundtrip_reconciled_current_latest_extended_complete_final_lineage_57_config,
+        _apply_broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complete_final_lineage_65_config,
+        _apply_broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_config,
     )
-    _apply_broker_vendor_roundtrip_latest_extended_complete_final_lineage_41_config(
-        frame,
-        config,
-    )
-    _apply_broker_vendor_roundtrip_current_latest_extended_complete_final_lineage_49_config(
-        frame,
-        config,
-    )
-    _apply_broker_vendor_roundtrip_reconciled_current_latest_extended_complete_final_lineage_57_config(
-        frame,
-        config,
-    )
-    _apply_broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complete_final_lineage_65_config(
-        frame,
-        config,
-    )
-    _apply_broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_config(
-        frame,
-        config,
-    )
+    for apply_lineage_config in lineage_config_appliers:
+        # Each epoch adds dozens of columns; consolidate before adding the next one.
+        frame = frame.copy()
+        apply_lineage_config(frame, config)
     return frame
 
 

@@ -3990,6 +3990,22 @@ pytest
 Current collected suite: 2348 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
+Latest broker-readiness frame-consolidation gate: dispatch-roundtrip readiness
+now consolidates its single-row pandas frame before each vendor-lineage epoch.
+This preserves every established field, value, precedence rule, and downstream
+contract while preventing the internal layout from growing to the previously
+observed 506 blocks through repeated column insertion. The end-to-end artifact
+test now treats pandas `PerformanceWarning` as an error, so fragmentation cannot
+quietly return on the widest Arrow.money/iRage readiness path. The focused
+artifact proof passed in 11.1 seconds, all 128 broker-readiness tests passed in
+278.7 seconds, and the full 956-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch -> broker-dispatch-send -> broker-dispatch-
+acknowledgement -> broker-dispatch-roundtrip chain passed in 780.4 seconds with
+explicit exit code zero and no warning summary. The repository test count is
+unchanged at 2348 tests across 154 files. The full repository suite was not
+rerun for this infrastructure-only slice; the last completed full-suite
+baseline remains unchanged.
+
 Latest sender-preparation confirmed verified-reconciled current latest extended
 complete-final target-lineage gate: all 128 sender-preparation tests and all
 107 acknowledgement tests pass. Confirmed verified-reconciled targets now

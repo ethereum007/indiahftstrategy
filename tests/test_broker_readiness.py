@@ -1,5 +1,6 @@
 import hashlib
 import json
+import warnings
 
 import pandas as pd
 import pytest
@@ -5639,20 +5640,22 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
         encoding="utf-8",
     )
 
-    report = write_broker_readiness_report(
-        output_dir=out_dir,
-        schema_audit_dir=schema_dir,
-        order_export_dir=export_dir,
-        upload_pack_dir=upload_dir,
-        resume_dir=resume_dir,
-        dispatch_roundtrip_dir=roundtrip_dir,
-        thresholds=BrokerReadinessThresholds(
-            adapter="arrow_money",
-            require_reviewed_schema=False,
-            require_resume_gate=True,
-            require_dispatch_roundtrip=True,
-        ),
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", pd.errors.PerformanceWarning)
+        report = write_broker_readiness_report(
+            output_dir=out_dir,
+            schema_audit_dir=schema_dir,
+            order_export_dir=export_dir,
+            upload_pack_dir=upload_dir,
+            resume_dir=resume_dir,
+            dispatch_roundtrip_dir=roundtrip_dir,
+            thresholds=BrokerReadinessThresholds(
+                adapter="arrow_money",
+                require_reviewed_schema=False,
+                require_resume_gate=True,
+                require_dispatch_roundtrip=True,
+            ),
+        )
 
     assert report.ready
     assert report.output_dir == out_dir
