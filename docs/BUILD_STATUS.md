@@ -3987,14 +3987,47 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2313 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2320 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest broker-readiness confirmed verified-reconciled current latest extended
-complete-final target-lineage gate: all 128 broker-readiness tests and all 141
-controlled-scale-up tests pass. Confirmed verified-reconciled targets now
-require roundtrip view seventy-three in addition to established view-sixty-five
-compatibility proof. Broker readiness validates the exact 72-field source
+Latest controlled-scale-up confirmed verified-reconciled current latest
+extended complete-final target-lineage gate: all 147 controlled-scale-up tests
+and all 106 cutover tests pass. Confirmed verified-reconciled targets now
+require broker-readiness view seventy-four in addition to established view-
+sixty-six compatibility proof. Controlled scale-up validates the exact 73-
+field source contract: the required and match decisions, 37 inherited digest
+fields, nine latest/current stage fields, seven current/reconciled transition
+fields, six reconciled stage reviews, the acknowledgement and roundtrip
+verified-reconciled reviews, six downstream verified-reconciled reviews from
+broker readiness through send, the confirmed acknowledgement, roundtrip, and
+broker-readiness reviews, and the generic carried lineage digest. It binds
+that additive proof to the established view-sixty-six broker and an
+independently recomputed controlled-scale-up digest, then extends the
+confirmed verified-reconciled epoch with a 74-field view seventy-five under
+the distinct
+`scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh controlled-
+scale-up recomputation drift all fail closed. Nested broker-readiness config
+and flattened `roundtrip_confirmed_verified_reconciled_*` summary recovery
+both carry the proof. Established view sixty-seven remains unchanged, and a
+distinct-digest regression proves cutover continues to derive view sixty-eight
+from view sixty-seven while ignoring additive view seventy-five. The focused
+10-test proof, complete 253-test controlled-scale-up/cutover boundary, and full
+928-test broker-readiness -> scale-up -> cutover -> route-enable -> broker-
+dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-
+dispatch-roundtrip chain pass. The focused proof completed in 43.9 seconds,
+the owning boundary in 202.5 seconds, and the authoritative full chain in
+1156.5 seconds with explicit exit code zero; only the known pandas
+fragmentation warnings were emitted. The repository collects 2320 tests
+across 154 files. The full repository suite was not rerun for this slice; the
+last completed full-suite baseline remains unchanged.
+
+Immediately preceding broker-readiness confirmed verified-reconciled current
+latest extended complete-final target-lineage gate: all 128 broker-readiness
+tests and all 141 controlled-scale-up tests pass. Confirmed verified-reconciled
+targets now require roundtrip view seventy-three in addition to established
+view-sixty-five compatibility proof. Broker readiness validates the exact 72-field source
 contract: the required and match decisions, 37 inherited digest fields, nine
 latest/current stage fields, seven current/reconciled transition fields, six
 reconciled stage reviews, the acknowledgement and roundtrip verified-
@@ -4022,7 +4055,7 @@ fragmentation warnings were emitted. The repository collects 2313 tests across
 154 files. The full repository suite was not rerun for this slice; the last
 completed full-suite baseline remains unchanged.
 
-Immediately preceding broker-dispatch-roundtrip confirmed verified-reconciled
+Earlier broker-dispatch-roundtrip confirmed verified-reconciled
 current latest extended complete-final target-lineage gate: all 103 roundtrip
 tests and all 122 broker-readiness tests pass. Confirmed verified-reconciled
 targets now require acknowledgement view seventy-two in addition to

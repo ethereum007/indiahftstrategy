@@ -4186,8 +4186,16 @@ against the established view-sixty-five broker and independently recomputed
 broker-readiness anchors, and emits fresh view seventy-four under
 `broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-sixty-six handoff remains unchanged for controlled scale-
-up, which continues to consume view sixty-six and intentionally ignores
-additive view seventy-four.
+up, which now consumes additive view seventy-four from nested broker-readiness
+config or flattened
+`roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+summary fields, revalidates the exact confirmed verified-reconciled chain
+against the established view-sixty-six broker and independently recomputed
+controlled-scale-up anchors, and emits fresh view seventy-five under
+`scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-sixty-seven handoff remains unchanged for cutover, which
+continues to consume view sixty-seven and intentionally ignores additive view
+seventy-five.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -5097,7 +5105,15 @@ reconciled source against the established broker and a fresh canonical broker-
 readiness recomputation, and emits a 73-field view seventy-four under
 `broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-sixty-six output remains unchanged for controlled scale-
-up, which intentionally ignores additive view seventy-four.
+up, which now consumes additive view seventy-four from nested broker-readiness
+config or flattened
+`roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+summary fields. It revalidates the exact 73-field confirmed verified-reconciled
+source against the established broker and a fresh canonical controlled-scale-
+up recomputation, and emits a 74-field view seventy-five under
+`scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-sixty-seven output remains unchanged for cutover, which
+intentionally ignores additive view seventy-five.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5501,8 +5517,12 @@ sixty-five, now consumes additive view seventy-three, and extends the confirmed
 verified-reconciled epoch with fresh view seventy-four under
 `broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Controlled scale-up continues to derive established view sixty-seven from view
-sixty-six and intentionally ignores additive view seventy-four; distinct-digest
-regressions cover all twenty-six compatibility boundaries.
+sixty-six, now consumes additive view seventy-four, and extends the confirmed
+verified-reconciled epoch with fresh view seventy-five under
+`scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Cutover continues to derive established view sixty-eight from view sixty-seven
+and intentionally ignores additive view seventy-five; distinct-digest
+regressions cover all twenty-seven compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the
