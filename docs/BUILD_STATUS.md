@@ -3945,9 +3945,15 @@
   established view-fifty-eight broker and independently recomputed scale-up
   anchors, and emits a 66-field view sixty-seven under
   `scaleup_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  Its established view-fifty-nine output remains unchanged. Cutover continues
-  to consume view fifty-nine and intentionally ignores additive view sixty-
-  seven.
+  Its established view-fifty-nine output remains unchanged. Cutover now
+  consumes additive view sixty-seven from nested scale-up config or flattened
+  `broker_readiness_verified_reconciled_current_latest_extended_complete_final_*`
+  summary fields, revalidates the exact 66-field verified-reconciled chain
+  against the established view-fifty-nine broker and independently recomputed
+  cutover anchors, and emits a 67-field view sixty-eight under
+  `cutover_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-sixty output remains unchanged. Route-enable continues
+  to consume view sixty and intentionally ignores additive view sixty-eight.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3966,13 +3972,40 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2264 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2271 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest controlled-scale-up verified-reconciled current latest extended
-complete-final target-lineage gate: all 140 scale-up tests and all 99 cutover
-tests pass. Reconciled targets now require broker-readiness view sixty-six in
-addition to established view-fifty-eight compatibility proof. Scale-up
+Latest cutover verified-reconciled current latest extended complete-final
+target-lineage gate: all 105 cutover tests and all 102 route-enable tests pass.
+Verified-reconciled targets now require scale-up view sixty-seven in addition
+to established view-fifty-nine compatibility proof. Cutover validates the
+exact 66-field source contract: the required and match decisions, 37 inherited
+digest fields, nine latest/current stage fields, seven current/reconciled
+transition fields, six reconciled stage reviews, acknowledgement, roundtrip,
+broker-readiness, and scale-up verified-reconciled reviews, and the generic
+carried lineage digest. It binds that additive proof to the established view-
+fifty-nine broker and an independently recomputed cutover digest, then emits a
+67-field view sixty-eight under the distinct
+`cutover_verified_reconciled_current_latest_extended_complete_final_*` key.
+Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh cutover
+recomputation drift all fail closed. Flattened scale-up summary recovery and
+nested scale-up config both carry the proof. Established view sixty remains
+unchanged, and a distinct-digest regression proves route-enable continues to
+derive view sixty-one from view sixty while ignoring additive view sixty-eight.
+The focused 10-test proof, complete 207-test cutover/route-enable boundary, and
+full 879-test broker-readiness -> scale-up -> cutover -> route-enable ->
+broker-dispatch -> broker-dispatch-send -> broker-dispatch-acknowledgement ->
+broker-dispatch-roundtrip chain pass. The owning boundary completed in 126.1
+seconds and the authoritative full chain in 645.8 seconds with explicit exit
+code zero. The repository collects 2271 tests across 154 files. The full
+repository suite was not rerun for this slice; the last completed full-suite
+baseline remains unchanged.
+
+Immediately preceding controlled-scale-up verified-reconciled current latest
+extended complete-final target-lineage gate: all 140 scale-up tests and all 99
+cutover tests pass. Reconciled targets now require broker-readiness view sixty-
+six in addition to established view-fifty-eight compatibility proof. Scale-up
 validates the exact 65-field source contract: the required and match decisions,
 37 inherited digest fields, nine latest/current stage fields, seven current/
 reconciled transition fields, six reconciled stage reviews, acknowledgement,
