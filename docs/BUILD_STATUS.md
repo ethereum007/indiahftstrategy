@@ -3987,10 +3987,37 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2334 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2341 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest route-enable confirmed verified-reconciled current latest extended
+Latest broker-dispatch confirmed verified-reconciled current latest extended
+complete-final target-lineage gate: all 116 broker-dispatch tests and all 122
+sender-preparation tests pass. Confirmed verified-reconciled targets now
+require route view seventy-seven in addition to established view-sixty-nine
+compatibility proof. Broker dispatch validates the exact 76-field source
+contract: the required and match decisions, every inherited historical,
+current, reconciled, verified, and confirmed review digest through fresh route
+confirmation, and the generic carried lineage digest. It binds that additive
+proof to the established view-sixty-nine broker and an independently
+recomputed dispatch digest, then extends the confirmed verified-reconciled
+epoch with a 77-field view seventy-eight under the distinct
+`dispatch_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited, transition, review, compatibility-
+anchor, generic-carried, or fresh dispatch recomputation drift all fail closed.
+Nested route config and flattened `cutover_confirmed_verified_reconciled_*`
+summary recovery both carry the proof. Established view seventy remains
+unchanged, and a distinct-digest regression proves sender preparation continues
+to derive view seventy-one from view seventy while ignoring additive view
+seventy-eight. The focused 10-test proof completed in 10.4 seconds, the complete
+238-test broker-dispatch/sender boundary in 264.3 seconds, and the full 949-test
+broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch ->
+broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-dispatch-
+roundtrip chain in 763 seconds with explicit exit code zero; only the known
+pandas fragmentation warnings were emitted. The repository collects 2341
+tests across 154 files. The full repository suite was not rerun for this slice;
+the last completed full-suite baseline remains unchanged.
+
+Immediately preceding route-enable confirmed verified-reconciled current latest extended
 complete-final target-lineage gate: all 115 route-enable tests and all 110
 broker-dispatch tests pass. Confirmed verified-reconciled targets now require
 cutover view seventy-six in addition to established view-sixty-eight
@@ -4021,7 +4048,7 @@ warnings were emitted. The repository collects 2334 tests across 154 files.
 The full repository suite was not rerun for this slice; the last completed
 full-suite baseline remains unchanged.
 
-Immediately preceding cutover confirmed verified-reconciled current latest
+Earlier cutover confirmed verified-reconciled current latest
 extended complete-final target-lineage gate: all 112 cutover tests and all 109
 route-enable tests pass. Confirmed verified-reconciled targets now require
 controlled-scale-up view seventy-five in addition to established view-sixty-
