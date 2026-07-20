@@ -4163,7 +4163,15 @@ view-sixty-two broker and independently recomputed send anchors, and emits
 fresh view seventy-one under
 `send_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-sixty-three handoff remains unchanged for acknowledgement,
-which ignores additive view seventy-one.
+which now consumes additive view seventy-one from nested sender config or
+flattened
+`dispatch_verified_reconciled_current_latest_extended_complete_final_*`
+summary fields, revalidates the exact verified-reconciled chain against the
+established view-sixty-three broker and independently recomputed
+acknowledgement anchors, and emits fresh view seventy-two under
+`ack_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-sixty-four handoff remains unchanged for roundtrip, which
+ignores additive view seventy-two.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -5050,7 +5058,15 @@ the established broker and a fresh canonical send recomputation, and emits a
 70-field view seventy-one under
 `send_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-sixty-three output remains unchanged for acknowledgement,
-which intentionally ignores additive view seventy-one.
+which now consumes additive view seventy-one from nested sender config or
+flattened
+`dispatch_verified_reconciled_current_latest_extended_complete_final_*`
+summary fields. It revalidates the exact 70-field verified-reconciled source
+against the established broker and a fresh canonical acknowledgement
+recomputation, and emits a 71-field view seventy-two under
+`ack_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+The established view-sixty-four output remains unchanged for roundtrip, which
+intentionally ignores additive view seventy-two.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5441,8 +5457,12 @@ Sender preparation continues to derive established view sixty-three from view
 sixty-two, now consumes additive view seventy, and emits fresh view seventy-one
 under
 `send_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-Acknowledgement continues to consume view sixty-three and intentionally ignores
-additive view seventy-one; distinct-digest regressions cover all twenty-three
+Acknowledgement continues to derive established view sixty-four from view
+sixty-three, now consumes additive view seventy-one, and starts the confirmed
+verified-reconciled epoch with fresh view seventy-two under
+`ack_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Roundtrip continues to consume view sixty-four and intentionally ignores
+additive view seventy-two; distinct-digest regressions cover all twenty-four
 compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility

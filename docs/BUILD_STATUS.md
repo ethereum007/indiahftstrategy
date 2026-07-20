@@ -3987,10 +3987,41 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2292 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2299 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest sender-preparation verified-reconciled current latest extended complete-
+Latest broker-dispatch-acknowledgement confirmed verified-reconciled current
+latest extended complete-final target-lineage gate: all 106 acknowledgement
+tests and all 97 roundtrip tests pass. Confirmed verified-reconciled targets
+now require sender view seventy-one in addition to established view-sixty-three
+compatibility proof. Acknowledgement validates the exact 70-field source
+contract: the required and match decisions, 37 inherited digest fields, nine
+latest/current stage fields, seven current/reconciled transition fields, six
+reconciled stage reviews, acknowledgement, roundtrip, broker-readiness,
+scale-up, cutover, route, dispatch, and send verified-reconciled reviews, and
+the generic carried lineage digest. It binds that additive proof to the
+established view-sixty-three broker and an independently recomputed
+acknowledgement digest, then starts the confirmed verified-reconciled epoch
+with a 71-field view seventy-two under the distinct
+`ack_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh
+acknowledgement recomputation drift all fail closed. Nested sender config and
+flattened `dispatch_verified_reconciled_*` summary recovery both carry the
+proof. Established view sixty-four remains unchanged, and a distinct-digest
+regression proves roundtrip continues to derive view sixty-five from view
+sixty-four while ignoring additive view seventy-two. The focused 10-test
+proof, complete 203-test acknowledgement/roundtrip boundary, and full 907-test
+broker-readiness -> scale-up -> cutover -> route-enable -> broker-dispatch ->
+broker-dispatch-send -> broker-dispatch-acknowledgement -> broker-dispatch-
+roundtrip chain pass. The focused proof completed in 16.5 seconds, the owning
+boundary in 234.2 seconds, and the authoritative full chain in 686.6 seconds
+with explicit exit code zero; only the known pandas fragmentation warnings
+were emitted. The repository collects 2299 tests across 154 files. The full
+repository suite was not rerun for this slice; the last completed full-suite
+baseline remains unchanged.
+
+Immediately preceding sender-preparation verified-reconciled current latest extended complete-
 final target-lineage gate: all 121 sender-preparation tests and all 100
 acknowledgement tests pass. Verified-reconciled targets now require dispatch
 view seventy in addition to established view-sixty-two compatibility proof.
