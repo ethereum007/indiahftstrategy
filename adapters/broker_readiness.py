@@ -305,6 +305,32 @@ ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_
 BROKER_READINESS_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_66_COMPARISON_KEY = (
     "broker_readiness_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
 )
+ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_COMPARISON_KEY = (
+    "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
+ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_FIELD_PREFIX = (
+    "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_SUMMARY_FIELD_PREFIX = (
+    "ack_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch"
+)
+ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_VERIFIED_REVIEW_FIELDS: tuple[
+    str, ...
+] = (
+    "broker_readiness_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "scaleup_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "cutover_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "route_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "dispatch_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "send_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+    "ack_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256",
+)
+ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD = (
+    "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+)
+BROKER_READINESS_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_74_COMPARISON_KEY = (
+    "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+)
 
 
 @dataclass(frozen=True)
@@ -894,6 +920,10 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
         frame,
         config,
     )
+    _apply_broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_config(
+        frame,
+        config,
+    )
     return frame
 
 
@@ -1456,6 +1486,72 @@ def _apply_broker_vendor_roundtrip_verified_reconciled_current_latest_extended_c
             f"{summary_prefix}_{ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD}",
             "",
         )
+    )
+
+
+def _broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_comparison_config(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    comparison = config.get(
+        ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_COMPARISON_KEY
+    )
+    if isinstance(comparison, dict) and comparison:
+        return comparison
+    dispatch = config.get("dispatch_roundtrip", {}) or {}
+    if isinstance(dispatch, dict):
+        comparison = dispatch.get(
+            ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_COMPARISON_KEY
+        )
+        if isinstance(comparison, dict) and comparison:
+            return comparison
+    return {}
+
+
+def _apply_broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_config(
+    frame: pd.DataFrame,
+    config: dict[str, Any],
+) -> None:
+    row = frame.iloc[0]
+    comparison = (
+        _broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_comparison_config(
+            config
+        )
+    )
+    prefix = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_FIELD_PREFIX
+    summary_prefix = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_SUMMARY_FIELD_PREFIX
+    frame.loc[0, f"{prefix}_lineage_match_required"] = _to_bool(
+        comparison.get(
+            "required",
+            row.get(f"{summary_prefix}_lineage_match_required", False),
+        )
+    )
+    frame.loc[0, f"{prefix}_lineage_matches"] = _to_bool(
+        comparison.get(
+            "matches",
+            row.get(f"{summary_prefix}_lineage_matches", False),
+        )
+    )
+    for field in (
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_DIGEST_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_CURRENT_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+        *ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_VERIFIED_REVIEW_FIELDS,
+        ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD,
+    ):
+        frame.loc[0, f"{prefix}_{field}"] = _sha256_text(
+            comparison.get(
+                field,
+                row.get(f"{summary_prefix}_{field}", ""),
+            )
+        )
+    roundtrip_review_field = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD
+    frame.loc[0, f"{prefix}_carried_application_lineage_sha256"] = _sha256_text(
+        comparison.get("carried_application_lineage_sha256")
+        or comparison.get(roundtrip_review_field)
+        or row.get(f"{summary_prefix}_{roundtrip_review_field}", "")
     )
 
 
@@ -2393,6 +2489,11 @@ def _item(
             row,
             provided=provided,
         ),
+        **_broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_item_fields(
+            component,
+            row,
+            provided=provided,
+        ),
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -3300,6 +3401,68 @@ def _broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complet
         *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
         ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
         ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+    ):
+        fields[f"{source_prefix}_{field}"] = (
+            _sha256_text(
+                _dispatch_text(component, row, f"{source_prefix}_{field}")
+            )
+            if active
+            else ""
+        )
+    fields[f"{source_prefix}_carried_application_lineage_sha256"] = (
+        _sha256_text(
+            _dispatch_text(
+                component,
+                row,
+                f"{source_prefix}_carried_application_lineage_sha256",
+            )
+        )
+        if active
+        else ""
+    )
+    return fields
+
+
+def _broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_item_fields(
+    component: str,
+    row: pd.Series,
+    *,
+    provided: bool,
+) -> dict[str, Any]:
+    source_prefix = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_FIELD_PREFIX
+    vendor_market_data_batch_only = _to_bool(
+        row.get("vendor_market_data_batch_only", False)
+    )
+    active = component == "dispatch_roundtrip" and (
+        provided or vendor_market_data_batch_only
+    )
+    fields: dict[str, Any] = {
+        f"{source_prefix}_lineage_match_required": bool(
+            active
+            and _dispatch_bool(
+                component,
+                row,
+                f"{source_prefix}_lineage_match_required",
+            )
+        ),
+        f"{source_prefix}_lineage_matches": bool(
+            active
+            and _dispatch_bool(
+                component,
+                row,
+                f"{source_prefix}_lineage_matches",
+            )
+        ),
+    }
+    for field in (
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_DIGEST_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_CURRENT_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+        *ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_VERIFIED_REVIEW_FIELDS,
+        ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD,
     ):
         fields[f"{source_prefix}_{field}"] = (
             _sha256_text(
@@ -6083,6 +6246,193 @@ def _broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complet
     return checks
 
 
+def _broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_checks(
+    row: Any,
+) -> list[dict[str, Any]]:
+    source_prefix = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_FIELD_PREFIX
+    compatibility_prefix = ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_FIELD_PREFIX
+    check_prefix = (
+        "broker_dispatch_roundtrip_vendor_market_data_batch_"
+        "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final"
+    )
+    lineage_match_required = bool(
+        getattr(row, f"{source_prefix}_lineage_match_required", False)
+    )
+    lineage_matches = bool(
+        getattr(row, f"{source_prefix}_lineage_matches", False)
+    )
+    broker_lineage_sha256 = _sha256_text(
+        getattr(row, f"{source_prefix}_broker_application_lineage_sha256", "")
+    )
+    current_lineage_sha256 = _sha256_text(
+        getattr(row, f"{source_prefix}_current_application_lineage_sha256", "")
+    )
+    compatibility_broker_lineage_sha256 = _sha256_text(
+        getattr(
+            row,
+            f"{compatibility_prefix}_broker_application_lineage_sha256",
+            "",
+        )
+    )
+    broker_readiness_verified_lineage_sha256 = _sha256_text(
+        getattr(
+            row,
+            f"{BROKER_FINAL_LINEAGE_FIELD_PREFIX}_readiness_carried_application_lineage_sha256",
+            "",
+        )
+    )
+    checks = [
+        _check(
+            f"{check_prefix}_lineage_match_required",
+            lineage_match_required,
+            "is",
+            True,
+            lineage_match_required,
+            "confirmed verified-reconciled target broker readiness requires round-trip's confirmed lineage comparison",
+        ),
+        _check(
+            f"{check_prefix}_lineage_matches",
+            lineage_matches,
+            "is",
+            True,
+            bool(lineage_match_required and lineage_matches),
+            "round-trip did not match every confirmed verified-reconciled target-lineage view",
+        ),
+        _check(
+            f"{check_prefix}_source_lineage_sha256_matches",
+            current_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and current_lineage_sha256
+                and broker_lineage_sha256
+                and current_lineage_sha256 == broker_lineage_sha256
+            ),
+            "round-trip confirmed verified-reconciled source lineage does not match final broker proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_lineage_sha256_matches",
+            compatibility_broker_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and compatibility_broker_lineage_sha256
+                and broker_lineage_sha256
+                and compatibility_broker_lineage_sha256 == broker_lineage_sha256
+            ),
+            "established broker-readiness broker digest does not match round-trip's confirmed verified-reconciled proof",
+        ),
+        _check(
+            f"{check_prefix}_compatibility_broker_readiness_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+            broker_readiness_verified_lineage_sha256,
+            "==",
+            broker_lineage_sha256,
+            bool(
+                lineage_match_required
+                and broker_readiness_verified_lineage_sha256
+                and broker_lineage_sha256
+                and broker_readiness_verified_lineage_sha256
+                == broker_lineage_sha256
+            ),
+            "independently recomputed broker-readiness lineage does not match round-trip's confirmed verified-reconciled proof",
+        ),
+    ]
+    for field in ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_DIGEST_FIELDS:
+        if field in {
+            "current_application_lineage_sha256",
+            "broker_application_lineage_sha256",
+        }:
+            continue
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        if stage == "scaleup":
+            stage = "prior_scaleup"
+        elif stage == "cutover":
+            stage = "prior_cutover"
+        carried_sha256 = _sha256_text(
+            getattr(row, f"{source_prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                f"round-trip's {stage.replace('_', '-')} target lineage does not match confirmed verified-reconciled broker proof",
+            )
+        )
+    for field in (
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_CURRENT_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+        *ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_VERIFIED_REVIEW_FIELDS,
+        ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD,
+    ):
+        stage = field.removesuffix("_carried_application_lineage_sha256")
+        carried_sha256 = _sha256_text(
+            getattr(row, f"{source_prefix}_{field}", "")
+        )
+        checks.append(
+            _check(
+                f"{check_prefix}_{stage}_carried_lineage_sha256_matches",
+                carried_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and carried_sha256
+                    and broker_lineage_sha256
+                    and carried_sha256 == broker_lineage_sha256
+                ),
+                f"round-trip's {stage.replace('_', '-')} target lineage does not match confirmed verified-reconciled broker proof",
+            )
+        )
+    generic_roundtrip_lineage_sha256 = _sha256_text(
+        getattr(row, f"{source_prefix}_carried_application_lineage_sha256", "")
+    )
+    checks.extend(
+        [
+            _check(
+                f"{check_prefix}_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_review_generic_carried_lineage_sha256_matches",
+                generic_roundtrip_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and generic_roundtrip_lineage_sha256
+                    and broker_lineage_sha256
+                    and generic_roundtrip_lineage_sha256 == broker_lineage_sha256
+                ),
+                "round-trip's generic confirmed verified-reconciled review lineage does not match final broker proof",
+            ),
+            _check(
+                f"{check_prefix}_broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_lineage_sha256_matches",
+                broker_readiness_verified_lineage_sha256,
+                "==",
+                broker_lineage_sha256,
+                bool(
+                    lineage_match_required
+                    and broker_readiness_verified_lineage_sha256
+                    and broker_lineage_sha256
+                    and broker_readiness_verified_lineage_sha256
+                    == broker_lineage_sha256
+                ),
+                "broker readiness's independently recomputed target lineage does not match round-trip's confirmed verified-reconciled proof",
+            ),
+        ]
+    )
+    return checks
+
+
 def _broker_dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     projected = _vendor_market_data_batch_projection(
@@ -6261,6 +6611,11 @@ def _broker_dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list
         )
         checks.extend(
             _broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complete_final_lineage_65_checks(
+                row
+            )
+        )
+        checks.extend(
+            _broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_checks(
                 row
             )
         )
@@ -6851,6 +7206,9 @@ def _summary(
                 **_broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complete_final_lineage_65_summary_fields(
                     dispatch_item
                 ),
+                **_broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_summary_fields(
+                    dispatch_item
+                ),
                 **_broker_vendor_current_lineage_summary_fields(dispatch_item),
                 "recommendation": _summary_recommendation(ready, schema_status, schema_review, thresholds),
             }
@@ -7180,6 +7538,40 @@ def _broker_vendor_roundtrip_verified_reconciled_current_latest_extended_complet
         *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
         ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
         ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+    ):
+        fields[f"{prefix}_{field}"] = _item_text(item, f"{prefix}_{field}")
+    return fields
+
+
+def _broker_vendor_roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_73_summary_fields(
+    item: pd.Series,
+) -> dict[str, Any]:
+    prefix = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_FIELD_PREFIX
+    fields: dict[str, Any] = {
+        f"{prefix}_lineage_match_required": _item_bool(
+            item,
+            f"{prefix}_lineage_match_required",
+        ),
+        f"{prefix}_lineage_matches": _item_bool(
+            item,
+            f"{prefix}_lineage_matches",
+        ),
+        f"{prefix}_broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": (
+            _item_text(
+                item,
+                f"{BROKER_FINAL_LINEAGE_FIELD_PREFIX}_readiness_carried_application_lineage_sha256",
+            )
+        ),
+    }
+    for field in (
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_DIGEST_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_CURRENT_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+        *ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_VERIFIED_REVIEW_FIELDS,
+        ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD,
     ):
         fields[f"{prefix}_{field}"] = _item_text(item, f"{prefix}_{field}")
     return fields
@@ -7734,6 +8126,11 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
                 row
             )
         ),
+        BROKER_READINESS_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_74_COMPARISON_KEY: (
+            _broker_vendor_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_74_config(
+                row
+            )
+        ),
         "vendor_market_data_batch_lineage_comparison": {
             "required": _item_bool(
                 row,
@@ -7955,6 +8352,36 @@ def _broker_vendor_readiness_verified_reconciled_current_latest_extended_complet
         config[field] = _item_text(row, f"{field_prefix}_{field}")
     config[
         "broker_readiness_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
+    ] = broker_readiness_lineage_sha256
+    config["carried_application_lineage_sha256"] = broker_readiness_lineage_sha256
+    return config
+
+
+def _broker_vendor_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_lineage_74_config(
+    row: pd.Series,
+) -> dict[str, Any]:
+    field_prefix = ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_FIELD_PREFIX
+    broker_readiness_lineage_sha256 = _item_text(
+        row,
+        f"{BROKER_FINAL_LINEAGE_FIELD_PREFIX}_readiness_carried_application_lineage_sha256",
+    )
+    config: dict[str, Any] = {
+        "required": _item_bool(row, f"{field_prefix}_lineage_match_required"),
+        "matches": _item_bool(row, f"{field_prefix}_lineage_matches"),
+    }
+    for field in (
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_DIGEST_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_CURRENT_STAGE_FIELDS,
+        *ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_REVIEW_FIELDS,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ACK_REVIEW_FIELD,
+        ROUNDTRIP_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_65_ROUNDTRIP_REVIEW_FIELD,
+        *ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_VERIFIED_REVIEW_FIELDS,
+        ROUNDTRIP_CONFIRMED_VERIFIED_RECONCILED_CURRENT_LATEST_EXTENDED_COMPLETE_FINAL_LINEAGE_73_ROUNDTRIP_REVIEW_FIELD,
+    ):
+        config[field] = _item_text(row, f"{field_prefix}_{field}")
+    config[
+        "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256"
     ] = broker_readiness_lineage_sha256
     config["carried_application_lineage_sha256"] = broker_readiness_lineage_sha256
     return config
