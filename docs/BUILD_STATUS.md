@@ -3952,8 +3952,16 @@
   against the established view-fifty-nine broker and independently recomputed
   cutover anchors, and emits a 67-field view sixty-eight under
   `cutover_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
-  Its established view-sixty output remains unchanged. Route-enable continues
-  to consume view sixty and intentionally ignores additive view sixty-eight.
+  Its established view-sixty output remains unchanged. Route-enable now
+  consumes additive view sixty-eight from nested cutover config or flattened
+  `scaleup_verified_reconciled_current_latest_extended_complete_final_*`
+  summary fields, revalidates the exact 67-field verified-reconciled chain
+  against the established view-sixty broker and independently recomputed route
+  anchors, and emits a 68-field view sixty-nine under
+  `route_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+  Its established view-sixty-one output remains unchanged. Broker dispatch
+  continues to consume view sixty-one and intentionally ignores additive view
+  sixty-nine.
 - Broker readiness and the combined broker-vendor wrapper now bind the current
   vendor batch to that final target proof. Supplying a fresh vendor artifact no
   longer shadows stronger broker-specific round-trip evidence. When current and
@@ -3972,11 +3980,39 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2271 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2278 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest cutover verified-reconciled current latest extended complete-final
-target-lineage gate: all 105 cutover tests and all 102 route-enable tests pass.
+Latest route-enable verified-reconciled current latest extended complete-final
+target-lineage gate: all 108 route-enable tests and all 103 broker-dispatch
+tests pass. Verified-reconciled targets now require cutover view sixty-eight in
+addition to established view-sixty compatibility proof. Route-enable validates
+the exact 67-field source contract: the required and match decisions, 37
+inherited digest fields, nine latest/current stage fields, seven current/
+reconciled transition fields, six reconciled stage reviews, acknowledgement,
+roundtrip, broker-readiness, scale-up, and cutover verified-reconciled reviews,
+and the generic carried lineage digest. It binds that additive proof to the
+established view-sixty broker and an independently recomputed route digest,
+then emits a 68-field view sixty-nine under the distinct
+`route_verified_reconciled_current_latest_extended_complete_final_*` key.
+Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh route
+recomputation drift all fail closed. Flattened cutover summary recovery and
+nested cutover config both carry the proof. Established view sixty-one remains
+unchanged, and a distinct-digest regression proves broker dispatch continues
+to derive view sixty-two from view sixty-one while ignoring additive view
+sixty-nine. The focused 10-test proof, complete 211-test route-enable/broker-
+dispatch boundary, and full 886-test broker-readiness -> scale-up -> cutover ->
+route-enable -> broker-dispatch -> broker-dispatch-send -> broker-dispatch-
+acknowledgement -> broker-dispatch-roundtrip chain pass. The owning boundary
+completed in 80.8 seconds and the authoritative full chain in 743.4 seconds
+with explicit exit code zero. The repository collects 2278 tests across 154
+files. The full repository suite was not rerun for this slice; the last
+completed full-suite baseline remains unchanged.
+
+Immediately preceding cutover verified-reconciled current latest extended
+complete-final target-lineage gate: all 105 cutover tests and all 102 route-
+enable tests pass.
 Verified-reconciled targets now require scale-up view sixty-seven in addition
 to established view-fifty-nine compatibility proof. Cutover validates the
 exact 66-field source contract: the required and match decisions, 37 inherited
