@@ -10,6 +10,15 @@ from engine.hft_backtest import IndianCostModel, Instrument
 
 
 BOOK_REQUIRED = ["ts", "bid", "ask", "bid_qty", "ask_qty"]
+MEASUREMENT_RUN_TYPE = "leadlag_measurement"
+MEASUREMENT_REQUIRED_ARTIFACTS = (
+    "cross_correlation.csv",
+    "lag_profile.csv",
+    "latency_curve.csv",
+    "leadlag_measure_summary.csv",
+    "leadlag_measure_config.json",
+    "leadlag_measure_runbook.md",
+)
 
 
 @dataclass(frozen=True)

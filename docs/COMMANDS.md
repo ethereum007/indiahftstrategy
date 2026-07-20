@@ -990,7 +990,18 @@ Outputs:
 cross_correlation.csv
 lag_profile.csv
 latency_curve.csv
+leadlag_measure_summary.csv
+leadlag_measure_config.json
+leadlag_measure_runbook.md
+manifest.json
 ```
+
+The measurement manifest fingerprints both raw leader/laggard files and all
+six measurement artifacts. It records the loader quarantine counts, instrument,
+Indian cost model, lag grid, and latency sweep. This run is research-only and
+does not authorize order submission. Rerun the measurement after any source or
+artifact change; legacy three-CSV measurement folders intentionally fail the
+edge-audit provenance gate.
 
 ## Lead-Lag Edge Audit
 
@@ -1017,8 +1028,15 @@ Outputs:
 leadlag_edge_metrics.csv
 leadlag_edge_checks.csv
 leadlag_edge_summary.csv
+leadlag_edge_measurement_provenance.csv
 manifest.json
 ```
+
+The audit verifies the measurement manifest before applying edge thresholds.
+Missing, unreadable, wrong-run-type, artifact-drifted, or source-drifted
+measurement evidence adds a failed `measurement_manifest_current` check. The
+edge manifest also fingerprints the measurement's raw-file dependencies, so a
+source change after the audit invalidates the audit manifest transitively.
 
 ## Lead-Lag Replay
 

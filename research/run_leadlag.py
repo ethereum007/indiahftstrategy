@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping, Optional
 
+import numpy as np
 import pandas as pd
 
 from data.loaders import load_tick_csv
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
-from research.leadlag import LeadLagSummary, summarize_pair
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from reports.manifest import write_experiment_manifest
+from research.leadlag import MEASUREMENT_RUN_TYPE, LeadLagSummary, summarize_pair
 
 
 @dataclass(frozen=True)
@@ -40,37 +43,44 @@ def run_leadlag(
     depth_fraction: float = 0.25,
     correlation_tolerance_ns: int | None = None,
 ) -> LeadLagRunResult:
-    leader = load_tick_csv(
-        leader_path,
+    leader_file = Path(leader_path).resolve()
+    laggard_file = Path(laggard_path).resolve()
+    leader_loaded = load_tick_csv(
+        leader_file,
         column_map=leader_column_map,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
-    ).data
-    laggard = load_tick_csv(
-        laggard_path,
+    )
+    laggard_loaded = load_tick_csv(
+        laggard_file,
         column_map=laggard_column_map,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
-    ).data
+    )
+    leader = leader_loaded.data
+    laggard = laggard_loaded.data
     laggard_instrument = Instrument(
         "LAGGARD-OPT",
         Kind.OPT,
         lot_size=lot_size,
         tick=laggard_tick_size,
     )
+    laggard_costs = IndianCostModel.nse_index_options()
+    resolved_lags_ns = lags_ns or _default_lags_ns()
+    resolved_latency_sweep_ns = latency_sweep_ns or _default_latency_sweep_ns()
     summary = summarize_pair(
         leader,
         laggard,
         leader_tick_size=leader_tick_size,
         laggard_tick_size=laggard_tick_size,
         laggard_instrument=laggard_instrument,
-        laggard_costs=IndianCostModel.nse_index_options(),
+        laggard_costs=laggard_costs,
         delta=delta,
         innovation_ticks=innovation_ticks,
-        lags_ns=lags_ns or _default_lags_ns(),
-        latency_sweep_ns=latency_sweep_ns or _default_latency_sweep_ns(),
+        lags_ns=resolved_lags_ns,
+        latency_sweep_ns=resolved_latency_sweep_ns,
         max_lag_ns=max_lag_ns,
         depth_fraction=depth_fraction,
         correlation_tolerance_ns=correlation_tolerance_ns,
@@ -81,7 +91,173 @@ def run_leadlag(
         summary.cross_correlation.to_csv(out_dir / "cross_correlation.csv", index=False)
         summary.lag_profile.to_csv(out_dir / "lag_profile.csv", index=False)
         summary.latency_curve.to_csv(out_dir / "latency_curve.csv", index=False)
+        measure_summary = _measurement_summary(
+            summary,
+            leader_rows=len(leader),
+            laggard_rows=len(laggard),
+        )
+        measure_summary.to_csv(out_dir / "leadlag_measure_summary.csv", index=False)
+        config = {
+            "run_type": MEASUREMENT_RUN_TYPE,
+            "strategy": "lead_lag_taker",
+            "market": INDIA_NSE_INDEX_DERIVATIVES.name,
+            "leader_path": str(leader_file),
+            "laggard_path": str(laggard_file),
+            "loader": {
+                "leader_column_map": dict(leader_column_map or {}),
+                "laggard_column_map": dict(laggard_column_map or {}),
+                "timestamp_unit": timestamp_unit,
+                "timestamp_tz": timestamp_tz,
+                "filter_session": bool(filter_session),
+                "leader_quarantine": asdict(leader_loaded.quarantine),
+                "laggard_quarantine": asdict(laggard_loaded.quarantine),
+            },
+            "instrument": {
+                "symbol": laggard_instrument.symbol,
+                "kind": laggard_instrument.kind.value,
+                "lot_size": laggard_instrument.lot_size,
+                "tick": laggard_instrument.tick,
+                "multiplier": laggard_instrument.multiplier,
+            },
+            "costs": asdict(laggard_costs),
+            "measurement": {
+                "leader_tick_size": leader_tick_size,
+                "laggard_tick_size": laggard_tick_size,
+                "delta": delta,
+                "innovation_ticks": innovation_ticks,
+                "lags_ns": list(resolved_lags_ns),
+                "latency_sweep_ns": list(resolved_latency_sweep_ns),
+                "max_lag_ns": max_lag_ns,
+                "depth_fraction": depth_fraction,
+                "correlation_tolerance_ns": correlation_tolerance_ns,
+            },
+            "authorizes_submission": False,
+            "next_gate": "audit-leadlag-edge",
+        }
+        (out_dir / "leadlag_measure_config.json").write_text(
+            json.dumps(config, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (out_dir / "leadlag_measure_runbook.md").write_text(
+            _measurement_runbook(measure_summary.iloc[0], out_dir),
+            encoding="utf-8",
+        )
+        write_experiment_manifest(
+            out_dir,
+            run_type=MEASUREMENT_RUN_TYPE,
+            parameters={
+                "strategy": config["strategy"],
+                "market": config["market"],
+                "loader": config["loader"],
+                "instrument": config["instrument"],
+                "costs": config["costs"],
+                "measurement": config["measurement"],
+            },
+            inputs={"leader": leader_file, "laggard": laggard_file},
+            extra={
+                "completed": True,
+                "authorizes_submission": False,
+                "next_gate": "audit-leadlag-edge",
+            },
+        )
     return LeadLagRunResult(summary=summary, output_dir=out_dir)
+
+
+def _measurement_summary(
+    summary: LeadLagSummary,
+    *,
+    leader_rows: int,
+    laggard_rows: int,
+) -> pd.DataFrame:
+    correlation = summary.cross_correlation.copy()
+    correlation["abs_correlation"] = pd.to_numeric(
+        correlation.get("correlation"), errors="coerce"
+    ).abs()
+    best_correlation = (
+        correlation.sort_values("abs_correlation", ascending=False).iloc[0]
+        if correlation["abs_correlation"].notna().any()
+        else None
+    )
+    latency = summary.latency_curve.copy()
+    latency["net_pnl"] = pd.to_numeric(latency.get("net_pnl"), errors="coerce")
+    best_latency = (
+        latency.sort_values("net_pnl", ascending=False).iloc[0]
+        if latency["net_pnl"].notna().any()
+        else None
+    )
+    profitable = latency.loc[latency["net_pnl"] > 0]
+    return pd.DataFrame(
+        [
+            {
+                "completed": True,
+                "strategy": "lead_lag_taker",
+                "market": INDIA_NSE_INDEX_DERIVATIVES.name,
+                "authorizes_submission": False,
+                "leader_rows": int(leader_rows),
+                "laggard_rows": int(laggard_rows),
+                "correlation_rows": int(len(correlation)),
+                "event_count": int(len(summary.lag_profile)),
+                "latency_rows": int(len(latency)),
+                "best_lag_ns": (
+                    int(best_correlation["lag_ns"])
+                    if best_correlation is not None
+                    else np.nan
+                ),
+                "best_abs_correlation": (
+                    float(best_correlation["abs_correlation"])
+                    if best_correlation is not None
+                    else np.nan
+                ),
+                "best_latency_ns": (
+                    int(best_latency["latency_ns"])
+                    if best_latency is not None
+                    else np.nan
+                ),
+                "best_latency_net_pnl": (
+                    float(best_latency["net_pnl"])
+                    if best_latency is not None
+                    else np.nan
+                ),
+                "max_positive_latency_ns": (
+                    int(profitable["latency_ns"].max())
+                    if not profitable.empty
+                    else np.nan
+                ),
+                "next_gate": "audit-leadlag-edge",
+            }
+        ]
+    )
+
+
+def _measurement_runbook(row: pd.Series, output_dir: Path) -> str:
+    return "\n".join(
+        [
+            "# Lead-Lag Measurement Runbook",
+            "",
+            "## Result",
+            "",
+            f"- Leader rows: {int(row['leader_rows'])}",
+            f"- Laggard rows: {int(row['laggard_rows'])}",
+            f"- Measured leader events: {int(row['event_count'])}",
+            f"- Latency points: {int(row['latency_rows'])}",
+            "- Order submission authorized: no",
+            "",
+            "## Provenance",
+            "",
+            "The manifest fingerprints both raw source files and every measurement artifact.",
+            "Any source or artifact drift must be resolved by rerunning this measurement.",
+            "",
+            "## Next Gate",
+            "",
+            "```powershell",
+            "python -m hft_cli audit-leadlag-edge `",
+            f"  --measure \"{output_dir}\" `",
+            f"  --out \"{output_dir.parent / (output_dir.name + '_edge')}\" `",
+            "  --fail-on-breach",
+            "```",
+            "",
+        ]
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

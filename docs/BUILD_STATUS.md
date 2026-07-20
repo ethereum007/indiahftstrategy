@@ -1353,10 +1353,15 @@
   so Arrow.money/iRage proof blockers route to vendor batch, broker-readiness,
   or wrapper reruns without opening nested artifacts.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
-  viability curve.
+  viability curve. Measurement runs now write a catalogable summary, full
+  loader/instrument/cost/grid config, operator runbook, and manifest that
+  fingerprints both raw leader/laggard files plus every measurement artifact.
 - Lead-lag edge audit that gates measured relationships on events,
   correlation, laggard update rate, update latency, and latency-curve PnL
-  before replay/sweep promotion.
+  before replay/sweep promotion. It now fails closed unless the measurement
+  manifest, artifacts, and raw inputs are current, writes an explicit
+  measurement-provenance sidecar, and binds the raw dependencies transitively
+  into the edge-audit manifest.
 - Lead-lag edge, replay, replay walk-forward, promotion, order-plan,
   launch-pipeline, and sweep artifacts retain `lead_lag_taker` plus
   market-profile identity for proof/catalog review, and non-India lead-lag
@@ -4019,8 +4024,26 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2361 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2364 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest lead-lag source-lineage gate: `measure-leadlag` now turns the latency
+frontier into a reproducible research bundle with summary, config, runbook, and
+manifest evidence. The manifest binds both raw leader/laggard source files, loader
+quarantine results, the exact instrument/cost assumptions, lag grid, and
+latency sweep. `audit-leadlag-edge` verifies all six required measurement
+artifacts and both source fingerprints before evaluating the economic gates;
+legacy, missing, stale, or substituted measurement proof fails
+`measurement_manifest_current`. The audit writes a dedicated provenance CSV
+and recursively fingerprints the raw dependencies, so later source drift also
+invalidates the completed edge manifest. The focused 11-test boundary passed
+in 8.9 seconds, and the complete 105-test lead-lag -> manifest -> catalog owner
+boundary passed in 125.2 seconds. Collection passes at 2364 tests across 155
+files. An additional 84-test strategy-evidence, scorecard, and research-family
+pass completed 82 tests and reproduced two unrelated provider-imbalance
+ops-launch scorecard fixture failures in isolation; no scorecard code or tests
+are changed by this slice. The full repository and broker lifecycle chains
+were not rerun.
 
 Latest prospective temporal-proof launch gate: research-family plan rows can
 now declare a normalized walk-forward split-audit path and required policy

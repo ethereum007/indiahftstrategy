@@ -8,6 +8,8 @@ from reports.leadlag_edge import (
     evaluate_leadlag_edge,
     write_leadlag_edge_audit,
 )
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
+from research.leadlag import MEASUREMENT_REQUIRED_ARTIFACTS, MEASUREMENT_RUN_TYPE
 
 
 def cross_correlation():
@@ -42,9 +44,48 @@ def latency_curve():
 
 def write_measure_dir(path):
     path.mkdir(parents=True, exist_ok=True)
+    leader_path = path.parent / f"{path.name}_leader.csv"
+    laggard_path = path.parent / f"{path.name}_laggard.csv"
+    leader_path.write_text("ts,bid,ask,bid_qty,ask_qty\n0,99,101,100,100\n", encoding="utf-8")
+    laggard_path.write_text("ts,bid,ask,bid_qty,ask_qty\n0,49,51,100,100\n", encoding="utf-8")
     cross_correlation().to_csv(path / "cross_correlation.csv", index=False)
     lag_profile().to_csv(path / "lag_profile.csv", index=False)
     latency_curve().to_csv(path / "latency_curve.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "completed": True,
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "authorizes_submission": False,
+                "next_gate": "audit-leadlag-edge",
+            }
+        ]
+    ).to_csv(path / "leadlag_measure_summary.csv", index=False)
+    (path / "leadlag_measure_config.json").write_text(
+        json.dumps(
+            {
+                "run_type": MEASUREMENT_RUN_TYPE,
+                "authorizes_submission": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (path / "leadlag_measure_runbook.md").write_text(
+        "# Lead-Lag Measurement Runbook\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        path,
+        run_type=MEASUREMENT_RUN_TYPE,
+        parameters={"strategy": "lead_lag_taker"},
+        inputs={"leader": leader_path, "laggard": laggard_path},
+        extra={"authorizes_submission": False},
+    )
+    return leader_path, laggard_path
 
 
 def test_leadlag_edge_audit_passes_strong_measurement():
@@ -116,13 +157,72 @@ def test_write_leadlag_edge_audit_outputs_report_files(tmp_path):
     assert (out_dir / "leadlag_edge_metrics.csv").exists()
     assert (out_dir / "leadlag_edge_checks.csv").exists()
     assert (out_dir / "leadlag_edge_summary.csv").exists()
+    assert (out_dir / "leadlag_edge_measurement_provenance.csv").exists()
     assert (out_dir / "manifest.json").exists()
     summary = pd.read_csv(out_dir / "leadlag_edge_summary.csv")
+    provenance = pd.read_csv(out_dir / "leadlag_edge_measurement_provenance.csv")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert summary.loc[0, "strategy"] == "lead_lag_taker"
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert bool(summary.loc[0, "measurement_manifest_current"])
+    assert bool(provenance.loc[0, "passed"])
+    assert int(provenance.loc[0, "required_artifact_count"]) == len(
+        MEASUREMENT_REQUIRED_ARTIFACTS
+    )
     assert manifest["parameters"]["strategy"] == "lead_lag_taker"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="leadlag_edge_audit",
+        required_artifacts=(
+            "leadlag_edge_metrics.csv",
+            "leadlag_edge_checks.csv",
+            "leadlag_edge_summary.csv",
+            "leadlag_edge_measurement_provenance.csv",
+        ),
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
+
+
+def test_leadlag_edge_audit_fails_when_measurement_source_drifted(tmp_path):
+    measure_dir = tmp_path / "measure"
+    out_dir = tmp_path / "audit"
+    leader_path, _ = write_measure_dir(measure_dir)
+    leader_path.write_text(
+        leader_path.read_text(encoding="utf-8") + "1,100,102,100,100\n",
+        encoding="utf-8",
+    )
+
+    audit = write_leadlag_edge_audit(measure_dir, output_dir=out_dir)
+
+    assert not audit.passed
+    failed = set(audit.checks.loc[~audit.checks["passed"].astype(bool), "check"])
+    assert failed == {"measurement_manifest_current"}
+    assert audit.summary.iloc[0]["measurement_manifest_error"] == "input_drift"
+    assert not bool(audit.provenance.iloc[0]["passed"])
+    assert audit.provenance.iloc[0]["error"] == "input_drift"
+
+
+def test_leadlag_edge_manifest_tracks_raw_measurement_dependencies(tmp_path):
+    measure_dir = tmp_path / "measure"
+    out_dir = tmp_path / "audit"
+    leader_path, _ = write_measure_dir(measure_dir)
+    audit = write_leadlag_edge_audit(measure_dir, output_dir=out_dir)
+    assert audit.passed
+
+    leader_path.write_text(
+        leader_path.read_text(encoding="utf-8") + "1,100,102,100,100\n",
+        encoding="utf-8",
+    )
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="leadlag_edge_audit",
+        require_input_fingerprints=True,
+    )
+
+    assert not integrity.passed
+    assert integrity.error == "input_drift"
 
 
 def test_cli_leadlag_edge_audit_can_fail_on_breach(tmp_path):

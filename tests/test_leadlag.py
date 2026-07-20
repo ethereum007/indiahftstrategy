@@ -1,14 +1,20 @@
+import json
+
 import numpy as np
 import pandas as pd
 
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
 from research.leadlag import (
+    MEASUREMENT_REQUIRED_ARTIFACTS,
+    MEASUREMENT_RUN_TYPE,
     cross_correlation,
     event_lag_profile,
     latency_viability_curve,
     summarize_pair,
 )
 from research.run_leadlag import run_leadlag
+from reports.catalog import catalog_experiment_runs
+from reports.manifest import verify_experiment_manifest
 
 
 def no_costs():
@@ -137,3 +143,42 @@ def test_run_leadlag_writes_report_files(tmp_path):
     assert (out_dir / "cross_correlation.csv").exists()
     assert (out_dir / "lag_profile.csv").exists()
     assert (out_dir / "latency_curve.csv").exists()
+    assert (out_dir / "leadlag_measure_summary.csv").exists()
+    assert (out_dir / "leadlag_measure_config.json").exists()
+    assert (out_dir / "leadlag_measure_runbook.md").exists()
+    assert (out_dir / "manifest.json").exists()
+
+    config = json.loads(
+        (out_dir / "leadlag_measure_config.json").read_text(encoding="utf-8")
+    )
+    assert config["run_type"] == MEASUREMENT_RUN_TYPE
+    assert config["leader_path"] == str(leader_path.resolve())
+    assert config["laggard_path"] == str(laggard_path.resolve())
+    assert config["measurement"]["latency_sweep_ns"] == [50, 250]
+    assert not config["authorizes_submission"]
+
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=MEASUREMENT_RUN_TYPE,
+        required_artifacts=MEASUREMENT_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
+    assert integrity.input_fingerprint_count == 2
+    catalog = catalog_experiment_runs([out_dir])
+    assert catalog.catalog.iloc[0]["summary_file"] == "leadlag_measure_summary.csv"
+    assert catalog.catalog.iloc[0]["summary_next_gate"] == "audit-leadlag-edge"
+
+    leader.to_csv(leader_path, index=False)
+    leader_path.write_text(
+        leader_path.read_text(encoding="utf-8") + "400,109.5,110.5,300,300\n",
+        encoding="utf-8",
+    )
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=MEASUREMENT_RUN_TYPE,
+        required_artifacts=MEASUREMENT_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"

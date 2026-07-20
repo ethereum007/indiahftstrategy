@@ -81,6 +81,7 @@ SUMMARY_FILES = [
     "parity_edge_summary.csv",
     "parity_order_summary.csv",
     "parity_launch_pipeline_summary.csv",
+    "leadlag_measure_summary.csv",
     "leadlag_edge_summary.csv",
     "leadlag_replay_walkforward_summary.csv",
     "leadlag_order_summary.csv",

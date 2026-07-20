@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -8,10 +8,18 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    ManifestIntegrity,
+    file_sha256,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+from research.leadlag import MEASUREMENT_REQUIRED_ARTIFACTS, MEASUREMENT_RUN_TYPE
 
 
 LEAD_LAG_STRATEGY = "lead_lag_taker"
+RUN_TYPE = "leadlag_edge_audit"
 
 
 @dataclass(frozen=True)
@@ -32,6 +40,7 @@ class LeadLagEdgeAudit:
     checks: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
+    provenance: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     @property
     def passed(self) -> bool:
@@ -73,7 +82,14 @@ def write_leadlag_edge_audit(
     strategy: str = LEAD_LAG_STRATEGY,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
 ) -> LeadLagEdgeAudit:
-    source = Path(measure_dir)
+    source = Path(measure_dir).resolve()
+    measurement_manifest = source / "manifest.json"
+    integrity = verify_experiment_manifest(
+        measurement_manifest,
+        expected_run_type=MEASUREMENT_RUN_TYPE,
+        required_artifacts=MEASUREMENT_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
     cross_correlation = _read_required(source / "cross_correlation.csv")
     lag_profile = _read_required(source / "lag_profile.csv")
     latency_curve = _read_required(source / "latency_curve.csv")
@@ -86,18 +102,120 @@ def write_leadlag_edge_audit(
         strategy=strategy,
         market=market,
     )
+    provenance = _measurement_provenance(source, integrity)
+    checks = pd.concat(
+        [_measurement_manifest_check(integrity), audit.checks],
+        ignore_index=True,
+    )
+    summary = _summary(audit.metrics, checks, strategy=strategy, market=market)
+    provenance_row = provenance.iloc[0]
+    summary["measurement_manifest_current"] = bool(integrity.passed)
+    summary["measurement_manifest_error"] = str(integrity.error)
+    summary["measurement_manifest_sha256"] = str(
+        provenance_row["manifest_sha256"]
+    )
+    summary["measurement_input_fingerprint_count"] = int(
+        integrity.input_fingerprint_count
+    )
+    summary["measurement_input_fingerprint_matches"] = int(
+        integrity.input_fingerprint_match_count
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     audit.metrics.to_csv(out / "leadlag_edge_metrics.csv", index=False)
-    audit.checks.to_csv(out / "leadlag_edge_checks.csv", index=False)
-    audit.summary.to_csv(out / "leadlag_edge_summary.csv", index=False)
+    checks.to_csv(out / "leadlag_edge_checks.csv", index=False)
+    summary.to_csv(out / "leadlag_edge_summary.csv", index=False)
+    provenance.to_csv(out / "leadlag_edge_measurement_provenance.csv", index=False)
+    dependencies = manifest_dependency_paths(measurement_manifest)
     write_experiment_manifest(
         out,
-        run_type="leadlag_edge_audit",
+        run_type=RUN_TYPE,
         parameters={"strategy": strategy, "market": market, "thresholds": asdict(thresholds)},
-        inputs={"measure": source},
+        inputs={
+            "leadlag_measurement": source,
+            "leadlag_measurement_manifest": measurement_manifest,
+            "leadlag_measurement_dependencies": dependencies,
+        },
+        extra={
+            "passed": bool(summary.iloc[0]["passed"]),
+            "measurement_manifest_current": bool(integrity.passed),
+            "measurement_manifest_sha256": str(
+                provenance_row["manifest_sha256"]
+            ),
+            "authorizes_submission": False,
+        },
     )
-    return LeadLagEdgeAudit(audit.metrics, audit.checks, audit.summary, out)
+    return LeadLagEdgeAudit(
+        metrics=audit.metrics,
+        checks=checks,
+        summary=summary,
+        output_dir=out,
+        provenance=provenance,
+    )
+
+
+def _measurement_provenance(
+    source: Path,
+    integrity: ManifestIntegrity,
+) -> pd.DataFrame:
+    manifest_path = integrity.manifest_path
+    return pd.DataFrame(
+        [
+            {
+                "measurement_path": str(source),
+                "manifest_path": str(manifest_path),
+                "manifest_exists": bool(integrity.exists),
+                "manifest_readable": bool(integrity.readable),
+                "manifest_sha256": (
+                    file_sha256(manifest_path) if manifest_path.is_file() else ""
+                ),
+                "run_type": integrity.run_type,
+                "expected_run_type": integrity.expected_run_type,
+                "run_type_matches": bool(integrity.run_type_matches),
+                "artifact_count": int(integrity.artifact_count),
+                "artifact_matches": int(integrity.artifact_match_count),
+                "required_artifact_count": int(
+                    integrity.required_artifact_count
+                ),
+                "required_artifact_matches": int(
+                    integrity.required_artifact_match_count
+                ),
+                "input_fingerprint_count": int(
+                    integrity.input_fingerprint_count
+                ),
+                "input_fingerprint_matches": int(
+                    integrity.input_fingerprint_match_count
+                ),
+                "passed": bool(integrity.passed),
+                "error": integrity.error,
+                "recommendation": (
+                    "audit_current_measurement"
+                    if integrity.passed
+                    else "rerun_measure_leadlag_from_current_source_files"
+                ),
+            }
+        ]
+    )
+
+
+def _measurement_manifest_check(integrity: ManifestIntegrity) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "check": "measurement_manifest_current",
+                "value": float(bool(integrity.passed)),
+                "operator": "==",
+                "threshold": 1.0,
+                "passed": bool(integrity.passed),
+                "reason": (
+                    ""
+                    if integrity.passed
+                    else "lead-lag measurement manifest failed: "
+                    f"{integrity.error or 'verification_failed'}"
+                ),
+            }
+        ]
+    )
 
 
 def _correlation_metrics(frame: pd.DataFrame) -> dict[str, Any]:
