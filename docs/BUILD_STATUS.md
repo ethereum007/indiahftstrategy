@@ -1387,10 +1387,16 @@
 - Lead-lag order-plan bridge converts promoted candidates into broker-neutral
   paper/shadow trigger templates for both upward leader buy-laggard and
   downward leader sell-laggard paths, with quantity, notional, and price-band
-  gates before staging.
+  gates before staging. It now verifies the complete promotion manifest and
+  transitive source lineage, requires promotion/candidate agreement on current
+  edge evidence and the profitable latency envelope, and carries the edge
+  measurement hash, latency budget, replay latency, headroom, and conservative
+  economics on every raw template.
 - Lead-lag launch pipeline runs promoted candidates through order planning,
   staging, launch bundle creation, broker export, upload pack, and broker
-  readiness review for Arrow.money/iRage-style paper or shadow handoff.
+  readiness review for Arrow.money/iRage-style paper or shadow handoff. Stale
+  or unbound promotion proof now stops before staging; the launch summary and
+  root manifest retain the order-plan proof and transitive research lineage.
 - Strategy evidence review supports a `leadlag` profile that requires measured
   lead-lag edge, replay walk-forward, stress, promotion, order-plan, and
   launch-pipeline artifacts with shared strategy and market identity before
@@ -4036,8 +4042,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2370 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2373 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest lead-lag promotion-to-launch proof gate: order planning now verifies the
+promotion manifest, its exact artifacts, and source fingerprints before
+creating any templates. Candidate and promotion evidence must agree on a
+passed/current edge audit, measured latency budget, and replay latency; raw
+templates retain the measurement hash, budget, latency, headroom, and edge
+economics. The launch pipeline has no unbound-edge override, stops before
+staging on drift, surfaces the proof in its root summary, and fingerprints the
+order-plan manifest plus transitive dependencies. All 17 focused order-plan/
+launch tests passed in 63.4 seconds, all 44 lead-lag lane tests passed in 102.3
+seconds, and all 69 manifest/catalog tests passed in 97 seconds. Collection
+passes at 2373 tests across 155 files. The full repository and broader broker
+lifecycle chains were not rerun.
 
 Latest lead-lag edge-to-promotion binding gate: `audit-leadlag-edge` now emits
 a non-authorizing candidate contract containing measurement-derived replay

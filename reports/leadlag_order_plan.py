@@ -10,14 +10,39 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.manifest import write_experiment_manifest
+from reports.leadlag_candidate_contract import (
+    candidate_replay_latency_ns,
+    edge_audit,
+    edge_audit_bound,
+    edge_latency_budget_ns,
+    edge_metrics,
+    latency_budget_respected,
+    latency_headroom_ns,
+    number,
+)
+from reports.manifest import (
+    ManifestIntegrity,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from strategies.run_leadlag_replay import LEAD_LAG_STRATEGY
+
+
+PROMOTION_RUN_TYPE = "promotion_report"
+PROMOTION_REQUIRED_ARTIFACTS = (
+    "promotion_candidate.csv",
+    "promotion_checks.csv",
+    "promotion_summary.csv",
+    "candidate_config.json",
+)
 
 
 @dataclass(frozen=True)
 class LeadLagOrderPlanConfig:
     laggard_instrument_id: str = "LAGGARD"
     require_promotion_ready: bool = True
+    require_edge_audit_bound: bool = True
     qty: int | None = None
     reference_price: float | None = None
     buy_limit_price: float | None = None
@@ -49,6 +74,7 @@ def build_leadlag_order_plan(
     candidate_config: dict[str, Any],
     *,
     config: LeadLagOrderPlanConfig | None = None,
+    _additional_checks: pd.DataFrame | None = None,
 ) -> LeadLagOrderPlanReport:
     config = config or LeadLagOrderPlanConfig()
     _validate_config(config)
@@ -79,6 +105,13 @@ def build_leadlag_order_plan(
         config,
         strategy=strategy,
     )
+    if _additional_checks is not None and not _additional_checks.empty:
+        _require(
+            _additional_checks,
+            ["check", "value", "operator", "threshold", "passed", "reason"],
+            "additional_checks",
+        )
+        checks = pd.concat([_additional_checks, checks], ignore_index=True)
     orders = (
         _orders(
             candidate_config,
@@ -98,6 +131,7 @@ def build_leadlag_order_plan(
         scenario_key,
         config,
         plan,
+        candidate_config,
         strategy=strategy,
         market=market,
     )
@@ -118,16 +152,26 @@ def write_leadlag_order_plan(
     if not candidate_path.exists():
         raise FileNotFoundError(f"candidate_config.json not found: {candidate_path}")
     config = config or LeadLagOrderPlanConfig()
+    integrity = verify_experiment_manifest(
+        promotion / "manifest.json",
+        expected_run_type=PROMOTION_RUN_TYPE,
+        required_artifacts=PROMOTION_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
     report = build_leadlag_order_plan(
         pd.read_csv(summary_path),
         json.loads(candidate_path.read_text(encoding="utf-8")),
         config=config,
+        _additional_checks=_promotion_manifest_check(integrity),
     )
+    report.summary["promotion_manifest_current"] = bool(integrity.passed)
+    report.summary["promotion_manifest_error"] = str(integrity.error)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.orders.to_csv(out / config.output_filename, index=False)
     report.checks.to_csv(out / "leadlag_order_checks.csv", index=False)
     report.summary.to_csv(out / "leadlag_order_summary.csv", index=False)
+    dependencies = manifest_dependency_paths(promotion / "manifest.json")
     write_experiment_manifest(
         out,
         run_type="leadlag_order_plan",
@@ -136,7 +180,23 @@ def write_leadlag_order_plan(
             "market": str(report.summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
             "config": asdict(config),
         },
-        inputs={"promotion": promotion, "summary": summary_path, "candidate_config": candidate_path},
+        inputs={
+            "promotion": promotion,
+            "promotion_manifest": promotion / "manifest.json",
+            "promotion_dependencies": dependencies,
+            "summary": summary_path,
+            "candidate_config": candidate_path,
+        },
+        extra={
+            "promotion_manifest_current": bool(integrity.passed),
+            "edge_audit_bound": bool(report.summary.iloc[0].get("edge_audit_bound", False)),
+            "edge_audit_override_used": bool(
+                report.summary.iloc[0].get("edge_audit_override_used", False)
+            ),
+            "edge_latency_budget_respected": bool(
+                report.summary.iloc[0].get("edge_latency_budget_respected", False)
+            ),
+        },
     )
     return LeadLagOrderPlanReport(report.orders, report.checks, report.summary, out)
 
@@ -189,6 +249,7 @@ def _orders(
     flat_after_ns = _number(parameters.get("flat_after_ns", replay_defaults.get("flat_after_ns")), np.nan)
     cooloff_ns = _number(parameters.get("cooloff_ns", replay_defaults.get("cooloff_ns")), np.nan)
     metrics = candidate_config.get("metrics", {}) if isinstance(candidate_config.get("metrics", {}), dict) else {}
+    evidence = _edge_evidence(candidate_config)
     rows = [
         _order_row(
             scenario_key,
@@ -205,6 +266,7 @@ def _orders(
             flat_after_ns=flat_after_ns,
             cooloff_ns=cooloff_ns,
             expected_markout=_number(metrics.get("median_markout_mean"), np.nan),
+            edge_evidence=evidence,
         ),
         _order_row(
             scenario_key,
@@ -221,6 +283,7 @@ def _orders(
             flat_after_ns=flat_after_ns,
             cooloff_ns=cooloff_ns,
             expected_markout=_number(metrics.get("median_markout_mean"), np.nan),
+            edge_evidence=evidence,
         ),
     ]
     return pd.DataFrame(rows)
@@ -242,6 +305,7 @@ def _order_row(
     flat_after_ns: float,
     cooloff_ns: float,
     expected_markout: float,
+    edge_evidence: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "client_order_id": _client_order_id(scenario_key, instrument_id, side, qty, price, trigger),
@@ -272,6 +336,7 @@ def _order_row(
         "lifecycle_action_id": trigger,
         "lifecycle_reason": "paper_shadow_leadlag_trigger_template",
         "lifecycle_message_count": 1,
+        **edge_evidence,
     }
 
 
@@ -292,6 +357,13 @@ def _checks(
     sell_price = float(plan["sell_limit_price"])
     tick_size = float(plan["tick_size"])
     reference_price = float(plan["reference_price"])
+    audit_bound = edge_audit_bound(candidate_config)
+    budget_respected = latency_budget_respected(candidate_config)
+    promotion_audit_bound = _to_bool(summary.get("edge_audit_bound", False))
+    candidate_budget = edge_latency_budget_ns(candidate_config)
+    promotion_budget = number(summary.get("edge_latency_budget_ns"))
+    candidate_latency = candidate_replay_latency_ns(candidate_config)
+    promotion_latency = number(summary.get("total_replay_latency_ns"))
     checks = [
         _check(
             "promotion_ready",
@@ -308,6 +380,48 @@ def _checks(
             True,
             candidate_ready or not config.require_promotion_ready,
             "candidate_config.json is not ready",
+        ),
+        _check(
+            "edge_audit_bound",
+            audit_bound,
+            "is",
+            True,
+            audit_bound or not config.require_edge_audit_bound,
+            "candidate is not bound to a passed, current lead-lag edge audit",
+        ),
+        _check(
+            "edge_latency_budget_respected",
+            budget_respected,
+            "is",
+            True,
+            budget_respected or not config.require_edge_audit_bound,
+            "candidate replay latency exceeds or omits the measured edge budget",
+        ),
+        _check(
+            "promotion_edge_audit_bound",
+            promotion_audit_bound,
+            "is",
+            True,
+            promotion_audit_bound or not config.require_edge_audit_bound,
+            "promotion summary is not bound to the lead-lag edge audit",
+        ),
+        _check(
+            "promotion_edge_latency_budget_matches",
+            promotion_budget,
+            "==",
+            candidate_budget,
+            _numbers_match(promotion_budget, candidate_budget)
+            or not config.require_edge_audit_bound,
+            "promotion and candidate edge latency budgets disagree",
+        ),
+        _check(
+            "promotion_replay_latency_matches",
+            promotion_latency,
+            "==",
+            candidate_latency,
+            _numbers_match(promotion_latency, candidate_latency)
+            or not config.require_edge_audit_bound,
+            "promotion and candidate replay latencies disagree",
         ),
         _check(
             "valid_strategy",
@@ -370,6 +484,7 @@ def _summary(
     scenario_key: str,
     config: LeadLagOrderPlanConfig,
     plan: dict[str, float | int],
+    candidate_config: dict[str, Any],
     *,
     strategy: str,
     market: str,
@@ -378,6 +493,17 @@ def _summary(
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     total_notional = float((orders["qty"] * orders["price"]).sum()) if not orders.empty else 0.0
     max_order_notional = float((orders["qty"] * orders["price"]).max()) if not orders.empty else 0.0
+    evidence = _edge_evidence(candidate_config)
+    edge_override_used = bool(
+        not config.require_edge_audit_bound and not evidence["edge_audit_bound"]
+    )
+    recommendation = (
+        "research_only_unbound_edge"
+        if ready and edge_override_used
+        else "stage_for_paper_shadow_runtime"
+        if ready
+        else "keep_in_research"
+    )
     return pd.DataFrame(
         [
             {
@@ -396,8 +522,11 @@ def _summary(
                 "total_notional": total_notional,
                 "max_order_notional": max_order_notional,
                 "failed_checks": failed,
+                "edge_latency_budget_respected": latency_budget_respected(candidate_config),
+                "edge_audit_override_used": edge_override_used,
+                **evidence,
                 "output_file": config.output_filename,
-                "recommendation": "stage_for_paper_shadow_runtime" if ready else "keep_in_research",
+                "recommendation": recommendation,
             }
         ]
     )
@@ -434,7 +563,66 @@ def _empty_orders() -> pd.DataFrame:
             "lifecycle_action_id",
             "lifecycle_reason",
             "lifecycle_message_count",
+            "edge_audit_bound",
+            "edge_measurement_manifest_sha256",
+            "edge_latency_budget_ns",
+            "total_replay_latency_ns",
+            "edge_latency_headroom_ns",
+            "edge_best_latency_avg_net_edge",
+            "edge_best_latency_cost_drag_ratio",
+            "edge_best_latency_net_edge_bps",
         ]
+    )
+
+
+def _promotion_manifest_check(integrity: ManifestIntegrity) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "check": "promotion_manifest_current",
+                "value": float(bool(integrity.passed)),
+                "operator": "is",
+                "threshold": 1.0,
+                "passed": bool(integrity.passed),
+                "reason": (
+                    ""
+                    if integrity.passed
+                    else "lead-lag promotion manifest failed: "
+                    f"{integrity.error or 'verification_failed'}"
+                ),
+            }
+        ]
+    )
+
+
+def _edge_evidence(candidate_config: dict[str, Any]) -> dict[str, Any]:
+    audit = edge_audit(candidate_config)
+    metrics = edge_metrics(candidate_config)
+    return {
+        "edge_audit_bound": edge_audit_bound(candidate_config),
+        "edge_measurement_manifest_sha256": str(
+            audit.get("measurement_manifest_sha256", "")
+        ).strip(),
+        "edge_latency_budget_ns": edge_latency_budget_ns(candidate_config),
+        "total_replay_latency_ns": candidate_replay_latency_ns(candidate_config),
+        "edge_latency_headroom_ns": latency_headroom_ns(candidate_config),
+        "edge_best_latency_avg_net_edge": number(
+            metrics.get("best_latency_avg_net_edge")
+        ),
+        "edge_best_latency_cost_drag_ratio": number(
+            metrics.get("best_latency_cost_drag_ratio")
+        ),
+        "edge_best_latency_net_edge_bps": number(
+            metrics.get("best_latency_net_edge_bps")
+        ),
+    }
+
+
+def _numbers_match(left: float, right: float) -> bool:
+    return bool(
+        np.isfinite(left)
+        and np.isfinite(right)
+        and np.isclose(left, right, rtol=0.0, atol=1e-9)
     )
 
 

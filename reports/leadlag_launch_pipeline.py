@@ -24,7 +24,7 @@ from reports.leadlag_order_plan import (
     LeadLagOrderPlanReport,
     write_leadlag_order_plan,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import manifest_dependency_paths, write_experiment_manifest
 from strategies.run_leadlag_replay import LEAD_LAG_STRATEGY
 
 
@@ -226,6 +226,7 @@ def write_leadlag_launch_pipeline(
     summary = _summary(component_frame, config, order_plan=order_plan, broker_readiness=broker_readiness)
     component_frame.to_csv(out / "leadlag_launch_pipeline_components.csv", index=False)
     summary.to_csv(out / "leadlag_launch_pipeline_summary.csv", index=False)
+    order_plan_manifest = order_plan_dir / "manifest.json"
     write_experiment_manifest(
         out,
         run_type="leadlag_launch_pipeline",
@@ -234,7 +235,24 @@ def write_leadlag_launch_pipeline(
             "market": str(summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
             "config": asdict(config),
         },
-        inputs={"promotion": promotion},
+        inputs={
+            "promotion": promotion,
+            "promotion_manifest": promotion / "manifest.json",
+            "order_plan_manifest": order_plan_manifest,
+            "order_plan_dependencies": manifest_dependency_paths(
+                order_plan_manifest
+            ),
+        },
+        extra={
+            "order_plan_promotion_manifest_current": bool(
+                summary.iloc[0].get(
+                    "order_plan_promotion_manifest_current", False
+                )
+            ),
+            "order_plan_edge_audit_bound": bool(
+                summary.iloc[0].get("order_plan_edge_audit_bound", False)
+            ),
+        },
     )
     return LeadLagLaunchPipelineReport(
         order_plan,
@@ -311,6 +329,30 @@ def _summary(
                 "ready_components": int(components["ready"].astype(bool).sum()) if not components.empty else 0,
                 "failed_components": failed,
                 "skipped_components": skipped,
+                "order_plan_promotion_manifest_current": bool(
+                    order_row.get("promotion_manifest_current", False)
+                ),
+                "order_plan_promotion_manifest_error": str(
+                    order_row.get("promotion_manifest_error", "")
+                ),
+                "order_plan_edge_audit_bound": bool(
+                    order_row.get("edge_audit_bound", False)
+                ),
+                "order_plan_edge_latency_budget_respected": bool(
+                    order_row.get("edge_latency_budget_respected", False)
+                ),
+                "order_plan_edge_measurement_manifest_sha256": str(
+                    order_row.get("edge_measurement_manifest_sha256", "")
+                ),
+                "order_plan_edge_latency_budget_ns": order_row.get(
+                    "edge_latency_budget_ns", float("nan")
+                ),
+                "order_plan_total_replay_latency_ns": order_row.get(
+                    "total_replay_latency_ns", float("nan")
+                ),
+                "order_plan_edge_latency_headroom_ns": order_row.get(
+                    "edge_latency_headroom_ns", float("nan")
+                ),
                 **_broker_readiness_summary_fields(broker_readiness),
                 "recommendation": "paper_or_shadow_handoff" if ready else "keep_in_research",
             }

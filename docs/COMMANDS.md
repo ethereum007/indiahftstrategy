@@ -1180,10 +1180,22 @@ leadlag_order_summary.csv
 manifest.json
 ```
 
-The generated `leadlag_order_candidates.csv` uses the broker-neutral `orders`
-schema and carries `SIGNAL_TEMPLATE` lifecycle metadata, so it can be staged
-for Arrow.money/iRage paper or shadow routing without losing the trigger
-intent:
+Order planning verifies the promotion manifest, its exact candidate/check/
+summary/config artifacts, and all recorded source fingerprints before emitting
+templates. It also requires the candidate and promotion summary to agree on a
+passed, current edge audit and on the measured versus replayed latency budget.
+Any package drift or latency mismatch leaves the order file empty and records a
+failed check. `--allow-unbound-edge-audit` is a research-only migration aid;
+it records `edge_audit_override_used` and the
+`research_only_unbound_edge` recommendation, does not bypass
+promotion-manifest integrity, and is not exposed by the full launch pipeline.
+
+The generated `leadlag_order_candidates.csv` contains the broker-neutral
+`orders` columns plus the edge measurement SHA-256, latency budget, replay
+latency, headroom, and conservative edge economics. It carries
+`SIGNAL_TEMPLATE` lifecycle metadata, so it can be staged for Arrow.money/iRage
+paper or shadow routing without losing the trigger intent or raw research
+provenance:
 
 ```powershell
 python -m hft_cli stage-orders `
@@ -1231,6 +1243,12 @@ leadlag_launch_pipeline_components.csv
 leadlag_launch_pipeline_summary.csv
 manifest.json
 ```
+
+The launch pipeline remains strict: a stale promotion or unbound/mechanically
+unprofitable latency contract stops at `01_order_plan` and skips every routing
+stage. The root summary exposes `order_plan_promotion_manifest_*` and
+`order_plan_edge_*` fields, while the root manifest fingerprints the order-plan
+manifest and its transitive promotion/research dependencies.
 
 The same `--broker-vendor-data-readiness` option is available on the imbalance,
 parity, settlement, and surface-MM launch pipelines. It may point at either the

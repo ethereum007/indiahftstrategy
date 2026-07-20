@@ -9,23 +9,28 @@ from reports.leadlag_order_plan import (
     build_leadlag_order_plan,
     write_leadlag_order_plan,
 )
+from reports.manifest import write_experiment_manifest
 
 
-def promotion_summary(*, ready=True):
+def promotion_summary(*, ready=True, edge_bound=True):
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "candidate_scenario_key": scenario_key(),
                 "failed_checks": 0 if ready else 1,
+                "edge_audit_bound": edge_bound,
+                "edge_latency_budget_ns": 100_000 if edge_bound else None,
+                "total_replay_latency_ns": 50_000,
+                "edge_latency_headroom_ns": 50_000 if edge_bound else None,
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_in_research",
             }
         ]
     )
 
 
-def promoted_candidate_config(*, ready=True, strategy="lead_lag_taker"):
-    return {
+def promoted_candidate_config(*, ready=True, strategy="lead_lag_taker", edge_bound=True):
+    candidate = {
         "schema_version": 1,
         "ready": ready,
         "strategy": strategy,
@@ -40,12 +45,30 @@ def promoted_candidate_config(*, ready=True, strategy="lead_lag_taker"):
             "flat_after_ns": 200_000,
             "cooloff_ns": 1000,
         },
+        "replay_defaults": {
+            "feed_latency_us": 25.0,
+            "order_latency_us": 25.0,
+        },
         "metrics": {
             "total_net_pnl": 42.0,
             "median_markout_mean": 0.15,
         },
         "failed_checks": [] if ready else ["walkforward_passed"],
     }
+    if edge_bound:
+        candidate["edge_audit"] = {
+            "passed": True,
+            "measurement_manifest_current": True,
+            "measurement_manifest_sha256": "a" * 64,
+            "max_profitable_latency_ns": 100_000,
+            "metrics": {
+                "max_profitable_latency_ns": 100_000,
+                "best_latency_avg_net_edge": 5.0,
+                "best_latency_cost_drag_ratio": 0.2,
+                "best_latency_net_edge_bps": 2.0,
+            },
+        }
+    return candidate
 
 
 def scenario_key():
@@ -55,12 +78,35 @@ def scenario_key():
     )
 
 
-def write_promotion(path, *, ready=True, strategy="lead_lag_taker"):
+def write_promotion(path, *, ready=True, strategy="lead_lag_taker", edge_bound=True):
     path.mkdir(parents=True, exist_ok=True)
-    promotion_summary(ready=ready).to_csv(path / "promotion_summary.csv", index=False)
+    promotion_summary(ready=ready, edge_bound=edge_bound).to_csv(
+        path / "promotion_summary.csv", index=False
+    )
+    pd.DataFrame([{"scenario_key": scenario_key()}]).to_csv(
+        path / "promotion_candidate.csv", index=False
+    )
+    pd.DataFrame([{"check": "proof", "passed": ready}]).to_csv(
+        path / "promotion_checks.csv", index=False
+    )
     (path / "candidate_config.json").write_text(
-        json.dumps(promoted_candidate_config(ready=ready, strategy=strategy), indent=2) + "\n",
+        json.dumps(
+            promoted_candidate_config(
+                ready=ready,
+                strategy=strategy,
+                edge_bound=edge_bound,
+            ),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
+    )
+    source = path.parent / f"{path.name}_source.csv"
+    pd.DataFrame([{"proof": "current"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        path,
+        run_type="promotion_report",
+        inputs={"source": source},
     )
 
 
@@ -89,6 +135,12 @@ def test_build_leadlag_order_plan_creates_stageable_buy_and_sell_templates():
     assert set(report.orders["client_order_id"].str[:5]) == {"LLAG-"}
     assert set(report.orders["lifecycle_action"]) == {"SIGNAL_TEMPLATE"}
     assert set(report.orders["template_only"]) == {True}
+    assert set(report.orders["edge_measurement_manifest_sha256"]) == {"a" * 64}
+    assert set(report.orders["edge_latency_budget_ns"]) == {100_000}
+    assert set(report.orders["total_replay_latency_ns"]) == {50_000}
+    assert set(report.orders["edge_latency_headroom_ns"]) == {50_000}
+    assert bool(report.summary.loc[0, "edge_audit_bound"])
+    assert bool(report.summary.loc[0, "edge_latency_budget_respected"])
 
     staged = stage_orders(
         report.orders,
@@ -121,6 +173,11 @@ def test_write_leadlag_order_plan_outputs_files_and_manifest(tmp_path):
     assert manifest["run_type"] == "leadlag_order_plan"
     assert manifest["parameters"]["strategy"] == "lead_lag_taker"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.loc[0, "promotion_manifest_current"])
+    assert manifest["extra"]["promotion_manifest_current"]
+    assert manifest["extra"]["edge_audit_bound"]
+    assert "promotion_manifest" in manifest["inputs"]
+    assert "promotion_dependencies" in manifest["inputs"]
     assert (out_dir / "leadlag_order_candidates.csv").exists()
     assert (out_dir / "leadlag_order_checks.csv").exists()
     assert (out_dir / "leadlag_order_summary.csv").exists()
@@ -138,6 +195,61 @@ def test_leadlag_order_plan_fails_closed_for_wrong_strategy():
     assert not report.ready
     assert report.orders.empty
     assert "valid_strategy" in failed
+
+
+def test_write_leadlag_order_plan_fails_closed_for_drifted_promotion(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "orders"
+    write_promotion(promotion_dir)
+    candidate_path = promotion_dir / "candidate_config.json"
+    candidate_path.write_text(
+        candidate_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_leadlag_order_plan(
+        promotion_dir,
+        output_dir=out_dir,
+        config=LeadLagOrderPlanConfig(reference_price=10.0),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.orders.empty
+    assert failed == {"promotion_manifest_current"}
+    assert not bool(report.summary.loc[0, "promotion_manifest_current"])
+    assert report.summary.loc[0, "promotion_manifest_error"] == "artifact_drift"
+
+
+def test_cli_plan_leadlag_orders_allows_explicit_unbound_research_override(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "orders"
+    write_promotion(promotion_dir, edge_bound=False)
+
+    code = main(
+        [
+            "plan-leadlag-orders",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--reference-price",
+            "10",
+            "--allow-unbound-edge-audit",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "leadlag_order_summary.csv")
+    checks = pd.read_csv(out_dir / "leadlag_order_checks.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "edge_audit_bound"])
+    assert bool(summary.loc[0, "edge_audit_override_used"])
+    assert summary.loc[0, "recommendation"] == "research_only_unbound_edge"
+    assert checks.loc[
+        checks["check"] == "edge_audit_bound", "passed"
+    ].astype(bool).all()
 
 
 def test_cli_plan_leadlag_orders_fails_closed_for_unready_promotion(tmp_path):

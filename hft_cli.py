@@ -866,6 +866,7 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_orders.add_argument("--price-band-pct", type=float, default=None)
     leadlag_orders.add_argument("--output-file", default="leadlag_order_candidates.csv")
     leadlag_orders.add_argument("--allow-unready-promotion", action="store_true")
+    leadlag_orders.add_argument("--allow-unbound-edge-audit", action="store_true")
     leadlag_orders.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_pipeline = sub.add_parser(
@@ -5076,6 +5077,7 @@ def main(argv: list[str] | None = None) -> int:
             config=LeadLagOrderPlanConfig(
                 laggard_instrument_id=args.laggard_instrument_id,
                 require_promotion_ready=not args.allow_unready_promotion,
+                require_edge_audit_bound=not args.allow_unbound_edge_audit,
                 qty=args.qty,
                 reference_price=args.reference_price,
                 buy_limit_price=args.buy_limit_price,
