@@ -2406,6 +2406,8 @@ python -m hft_cli pipeline-robust-selection `
   --research-registration runs\research_registration\india_index_microstructure_v1 `
   --registered-study-label surface_mm `
   --require-research-registration `
+  --walkforward-split-audit runs\validation\surface_mm_walkforward `
+  --require-walkforward-split-audit `
   --min-selection-pass-rate 1 `
   --max-probability-overfit 0.25 `
   --min-candidate-selection-rate 0.25 `
@@ -2447,6 +2449,22 @@ written into the root summary, candidate config, and manifest inputs.
 missing. Registration proof and sweep provenance form one promotion preflight,
 so a mismatched, failed, or drifted registration cannot yield a ready leaf.
 
+For model-driven studies, pass the output of `audit-walkforward-splits` through
+`--walkforward-split-audit`. Any supplied audit is enforced even when
+`--require-walkforward-split-audit` is omitted. The pipeline verifies the audit
+run type, every required artifact hash, the original labels fingerprint, all
+fold/check decisions, zero future-training/label-overlap/embargo breaches, an
+empty blocked-action queue, and the non-authorizing contract. The root summary,
+candidate config, preflight, runbook, and manifest preserve the audit SHA and
+leakage metrics. The root manifest also fingerprints the labels dependency
+directly, so post-pipeline label drift invalidates the robust result. The audit
+path, required decision, and manifest SHA also enter the canonical launch
+semantic digest used by execution receipts. When no audit is supplied or
+required, the semantic payload remains unchanged for compatibility with
+existing non-model launch contracts. Omit the audit for non-model parameter
+sweeps; require it for workflows whose model selection depends on label-level
+temporal folds.
+
 The generated family launcher also supplies `--research-launch-matrix`,
 `--research-launch-contract-id`, and
 `--require-research-launch-contract`. The official executor additionally
@@ -2482,6 +2500,7 @@ Outputs:
 03_promotion\...
 robust_selection_pipeline_sweep_provenance.csv
 robust_selection_pipeline_research_registration.csv
+robust_selection_pipeline_walkforward_split_audit.csv
 robust_selection_pipeline_research_launch_contract.csv
 robust_selection_pipeline_research_launch_execution_receipt.csv
 robust_selection_pipeline_preflight.csv

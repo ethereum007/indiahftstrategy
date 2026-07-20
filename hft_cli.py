@@ -3691,6 +3691,11 @@ def main(argv: list[str] | None = None) -> int:
         "--require-research-registration",
         action="store_true",
     )
+    robust_selection.add_argument("--walkforward-split-audit", default=None)
+    robust_selection.add_argument(
+        "--require-walkforward-split-audit",
+        action="store_true",
+    )
     robust_selection.add_argument("--research-launch-matrix", default=None)
     robust_selection.add_argument("--research-launch-contract-id", default=None)
     robust_selection.add_argument(
@@ -8292,6 +8297,10 @@ def main(argv: list[str] | None = None) -> int:
             research_registration_path=args.research_registration,
             registered_study_label=args.registered_study_label,
             require_research_registration=args.require_research_registration,
+            walkforward_split_audit_path=args.walkforward_split_audit,
+            require_walkforward_split_audit=(
+                args.require_walkforward_split_audit
+            ),
             research_launch_matrix_path=args.research_launch_matrix,
             research_launch_contract_id=args.research_launch_contract_id,
             require_research_launch_contract=(

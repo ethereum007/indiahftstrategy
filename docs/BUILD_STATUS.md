@@ -88,6 +88,17 @@
   summary, candidate config, and manifest. Registration proof and sweep
   provenance jointly gate nested promotion; exploratory unregistered runs stay
   compatible unless registration is explicitly required.
+  Model-driven studies can now bind a walk-forward split audit as another
+  first-class preflight stage. Any supplied audit is enforced, while
+  `--require-walkforward-split-audit` also blocks omission. The pipeline
+  revalidates every audit artifact and original labels fingerprint, independently
+  confirms all fold/check decisions and zero future-training, label-overlap,
+  and embargo-breach rows, and preserves the audit SHA and leakage metrics in
+  the summary, candidate config, runbook, and root manifest. Non-model
+  parameter sweeps remain compatible when no split audit is supplied. Audit
+  path, required state, and manifest SHA are part of the canonical launch
+  semantic digest, so execution-receipt checks also reject proof-argument
+  drift.
   Registered executions now add a launch-contract preflight that verifies the
   current matrix artifact, contract-core hash, exact study/output identity,
   ordered sweeps and labels, grouping columns, holdout count, and registration
@@ -3996,8 +4007,27 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2355 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2359 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest robust-selection temporal-proof binding gate: model-driven robust studies
+can now supply `--walkforward-split-audit` and fail closed on a missing required
+audit, failed audit, artifact drift, or original-label drift. Any supplied audit
+is enforced even when the require flag is omitted. The new preflight validates
+the audit run type, all seven required artifact hashes, source-input
+fingerprints, summary/config/check/fold agreement, an empty blocked-action
+queue, zero future-training/overlap/embargo breaches, and the non-authorizing
+contract. Audit SHA and leakage metrics propagate through stages, summary,
+candidate config, runbook, and manifest; the robust root directly fingerprints
+the original labels so later source drift invalidates it. Audit identity also
+enters the canonical launch semantic digest. Non-model parameter sweeps remain
+backward compatible when no audit is supplied. Four focused binding cases
+passed in 31.9 seconds, and the final 130-test temporal validation ->
+manifest/catalog -> overfit -> significance -> holdout -> robust selection ->
+prospective research-family owner boundary passed in 306.2 seconds. The
+repository now collects 2359 tests across 155 files. The full
+repository and broker lifecycle chains were not rerun for this research-proof
+slice; their completed baselines remain unchanged.
 
 Latest walk-forward temporal-leakage gate: the previously dormant
 `purged_walk_forward_splits` helper now follows expanding-window chronology and

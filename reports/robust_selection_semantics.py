@@ -25,8 +25,15 @@ def build_robust_selection_semantics(
     holdout_config: dict[str, Any],
     holdout_thresholds: dict[str, Any],
     promotion_thresholds: dict[str, Any],
+    walkforward_split_audit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    split_audit = {
+        "path": "",
+        "required": False,
+        "manifest_sha256": "",
+    }
+    split_audit.update(walkforward_split_audit or {})
+    semantics = {
         "schema_version": 1,
         "sweep_paths": [str(Path(path).resolve()) for path in sweep_paths],
         "labels": [str(value) for value in (labels or [])],
@@ -44,6 +51,15 @@ def build_robust_selection_semantics(
         "promotion_thresholds": _jsonable(promotion_thresholds),
         "authorizes_submission": False,
     }
+    if any(
+        (
+            str(split_audit["path"]),
+            bool(split_audit["required"]),
+            str(split_audit["manifest_sha256"]),
+        )
+    ):
+        semantics["walkforward_split_audit"] = _jsonable(split_audit)
+    return semantics
 
 
 def semantic_digest(parameters: dict[str, Any]) -> str:

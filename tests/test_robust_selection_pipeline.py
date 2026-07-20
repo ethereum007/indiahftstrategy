@@ -4,12 +4,62 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.promotion import PromotionThresholds
 from reports.research_family_registration import (
     write_research_family_registration,
 )
 from reports.robust_selection_pipeline import write_robust_selection_pipeline
+from reports.robust_selection_semantics import (
+    build_robust_selection_semantics,
+    semantic_digest,
+)
+from reports.walkforward_split_audit import write_walk_forward_split_audit
+
+
+def test_robust_selection_semantics_bind_walkforward_audit_identity():
+    common = {
+        "sweep_paths": ["sweep"],
+        "labels": ["period"],
+        "group_cols": ["scenario"],
+        "strategy": "surface_mm",
+        "market": "india_nse_index_derivatives",
+        "selection": {},
+        "overfit_config": {},
+        "overfit_thresholds": {},
+        "significance_config": {},
+        "significance_thresholds": {},
+        "holdout_sweeps": 1,
+        "holdout_config": {},
+        "holdout_thresholds": {},
+        "promotion_thresholds": {},
+    }
+    unbound = build_robust_selection_semantics(**common)
+    bound = build_robust_selection_semantics(
+        **common,
+        walkforward_split_audit={
+            "path": "audit",
+            "required": True,
+            "manifest_sha256": "a" * 64,
+        },
+    )
+    changed_proof = build_robust_selection_semantics(
+        **common,
+        walkforward_split_audit={
+            "path": "audit",
+            "required": True,
+            "manifest_sha256": "b" * 64,
+        },
+    )
+
+    assert "walkforward_split_audit" not in unbound
+    assert bound["walkforward_split_audit"]["required"]
+    assert semantic_digest(unbound) != semantic_digest(bound)
+    assert semantic_digest(bound) != semantic_digest(changed_proof)
 
 
 def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_path):
@@ -33,6 +83,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
         "research_launch_execution_receipt",
         "research_launch_contract",
         "research_registration",
+        "walkforward_split_audit",
         "sweep_provenance",
         "selection",
         "backtest_overfit",
@@ -52,6 +103,8 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert bool(summary["research_launch_contract_passed"])
     assert not bool(summary["research_launch_execution_receipt_provided"])
     assert bool(summary["research_launch_execution_receipt_passed"])
+    assert not bool(summary["walkforward_split_audit_provided"])
+    assert bool(summary["walkforward_split_audit_passed"])
     registration_stage = report.stages.set_index("stage").loc[
         "research_registration"
     ]
@@ -75,6 +128,8 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert config["upstream_integrity"]["passed"]
     assert not config["pipeline"]["research_registration_provided"]
     assert config["pipeline"]["research_registration_passed"]
+    assert not config["pipeline"]["walkforward_split_audit_provided"]
+    assert config["pipeline"]["walkforward_split_audit_passed"]
     assert not config["authorizes_submission"]
     assert manifest["run_type"] == "robust_selection_pipeline"
     assert not manifest["extra"]["authorizes_submission"]
@@ -101,6 +156,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
         "robust_selection_pipeline_research_registration.csv",
         "robust_selection_pipeline_research_launch_contract.csv",
         "robust_selection_pipeline_research_launch_execution_receipt.csv",
+        "robust_selection_pipeline_walkforward_split_audit.csv",
         "robust_selection_pipeline_preflight.csv",
         "robust_selection_pipeline_sweep_provenance.csv",
         "robust_selection_pipeline_stages.csv",
@@ -166,6 +222,140 @@ def test_robust_selection_pipeline_binds_registered_study_row(tmp_path):
         registration_manifest
     )
     assert not manifest["extra"]["authorizes_submission"]
+
+
+def test_robust_selection_pipeline_binds_current_walkforward_split_audit(tmp_path):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    audit_dir, labels_path = _write_walkforward_split_audit(tmp_path)
+    output = tmp_path / "robust_selection"
+
+    report = write_robust_selection_pipeline(
+        sweeps,
+        output_dir=output,
+        labels=labels,
+        group_cols=["scenario"],
+        walkforward_split_audit_path=audit_dir,
+        require_walkforward_split_audit=True,
+    )
+
+    binding = report.walkforward_split_audit.iloc[0]
+    summary = report.summary.iloc[0]
+    config = json.loads((output / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    stage = report.stages.set_index("stage").loc["walkforward_split_audit"]
+    preflight = report.preflight.set_index("component").loc[
+        "walkforward_split_audit"
+    ]
+    assert report.ready
+    assert bool(binding["provided"])
+    assert bool(binding["required"])
+    assert bool(binding["passed"])
+    assert bool(binding["manifest_current"])
+    assert bool(binding["checks_passed"])
+    assert bool(binding["folds_passed"])
+    assert bool(binding["non_authorizing"])
+    assert int(binding["future_training_rows"]) == 0
+    assert int(binding["overlapping_training_labels"]) == 0
+    assert int(binding["embargo_breach_rows"]) == 0
+    assert bool(summary["walkforward_split_audit_provided"])
+    assert bool(summary["walkforward_split_audit_passed"])
+    assert summary["walkforward_split_audit_manifest_sha256"] == file_sha256(
+        audit_dir / "manifest.json"
+    )
+    assert bool(stage["status"])
+    assert not bool(stage["skipped"])
+    assert bool(preflight["passed"])
+    assert config["pipeline"]["walkforward_split_audit_required"]
+    assert config["pipeline"]["walkforward_split_fold_count"] == 3
+    assert manifest["inputs"]["walkforward_split_audit"]["kind"] == "directory"
+    assert manifest["inputs"]["walkforward_split_audit_manifest"]["kind"] == "file"
+    dependencies = manifest["inputs"]["walkforward_split_audit_dependencies"]
+    assert len(dependencies) == 1
+    assert dependencies[0]["path"] == str(labels_path.resolve())
+    assert verify_experiment_manifest(output / "manifest.json").passed
+
+    labels_path.write_text(
+        labels_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    integrity = verify_experiment_manifest(output / "manifest.json")
+    assert not integrity.passed
+    assert integrity.error == "input_drift"
+
+
+def test_robust_selection_pipeline_cli_blocks_missing_required_split_audit(
+    tmp_path,
+):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    output = tmp_path / "robust_selection"
+    args = [
+        "pipeline-robust-selection",
+        "--sweeps",
+        *[str(path) for path in sweeps],
+        "--out",
+        str(output),
+        "--group-cols",
+        "scenario",
+        "--require-walkforward-split-audit",
+        "--fail-on-breach",
+    ]
+    for label in labels:
+        args.extend(["--label", label])
+
+    status = main(args)
+
+    binding = pd.read_csv(
+        output / "robust_selection_pipeline_walkforward_split_audit.csv"
+    ).iloc[0]
+    summary = pd.read_csv(output / "robust_selection_pipeline_summary.csv").iloc[0]
+    stages = pd.read_csv(output / "robust_selection_pipeline_stages.csv").set_index(
+        "stage"
+    )
+    assert status == 2
+    assert not bool(binding["provided"])
+    assert bool(binding["required"])
+    assert not bool(binding["passed"])
+    assert binding["failed_check_names"] == "audit_provided"
+    assert not bool(summary["ready"])
+    assert summary["next_gate"] == "audit-walkforward-splits"
+    assert not bool(stages.loc["walkforward_split_audit", "status"])
+    assert not bool(stages.loc["promotion", "status"])
+
+
+def test_robust_selection_pipeline_blocks_drifted_supplied_split_audit(tmp_path):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    audit_dir, labels_path = _write_walkforward_split_audit(tmp_path)
+    labels_path.write_text(
+        labels_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "robust_selection"
+
+    report = write_robust_selection_pipeline(
+        sweeps,
+        output_dir=output,
+        labels=labels,
+        group_cols=["scenario"],
+        walkforward_split_audit_path=audit_dir,
+    )
+
+    binding = report.walkforward_split_audit.iloc[0]
+    assert not report.ready
+    assert bool(binding["provided"])
+    assert not bool(binding["required"])
+    assert not bool(binding["passed"])
+    assert not bool(binding["manifest_current"])
+    assert binding["manifest_error"] == "input_drift"
+    assert "manifest_current" in binding["failed_check_names"]
+    assert report.summary.iloc[0]["next_gate"] == "audit-walkforward-splits"
+    assert set(report.action_queue["component"]) == {
+        "walkforward_split_audit",
+        "promotion",
+    }
+    assert report.candidate_config["failed_checks"] == [
+        "walkforward_split_audit",
+        "promotion",
+    ]
 
 
 def test_robust_selection_pipeline_cli_blocks_registered_search_breadth_breach(
@@ -428,6 +618,23 @@ def _write_pipeline_registration(tmp_path, output, *, max_scenarios=3):
     )
     assert report.passed
     return report, registration_dir
+
+
+def _write_walkforward_split_audit(tmp_path):
+    labels_path = tmp_path / "walkforward_labels.csv"
+    pd.DataFrame(
+        {
+            "ts": list(range(1, 17)),
+            "label_end_ts": list(range(1, 17)),
+        }
+    ).to_csv(labels_path, index=False)
+    audit_dir = tmp_path / "walkforward_split_audit"
+    report = write_walk_forward_split_audit(
+        labels_path,
+        output_dir=audit_dir,
+    )
+    assert report.passed
+    return audit_dir, labels_path
 
 
 def _write_stable_sweeps(root, *, periods=9, losing_holdout=False):
