@@ -63,6 +63,11 @@ from reports.backtest_significance import (
     BacktestSignificanceThresholds,
     write_backtest_significance_audit,
 )
+from reports.walkforward_split_audit import (
+    WalkForwardSplitAuditConfig,
+    WalkForwardSplitAuditThresholds,
+    write_walk_forward_split_audit,
+)
 from reports.catalog import write_experiment_catalog
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
@@ -3652,6 +3657,23 @@ def main(argv: list[str] | None = None) -> int:
     compare_sweeps.add_argument("--min-median-net-pnl", type=float, default=0.0)
     compare_sweeps.add_argument("--max-worst-drawdown", type=float, default=None)
     compare_sweeps.add_argument("--fail-on-breach", action="store_true")
+
+    walkforward_split_audit = sub.add_parser(
+        "audit-walkforward-splits",
+        help="Audit past-only expanding temporal splits with purge and embargo evidence.",
+    )
+    walkforward_split_audit.add_argument("--labels", required=True)
+    walkforward_split_audit.add_argument("--out", required=True)
+    walkforward_split_audit.add_argument("--time-col", default="ts")
+    walkforward_split_audit.add_argument("--label-end-col", default="label_end_ts")
+    walkforward_split_audit.add_argument("--n-splits", type=int, default=3)
+    walkforward_split_audit.add_argument("--embargo-ns", type=int, default=0)
+    walkforward_split_audit.add_argument("--test-size", type=int, default=None)
+    walkforward_split_audit.add_argument("--min-train-rows", type=int, default=1)
+    walkforward_split_audit.add_argument("--min-test-rows", type=int, default=1)
+    walkforward_split_audit.add_argument("--fail-on-breach", action="store_true")
+    walkforward_split_audit.add_argument("--fail-on-blocked-actions", action="store_true")
+    walkforward_split_audit.add_argument("--fail-on-actions", action="store_true")
 
     robust_selection = sub.add_parser(
         "pipeline-robust-selection",
@@ -8362,6 +8384,31 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_breach and not result.ready:
             return 2
         if args.fail_on_actions and not result.action_queue.empty:
+            return 2
+        return 0
+    if args.command == "audit-walkforward-splits":
+        result = write_walk_forward_split_audit(
+            args.labels,
+            output_dir=args.out,
+            config=WalkForwardSplitAuditConfig(
+                time_col=args.time_col,
+                label_end_col=args.label_end_col,
+                n_splits=args.n_splits,
+                embargo_ns=args.embargo_ns,
+                test_size=args.test_size,
+            ),
+            thresholds=WalkForwardSplitAuditThresholds(
+                min_train_rows=args.min_train_rows,
+                min_test_rows=args.min_test_rows,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and action_count > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
             return 2
         return 0
     if args.command == "audit-backtest-overfit":

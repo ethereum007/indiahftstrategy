@@ -2139,6 +2139,54 @@ scenario_scores.csv
 selection_summary.csv
 ```
 
+## Walk-Forward Split Leakage Audit
+
+Build auditable expanding-window train/test assignments from a label CSV before
+fitting a model or comparing parameter choices:
+
+```powershell
+python -m hft_cli audit-walkforward-splits `
+  --labels data\research\imbalance_labels.csv `
+  --time-col ts `
+  --label-end-col label_end_ts `
+  --n-splits 5 `
+  --embargo-ns 1000000000 `
+  --min-train-rows 10000 `
+  --min-test-rows 1000 `
+  --out runs\validation\imbalance_walkforward `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+By default, test windows have equal row counts and the unused leading remainder
+forms the initial training history. Use `--test-size` to set an explicit test
+row count. Each later training window expands through earlier observations
+only. A training label is purged when its `label_end_ts` reaches the next test
+start, and `--embargo-ns` requires an additional label-resolution gap before
+that boundary. Test starts must advance strictly, so rows sharing one timestamp
+cannot be split across test-window boundaries.
+
+Outputs:
+
+```text
+walkforward_split_assignments.csv
+walkforward_split_folds.csv
+walkforward_split_checks.csv
+walkforward_split_summary.csv
+walkforward_split_action_queue.csv
+walkforward_split_config.json
+walkforward_split_runbook.md
+manifest.json
+```
+
+The assignment artifact records every source row as `train`, `test`, `purged`,
+`embargoed`, or `future_excluded` for every fold. The fold and check artifacts
+prove zero future training rows, zero overlapping labels, zero embargo breaches,
+disjoint test assignments, strictly later test windows, and non-shrinking
+training history. Passing evidence advances only to `pipeline-robust-selection`
+and always records `authorizes_submission=false`; it is a leakage-control proof,
+not evidence of strategy profitability.
+
 ## Backtest Overfit Audit
 
 Measure whether the scenario selected in one subset of sweep periods retains

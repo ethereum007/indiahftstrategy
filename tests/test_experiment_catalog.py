@@ -3088,6 +3088,13 @@ def test_catalog_experiment_runs_recognizes_scaleup_calibration_and_data_ops_sta
             "ready",
         ),
         (
+            "walkforward_split",
+            "walkforward_split_audit",
+            "walkforward_split_summary.csv",
+            {"passed": True, "failed_checks": 0, "fold_count": 3},
+            "passed",
+        ),
+        (
             "mapped_data",
             "mapped_data_normalization",
             "mapped_data_summary.csv",

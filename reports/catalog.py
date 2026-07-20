@@ -104,6 +104,7 @@ SUMMARY_FILES = [
     "backtest_overfit_summary.csv",
     "backtest_significance_summary.csv",
     "backtest_holdout_summary.csv",
+    "walkforward_split_summary.csv",
     "research_family_summary.csv",
     "research_family_registration_summary.csv",
     "research_family_launch_summary.csv",

@@ -59,6 +59,15 @@
   binds the candidate identity, selection-manifest SHA, and current holdout
   manifest. The audit explicitly distinguishes recorded selection isolation
   from any unverifiable claim that a human never inspected the data.
+- Label-level model research now has a manifest-backed temporal leakage gate.
+  `audit-walkforward-splits` builds equal contiguous test windows with expanding
+  past-only training history, purges training labels that reach the next test
+  boundary, applies a duration-based pre-test embargo, and rejects equal-
+  timestamp fold boundaries. It writes per-row assignments, per-fold temporal
+  metrics, fail-closed checks, scheduler actions, a JSON handoff, a runbook, and
+  a fingerprinted manifest. The underlying splitter no longer admits future
+  observations into the first training fold. This proof remains non-authorizing
+  and advances only to robust model-selection research.
 - Multi-period parameter research now has a single strict orchestration gate.
   `pipeline-robust-selection` reserves the final three ordered sweeps as
   holdouts by default, requires full coverage across the earlier development
@@ -3987,8 +3996,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2348 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2355 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest walk-forward temporal-leakage gate: the previously dormant
+`purged_walk_forward_splits` helper now follows expanding-window chronology and
+never trains on observations after its test fold. Default test windows have
+equal size with an initial training remainder; explicit test size is also
+supported. Labels reaching the test boundary are purged, a nanosecond embargo
+creates an additional pre-test label-resolution gap, original indices remain
+stable, and malformed timestamp/interval/split contracts fail closed. The new
+`audit-walkforward-splits` command materializes assignments, fold metrics,
+checks, actions, config, runbook, and manifest evidence, and its summary is
+recognized by `catalog-runs`. All 10 focused tests passed in 11.1 seconds, and
+the 121-test temporal validation -> catalog -> overfit -> significance ->
+holdout -> robust selection -> research-family owner boundary passed in 228.0
+seconds. The repository collects 2355 tests across 155 files. The full
+repository and broker lifecycle chains were not rerun for this research-proof
+slice; their completed baselines remain unchanged.
 
 Latest broker-readiness frame-consolidation gate: dispatch-roundtrip readiness
 now consolidates its single-row pandas frame before each vendor-lineage epoch.
