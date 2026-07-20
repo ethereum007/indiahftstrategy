@@ -130,6 +130,9 @@ def run_leadlag(
                 "max_lag_ns": max_lag_ns,
                 "depth_fraction": depth_fraction,
                 "correlation_tolerance_ns": correlation_tolerance_ns,
+                "cost_scope": "round_trip_entry_and_predicted_exit",
+                "exit_touch": "opposite_touch_shifted_by_delta",
+                "win_rate_definition": "profitable_fills_over_fills",
             },
             "authorizes_submission": False,
             "next_gate": "audit-leadlag-edge",
@@ -218,6 +221,35 @@ def _measurement_summary(
                     if best_latency is not None
                     else np.nan
                 ),
+                "best_latency_fill_rate": _latency_value(
+                    best_latency,
+                    "fill_rate",
+                    "win_rate",
+                ),
+                "best_latency_win_rate": _latency_value(
+                    best_latency,
+                    "win_rate",
+                ),
+                "best_latency_gross_pnl": _latency_value(
+                    best_latency,
+                    "gross_pnl",
+                ),
+                "best_latency_round_trip_cost": _latency_value(
+                    best_latency,
+                    "round_trip_cost",
+                ),
+                "best_latency_avg_net_edge": _latency_value(
+                    best_latency,
+                    "avg_net_edge",
+                ),
+                "best_latency_cost_drag_ratio": _latency_value(
+                    best_latency,
+                    "cost_drag_ratio",
+                ),
+                "best_latency_net_edge_bps": _latency_value(
+                    best_latency,
+                    "net_edge_bps",
+                ),
                 "max_positive_latency_ns": (
                     int(profitable["latency_ns"].max())
                     if not profitable.empty
@@ -227,6 +259,15 @@ def _measurement_summary(
             }
         ]
     )
+
+
+def _latency_value(row: pd.Series | None, *columns: str) -> float:
+    if row is None:
+        return np.nan
+    for column in columns:
+        if column in row and not pd.isna(row[column]):
+            return float(row[column])
+    return np.nan
 
 
 def _measurement_runbook(row: pd.Series, output_dir: Path) -> str:
@@ -240,10 +281,14 @@ def _measurement_runbook(row: pd.Series, output_dir: Path) -> str:
             f"- Laggard rows: {int(row['laggard_rows'])}",
             f"- Measured leader events: {int(row['event_count'])}",
             f"- Latency points: {int(row['latency_rows'])}",
+            f"- Best round-trip net PnL: {row['best_latency_net_pnl']:.6g}",
+            f"- Best average net edge: {row['best_latency_avg_net_edge']:.6g}",
+            f"- Best cost drag ratio: {row['best_latency_cost_drag_ratio']:.6g}",
             "- Order submission authorized: no",
             "",
             "## Provenance",
             "",
+            "The latency curve charges the predicted exit touch and both entry/exit costs.",
             "The manifest fingerprints both raw source files and every measurement artifact.",
             "Any source or artifact drift must be resolved by rerunning this measurement.",
             "",

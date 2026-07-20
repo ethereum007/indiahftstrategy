@@ -35,9 +35,51 @@ def lag_profile():
 def latency_curve():
     return pd.DataFrame(
         [
-            {"latency_ns": 50_000, "events": 3, "fills": 3, "win_rate": 1.0, "net_pnl": 15.0, "avg_edge": 6.0},
-            {"latency_ns": 150_000, "events": 3, "fills": 2, "win_rate": 0.67, "net_pnl": 8.0, "avg_edge": 5.0},
-            {"latency_ns": 300_000, "events": 3, "fills": 1, "win_rate": 0.33, "net_pnl": 2.0, "avg_edge": 4.0},
+            {
+                "latency_ns": 50_000,
+                "events": 3,
+                "fills": 3,
+                "fill_rate": 1.0,
+                "profitable_fills": 3,
+                "win_rate": 1.0,
+                "gross_pnl": 18.0,
+                "round_trip_cost": 3.0,
+                "net_pnl": 15.0,
+                "avg_edge": 6.0,
+                "avg_net_edge": 5.0,
+                "cost_drag_ratio": 1.0 / 6.0,
+                "net_edge_bps": 3.0,
+            },
+            {
+                "latency_ns": 150_000,
+                "events": 3,
+                "fills": 2,
+                "fill_rate": 2.0 / 3.0,
+                "profitable_fills": 2,
+                "win_rate": 1.0,
+                "gross_pnl": 10.0,
+                "round_trip_cost": 2.0,
+                "net_pnl": 8.0,
+                "avg_edge": 5.0,
+                "avg_net_edge": 4.0,
+                "cost_drag_ratio": 0.2,
+                "net_edge_bps": 2.0,
+            },
+            {
+                "latency_ns": 300_000,
+                "events": 3,
+                "fills": 1,
+                "fill_rate": 1.0 / 3.0,
+                "profitable_fills": 1,
+                "win_rate": 1.0,
+                "gross_pnl": 4.0,
+                "round_trip_cost": 2.0,
+                "net_pnl": 2.0,
+                "avg_edge": 4.0,
+                "avg_net_edge": 2.0,
+                "cost_drag_ratio": 0.5,
+                "net_edge_bps": 1.0,
+            },
         ]
     )
 
@@ -101,6 +143,9 @@ def test_leadlag_edge_audit_passes_strong_measurement():
             min_best_latency_net_pnl=10.0,
             min_best_latency_fills=3,
             min_profitable_latency_ns=50_000,
+            min_best_latency_fill_rate=1.0,
+            min_best_latency_avg_net_edge=5.0,
+            max_best_latency_cost_drag_ratio=0.2,
         ),
     )
 
@@ -110,6 +155,12 @@ def test_leadlag_edge_audit_passes_strong_measurement():
     assert metrics["best_abs_correlation"] == 0.82
     assert metrics["update_rate"] == 1.0
     assert metrics["max_profitable_latency_ns"] == 50_000
+    assert metrics["best_latency_fill_rate"] == 1.0
+    assert metrics["best_latency_win_rate"] == 1.0
+    assert metrics["best_latency_gross_pnl"] == 18.0
+    assert metrics["best_latency_round_trip_cost"] == 3.0
+    assert metrics["best_latency_avg_net_edge"] == 5.0
+    assert metrics["best_latency_cost_drag_ratio"] == 1.0 / 6.0
     assert audit.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert audit.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert audit.summary.iloc[0]["recommendation"] == "replay_or_sweep_candidate"
@@ -140,6 +191,37 @@ def test_leadlag_edge_audit_fails_weak_update_rate_and_latency():
     assert "update_rate" in failed
     assert "best_latency_net_pnl" in failed
     assert "max_profitable_latency_ns" in failed
+
+
+def test_leadlag_edge_audit_can_gate_per_fill_edge_and_cost_drag():
+    viable = evaluate_leadlag_edge(
+        cross_correlation(),
+        lag_profile(),
+        latency_curve(),
+        thresholds=LeadLagEdgeThresholds(
+            min_profitable_latency_ns=150_000,
+            min_best_latency_fill_rate=0.5,
+            min_best_latency_avg_net_edge=4.0,
+            max_best_latency_cost_drag_ratio=0.2,
+        ),
+    )
+    assert viable.passed
+    assert viable.metrics.iloc[0]["max_profitable_latency_ns"] == 150_000
+
+    audit = evaluate_leadlag_edge(
+        cross_correlation(),
+        lag_profile(),
+        latency_curve(),
+        thresholds=LeadLagEdgeThresholds(
+            min_best_latency_avg_net_edge=5.1,
+            max_best_latency_cost_drag_ratio=0.1,
+        ),
+    )
+
+    failed = set(audit.checks.loc[~audit.checks["passed"].astype(bool), "check"])
+    assert not audit.passed
+    assert "best_latency_avg_net_edge" in failed
+    assert "best_latency_cost_drag_ratio" in failed
 
 
 def test_write_leadlag_edge_audit_outputs_report_files(tmp_path):
@@ -239,6 +321,12 @@ def test_cli_leadlag_edge_audit_can_fail_on_breach(tmp_path):
             str(out_dir),
             "--min-abs-correlation",
             "0.95",
+            "--min-best-latency-fill-rate",
+            "1.0",
+            "--min-best-latency-avg-net-edge",
+            "5.0",
+            "--max-best-latency-cost-drag-ratio",
+            "0.2",
             "--fail-on-breach",
         ]
     )

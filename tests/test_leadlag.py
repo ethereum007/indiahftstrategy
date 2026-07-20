@@ -86,7 +86,50 @@ def test_latency_viability_curve_dies_after_stale_quote_updates():
     )
 
     assert list(curve["fills"]) == [1, 1, 0]
-    assert list(curve["net_pnl"]) == [750.0, 750.0, 0.0]
+    assert list(curve["gross_pnl"]) == [675.0, 675.0, 0.0]
+    assert list(curve["net_pnl"]) == [675.0, 675.0, 0.0]
+    assert list(curve["fill_rate"]) == [1.0, 1.0, 0.0]
+    assert list(curve["win_rate"]) == [1.0, 1.0, 0.0]
+
+
+def test_latency_viability_curve_charges_exit_spread_and_round_trip_costs():
+    leader = book_from_mid([0, 100, 200, 300], [100.0, 110.0, 110.0, 110.0])
+    laggard = book_from_mid([0, 100, 200, 300], [50.0, 50.0, 50.0, 60.0])
+    inst = Instrument("NIFTY-ATM-CE", Kind.OPT, lot_size=75, tick=0.05)
+    round_trip_costs = IndianCostModel(
+        stt_sell=0.0,
+        exch_txn=0.0,
+        sebi_fee=0.0,
+        stamp_buy=0.0,
+        gst=0.0,
+        clearing_per_lot=340.0,
+    )
+
+    curve = latency_viability_curve(
+        leader,
+        laggard,
+        leader_tick_size=1.0,
+        laggard_tick_size=0.05,
+        instrument=inst,
+        costs=round_trip_costs,
+        delta=1.0,
+        innovation_ticks=5.0,
+        latency_sweep_ns=[50],
+        depth_fraction=0.25,
+    )
+
+    row = curve.iloc[0]
+    assert int(row["fills"]) == 1
+    assert int(row["profitable_fills"]) == 0
+    assert row["fill_rate"] == 1.0
+    assert row["win_rate"] == 0.0
+    assert row["gross_pnl"] == 675.0
+    assert row["round_trip_cost"] == 680.0
+    assert row["net_pnl"] == -5.0
+    assert row["avg_edge"] == 675.0
+    assert row["avg_net_edge"] == -5.0
+    assert row["cost_drag_ratio"] == 680.0 / 675.0
+    assert row["net_edge_bps"] < 0.0
 
 
 def test_summarize_pair_returns_all_three_outputs():
@@ -155,7 +198,23 @@ def test_run_leadlag_writes_report_files(tmp_path):
     assert config["leader_path"] == str(leader_path.resolve())
     assert config["laggard_path"] == str(laggard_path.resolve())
     assert config["measurement"]["latency_sweep_ns"] == [50, 250]
+    assert config["measurement"]["cost_scope"] == (
+        "round_trip_entry_and_predicted_exit"
+    )
+    assert config["measurement"]["win_rate_definition"] == (
+        "profitable_fills_over_fills"
+    )
     assert not config["authorizes_submission"]
+    latency = pd.read_csv(out_dir / "latency_curve.csv")
+    assert {
+        "fill_rate",
+        "profitable_fills",
+        "gross_pnl",
+        "round_trip_cost",
+        "avg_net_edge",
+        "cost_drag_ratio",
+        "net_edge_bps",
+    } <= set(latency.columns)
 
     integrity = verify_experiment_manifest(
         out_dir / "manifest.json",

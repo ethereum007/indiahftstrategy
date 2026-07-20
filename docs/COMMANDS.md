@@ -1003,6 +1003,14 @@ does not authorize order submission. Rerun the measurement after any source or
 artifact change; legacy three-CSV measurement folders intentionally fail the
 edge-audit provenance gate.
 
+`latency_curve.csv` uses conservative round-trip economics. A long signal buys
+the live arrival ask and exits at the predicted future bid; a short signal sells
+the live arrival bid and exits at the predicted future ask. Both entry and exit
+charges are deducted. `fill_rate` is fills divided by leader events, while
+`win_rate` is net-positive fills divided by fills. The curve separately reports
+`gross_pnl`, `round_trip_cost`, `net_pnl`, average gross/cost/net edge,
+`cost_drag_ratio`, entry turnover, and net edge in basis points.
+
 ## Lead-Lag Edge Audit
 
 Gate a measured lead-lag relationship before spending replay/sweep cycles:
@@ -1018,6 +1026,9 @@ python -m hft_cli audit-leadlag-edge `
   --max-median-update-ns 1000000 `
   --min-best-latency-net-pnl 0 `
   --min-best-latency-fills 5 `
+  --min-best-latency-fill-rate 0.20 `
+  --min-best-latency-avg-net-edge 5 `
+  --max-best-latency-cost-drag-ratio 0.50 `
   --min-profitable-latency-ns 250000 `
   --fail-on-breach
 ```
@@ -1037,6 +1048,9 @@ Missing, unreadable, wrong-run-type, artifact-drifted, or source-drifted
 measurement evidence adds a failed `measurement_manifest_current` check. The
 edge manifest also fingerprints the measurement's raw-file dependencies, so a
 source change after the audit invalidates the audit manifest transitively.
+The optional fill-rate, average-net-edge, and cost-drag hurdles apply to every
+latency row when computing `max_profitable_latency_ns`; the reported latency
+budget therefore cannot include a slower point that violates those economics.
 
 ## Lead-Lag Replay
 

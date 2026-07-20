@@ -32,6 +32,9 @@ class LeadLagEdgeThresholds:
     min_best_latency_net_pnl: float = 0.0
     min_best_latency_fills: int = 1
     min_profitable_latency_ns: int = 0
+    min_best_latency_fill_rate: float | None = None
+    min_best_latency_avg_net_edge: float | None = None
+    max_best_latency_cost_drag_ratio: float | None = None
 
 
 @dataclass(frozen=True)
@@ -262,32 +265,89 @@ def _latency_metrics(frame: pd.DataFrame, thresholds: LeadLagEdgeThresholds) -> 
     work = frame.copy()
     work["net_pnl"] = pd.to_numeric(work["net_pnl"], errors="coerce")
     work["fills"] = pd.to_numeric(work["fills"], errors="coerce").fillna(0)
+    fill_rate_source = (
+        work["fill_rate"]
+        if "fill_rate" in work
+        else work.get("win_rate", pd.Series(np.nan, index=work.index))
+    )
+    work["fill_rate"] = pd.to_numeric(fill_rate_source, errors="coerce")
+    derived_avg_net_edge = work["net_pnl"].div(work["fills"].replace(0, np.nan))
+    if "avg_net_edge" in work:
+        work["avg_net_edge"] = pd.to_numeric(
+            work["avg_net_edge"], errors="coerce"
+        ).fillna(derived_avg_net_edge)
+    else:
+        work["avg_net_edge"] = derived_avg_net_edge
+    if "cost_drag_ratio" in work:
+        work["cost_drag_ratio"] = pd.to_numeric(
+            work["cost_drag_ratio"], errors="coerce"
+        )
+    else:
+        work["cost_drag_ratio"] = np.nan
     if work["net_pnl"].notna().any():
         best = work.sort_values(["net_pnl", "fills"], ascending=[False, False]).iloc[0]
         best_latency_ns = int(best["latency_ns"])
         best_net_pnl = float(best["net_pnl"])
         best_fills = int(best["fills"])
         best_win_rate = _float(best, "win_rate")
+        best_fill_rate = _float(best, "fill_rate")
+        if np.isnan(best_fill_rate):
+            best_fill_rate = best_win_rate
         best_avg_edge = _float(best, "avg_edge")
+        best_gross_pnl = _float(best, "gross_pnl")
+        best_round_trip_cost = _float(best, "round_trip_cost")
+        best_avg_net_edge = _float(best, "avg_net_edge")
+        if np.isnan(best_avg_net_edge) and best_fills > 0:
+            best_avg_net_edge = best_net_pnl / best_fills
+        best_cost_drag_ratio = _float(best, "cost_drag_ratio")
+        if np.isnan(best_cost_drag_ratio) and best_gross_pnl > 0:
+            best_cost_drag_ratio = best_round_trip_cost / best_gross_pnl
+        best_net_edge_bps = _float(best, "net_edge_bps")
     else:
         best_latency_ns = np.nan
         best_net_pnl = np.nan
         best_fills = 0
         best_win_rate = np.nan
+        best_fill_rate = np.nan
         best_avg_edge = np.nan
+        best_gross_pnl = np.nan
+        best_round_trip_cost = np.nan
+        best_avg_net_edge = np.nan
+        best_cost_drag_ratio = np.nan
+        best_net_edge_bps = np.nan
 
-    viable = work.loc[
+    viable_mask = (
         (work["net_pnl"] >= thresholds.min_best_latency_net_pnl)
         & (work["fills"] >= thresholds.min_best_latency_fills)
-    ]
+    )
+    if thresholds.min_best_latency_fill_rate is not None:
+        viable_mask &= (
+            work["fill_rate"] >= thresholds.min_best_latency_fill_rate
+        )
+    if thresholds.min_best_latency_avg_net_edge is not None:
+        viable_mask &= (
+            work["avg_net_edge"] >= thresholds.min_best_latency_avg_net_edge
+        )
+    if thresholds.max_best_latency_cost_drag_ratio is not None:
+        viable_mask &= (
+            work["cost_drag_ratio"]
+            <= thresholds.max_best_latency_cost_drag_ratio
+        )
+    viable = work.loc[viable_mask]
     max_profitable_latency_ns = int(viable["latency_ns"].max()) if not viable.empty else np.nan
     return {
         "latency_rows": int(len(work)),
         "best_latency_ns": best_latency_ns,
         "best_latency_net_pnl": best_net_pnl,
         "best_latency_fills": best_fills,
+        "best_latency_fill_rate": best_fill_rate,
         "best_latency_win_rate": best_win_rate,
         "best_latency_avg_edge": best_avg_edge,
+        "best_latency_gross_pnl": best_gross_pnl,
+        "best_latency_round_trip_cost": best_round_trip_cost,
+        "best_latency_avg_net_edge": best_avg_net_edge,
+        "best_latency_cost_drag_ratio": best_cost_drag_ratio,
+        "best_latency_net_edge_bps": best_net_edge_bps,
         "viable_latency_rows": int(len(viable)),
         "max_profitable_latency_ns": max_profitable_latency_ns,
     }
@@ -305,6 +365,33 @@ def _checks(row: pd.Series, thresholds: LeadLagEdgeThresholds) -> pd.DataFrame:
     ]
     if thresholds.max_median_update_ns is not None:
         checks.append(_threshold_check(row, "median_update_ns", "<=", thresholds.max_median_update_ns))
+    if thresholds.min_best_latency_fill_rate is not None:
+        checks.append(
+            _threshold_check(
+                row,
+                "best_latency_fill_rate",
+                ">=",
+                thresholds.min_best_latency_fill_rate,
+            )
+        )
+    if thresholds.min_best_latency_avg_net_edge is not None:
+        checks.append(
+            _threshold_check(
+                row,
+                "best_latency_avg_net_edge",
+                ">=",
+                thresholds.min_best_latency_avg_net_edge,
+            )
+        )
+    if thresholds.max_best_latency_cost_drag_ratio is not None:
+        checks.append(
+            _threshold_check(
+                row,
+                "best_latency_cost_drag_ratio",
+                "<=",
+                thresholds.max_best_latency_cost_drag_ratio,
+            )
+        )
     return pd.DataFrame(checks)
 
 
@@ -326,6 +413,21 @@ def _summary(metrics: pd.DataFrame, checks: pd.DataFrame, *, strategy: str, mark
                 "update_rate": metric["update_rate"],
                 "best_latency_ns": metric["best_latency_ns"],
                 "best_latency_net_pnl": metric["best_latency_net_pnl"],
+                "best_latency_fill_rate": metric["best_latency_fill_rate"],
+                "best_latency_win_rate": metric["best_latency_win_rate"],
+                "best_latency_gross_pnl": metric["best_latency_gross_pnl"],
+                "best_latency_round_trip_cost": metric[
+                    "best_latency_round_trip_cost"
+                ],
+                "best_latency_avg_net_edge": metric[
+                    "best_latency_avg_net_edge"
+                ],
+                "best_latency_cost_drag_ratio": metric[
+                    "best_latency_cost_drag_ratio"
+                ],
+                "best_latency_net_edge_bps": metric[
+                    "best_latency_net_edge_bps"
+                ],
                 "max_profitable_latency_ns": metric["max_profitable_latency_ns"],
             }
         ]
@@ -366,6 +468,18 @@ def _validate_thresholds(thresholds: LeadLagEdgeThresholds) -> None:
         raise ValueError("min_best_latency_fills must be non-negative")
     if thresholds.min_profitable_latency_ns < 0:
         raise ValueError("min_profitable_latency_ns must be non-negative")
+    if (
+        thresholds.min_best_latency_fill_rate is not None
+        and not 0 <= thresholds.min_best_latency_fill_rate <= 1
+    ):
+        raise ValueError("min_best_latency_fill_rate must be between 0 and 1")
+    if (
+        thresholds.max_best_latency_cost_drag_ratio is not None
+        and thresholds.max_best_latency_cost_drag_ratio < 0
+    ):
+        raise ValueError(
+            "max_best_latency_cost_drag_ratio must be non-negative"
+        )
     if not 0 <= thresholds.min_update_rate <= 1:
         raise ValueError("min_update_rate must be between 0 and 1")
     if thresholds.min_abs_correlation < 0:

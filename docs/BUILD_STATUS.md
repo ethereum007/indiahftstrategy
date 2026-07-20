@@ -1356,12 +1356,17 @@
   viability curve. Measurement runs now write a catalogable summary, full
   loader/instrument/cost/grid config, operator runbook, and manifest that
   fingerprints both raw leader/laggard files plus every measurement artifact.
+  The latency curve now charges the predicted exit-side spread and both entry
+  and exit costs, separates fill rate from net-positive win rate, and reports
+  gross PnL, round-trip cost, average net edge, cost drag, turnover, and net
+  edge basis points.
 - Lead-lag edge audit that gates measured relationships on events,
   correlation, laggard update rate, update latency, and latency-curve PnL
   before replay/sweep promotion. It now fails closed unless the measurement
   manifest, artifacts, and raw inputs are current, writes an explicit
   measurement-provenance sidecar, and binds the raw dependencies transitively
-  into the edge-audit manifest.
+  into the edge-audit manifest. Optional fill-rate, per-fill net-edge, and
+  cost-drag thresholds also constrain the reported maximum viable latency.
 - Lead-lag edge, replay, replay walk-forward, promotion, order-plan,
   launch-pipeline, and sweep artifacts retain `lead_lag_taker` plus
   market-profile identity for proof/catalog review, and non-India lead-lag
@@ -4024,8 +4029,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2365 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2367 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest conservative lead-lag latency-economics gate: measurement curves now
+model live-arrival touch entry, opposite-touch predicted exit, and both entry
+and exit Indian-market costs. Fill rate and profitable-fill win rate are
+reported separately, alongside gross PnL, round-trip cost, average gross/cost/
+net edge, cost drag, turnover, and net edge bps. Optional CLI thresholds for
+fill rate, average net edge, and maximum cost drag constrain both best-row
+checks and the maximum viable latency frontier; the legacy `avg_edge` field
+remains a gross-edge compatibility alias. All 13 focused tests passed in 13.9
+seconds, all 38 lead-lag lane tests passed in 62 seconds, and all 69 manifest/
+catalog tests passed in 88 seconds. Collection passes at 2367 tests across 155
+files. The full repository and broker lifecycle chains were not rerun.
 
 Latest provider scorecard chain-audit contract repair: the complete provider
 imbalance ops-launch fixture now models the current rehearsal-certificate

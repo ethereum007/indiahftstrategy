@@ -19,6 +19,24 @@ MEASUREMENT_REQUIRED_ARTIFACTS = (
     "leadlag_measure_config.json",
     "leadlag_measure_runbook.md",
 )
+LATENCY_CURVE_COLUMNS = (
+    "latency_ns",
+    "events",
+    "fills",
+    "fill_rate",
+    "profitable_fills",
+    "win_rate",
+    "gross_pnl",
+    "round_trip_cost",
+    "net_pnl",
+    "avg_edge",
+    "avg_gross_edge",
+    "avg_round_trip_cost",
+    "avg_net_edge",
+    "cost_drag_ratio",
+    "entry_turnover",
+    "net_edge_bps",
+)
 
 
 @dataclass(frozen=True)
@@ -175,16 +193,16 @@ def latency_viability_curve(
         raise ValueError("depth_fraction must be in (0, 1]")
     events = _events_with_laggard_state(leader, laggard, leader_tick_size, innovation_ticks)
     if events.empty:
-        return pd.DataFrame(
-            columns=["latency_ns", "events", "fills", "win_rate", "net_pnl", "avg_edge"]
-        )
+        return pd.DataFrame(columns=LATENCY_CURVE_COLUMNS)
 
     laggard_book = laggard.sort_values("ts").copy()
     rows = []
     for latency_ns in latency_sweep_ns:
         fills = 0
-        net_pnl = 0.0
-        gross_edge_sum = 0.0
+        profitable_fills = 0
+        gross_pnl = 0.0
+        round_trip_cost = 0.0
+        entry_turnover = 0.0
         for event in events.itertuples(index=False):
             arrival_ts = int(event.ts + int(latency_ns))
             book = _book_at(laggard_book, arrival_ts)
@@ -195,31 +213,58 @@ def latency_viability_curve(
             if qty <= 0:
                 continue
             if expected_move > 0:
-                raw_edge = event.laggard_ask_at_event + expected_move - book["ask"]
                 fill_price = book["ask"]
+                exit_price = event.laggard_bid_at_event + expected_move
                 side = +1
             else:
-                raw_edge = book["bid"] - (event.laggard_bid_at_event + expected_move)
                 fill_price = book["bid"]
+                exit_price = event.laggard_ask_at_event + expected_move
                 side = -1
+            raw_edge = side * (exit_price - fill_price)
+            if exit_price <= 0:
+                continue
             if raw_edge < laggard_tick_size:
                 continue
-            cost = costs.cost(side, fill_price, qty, instrument)
+            entry_cost = costs.cost(side, fill_price, qty, instrument)
+            exit_cost = costs.cost(-side, exit_price, qty, instrument)
+            cost = entry_cost + exit_cost
             gross_edge = raw_edge * qty * instrument.multiplier
-            net_pnl += gross_edge - cost
-            gross_edge_sum += gross_edge
+            net_edge = gross_edge - cost
+            gross_pnl += gross_edge
+            round_trip_cost += cost
+            entry_turnover += fill_price * qty * instrument.multiplier
             fills += 1
+            profitable_fills += int(net_edge > 0)
+        net_pnl = gross_pnl - round_trip_cost
         rows.append(
             {
                 "latency_ns": int(latency_ns),
                 "events": int(len(events)),
                 "fills": int(fills),
-                "win_rate": fills / len(events),
+                "fill_rate": fills / len(events),
+                "profitable_fills": int(profitable_fills),
+                "win_rate": profitable_fills / fills if fills else 0.0,
+                "gross_pnl": float(gross_pnl),
+                "round_trip_cost": float(round_trip_cost),
                 "net_pnl": float(net_pnl),
-                "avg_edge": float(gross_edge_sum / max(fills, 1)),
+                "avg_edge": float(gross_pnl / max(fills, 1)),
+                "avg_gross_edge": float(gross_pnl / max(fills, 1)),
+                "avg_round_trip_cost": float(round_trip_cost / max(fills, 1)),
+                "avg_net_edge": float(net_pnl / max(fills, 1)),
+                "cost_drag_ratio": (
+                    float(round_trip_cost / gross_pnl)
+                    if gross_pnl > 0
+                    else np.nan
+                ),
+                "entry_turnover": float(entry_turnover),
+                "net_edge_bps": (
+                    float(1e4 * net_pnl / entry_turnover)
+                    if entry_turnover > 0
+                    else np.nan
+                ),
             }
         )
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=LATENCY_CURVE_COLUMNS)
 
 
 def _leader_events(

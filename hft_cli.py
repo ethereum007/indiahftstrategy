@@ -694,6 +694,9 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_edge.add_argument("--min-best-latency-net-pnl", type=float, default=0.0)
     leadlag_edge.add_argument("--min-best-latency-fills", type=int, default=1)
     leadlag_edge.add_argument("--min-profitable-latency-ns", type=int, default=0)
+    leadlag_edge.add_argument("--min-best-latency-fill-rate", type=float, default=None)
+    leadlag_edge.add_argument("--min-best-latency-avg-net-edge", type=float, default=None)
+    leadlag_edge.add_argument("--max-best-latency-cost-drag-ratio", type=float, default=None)
     leadlag_edge.add_argument("--fail-on-breach", action="store_true")
 
     imbalance_edge = sub.add_parser("audit-imbalance-edge", help="Gate microprice imbalance evidence before replay.")
@@ -4869,6 +4872,11 @@ def main(argv: list[str] | None = None) -> int:
                 min_best_latency_net_pnl=args.min_best_latency_net_pnl,
                 min_best_latency_fills=args.min_best_latency_fills,
                 min_profitable_latency_ns=args.min_profitable_latency_ns,
+                min_best_latency_fill_rate=args.min_best_latency_fill_rate,
+                min_best_latency_avg_net_edge=args.min_best_latency_avg_net_edge,
+                max_best_latency_cost_drag_ratio=(
+                    args.max_best_latency_cost_drag_ratio
+                ),
             ),
         )
         print(result.summary.to_string(index=False))
