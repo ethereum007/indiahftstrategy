@@ -4202,8 +4202,16 @@ against the established view-sixty-seven broker and independently recomputed
 cutover anchors, and emits fresh view seventy-six under
 `cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-sixty-eight handoff remains unchanged for route
-enablement, which continues to consume view sixty-eight and intentionally
-ignores additive view seventy-six.
+enablement, which continues to derive established view sixty-nine from view
+sixty-eight. Route enablement now also consumes additive view seventy-six from
+nested cutover config or flattened
+`scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+summary fields, revalidates the exact confirmed verified-reconciled chain
+against the established view-sixty-eight broker and independently recomputed
+route anchors, and emits fresh view seventy-seven under
+`route_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Broker dispatch continues to derive established view seventy from view sixty-
+nine and intentionally ignores additive view seventy-seven.
 Legacy draft-backed batches continue through the existing provenance checks.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
@@ -5129,7 +5137,16 @@ source against the established broker and a fresh canonical cutover
 recomputation, and emits a 75-field view seventy-six under
 `cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 The established view-sixty-eight output remains unchanged for route
-enablement, which intentionally ignores additive view seventy-six.
+enablement, which continues to derive established view sixty-nine from view
+sixty-eight. Route enablement now also consumes additive view seventy-six from
+nested cutover config or flattened
+`scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+summary fields. It revalidates the exact 75-field confirmed verified-
+reconciled source against the established broker and a fresh canonical route
+recomputation, and emits a 76-field view seventy-seven under
+`route_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Broker dispatch continues to derive established view seventy from view sixty-
+nine and intentionally ignores additive view seventy-seven.
 The established view-thirty-seven `route_extended_complete_final_*` output
 remains unchanged as broker dispatch's compatibility anchor. Broker dispatch
 additionally consumes view forty-five from nested route config or flattened
@@ -5541,8 +5558,12 @@ and now consumes additive view seventy-five, extending the confirmed verified-
 reconciled epoch with fresh view seventy-six under
 `cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
 Route enablement continues to derive established view sixty-nine from view
-sixty-eight and intentionally ignores additive view seventy-six; distinct-
-digest regressions cover all twenty-eight compatibility boundaries.
+sixty-eight, now consumes additive view seventy-six, and extends the confirmed
+verified-reconciled epoch with fresh view seventy-seven under
+`route_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison`.
+Broker dispatch continues to derive established view seventy from view sixty-
+nine and intentionally ignores additive view seventy-seven; distinct-digest
+regressions cover all twenty-nine compatibility boundaries.
 Summary-only recovery prefers the current `cutover_*` vendor columns and the
 cutover-produced `scaleup_*` final-lineage columns before older compatibility
 fields. If cutover retained the

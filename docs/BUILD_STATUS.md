@@ -3987,13 +3987,45 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2327 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2334 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest cutover confirmed verified-reconciled current latest extended complete-
-final target-lineage gate: all 112 cutover tests and all 109 route-enable tests
-pass. Confirmed verified-reconciled targets now require controlled-scale-up
-view seventy-five in addition to established view-sixty-seven compatibility
+Latest route-enable confirmed verified-reconciled current latest extended
+complete-final target-lineage gate: all 115 route-enable tests and all 110
+broker-dispatch tests pass. Confirmed verified-reconciled targets now require
+cutover view seventy-six in addition to established view-sixty-eight
+compatibility proof. Route enablement validates the exact 75-field source
+contract: the required and match decisions, 37 inherited digest fields, nine
+latest/current stage fields, seven current/reconciled transition fields, six
+reconciled stage reviews, five verified-reconciled reviews through cutover,
+three later route/dispatch/send verified-reconciled reviews, four confirmed
+reviews from acknowledgement through controlled scale-up, the confirmed
+cutover review, and the generic carried lineage digest. It binds that additive
+proof to the established view-sixty-eight broker and an independently
+recomputed route digest, then extends the confirmed verified-reconciled epoch
+with a 76-field view seventy-seven under the distinct
+`route_confirmed_verified_reconciled_current_latest_extended_complete_final_*`
+key. Missing or negative proof, inherited, transition, or review-field drift,
+either compatibility-anchor drift, generic-carried drift, and fresh route
+recomputation drift all fail closed. Nested cutover config and flattened
+`scaleup_confirmed_verified_reconciled_*` summary recovery both carry the
+proof. Established view sixty-nine remains unchanged, and a distinct-digest
+regression proves broker dispatch continues to derive view seventy from view
+sixty-nine while ignoring additive view seventy-seven. The focused 10-test
+proof completed in 13.4 seconds, the complete 225-test route-enable/broker-
+dispatch boundary in 96.1 seconds, and the full 942-test broker-readiness ->
+scale-up -> cutover -> route-enable -> broker-dispatch -> broker-dispatch-send
+-> broker-dispatch-acknowledgement -> broker-dispatch-roundtrip chain in 743.9
+seconds with explicit exit code zero; only the known pandas fragmentation
+warnings were emitted. The repository collects 2334 tests across 154 files.
+The full repository suite was not rerun for this slice; the last completed
+full-suite baseline remains unchanged.
+
+Immediately preceding cutover confirmed verified-reconciled current latest
+extended complete-final target-lineage gate: all 112 cutover tests and all 109
+route-enable tests pass. Confirmed verified-reconciled targets now require
+controlled-scale-up view seventy-five in addition to established view-sixty-
+seven compatibility
 proof. Cutover validates the exact 74-field source contract: the required and
 match decisions, 37 inherited digest fields, nine latest/current stage fields,
 seven current/reconciled transition fields, six reconciled stage reviews, four
@@ -4022,7 +4054,7 @@ fragmentation warnings were emitted. The repository collects 2327 tests
 across 154 files. The full repository suite was not rerun for this slice; the
 last completed full-suite baseline remains unchanged.
 
-Immediately preceding controlled-scale-up confirmed verified-reconciled
+Earlier controlled-scale-up confirmed verified-reconciled
 current latest extended complete-final target-lineage gate: all 147 controlled-
 scale-up tests and all 106 cutover tests pass. Confirmed verified-reconciled
 targets now require broker-readiness view seventy-four in addition to
