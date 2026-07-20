@@ -8,13 +8,27 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from research.validation import PurgedSplit, purged_walk_forward_splits
 
 
 RUN_TYPE = "walkforward_split_audit"
 READY_NEXT_GATE = "pipeline-robust-selection"
 REPAIR_NEXT_GATE = "audit-walkforward-splits"
+
+REQUIRED_ARTIFACTS = (
+    "walkforward_split_assignments.csv",
+    "walkforward_split_folds.csv",
+    "walkforward_split_checks.csv",
+    "walkforward_split_summary.csv",
+    "walkforward_split_action_queue.csv",
+    "walkforward_split_config.json",
+    "walkforward_split_runbook.md",
+)
 
 ACTION_QUEUE_COLUMNS = [
     "priority",
@@ -65,6 +79,28 @@ class WalkForwardSplitAuditReport:
     @property
     def ready(self) -> bool:
         return self.passed
+
+
+@dataclass(frozen=True)
+class WalkForwardSplitAuditSnapshot:
+    root: Path
+    manifest_path: Path
+    summary: dict[str, Any]
+    config: dict[str, Any]
+    manifest: dict[str, Any]
+    checks: pd.DataFrame
+    folds: pd.DataFrame
+    action_queue: pd.DataFrame
+    passed: bool
+    manifest_current: bool
+    manifest_error: str
+    manifest_sha256: str
+    manifest_artifact_count: int
+    manifest_artifact_match_count: int
+    manifest_input_count: int
+    manifest_input_match_count: int
+    non_authorizing: bool
+    failed_check_names: tuple[str, ...]
 
 
 def evaluate_walk_forward_split_audit(
@@ -179,6 +215,102 @@ def write_walk_forward_split_audit(
         action_queue=report.action_queue,
         config=payload,
         output_dir=out,
+    )
+
+
+def load_walk_forward_split_audit(
+    audit_path: str | Path,
+) -> WalkForwardSplitAuditSnapshot:
+    raw = Path(audit_path).resolve()
+    if raw.name == "manifest.json":
+        root = raw.parent
+        manifest_path = raw
+    else:
+        root = raw
+        manifest_path = root / "manifest.json"
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=RUN_TYPE,
+        required_artifacts=REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    manifest = _read_json_object(manifest_path)
+    config = _read_json_object(root / "walkforward_split_config.json")
+    summary_frame = pd.read_csv(root / "walkforward_split_summary.csv")
+    checks = pd.read_csv(root / "walkforward_split_checks.csv")
+    folds = pd.read_csv(root / "walkforward_split_folds.csv")
+    action_queue = pd.read_csv(root / "walkforward_split_action_queue.csv")
+    if len(summary_frame) != 1:
+        raise ValueError("walk-forward split audit summary must contain one row")
+
+    summary = _record(summary_frame.iloc[0])
+    manifest_extra = manifest.get("extra", {})
+    manifest_extra = manifest_extra if isinstance(manifest_extra, dict) else {}
+    checks_passed = bool(
+        not checks.empty
+        and "passed" in checks.columns
+        and checks["passed"].map(_to_bool).all()
+    )
+    folds_passed = bool(
+        not folds.empty
+        and "passed" in folds.columns
+        and folds["passed"].map(_to_bool).all()
+    )
+    leakage_metrics_zero = bool(
+        _int(summary.get("future_training_rows")) == 0
+        and _int(summary.get("overlapping_training_labels")) == 0
+        and _int(summary.get("embargo_breach_rows")) == 0
+    )
+    non_authorizing = bool(
+        "authorizes_submission" in summary
+        and not _to_bool(summary.get("authorizes_submission", True))
+        and "authorizes_submission" in config
+        and not _to_bool(config.get("authorizes_submission", True))
+        and "authorizes_submission" in manifest_extra
+        and not _to_bool(manifest_extra.get("authorizes_submission", True))
+    )
+    validations = {
+        "manifest_current": bool(integrity.passed),
+        "summary_passed": _to_bool(summary.get("passed", False)),
+        "summary_ready": _to_bool(summary.get("ready", False)),
+        "config_passed": _to_bool(config.get("passed", False)),
+        "config_ready": _to_bool(config.get("ready", False)),
+        "manifest_declares_pass": _to_bool(
+            manifest_extra.get("passed", False)
+        ),
+        "checks_passed": checks_passed,
+        "folds_passed": folds_passed,
+        "leakage_metrics_zero": leakage_metrics_zero,
+        "no_blocked_actions": bool(
+            action_queue.empty
+            and _int(summary.get("blocked_action_count")) == 0
+        ),
+        "non_authorizing": non_authorizing,
+    }
+    failed = tuple(name for name, value in validations.items() if not value)
+    return WalkForwardSplitAuditSnapshot(
+        root=root,
+        manifest_path=manifest_path,
+        summary=summary,
+        config=config,
+        manifest=manifest,
+        checks=checks,
+        folds=folds,
+        action_queue=action_queue,
+        passed=not failed,
+        manifest_current=bool(integrity.passed),
+        manifest_error=str(integrity.error),
+        manifest_sha256=(
+            file_sha256(manifest_path) if manifest_path.is_file() else ""
+        ),
+        manifest_artifact_count=int(integrity.artifact_count),
+        manifest_artifact_match_count=int(integrity.artifact_match_count),
+        manifest_input_count=int(integrity.input_fingerprint_count),
+        manifest_input_match_count=int(
+            integrity.input_fingerprint_match_count
+        ),
+        non_authorizing=non_authorizing,
+        failed_check_names=failed,
     )
 
 
@@ -525,6 +657,37 @@ def _help_command(gate: str) -> str:
 
 def _record(row: pd.Series) -> dict[str, Any]:
     return {str(key): _jsonable(value) for key, value in row.to_dict().items()}
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON artifact must contain an object: {path}")
+    return payload
+
+
+def _to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "ready",
+            "passed",
+        }
+    return bool(value)
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _jsonable(value: Any) -> Any:

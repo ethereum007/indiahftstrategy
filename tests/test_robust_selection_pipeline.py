@@ -202,6 +202,7 @@ def test_robust_selection_pipeline_binds_registered_study_row(tmp_path):
     assert report.ready
     assert bool(binding["passed"])
     assert bool(binding["contract_matches"])
+    assert bool(binding["walkforward_split_audit_contract_matches"])
     assert binding["registered_study_label"] == "surface_mm_study"
     assert binding["registration_id"] == registration_id
     assert bool(summary["research_registration_provided"])
@@ -222,6 +223,43 @@ def test_robust_selection_pipeline_binds_registered_study_row(tmp_path):
         registration_manifest
     )
     assert not manifest["extra"]["authorizes_submission"]
+
+
+def test_robust_selection_pipeline_enforces_registered_split_audit(tmp_path):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    audit_dir, _ = _write_walkforward_split_audit(tmp_path)
+    output = tmp_path / "robust_selection"
+    _, registration_dir = _write_pipeline_registration(
+        tmp_path,
+        output,
+        walkforward_split_audit_path=audit_dir,
+        require_walkforward_split_audit=True,
+    )
+
+    report = write_robust_selection_pipeline(
+        sweeps,
+        output_dir=output,
+        labels=labels,
+        group_cols=["scenario"],
+        strategy="surface_mm",
+        research_registration_path=registration_dir,
+        registered_study_label="surface_mm_study",
+        require_research_registration=True,
+    )
+
+    binding = report.research_registration.iloc[0]
+    assert not report.ready
+    assert bool(binding["walkforward_split_audit_declared"])
+    assert not bool(binding["walkforward_split_audit_path_matches"])
+    assert not bool(binding["walkforward_split_audit_requirement_matches"])
+    assert not bool(binding["walkforward_split_audit_passed"])
+    assert not bool(binding["walkforward_split_audit_contract_matches"])
+    assert {
+        "walkforward_split_audit_path_matches",
+        "walkforward_split_audit_requirement_matches",
+        "walkforward_split_audit_passed",
+    }.issubset(set(str(binding["failed_check_names"]).split(",")))
+    assert report.summary.iloc[0]["next_gate"] == "register-research-family"
 
 
 def test_robust_selection_pipeline_binds_current_walkforward_split_audit(tmp_path):
@@ -582,7 +620,14 @@ def test_robust_selection_pipeline_blocks_losing_reserved_holdout(tmp_path):
     assert not report.candidate_config["backtest_holdout"]["passed"]
 
 
-def _write_pipeline_registration(tmp_path, output, *, max_scenarios=3):
+def _write_pipeline_registration(
+    tmp_path,
+    output,
+    *,
+    max_scenarios=3,
+    walkforward_split_audit_path=None,
+    require_walkforward_split_audit=False,
+):
     plan_path = tmp_path / "research_family_plan.csv"
     pd.DataFrame(
         [
@@ -596,6 +641,12 @@ def _write_pipeline_registration(tmp_path, output, *, max_scenarios=3):
                 "max_scenarios": max_scenarios,
                 "development_sweeps": 6,
                 "holdout_sweeps": 3,
+                "walkforward_split_audit_path": str(
+                    walkforward_split_audit_path or ""
+                ),
+                "require_walkforward_split_audit": bool(
+                    require_walkforward_split_audit
+                ),
             },
             {
                 "study_label": "future_study",
@@ -607,6 +658,8 @@ def _write_pipeline_registration(tmp_path, output, *, max_scenarios=3):
                 "max_scenarios": 3,
                 "development_sweeps": 6,
                 "holdout_sweeps": 3,
+                "walkforward_split_audit_path": "",
+                "require_walkforward_split_audit": False,
             },
         ]
     ).to_csv(plan_path, index=False)

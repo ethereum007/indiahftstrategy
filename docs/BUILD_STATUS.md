@@ -137,6 +137,12 @@
   each study. It emits a deterministic registration ID, lock file, runbook, and
   manifest bound to the original plan. Shared manifest timestamps now retain
   microsecond UTC precision so post-hoc registrations can fail time ordering.
+  Optional per-study `walkforward_split_audit_path` and
+  `require_walkforward_split_audit` declarations now become part of that
+  deterministic lock. Registration permits the prospective artifact to be
+  created later, but a required declaration must name a path. Direct registered
+  robust runs enforce the exact normalized path, required policy, and a current
+  passing proof; undeclared legacy rows remain compatible.
 - Registered research families now have an immutable launch and closure-
   coverage matrix. `plan-research-family-launches` consumes prospective JSON
   sweep/group specifications, verifies every sweep manifest, emits a
@@ -149,6 +155,12 @@
   and hash-chained attempt record. The
   `run-research-family-study` executor runs only a current launch-ready row's
   exact stored argv and injects the receipt path as dispatch evidence.
+  Declared walk-forward split audits are now loaded at planning time and bound
+  into the contract core, generated argv, canonical semantic digest, matrix
+  row, summary, and runbook. The matrix manifest fingerprints each audit,
+  manifest, and original labels dependency. Missing, failed, substituted, or
+  drifted temporal proof invalidates the contract and routes the study back to
+  `audit-walkforward-splits` before dispatch.
   Abandonments require a unique reason ledger row and an explicit operator
   attestation; all artifacts remain non-authorizing.
 - Cross-strategy research now has a declared-family multiple-testing ledger.
@@ -4007,8 +4019,26 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2359 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2361 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest prospective temporal-proof launch gate: research-family plan rows can
+now declare a normalized walk-forward split-audit path and required policy
+before the artifact exists. Launch planning resolves and fully revalidates the
+declared audit, binds its manifest SHA into the immutable contract and robust
+semantic digest, supplies the exact CLI flags, and fingerprints the audit's
+original labels in the launch-matrix manifest. Direct registered robust runs
+also compare the invoked audit path and policy with the locked row. Missing,
+failed, stale, omitted, or substituted proof fails closed and advances to
+`audit-walkforward-splits`; rows with no declaration retain compatibility. The
+33-test split-audit -> registration -> launch/receipt -> robust-selection slice
+passed in 217.2 seconds, including end-to-end dispatch and post-plan label
+drift. The complete 133-test temporal validation -> manifest/catalog ->
+overfit -> significance -> holdout -> robust selection -> prospective
+research-family owner boundary passed in 319.2 seconds. Collection passes at
+2361 tests across 155 files. The full repository and broker lifecycle chains
+were not rerun for this research-contract slice; their completed baselines
+remain unchanged.
 
 Latest robust-selection temporal-proof binding gate: model-driven robust studies
 can now supply `--walkforward-split-audit` and fail closed on a missing required

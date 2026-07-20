@@ -8,6 +8,7 @@ from reports.walkforward_split_audit import (
     WalkForwardSplitAuditConfig,
     WalkForwardSplitAuditThresholds,
     evaluate_walk_forward_split_audit,
+    load_walk_forward_split_audit,
     write_walk_forward_split_audit,
 )
 
@@ -135,6 +136,21 @@ def test_write_walkforward_split_audit_outputs_manifest_bound_evidence(tmp_path)
         require_input_fingerprints=True,
     )
     assert integrity.passed
+    snapshot = load_walk_forward_split_audit(out_dir)
+    assert snapshot.passed
+    assert snapshot.manifest_current
+    assert snapshot.failed_check_names == ()
+    assert snapshot.non_authorizing
+
+    labels_path.write_text(
+        labels_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted = load_walk_forward_split_audit(out_dir / "manifest.json")
+    assert not drifted.passed
+    assert not drifted.manifest_current
+    assert drifted.manifest_error == "input_drift"
+    assert "manifest_current" in drifted.failed_check_names
 
 
 def test_cli_walkforward_split_audit_returns_fail_closed_exit_codes(tmp_path):

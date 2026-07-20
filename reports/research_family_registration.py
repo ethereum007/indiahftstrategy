@@ -128,6 +128,15 @@ def evaluate_research_family_registration(
             minimum=thresholds.min_holdout_sweeps,
         ).sum()
     )
+    audit_paths = studies.get(
+        "walkforward_split_audit_path",
+        pd.Series("", index=studies.index, dtype=str),
+    ).fillna("").astype(str).str.strip()
+    audit_required = studies.get(
+        "require_walkforward_split_audit",
+        pd.Series(False, index=studies.index, dtype=bool),
+    ).map(_to_bool)
+    valid_audit_declarations = int((~audit_required | audit_paths.ne("")).sum())
     checks = pd.DataFrame(
         [
             _numeric_check(
@@ -179,6 +188,13 @@ def evaluate_research_family_registration(
                 study_count,
                 "every study must reserve enough chronological holdouts",
             ),
+            _numeric_check(
+                "walkforward_split_audit_declarations",
+                valid_audit_declarations,
+                "==",
+                study_count,
+                "every required walk-forward split audit needs a planned path",
+            ),
         ]
     )
     passed = bool(not checks.empty and checks["passed"].astype(bool).all())
@@ -203,6 +219,12 @@ def evaluate_research_family_registration(
                     "holdout_sweeps",
                 ),
                 "total_max_scenarios": _sum_int(studies, "max_scenarios"),
+                "walkforward_split_audit_declared_count": int(
+                    audit_paths.ne("").sum()
+                ),
+                "walkforward_split_audit_required_count": int(
+                    audit_required.sum()
+                ),
                 "failed_checks": failed_checks,
                 "action_count": int(len(action_queue)),
                 "blocked_action_count": int(len(action_queue)),
@@ -361,7 +383,7 @@ def load_research_family_registration(
     summary_frame = pd.read_csv(summary_path)
     if summary_frame.empty:
         raise ValueError(f"research family registration summary is empty: {summary_path}")
-    studies = pd.read_csv(studies_path)
+    studies = _normalize_plan(pd.read_csv(studies_path), root)
     summary = _record(summary_frame.iloc[0])
     config = _read_json_object(config_path)
     lock = _read_json_object(lock_path)
@@ -435,6 +457,14 @@ def _normalize_plan(plan: pd.DataFrame, root: Path) -> pd.DataFrame:
     frame["planned_study_path"] = frame["planned_study_path"].map(
         lambda value: _planned_path(value, root)
     )
+    if "walkforward_split_audit_path" in frame.columns:
+        frame["walkforward_split_audit_path"] = frame[
+            "walkforward_split_audit_path"
+        ].map(lambda value: _planned_path(value, root))
+    if "require_walkforward_split_audit" in frame.columns:
+        frame["require_walkforward_split_audit"] = frame[
+            "require_walkforward_split_audit"
+        ].map(_strict_bool)
     for column in ("max_scenarios", "development_sweeps", "holdout_sweeps"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
     ordered = list(REQUIRED_COLUMNS) + [
@@ -452,6 +482,24 @@ def _planned_path(value: Any, root: Path) -> str:
         return ""
     path = Path(text)
     return str((root / path).resolve() if not path.is_absolute() else path.resolve())
+
+
+def _strict_bool(value: Any) -> bool:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip().lower()
+    if not text:
+        return False
+    if text in {"1", "true", "yes", "y"}:
+        return True
+    if text in {"0", "false", "no", "n"}:
+        return False
+    raise ValueError(f"invalid boolean value: {value}")
 
 
 def _complete_text_rows(studies: pd.DataFrame) -> int:
@@ -530,6 +578,8 @@ def _recommendation(check: str) -> str:
         return "declare_a_positive_maximum_search_breadth_per_study"
     if check == "development_sweep_plan":
         return "plan_at_least_six_development_sweeps_per_study"
+    if check == "walkforward_split_audit_declarations":
+        return "declare_an_audit_path_for_each_required_model_study"
     return "reserve_at_least_three_chronological_holdouts_per_study"
 
 
@@ -592,6 +642,11 @@ def _runbook(
             f"{int(summary['min_planned_holdout_sweeps'])}"
         ),
         f"- Planned maximum scenarios: {int(summary['total_max_scenarios'])}",
+        (
+            "- Walk-forward split audits (declared/required): "
+            f"{int(summary['walkforward_split_audit_declared_count'])}/"
+            f"{int(summary['walkforward_split_audit_required_count'])}"
+        ),
         f"- Next gate: `{summary['next_gate']}`",
         "- Closed: `false`",
         "- Authorizes submission: `false`",

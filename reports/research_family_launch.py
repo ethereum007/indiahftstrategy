@@ -16,6 +16,7 @@ import pandas as pd
 
 from reports.manifest import (
     file_sha256,
+    manifest_dependency_paths,
     verify_experiment_manifest,
     write_experiment_manifest,
 )
@@ -35,12 +36,14 @@ from reports.robust_selection_semantics import (
     build_robust_selection_semantics,
     semantic_digest,
 )
+from reports.walkforward_split_audit import load_walk_forward_split_audit
 
 
 RUN_TYPE = "research_family_launch_matrix"
 READY_NEXT_GATE = "audit-research-family"
 LAUNCH_NEXT_GATE = "run-research-family-study"
 REPAIR_NEXT_GATE = "plan-research-family-launches"
+SPLIT_AUDIT_NEXT_GATE = "audit-walkforward-splits"
 ATTEMPT_LEDGER_NAME = "attempts.jsonl"
 ATTEMPT_LOCK_NAME = "attempts.lock"
 ATTEMPT_RECORD_DIR = "records"
@@ -1178,6 +1181,35 @@ def write_research_family_launch_matrix(
     }
     if abandonment_source is not None:
         inputs["research_family_abandonments"] = abandonment_source
+    split_audit_manifests = sorted(
+        {
+            Path(str(path)).resolve()
+            for path in launches.get(
+                "walkforward_split_audit_manifest_path",
+                pd.Series(dtype=str),
+            ).astype(str)
+            if path and Path(str(path)).is_file()
+        },
+        key=str,
+    )
+    if split_audit_manifests:
+        inputs["walkforward_split_audits"] = sorted(
+            {path.parent for path in split_audit_manifests},
+            key=str,
+        )
+        inputs["walkforward_split_audit_manifests"] = split_audit_manifests
+        split_audit_dependencies = sorted(
+            {
+                dependency
+                for manifest_path in split_audit_manifests
+                for dependency in manifest_dependency_paths(manifest_path)
+            },
+            key=str,
+        )
+        if split_audit_dependencies:
+            inputs["walkforward_split_audit_dependencies"] = (
+                split_audit_dependencies
+            )
     completed_manifests = [
         Path(str(path))
         for path in launches.get(
@@ -1210,6 +1242,15 @@ def write_research_family_launch_matrix(
             "registration_id": registration.registration_id,
             "study_count": int(len(launches)),
             "contract_ready_count": _bool_count(launches, "contract_ready"),
+            "walkforward_split_audit_declared_count": int(
+                summary.iloc[0]["walkforward_split_audit_declared_count"]
+            ),
+            "walkforward_split_audit_required_count": int(
+                summary.iloc[0]["walkforward_split_audit_required_count"]
+            ),
+            "walkforward_split_audit_passed_count": int(
+                summary.iloc[0]["walkforward_split_audit_passed_count"]
+            ),
             "closure_covered_count": _bool_count(launches, "closure_covered"),
             "attempt_count": int(
                 launches.get("attempt_count", pd.Series(dtype=int)).sum()
@@ -1291,6 +1332,7 @@ def _build_launches(
         sweep_inputs_current = bool(
             sweep_paths and sweep_current_count == len(sweep_paths)
         )
+        split_audit = _walkforward_split_audit_contract(study, plan_root)
         parse_error = ";".join(
             value for value in (sweep_error, group_error, label_error) if value
         )
@@ -1300,6 +1342,7 @@ def _build_launches(
             and sweep_paths_unique
             and group_cols_valid
             and sweep_labels_valid
+            and bool(split_audit["passed"])
         )
         base_argv = _launch_argv(
             registration,
@@ -1307,12 +1350,14 @@ def _build_launches(
             sweep_paths=sweep_paths,
             group_cols=group_cols,
             sweep_labels=sweep_labels,
+            walkforward_split_audit=split_audit,
         )
         semantic_parameters = _default_robust_selection_semantics(
             study,
             sweep_paths=sweep_paths,
             group_cols=group_cols,
             sweep_labels=sweep_labels,
+            walkforward_split_audit=split_audit,
         )
         contract_core = {
             "schema_version": 1,
@@ -1329,6 +1374,21 @@ def _build_launches(
             "contract_valid": contract_valid,
             "authorizes_submission": False,
         }
+        if split_audit["provided"] or split_audit["required"]:
+            contract_core["walkforward_split_audit"] = {
+                key: split_audit[key]
+                for key in (
+                    "provided",
+                    "required",
+                    "passed",
+                    "audit_path",
+                    "manifest_path",
+                    "manifest_sha256",
+                    "manifest_current",
+                    "manifest_error",
+                    "failed_check_names",
+                )
+            }
         contract_id = _payload_sha256(contract_core)
         contract_path = contract_dir / (
             f"{index + 1:03d}_{_slug(label)}_{contract_id[:12]}.json"
@@ -1468,6 +1528,51 @@ def _build_launches(
                 "group_column_count": len(group_cols),
                 "group_columns_valid": group_cols_valid,
                 "sweep_labels_valid": sweep_labels_valid,
+                "walkforward_split_audit_provided": bool(
+                    split_audit["provided"]
+                ),
+                "walkforward_split_audit_required": bool(
+                    split_audit["required"]
+                ),
+                "walkforward_split_audit_passed": bool(
+                    split_audit["passed"]
+                ),
+                "walkforward_split_audit_path": str(
+                    split_audit["audit_path"]
+                ),
+                "walkforward_split_audit_manifest_path": str(
+                    split_audit["manifest_path"]
+                ),
+                "walkforward_split_audit_manifest_sha256": str(
+                    split_audit["manifest_sha256"]
+                ),
+                "walkforward_split_audit_manifest_current": bool(
+                    split_audit["manifest_current"]
+                ),
+                "walkforward_split_audit_manifest_error": str(
+                    split_audit["manifest_error"]
+                ),
+                "walkforward_split_audit_failed_check_names": str(
+                    split_audit["failed_check_names"]
+                ),
+                "walkforward_split_audit_source_rows": int(
+                    split_audit["source_rows"]
+                ),
+                "walkforward_split_audit_fold_count": int(
+                    split_audit["fold_count"]
+                ),
+                "walkforward_split_audit_future_training_rows": int(
+                    split_audit["future_training_rows"]
+                ),
+                "walkforward_split_audit_overlapping_training_labels": int(
+                    split_audit["overlapping_training_labels"]
+                ),
+                "walkforward_split_audit_embargo_breach_rows": int(
+                    split_audit["embargo_breach_rows"]
+                ),
+                "walkforward_split_audit_non_authorizing": bool(
+                    split_audit["non_authorizing"]
+                ),
                 "launch_spec_error": parse_error,
                 "contract_valid": contract_valid,
                 "contract_ready": contract_ready,
@@ -1692,12 +1797,97 @@ def _result_evidence(
     }
 
 
+def _walkforward_split_audit_contract(
+    study: pd.Series,
+    plan_root: Path,
+) -> dict[str, Any]:
+    raw_path = str(study.get("walkforward_split_audit_path", "")).strip()
+    required = _to_bool(study.get("require_walkforward_split_audit", False))
+    provided = bool(raw_path)
+    base: dict[str, Any] = {
+        "provided": provided,
+        "required": required,
+        "passed": False,
+        "audit_path": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_current": False,
+        "manifest_error": "",
+        "failed_check_names": "",
+        "source_rows": 0,
+        "fold_count": 0,
+        "future_training_rows": 0,
+        "overlapping_training_labels": 0,
+        "embargo_breach_rows": 0,
+        "non_authorizing": False,
+    }
+    if not provided:
+        base.update(
+            {
+                "passed": not required,
+                "failed_check_names": "" if not required else "audit_provided",
+                "manifest_error": "" if not required else "audit_path_missing",
+            }
+        )
+        return base
+
+    root = _resolve_path(raw_path, plan_root)
+    base.update(
+        {
+            "audit_path": str(root),
+            "manifest_path": str(root / "manifest.json"),
+        }
+    )
+    try:
+        snapshot = load_walk_forward_split_audit(root)
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        base.update(
+            {
+                "manifest_error": f"{type(exc).__name__}: {exc}",
+                "failed_check_names": "audit_loadable",
+            }
+        )
+        return base
+
+    summary = snapshot.summary
+    base.update(
+        {
+            "passed": snapshot.passed,
+            "audit_path": str(snapshot.root),
+            "manifest_path": str(snapshot.manifest_path),
+            "manifest_sha256": snapshot.manifest_sha256,
+            "manifest_current": snapshot.manifest_current,
+            "manifest_error": snapshot.manifest_error,
+            "failed_check_names": ",".join(snapshot.failed_check_names),
+            "source_rows": _int(summary.get("source_rows")),
+            "fold_count": _int(summary.get("fold_count")),
+            "future_training_rows": _int(summary.get("future_training_rows")),
+            "overlapping_training_labels": _int(
+                summary.get("overlapping_training_labels")
+            ),
+            "embargo_breach_rows": _int(
+                summary.get("embargo_breach_rows")
+            ),
+            "non_authorizing": snapshot.non_authorizing,
+        }
+    )
+    return base
+
+
 def _default_robust_selection_semantics(
     study: pd.Series,
     *,
     sweep_paths: list[Path],
     group_cols: list[str],
     sweep_labels: list[str],
+    walkforward_split_audit: dict[str, Any],
 ) -> dict[str, Any]:
     holdout_sweeps = _int(study.get("holdout_sweeps"))
     overfit_config = BacktestOverfitConfig(
@@ -1738,6 +1928,18 @@ def _default_robust_selection_semantics(
             BacktestHoldoutThresholds(min_sweeps=holdout_sweeps)
         ),
         promotion_thresholds=asdict(promotion_thresholds),
+        walkforward_split_audit=(
+            {
+                "path": str(walkforward_split_audit["audit_path"]),
+                "required": bool(walkforward_split_audit["required"]),
+                "manifest_sha256": str(
+                    walkforward_split_audit["manifest_sha256"]
+                ),
+            }
+            if walkforward_split_audit["provided"]
+            or walkforward_split_audit["required"]
+            else None
+        ),
     )
 
 
@@ -1748,6 +1950,7 @@ def _launch_argv(
     sweep_paths: list[Path],
     group_cols: list[str],
     sweep_labels: list[str],
+    walkforward_split_audit: dict[str, Any],
 ) -> list[str]:
     argv = [
         "python",
@@ -1774,6 +1977,15 @@ def _launch_argv(
         "--fail-on-actions",
         "--fail-on-breach",
     ]
+    if walkforward_split_audit["provided"]:
+        argv.extend(
+            [
+                "--walkforward-split-audit",
+                str(walkforward_split_audit["audit_path"]),
+            ]
+        )
+    if walkforward_split_audit["required"]:
+        argv.append("--require-walkforward-split-audit")
     for label in sweep_labels:
         argv.extend(["--label", label])
     return argv
@@ -1791,6 +2003,24 @@ def _checks(
     outcome_ledger_error: str,
 ) -> pd.DataFrame:
     study_count = int(len(launches))
+    split_audit_requested = (
+        launches.get(
+            "walkforward_split_audit_provided",
+            pd.Series(False, index=launches.index),
+        ).map(_to_bool)
+        | launches.get(
+            "walkforward_split_audit_required",
+            pd.Series(False, index=launches.index),
+        ).map(_to_bool)
+    )
+    split_audit_passed = launches.get(
+        "walkforward_split_audit_passed",
+        pd.Series(False, index=launches.index),
+    ).map(_to_bool)
+    split_audit_requested_count = int(split_audit_requested.sum())
+    split_audit_passed_count = int(
+        (split_audit_requested & split_audit_passed).sum()
+    )
     registered_labels = set(registration.studies["study_label"].astype(str))
     abandonment_labels = set(
         abandonments.get("study_label", pd.Series(dtype=str)).astype(str)
@@ -1885,6 +2115,13 @@ def _checks(
             study_count,
             "one or more registered rows lack a valid immutable launch contract",
         ),
+        _numeric_check(
+            "walkforward_split_audits_current",
+            split_audit_passed_count,
+            "==",
+            split_audit_requested_count,
+            "one or more declared walk-forward split audits are missing, failed, or stale",
+        ),
         _check(
             "abandonment_rows_valid",
             abandonment_rows_valid,
@@ -1923,6 +2160,20 @@ def _summary(
 ) -> pd.DataFrame:
     status = launches.get("study_status", pd.Series(dtype=str)).astype(str)
     contract_ready_count = _bool_count(launches, "contract_ready")
+    split_audit_requested = (
+        launches.get(
+            "walkforward_split_audit_provided",
+            pd.Series(False, index=launches.index),
+        ).map(_to_bool)
+        | launches.get(
+            "walkforward_split_audit_required",
+            pd.Series(False, index=launches.index),
+        ).map(_to_bool)
+    )
+    split_audit_passed = launches.get(
+        "walkforward_split_audit_passed",
+        pd.Series(False, index=launches.index),
+    ).map(_to_bool)
     failed_check_names = set(
         checks.loc[~checks["passed"].map(_to_bool), "check"].astype(str)
     )
@@ -1941,9 +2192,9 @@ def _summary(
         READY_NEXT_GATE
         if passed
         else (
-            REPAIR_NEXT_GATE
-            if repair_required
-            else LAUNCH_NEXT_GATE
+            SPLIT_AUDIT_NEXT_GATE
+            if "walkforward_split_audits_current" in failed_check_names
+            else (REPAIR_NEXT_GATE if repair_required else LAUNCH_NEXT_GATE)
         )
     )
     return pd.DataFrame(
@@ -1955,6 +2206,20 @@ def _summary(
                 "study_count": int(len(launches)),
                 "valid_contract_count": _bool_count(launches, "contract_valid"),
                 "contract_ready_count": contract_ready_count,
+                "walkforward_split_audit_declared_count": _bool_count(
+                    launches,
+                    "walkforward_split_audit_provided",
+                ),
+                "walkforward_split_audit_required_count": _bool_count(
+                    launches,
+                    "walkforward_split_audit_required",
+                ),
+                "walkforward_split_audit_requested_count": int(
+                    split_audit_requested.sum()
+                ),
+                "walkforward_split_audit_passed_count": int(
+                    (split_audit_requested & split_audit_passed).sum()
+                ),
                 "initial_dispatch_ready_count": _bool_count(
                     launches,
                     "initial_dispatch_ready",
@@ -2022,6 +2287,12 @@ def _action_queue(
         elif not bool(launch.outcome_ledger_valid):
             action = "repair_the_hash_chained_launch_outcome_ledger"
             next_gate = REPAIR_NEXT_GATE
+        elif (
+            bool(launch.walkforward_split_audit_provided)
+            or bool(launch.walkforward_split_audit_required)
+        ) and not bool(launch.walkforward_split_audit_passed):
+            action = "rerun_or_restore_the_declared_walkforward_split_audit"
+            next_gate = SPLIT_AUDIT_NEXT_GATE
         elif not bool(launch.contract_valid):
             action = "repair_the_registered_launch_spec"
             next_gate = REPAIR_NEXT_GATE
@@ -2061,6 +2332,11 @@ def _action_queue(
     for check in failed.itertuples(index=False):
         if str(check.check) == "closure_coverage" and rows:
             continue
+        next_gate = (
+            SPLIT_AUDIT_NEXT_GATE
+            if str(check.check) == "walkforward_split_audits_current"
+            else REPAIR_NEXT_GATE
+        )
         rows.append(
             {
                 "priority": len(rows) + 1,
@@ -2074,8 +2350,8 @@ def _action_queue(
                 "action": "repair_the_launch_matrix_evidence",
                 "reason": str(check.reason),
                 "recommendation": "repair_the_launch_matrix_evidence",
-                "next_gate": REPAIR_NEXT_GATE,
-                "next_gate_help_command": _help_command(REPAIR_NEXT_GATE),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
             }
         )
     return pd.DataFrame(rows, columns=ACTION_QUEUE_COLUMNS)
@@ -2294,6 +2570,11 @@ def _runbook(
         f"- Family: `{summary['family_id']}`",
         f"- Registration ID: `{summary['registration_id']}`",
         f"- Studies: {int(summary['study_count'])}",
+        (
+            "- Walk-forward split audits (requested/passed): "
+            f"{int(summary['walkforward_split_audit_requested_count'])}/"
+            f"{int(summary['walkforward_split_audit_passed_count'])}"
+        ),
         f"- Closure covered: {int(summary['closure_covered_count'])}/{int(summary['study_count'])}",
         f"- Dispatch attempts: {int(summary['attempt_count'])}",
         f"- Finalized outcomes: {int(summary['outcome_count'])}",

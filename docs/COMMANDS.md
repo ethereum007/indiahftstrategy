@@ -2522,9 +2522,9 @@ Create a plan CSV before running any studies. Paths are resolved relative to
 the plan file and may point to result folders that do not exist yet:
 
 ```csv
-study_label,strategy,market,hypothesis,planned_study_path,primary_metric,max_scenarios,development_sweeps,holdout_sweeps
-leadlag,leadlag,india_nse_index_derivatives,Leader moves predict laggard net of costs,results/leadlag,robust_score,24,6,3
-imbalance,imbalance,india_nse_index_derivatives,Queue imbalance predicts executable edge,results/imbalance,robust_score,36,6,3
+study_label,strategy,market,hypothesis,planned_study_path,primary_metric,max_scenarios,development_sweeps,holdout_sweeps,walkforward_split_audit_path,require_walkforward_split_audit
+leadlag,leadlag,india_nse_index_derivatives,Leader moves predict laggard net of costs,results/leadlag,robust_score,24,6,3,runs/validation/leadlag_walkforward,true
+imbalance,imbalance,india_nse_index_derivatives,Queue imbalance predicts executable edge,results/imbalance,robust_score,36,6,3,runs/validation/imbalance_walkforward,true
 ```
 
 Lock and manifest the normalized plan:
@@ -2545,7 +2545,13 @@ The registration validates unique labels and future result roots, required
 hypotheses and metrics, positive search breadth, and development/holdout period
 counts. Its deterministic registration ID hashes the family ID plus normalized
 plan. `registration.lock.json` and the manifest bind that ID to the original
-plan file. Changing the plan requires a new registration.
+plan file. Changing the plan requires a new registration. The optional
+`walkforward_split_audit_path` and `require_walkforward_split_audit` columns
+prospectively lock temporal-leakage proof per study. Registration normalizes
+the path but does not require the audit to exist yet; a true requirement must
+name a path. The launch planner and direct registered pipeline later require
+that exact path, exact required/optional policy, and a current passing audit.
+Legacy plans that omit both columns remain compatible.
 
 Run each planned robust study with the registration root, its exact
 `study_label`, and `--require-research-registration`. This creates prospective
@@ -2577,6 +2583,15 @@ To materialize immutable launch contracts, add `sweep_paths_json`,
 prospective registration plan. Each value is a JSON string array. These
 columns are preserved in the normalized plan and included in its registration
 ID.
+
+When a registered row declares `walkforward_split_audit_path`, launch planning
+loads that audit, verifies all artifacts plus the original labels fingerprint,
+and writes its path, manifest SHA, required policy, and pass state into the
+immutable contract core and semantic digest. The generated argv supplies the
+matching split-audit flags. The launch-matrix manifest fingerprints the audit,
+its manifest, and its labels dependency directly, so missing, failed, replaced,
+or drifted temporal proof prevents dispatch and routes back to
+`audit-walkforward-splits`.
 
 Generate one deterministic `pipeline-robust-selection` argv contract per
 registered row and audit result coverage:

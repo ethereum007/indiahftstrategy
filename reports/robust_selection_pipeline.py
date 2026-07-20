@@ -30,7 +30,6 @@ from reports.backtest_significance import (
 from reports.manifest import (
     file_sha256,
     manifest_dependency_paths,
-    verify_experiment_manifest,
     write_experiment_manifest,
 )
 from reports.promotion import (
@@ -53,9 +52,7 @@ from reports.robust_selection_semantics import (
 )
 from reports.sweep_provenance import build_sweep_provenance
 from reports.sweeps import SweepComparison, write_sweep_comparison
-from reports.walkforward_split_audit import (
-    RUN_TYPE as WALKFORWARD_SPLIT_AUDIT_RUN_TYPE,
-)
+from reports.walkforward_split_audit import load_walk_forward_split_audit
 
 
 RUN_TYPE = "robust_selection_pipeline"
@@ -72,16 +69,6 @@ STAGE_NEXT_GATES = {
     "backtest_holdout": "audit-backtest-holdout",
     "promotion": "promote-scenario",
 }
-
-WALKFORWARD_SPLIT_AUDIT_ARTIFACTS = (
-    "walkforward_split_assignments.csv",
-    "walkforward_split_folds.csv",
-    "walkforward_split_checks.csv",
-    "walkforward_split_summary.csv",
-    "walkforward_split_action_queue.csv",
-    "walkforward_split_config.json",
-    "walkforward_split_runbook.md",
-)
 
 ACTION_QUEUE_COLUMNS = [
     "priority",
@@ -324,6 +311,7 @@ def write_robust_selection_pipeline(
         scenario_count=_int(overfit_row.get("scenario_count")),
         development_sweeps=len(development_paths),
         holdout_sweeps=len(reserved_paths),
+        walkforward_split_audit=walkforward_split_audit_row,
     )
     research_registration_path_out = (
         out / "robust_selection_pipeline_research_registration.csv"
@@ -1167,62 +1155,8 @@ def _walkforward_split_audit_binding(
         )
         return pd.DataFrame([base])
 
-    raw = Path(raw_path).resolve()
-    if raw.name == "manifest.json":
-        root = raw.parent
-        manifest_path = raw
-    else:
-        root = raw
-        manifest_path = root / "manifest.json"
-    base.update(
-        {
-            "audit_path": str(root),
-            "manifest_path": str(manifest_path),
-        }
-    )
-    integrity = verify_experiment_manifest(
-        manifest_path,
-        expected_run_type=WALKFORWARD_SPLIT_AUDIT_RUN_TYPE,
-        required_artifacts=WALKFORWARD_SPLIT_AUDIT_ARTIFACTS,
-        require_input_fingerprints=True,
-    )
-    manifest_sha256 = ""
-    if manifest_path.is_file():
-        try:
-            manifest_sha256 = file_sha256(manifest_path)
-        except OSError:
-            manifest_sha256 = ""
-    base.update(
-        {
-            "manifest_sha256": manifest_sha256,
-            "manifest_current": bool(integrity.passed),
-            "manifest_error": str(integrity.error),
-            "manifest_artifact_count": int(integrity.artifact_count),
-            "manifest_artifact_match_count": int(
-                integrity.artifact_match_count
-            ),
-            "manifest_input_count": int(integrity.input_fingerprint_count),
-            "manifest_input_match_count": int(
-                integrity.input_fingerprint_match_count
-            ),
-        }
-    )
-
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        config = json.loads(
-            (root / "walkforward_split_config.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        summary = pd.read_csv(root / "walkforward_split_summary.csv")
-        checks = pd.read_csv(root / "walkforward_split_checks.csv")
-        folds = pd.read_csv(root / "walkforward_split_folds.csv")
-        action_queue = pd.read_csv(
-            root / "walkforward_split_action_queue.csv"
-        )
-        if not isinstance(manifest, dict) or not isinstance(config, dict):
-            raise ValueError("audit JSON artifacts must be objects")
+        snapshot = load_walk_forward_split_audit(raw_path)
     except (
         OSError,
         ValueError,
@@ -1239,96 +1173,59 @@ def _walkforward_split_audit_binding(
             }
         )
         return pd.DataFrame([base])
-
-    summary_row = (
-        summary.iloc[0] if len(summary) == 1 else pd.Series(dtype=object)
-    )
-    manifest_extra = (
-        manifest.get("extra", {}) if isinstance(manifest, dict) else {}
-    )
-    manifest_extra = manifest_extra if isinstance(manifest_extra, dict) else {}
-    summary_passed = _to_bool(summary_row.get("passed", False))
-    summary_ready = _to_bool(summary_row.get("ready", False))
-    config_passed = _to_bool(config.get("passed", False))
-    config_ready = _to_bool(config.get("ready", False))
-    checks_passed = bool(
-        not checks.empty
-        and "passed" in checks.columns
-        and checks["passed"].map(_to_bool).all()
-    )
-    folds_passed = bool(
-        not folds.empty
-        and "passed" in folds.columns
-        and folds["passed"].map(_to_bool).all()
-    )
-    future_training_rows = _int(summary_row.get("future_training_rows"))
-    overlapping_training_labels = _int(
-        summary_row.get("overlapping_training_labels")
-    )
-    embargo_breach_rows = _int(summary_row.get("embargo_breach_rows"))
-    blocked_action_count = _int(summary_row.get("blocked_action_count"))
-    metrics_zero = bool(
-        future_training_rows == 0
-        and overlapping_training_labels == 0
-        and embargo_breach_rows == 0
-    )
-    non_authorizing = bool(
-        "authorizes_submission" in summary_row.index
-        and not _to_bool(summary_row.get("authorizes_submission", True))
-        and "authorizes_submission" in config
-        and not _to_bool(config.get("authorizes_submission", True))
-        and "authorizes_submission" in manifest_extra
-        and not _to_bool(manifest_extra.get("authorizes_submission", True))
-    )
-    manifest_declares_pass = bool(
-        _to_bool(manifest_extra.get("passed", False))
-    )
-    no_blocked_actions = bool(
-        action_queue.empty and blocked_action_count == 0
-    )
-    validations = {
-        "manifest_current": bool(integrity.passed),
-        "summary_passed": summary_passed,
-        "summary_ready": summary_ready,
-        "config_passed": config_passed,
-        "config_ready": config_ready,
-        "manifest_declares_pass": manifest_declares_pass,
-        "checks_passed": checks_passed,
-        "folds_passed": folds_passed,
-        "leakage_metrics_zero": metrics_zero,
-        "no_blocked_actions": no_blocked_actions,
-        "non_authorizing": non_authorizing,
-    }
-    failed = [name for name, value in validations.items() if not value]
-    passed = not failed
+    summary = snapshot.summary
+    failed = list(snapshot.failed_check_names)
     base.update(
         {
-            "passed": passed,
-            "summary_passed": summary_passed,
-            "summary_ready": summary_ready,
-            "config_passed": config_passed,
-            "config_ready": config_ready,
-            "checks_passed": checks_passed,
-            "folds_passed": folds_passed,
-            "non_authorizing": non_authorizing,
-            "source_rows": _int(summary_row.get("source_rows")),
-            "fold_count": _int(summary_row.get("fold_count")),
-            "future_training_rows": future_training_rows,
-            "overlapping_training_labels": overlapping_training_labels,
-            "embargo_breach_rows": embargo_breach_rows,
-            "blocked_action_count": blocked_action_count,
+            "passed": snapshot.passed,
+            "audit_path": str(snapshot.root),
+            "manifest_path": str(snapshot.manifest_path),
+            "manifest_sha256": snapshot.manifest_sha256,
+            "manifest_current": snapshot.manifest_current,
+            "manifest_error": snapshot.manifest_error,
+            "manifest_artifact_count": snapshot.manifest_artifact_count,
+            "manifest_artifact_match_count": (
+                snapshot.manifest_artifact_match_count
+            ),
+            "manifest_input_count": snapshot.manifest_input_count,
+            "manifest_input_match_count": snapshot.manifest_input_match_count,
+            "summary_passed": _to_bool(summary.get("passed", False)),
+            "summary_ready": _to_bool(summary.get("ready", False)),
+            "config_passed": _to_bool(snapshot.config.get("passed", False)),
+            "config_ready": _to_bool(snapshot.config.get("ready", False)),
+            "checks_passed": bool(
+                not snapshot.checks.empty
+                and "passed" in snapshot.checks.columns
+                and snapshot.checks["passed"].map(_to_bool).all()
+            ),
+            "folds_passed": bool(
+                not snapshot.folds.empty
+                and "passed" in snapshot.folds.columns
+                and snapshot.folds["passed"].map(_to_bool).all()
+            ),
+            "non_authorizing": snapshot.non_authorizing,
+            "source_rows": _int(summary.get("source_rows")),
+            "fold_count": _int(summary.get("fold_count")),
+            "future_training_rows": _int(summary.get("future_training_rows")),
+            "overlapping_training_labels": _int(
+                summary.get("overlapping_training_labels")
+            ),
+            "embargo_breach_rows": _int(
+                summary.get("embargo_breach_rows")
+            ),
+            "blocked_action_count": _int(summary.get("blocked_action_count")),
             "failed_checks": len(failed),
             "failed_check_names": ",".join(failed),
             "detail": (
-                f"folds={_int(summary_row.get('fold_count'))};"
-                f"source_rows={_int(summary_row.get('source_rows'))};"
-                f"manifest_sha256={manifest_sha256}"
-                if passed
+                f"folds={_int(summary.get('fold_count'))};"
+                f"source_rows={_int(summary.get('source_rows'))};"
+                f"manifest_sha256={snapshot.manifest_sha256}"
+                if snapshot.passed
                 else f"failed_checks={','.join(failed)}"
             ),
             "recommendation": (
                 "continue_to_manifest_bound_sweep_validation"
-                if passed
+                if snapshot.passed
                 else "rerun_or_repair_the_walkforward_split_audit"
             ),
         }
@@ -1348,6 +1245,7 @@ def _research_registration_binding(
     scenario_count: int,
     development_sweeps: int,
     holdout_sweeps: int,
+    walkforward_split_audit: pd.Series,
 ) -> pd.DataFrame:
     provided = raw_path is not None
     study_label = str(registered_study_label or "").strip()
@@ -1390,6 +1288,25 @@ def _research_registration_binding(
         "planned_holdout_sweeps": 0,
         "actual_holdout_sweeps": holdout_sweeps,
         "holdout_sweeps_match": False,
+        "walkforward_split_audit_declared": False,
+        "planned_walkforward_split_audit_path": "",
+        "actual_walkforward_split_audit_path": _text(
+            walkforward_split_audit.get("audit_path", "")
+        ),
+        "walkforward_split_audit_provided": _to_bool(
+            walkforward_split_audit.get("provided", False)
+        ),
+        "walkforward_split_audit_path_matches": True,
+        "planned_require_walkforward_split_audit": False,
+        "actual_require_walkforward_split_audit": _to_bool(
+            walkforward_split_audit.get("required", False)
+        ),
+        "walkforward_split_audit_requirement_matches": True,
+        "walkforward_split_audit_passed": bool(
+            _to_bool(walkforward_split_audit.get("provided", False))
+            and _to_bool(walkforward_split_audit.get("passed", False))
+        ),
+        "walkforward_split_audit_contract_matches": True,
         "contract_matches": False,
         "failed_checks": 0,
         "failed_check_names": "",
@@ -1452,6 +1369,49 @@ def _research_registration_binding(
     max_scenarios = _int(plan.get("max_scenarios"))
     planned_development = _int(plan.get("development_sweeps"))
     planned_holdout = _int(plan.get("holdout_sweeps"))
+    planned_split_audit_path = _text(
+        plan.get("walkforward_split_audit_path", "")
+    )
+    actual_split_audit_path = _text(
+        walkforward_split_audit.get("audit_path", "")
+    )
+    split_audit_provided = _to_bool(
+        walkforward_split_audit.get("provided", False)
+    )
+    planned_require_split_audit = _to_bool(
+        plan.get("require_walkforward_split_audit", False)
+    )
+    actual_require_split_audit = _to_bool(
+        walkforward_split_audit.get("required", False)
+    )
+    split_audit_declared = bool(
+        planned_split_audit_path or planned_require_split_audit
+    )
+    split_audit_path_matches = bool(
+        not split_audit_declared
+        or (
+            planned_split_audit_path
+            and actual_split_audit_path
+            and _canonical_audit_path(planned_split_audit_path)
+            == _canonical_audit_path(actual_split_audit_path)
+        )
+    )
+    split_audit_requirement_matches = bool(
+        not split_audit_declared
+        or planned_require_split_audit == actual_require_split_audit
+    )
+    split_audit_passed = bool(
+        split_audit_provided
+        and _to_bool(walkforward_split_audit.get("passed", False))
+    )
+    split_audit_contract_matches = bool(
+        not split_audit_declared
+        or (
+            split_audit_path_matches
+            and split_audit_requirement_matches
+            and split_audit_passed
+        )
+    )
     path_matches = bool(
         planned_path
         and _canonical_path(planned_path) == _canonical_path(output_dir)
@@ -1479,6 +1439,7 @@ def _research_registration_binding(
         and breadth_matches
         and development_matches
         and holdout_matches
+        and split_audit_contract_matches
     )
     checks = {
         "registration_ready": snapshot.ready,
@@ -1492,6 +1453,13 @@ def _research_registration_binding(
         "search_breadth_within_plan": breadth_matches,
         "development_sweeps_match": development_matches,
         "holdout_sweeps_match": holdout_matches,
+        "walkforward_split_audit_path_matches": split_audit_path_matches,
+        "walkforward_split_audit_requirement_matches": (
+            split_audit_requirement_matches
+        ),
+        "walkforward_split_audit_passed": bool(
+            not split_audit_declared or split_audit_passed
+        ),
     }
     failed = [name for name, value in checks.items() if not value]
     passed = not failed
@@ -1523,6 +1491,24 @@ def _research_registration_binding(
             "development_sweeps_match": development_matches,
             "planned_holdout_sweeps": planned_holdout,
             "holdout_sweeps_match": holdout_matches,
+            "walkforward_split_audit_declared": split_audit_declared,
+            "planned_walkforward_split_audit_path": planned_split_audit_path,
+            "actual_walkforward_split_audit_path": actual_split_audit_path,
+            "walkforward_split_audit_provided": split_audit_provided,
+            "walkforward_split_audit_path_matches": split_audit_path_matches,
+            "planned_require_walkforward_split_audit": (
+                planned_require_split_audit
+            ),
+            "actual_require_walkforward_split_audit": (
+                actual_require_split_audit
+            ),
+            "walkforward_split_audit_requirement_matches": (
+                split_audit_requirement_matches
+            ),
+            "walkforward_split_audit_passed": split_audit_passed,
+            "walkforward_split_audit_contract_matches": (
+                split_audit_contract_matches
+            ),
             "contract_matches": contract_matches,
             "failed_checks": len(failed),
             "failed_check_names": ",".join(failed),
@@ -2273,6 +2259,22 @@ def _help_command(gate: str) -> str:
 
 def _canonical_path(value: str | Path) -> str:
     return str(Path(value).resolve()).casefold()
+
+
+def _canonical_audit_path(value: str | Path) -> str:
+    path = Path(value)
+    if path.name.casefold() == "manifest.json":
+        path = path.parent
+    return str(path.resolve()).casefold()
+
+
+def _text(value: Any) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
 
 
 def _int(value: Any) -> int:

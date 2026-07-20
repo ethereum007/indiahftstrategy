@@ -129,6 +129,48 @@ def test_research_family_registration_cli_fails_closed_for_weak_plan(tmp_path):
     assert int(summary["study_count"]) == 1
 
 
+def test_research_family_registration_locks_optional_split_audit_declarations(
+    tmp_path,
+):
+    rows = _plan_rows(tmp_path)
+    rows[0]["walkforward_split_audit_path"] = "validation/leadlag"
+    rows[0]["require_walkforward_split_audit"] = "yes"
+    rows[1]["walkforward_split_audit_path"] = ""
+    rows[1]["require_walkforward_split_audit"] = "false"
+    plan_path = tmp_path / "plan.csv"
+    pd.DataFrame(rows).to_csv(plan_path, index=False)
+
+    report = write_research_family_registration(
+        plan_path,
+        output_dir=tmp_path / "registration",
+        family_id="split_audit_family",
+    )
+
+    studies = report.studies.set_index("study_label")
+    summary = report.summary.iloc[0]
+    assert report.passed
+    assert studies.loc["leadlag", "walkforward_split_audit_path"] == str(
+        (tmp_path / "validation" / "leadlag").resolve()
+    )
+    assert bool(studies.loc["leadlag", "require_walkforward_split_audit"])
+    assert not bool(
+        studies.loc["imbalance", "require_walkforward_split_audit"]
+    )
+    assert int(summary["walkforward_split_audit_declared_count"]) == 1
+    assert int(summary["walkforward_split_audit_required_count"]) == 1
+
+    rows[1]["require_walkforward_split_audit"] = True
+    pd.DataFrame(rows).to_csv(plan_path, index=False)
+    blocked = write_research_family_registration(
+        plan_path,
+        output_dir=tmp_path / "blocked_registration",
+        family_id="blocked_split_audit_family",
+    )
+    failed = set(blocked.checks.loc[~blocked.checks["passed"], "check"])
+    assert not blocked.passed
+    assert "walkforward_split_audit_declarations" in failed
+
+
 def _write_plan(tmp_path):
     plan_path = tmp_path / "plan.csv"
     pd.DataFrame(_plan_rows(tmp_path)).to_csv(plan_path, index=False)

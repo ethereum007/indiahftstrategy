@@ -23,6 +23,7 @@ from reports.research_family_launch import (
     write_research_family_launch_matrix,
 )
 from reports.research_family_registration import write_research_family_registration
+from reports.walkforward_split_audit import write_walk_forward_split_audit
 
 
 def test_research_family_launch_builds_deterministic_pending_contracts(tmp_path):
@@ -64,7 +65,95 @@ def test_research_family_launch_builds_deterministic_pending_contracts(tmp_path)
             Path(row.contract_path).read_text(encoding="utf-8")
         )
         assert contract["contract_id"] == row.contract_id
+        assert "walkforward_split_audit" not in contract["contract_core"]
         assert not contract["authorizes_submission"]
+
+
+def test_research_family_launch_binds_declared_split_audit_end_to_end(tmp_path):
+    audit_dir, labels_path = _write_walkforward_split_audit(tmp_path)
+    _, registration_dir = _write_registration(
+        tmp_path,
+        walkforward_split_audit_path=audit_dir / "manifest.json",
+        require_walkforward_split_audit=True,
+    )
+    launch_dir = tmp_path / "launches"
+
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+
+    leadlag = pending.launches.set_index("study_label").loc["leadlag"]
+    summary = pending.summary.iloc[0]
+    argv = json.loads(leadlag["launch_argv_json"])
+    contract = json.loads(
+        Path(str(leadlag["contract_path"])).read_text(encoding="utf-8")
+    )
+    manifest = json.loads((launch_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert int(summary["walkforward_split_audit_declared_count"]) == 1
+    assert int(summary["walkforward_split_audit_required_count"]) == 1
+    assert int(summary["walkforward_split_audit_passed_count"]) == 1
+    assert bool(leadlag["walkforward_split_audit_provided"])
+    assert bool(leadlag["walkforward_split_audit_required"])
+    assert bool(leadlag["walkforward_split_audit_passed"])
+    assert bool(leadlag["contract_ready"])
+    assert "--walkforward-split-audit" in argv
+    assert "--require-walkforward-split-audit" in argv
+    audit_flag = argv.index("--walkforward-split-audit")
+    assert argv[audit_flag + 1] == str(audit_dir.resolve())
+    audit_contract = contract["contract_core"]["walkforward_split_audit"]
+    assert audit_contract["passed"]
+    assert audit_contract["manifest_current"]
+    assert audit_contract["manifest_sha256"] == file_sha256(
+        audit_dir / "manifest.json"
+    )
+    assert contract["contract_core"]["semantic_parameters"][
+        "walkforward_split_audit"
+    ]["manifest_sha256"] == audit_contract["manifest_sha256"]
+    dependencies = manifest["inputs"][
+        "walkforward_split_audit_dependencies"
+    ]
+    assert len(dependencies) == 1
+    assert dependencies[0]["path"] == str(labels_path.resolve())
+
+    status = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            str(leadlag["contract_id"]),
+        ]
+    )
+
+    result_root = tmp_path / "results" / "leadlag"
+    result_summary = pd.read_csv(
+        result_root / "robust_selection_pipeline_summary.csv"
+    ).iloc[0]
+    registration_binding = pd.read_csv(
+        result_root / "robust_selection_pipeline_research_registration.csv"
+    ).iloc[0]
+    assert status == 0
+    assert bool(result_summary["ready"])
+    assert bool(result_summary["walkforward_split_audit_passed"])
+    assert bool(registration_binding["walkforward_split_audit_declared"])
+    assert bool(registration_binding["walkforward_split_audit_contract_matches"])
+
+    labels_path.write_text(
+        labels_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted = load_research_family_launch_matrix(launch_dir)
+    assert not drifted.manifest_current
+    assert drifted.manifest_error == "input_drift"
+    blocked = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=tmp_path / "launches_after_drift",
+    )
+    blocked_leadlag = blocked.launches.set_index("study_label").loc["leadlag"]
+    assert not bool(blocked_leadlag["walkforward_split_audit_passed"])
+    assert not bool(blocked_leadlag["contract_valid"])
+    assert blocked.summary.iloc[0]["next_gate"] == "audit-walkforward-splits"
 
 
 def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
@@ -827,30 +916,46 @@ def test_research_family_launch_blocks_result_bound_to_different_registration(
     assert "leadlag" in set(report.action_queue["component"])
 
 
-def _write_registration(tmp_path):
+def _write_registration(
+    tmp_path,
+    *,
+    walkforward_split_audit_path=None,
+    require_walkforward_split_audit=False,
+):
     sweeps = _write_sweeps(tmp_path / "sweeps")
     plan_path = tmp_path / "plan.csv"
-    pd.DataFrame(
-        [
-            {
-                "study_label": label,
-                "strategy": label,
-                "market": "india_nse_index_derivatives",
-                "hypothesis": f"{label} remains positive after costs",
-                "planned_study_path": f"results/{label}",
-                "primary_metric": "robust_score",
-                "max_scenarios": 3,
-                "development_sweeps": 6,
-                "holdout_sweeps": 3,
-                "sweep_paths_json": json.dumps([str(path) for path in sweeps]),
-                "group_cols_json": json.dumps(["scenario"]),
-                "sweep_labels_json": json.dumps(
-                    [f"period_{index + 1}" for index in range(9)]
-                ),
-            }
-            for label in ("leadlag", "imbalance")
-        ]
-    ).to_csv(plan_path, index=False)
+    rows = [
+        {
+            "study_label": label,
+            "strategy": label,
+            "market": "india_nse_index_derivatives",
+            "hypothesis": f"{label} remains positive after costs",
+            "planned_study_path": f"results/{label}",
+            "primary_metric": "robust_score",
+            "max_scenarios": 3,
+            "development_sweeps": 6,
+            "holdout_sweeps": 3,
+            "sweep_paths_json": json.dumps([str(path) for path in sweeps]),
+            "group_cols_json": json.dumps(["scenario"]),
+            "sweep_labels_json": json.dumps(
+                [f"period_{index + 1}" for index in range(9)]
+            ),
+        }
+        for label in ("leadlag", "imbalance")
+    ]
+    if walkforward_split_audit_path is not None or require_walkforward_split_audit:
+        for row in rows:
+            row["walkforward_split_audit_path"] = (
+                str(walkforward_split_audit_path)
+                if row["study_label"] == "leadlag"
+                and walkforward_split_audit_path is not None
+                else ""
+            )
+            row["require_walkforward_split_audit"] = bool(
+                row["study_label"] == "leadlag"
+                and require_walkforward_split_audit
+            )
+    pd.DataFrame(rows).to_csv(plan_path, index=False)
     registration_dir = tmp_path / "registration"
     report = write_research_family_registration(
         plan_path,
@@ -858,6 +963,23 @@ def _write_registration(tmp_path):
         family_id="launch_matrix_family",
     )
     return report, registration_dir
+
+
+def _write_walkforward_split_audit(tmp_path):
+    labels_path = tmp_path / "walkforward_labels.csv"
+    pd.DataFrame(
+        {
+            "ts": list(range(1, 17)),
+            "label_end_ts": list(range(1, 17)),
+        }
+    ).to_csv(labels_path, index=False)
+    audit_dir = tmp_path / "walkforward_split_audit"
+    report = write_walk_forward_split_audit(
+        labels_path,
+        output_dir=audit_dir,
+    )
+    assert report.passed
+    return audit_dir, labels_path
 
 
 def _write_sweeps(root):
