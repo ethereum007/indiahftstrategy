@@ -321,6 +321,36 @@ def send_view_71_target_application_lineage_comparison(
     return comparison
 
 
+def send_view_79_target_application_lineage_comparison(
+    vendor,
+    *,
+    lineage_sha256=None,
+    **overrides,
+):
+    lineage_sha256 = lineage_sha256 or target_application_lineage_sha256(
+        vendor["datasets"]
+    )
+    comparison = send_view_71_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256=lineage_sha256,
+    )
+    comparison.update(
+        {
+            "ack_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "roundtrip_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "broker_readiness_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "scaleup_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "cutover_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "route_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "dispatch_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "send_confirmed_verified_reconciled_current_latest_extended_complete_final_review_carried_application_lineage_sha256": lineage_sha256,
+            "carried_application_lineage_sha256": lineage_sha256,
+        }
+    )
+    comparison.update(overrides)
+    return comparison
+
+
 def ack_view_56_target_application_lineage_comparison(
     vendor,
     *,
@@ -3196,6 +3226,67 @@ def test_broker_dispatch_ack_blocks_send_view_71_drift_while_preserving_view_64(
         == lineage_sha256
     )
     assert ack_view_72["carried_application_lineage_sha256"] == lineage_sha256
+
+
+def test_broker_dispatch_ack_ignores_additive_send_view_79():
+    vendor = target_application_vendor_market_data_batch_config()
+    lineage_sha256 = target_application_lineage_sha256(vendor["datasets"])
+    drifted_lineage_sha256 = "f" * 64
+    config = dispatch_config()
+    input_prefix = "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"
+    config[input_prefix] = vendor
+    config[f"{input_prefix}_lineage_comparison"] = (
+        target_application_lineage_comparison(vendor)
+    )
+    config[
+        "send_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = send_final_target_application_lineage_comparison(vendor)
+    add_send_complete_final_target_application_lineage(config, vendor)
+    additive_view_79 = send_view_79_target_application_lineage_comparison(
+        vendor,
+        lineage_sha256=drifted_lineage_sha256,
+    )
+    assert len(additive_view_79) == 78
+    config[
+        "send_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = additive_view_79
+
+    summary = with_dispatch_broker_vendor_batch_summary(dispatch_summary(), vendor)
+    additive_prefix = (
+        "dispatch_confirmed_verified_reconciled_current_latest_extended_complete_final_"
+        "broker_dispatch_roundtrip_vendor_market_data_batch"
+    )
+    summary.loc[0, f"{additive_prefix}_lineage_match_required"] = additive_view_79[
+        "required"
+    ]
+    summary.loc[0, f"{additive_prefix}_lineage_matches"] = additive_view_79[
+        "matches"
+    ]
+    for field, value in additive_view_79.items():
+        if field in {"required", "matches", "carried_application_lineage_sha256"}:
+            continue
+        summary.loc[0, f"{additive_prefix}_{field}"] = value
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=summary,
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert report.passed
+    ack_view_72 = report.config[
+        "ack_confirmed_verified_reconciled_current_latest_extended_complete_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ]
+    assert ack_view_72 == ack_view_72_target_application_lineage_comparison(vendor)
+    assert ack_view_72["broker_application_lineage_sha256"] == lineage_sha256
+    assert ack_view_72["broker_application_lineage_sha256"] != drifted_lineage_sha256
+    checks = set(report.checks["check"])
+    assert not any(
+        "send_confirmed_verified_reconciled_current_latest_extended_complete_final"
+        in check
+        for check in checks
+    )
 
 
 def test_broker_dispatch_ack_requires_send_view_71_lineage_for_confirmed_verified_target():
