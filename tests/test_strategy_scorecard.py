@@ -132,7 +132,12 @@ def write_research_family_fixture(
 
 
 def complete_leadlag_rows():
-    return [
+    measurement_manifest_sha256 = "a" * 64
+    edge_candidate_manifest_sha256 = "b" * 64
+    edge_latency_budget_ns = 100_000
+    total_replay_latency_ns = 50_000
+    edge_latency_headroom_ns = 50_000
+    rows = [
         row("leadlag_edge_audit", "leadlag_edge_summary.csv", "lead_lag_taker", minute=25),
         row("leadlag_replay_walkforward", "leadlag_replay_walkforward_summary.csv", "lead_lag_taker", minute=30),
         row("stress_report", "stress_summary.csv", "lead_lag_taker", minute=35),
@@ -140,6 +145,67 @@ def complete_leadlag_rows():
         row("leadlag_order_plan", "leadlag_order_summary.csv", "lead_lag_taker", minute=45),
         row("leadlag_launch_pipeline", "leadlag_launch_pipeline_summary.csv", "lead_lag_taker", minute=50),
     ]
+    by_type = {item["run_type"]: item for item in rows}
+    by_type["leadlag_edge_audit"].update(
+        {
+            "summary_measurement_manifest_current": True,
+            "summary_measurement_manifest_sha256": measurement_manifest_sha256,
+            "summary_max_profitable_latency_ns": edge_latency_budget_ns,
+        }
+    )
+    by_type["leadlag_replay_walkforward"].update(
+        {
+            "summary_edge_candidate_manifest_required": True,
+            "summary_edge_candidate_manifest_current": True,
+            "summary_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+            "summary_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+            "summary_edge_audit_bound": True,
+            "summary_edge_latency_budget_ns": edge_latency_budget_ns,
+            "summary_total_replay_latency_ns": total_replay_latency_ns,
+            "summary_edge_latency_headroom_ns": edge_latency_headroom_ns,
+        }
+    )
+    by_type["promotion_report"].update(
+        {
+            "summary_walkforward_manifest_current": True,
+            "summary_edge_audit_bound": True,
+            "summary_edge_candidate_manifest_bound": True,
+            "summary_edge_candidate_manifest_current": True,
+            "summary_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+            "summary_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+            "summary_edge_latency_budget_ns": edge_latency_budget_ns,
+            "summary_total_replay_latency_ns": total_replay_latency_ns,
+            "summary_edge_latency_headroom_ns": edge_latency_headroom_ns,
+        }
+    )
+    by_type["leadlag_order_plan"].update(
+        {
+            "summary_promotion_manifest_current": True,
+            "summary_edge_audit_bound": True,
+            "summary_edge_candidate_manifest_bound": True,
+            "summary_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+            "summary_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+            "summary_edge_latency_budget_respected": True,
+            "summary_edge_audit_override_used": False,
+            "summary_edge_latency_budget_ns": edge_latency_budget_ns,
+            "summary_total_replay_latency_ns": total_replay_latency_ns,
+            "summary_edge_latency_headroom_ns": edge_latency_headroom_ns,
+        }
+    )
+    by_type["leadlag_launch_pipeline"].update(
+        {
+            "summary_order_plan_promotion_manifest_current": True,
+            "summary_order_plan_edge_audit_bound": True,
+            "summary_order_plan_edge_candidate_manifest_bound": True,
+            "summary_order_plan_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+            "summary_order_plan_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+            "summary_order_plan_edge_latency_budget_respected": True,
+            "summary_order_plan_edge_latency_budget_ns": edge_latency_budget_ns,
+            "summary_order_plan_total_replay_latency_ns": total_replay_latency_ns,
+            "summary_order_plan_edge_latency_headroom_ns": edge_latency_headroom_ns,
+        }
+    )
+    return rows
 
 
 def incomplete_imbalance_rows():
@@ -368,6 +434,13 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert ranked.loc["leadlag", "rank"] == 1
     assert bool(ranked.loc["leadlag", "ready"])
     assert ranked.loc["leadlag", "readiness_score"] == 1.0
+    assert bool(ranked.loc["leadlag", "leadlag_edge_lineage_ready"])
+    assert ranked.loc["leadlag", "leadlag_measurement_manifest_sha256"] == "a" * 64
+    assert ranked.loc["leadlag", "leadlag_edge_candidate_manifest_sha256"] == "b" * 64
+    assert ranked.loc["leadlag", "leadlag_edge_latency_budget_ns"] == 100_000
+    assert ranked.loc["leadlag", "leadlag_total_replay_latency_ns"] == 50_000
+    assert ranked.loc["leadlag", "leadlag_edge_latency_headroom_ns"] == 50_000
+    assert len(ranked.loc["leadlag", "leadlag_edge_lineage_contract_sha256"]) == 64
     assert ranked.loc["leadlag", "next_gate"] == "plan-scaleup"
     assert ranked.loc["leadlag", "next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert not bool(ranked.loc["imbalance", "ready"])
@@ -376,6 +449,11 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert ranked.loc["imbalance", "next_required_run_type"] == "imbalance_replay_walkforward"
     assert ranked.loc["imbalance", "next_gate"] == "walkforward-imbalance-replay"
     assert report.summary.loc[0, "best_profile"] == "leadlag"
+    assert bool(report.summary.loc[0, "leadlag_edge_lineage_ready"])
+    assert (
+        report.summary.loc[0, "leadlag_edge_lineage_contract_sha256"]
+        == ranked.loc["leadlag", "leadlag_edge_lineage_contract_sha256"]
+    )
     assert report.summary.loc[0, "best_next_gate"] == "plan-scaleup"
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert int(report.summary.loc[0, "failed_check_count"]) == 1
@@ -391,6 +469,11 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.summary.loc[0, "primary_blocker_next_gate"] == "walkforward-imbalance-replay"
     assert report.config["schema_version"] == 1
     assert report.config["best_profile"] == "leadlag"
+    assert report.config["leadlag_edge_lineage_ready"]
+    assert (
+        report.config["leadlag_edge_lineage_contract_sha256"]
+        == ranked.loc["leadlag", "leadlag_edge_lineage_contract_sha256"]
+    )
     assert report.config["next_gate"] == "plan-scaleup"
     assert report.config["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["ready_action_count"] == 1
@@ -411,6 +494,11 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.config["next_actions"][0]["next_gate"] == "plan-scaleup"
     assert report.config["next_actions"][0]["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["ready_actions"][0]["profile"] == "leadlag"
+    assert report.config["ready_actions"][0]["leadlag_edge_lineage_ready"]
+    assert (
+        report.config["ready_actions"][0]["leadlag_edge_lineage_contract_sha256"]
+        == ranked.loc["leadlag", "leadlag_edge_lineage_contract_sha256"]
+    )
     assert report.config["blocked_actions"][0]["profile"] == "imbalance"
     assert report.config["next_actions"][1]["missing_required_run_types"] == [
         "imbalance_replay_walkforward",
@@ -468,15 +556,29 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert config["primary_action"]["next_gate"] == "plan-scaleup"
     assert config["ready_actions"][0]["profile"] == "leadlag"
     assert config["next_actions"][0]["profile"] == "leadlag"
+    assert config["leadlag_edge_lineage_ready"]
+    assert len(config["leadlag_edge_lineage_contract_sha256"]) == 64
+    assert queue.loc[0, "leadlag_edge_lineage_ready"]
+    assert (
+        queue.loc[0, "leadlag_edge_lineage_contract_sha256"]
+        == config["leadlag_edge_lineage_contract_sha256"]
+    )
     runbook = (out_dir / "strategy_scorecard_runbook.md").read_text(encoding="utf-8")
     assert "# Strategy Scorecard Runbook" in runbook
     assert "- Ready: yes" in runbook
     assert "## Ready Actions" in runbook
     assert "`plan-scaleup`" in runbook
+    assert "- Lead-lag edge lineage ready: yes" in runbook
+    assert config["leadlag_edge_lineage_contract_sha256"] in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "strategy_scorecard_action_queue.csv" in artifact_paths
     assert "strategy_scorecard_runbook.md" in artifact_paths
+    assert manifest["extra"]["leadlag_edge_lineage_ready"]
+    assert (
+        manifest["extra"]["leadlag_edge_lineage_contract_sha256"]
+        == config["leadlag_edge_lineage_contract_sha256"]
+    )
 
     ready_blocked_dir = tmp_path / "scorecard_ready_blocked_gate"
     ready_actions_dir = tmp_path / "scorecard_ready_action_gate"
@@ -510,6 +612,35 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     )
     assert blocked_code == 0
     assert actions_code == 2
+
+
+def test_strategy_scorecard_blocks_leadlag_lineage_identity_drift():
+    rows = complete_leadlag_rows()
+    launch = next(
+        item for item in rows if item["run_type"] == "leadlag_launch_pipeline"
+    )
+    launch["summary_order_plan_edge_measurement_manifest_sha256"] = "c" * 64
+
+    report = evaluate_strategy_scorecard(
+        pd.DataFrame(rows),
+        thresholds=StrategyScorecardThresholds(
+            profiles=("leadlag",),
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    assert not report.ready
+    assert not bool(score["ready"])
+    assert not bool(score["leadlag_edge_lineage_ready"])
+    assert "leadlag_measurement_manifest_identity" in score["evidence_failed_checks"]
+    assert score["leadlag_edge_lineage_contract_sha256"] == ""
+    assert not report.config["leadlag_edge_lineage_ready"]
+    assert report.config["leadlag_edge_lineage_contract_sha256"] == ""
+    assert report.config["blocked_actions"][0]["profile"] == "leadlag"
+    assert "leadlag_measurement_manifest_identity" in report.config[
+        "blocked_actions"
+    ][0]["evidence_failed_checks"]
 
 
 def test_strategy_scorecard_binds_exact_research_family_survivor(tmp_path):

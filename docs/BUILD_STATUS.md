@@ -857,6 +857,11 @@
 - Strategy readiness scorecard now writes a manifest-tracked
   `strategy_scorecard_runbook.md` handoff with ready actions, blocked actions,
   open gaps, and the next CLI gate/help command for review.
+- Lead-lag strategy scorecards now recompute and retain the exact measured-edge
+  lineage contract from evidence review across ranked rows, aggregate summary,
+  JSON actions, action queue, runbook, and manifest metadata. Measurement or
+  edge-audit hash drift blocks the profile before scale-up instead of allowing
+  a status-only scorecard handoff.
 - Experiment catalog now recognizes strategy scorecard summaries, preserving
   best-profile and next-gate readiness signals for downstream evidence ledgers.
 - Strategy portfolio allocation now converts ready scorecard profiles into a
@@ -6074,7 +6079,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-2379-test collection across 155 files is fully green.
+2380-test collection across 155 files is fully green.
 
 Latest lead-lag strategy-readiness gate: proof-complete stage selection,
 measurement and edge-audit SHA continuity, latency-budget/replay/headroom
@@ -6083,6 +6088,13 @@ legacy unbound-order rejection, and downstream hash/latency drift rejection
 pass inside the complete strategy-evidence suite (`62 passed`). Experiment-
 catalog compatibility also passes (`64 passed`). The full repository suite was
 not rerun for this evidence-only slice.
+
+Latest lead-lag evidence-to-scorecard handoff: current measured-edge fixtures,
+contract retention across every scorecard output, deterministic manifest
+metadata, and launch measurement-hash drift blocking pass in the complete
+strategy-scorecard suite (`16 passed`). Adjacent strategy-portfolio and
+lead-lag evidence compatibility passes (`29 passed`). The handoff remains
+non-authorizing and the full repository suite was not rerun.
 
 ## Next Build Targets
 

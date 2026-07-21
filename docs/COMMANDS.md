@@ -471,6 +471,13 @@ catalogs.
 Use `--fail-on-blocked-actions` to return exit code 2 when the scorecard queue
 has blocked profile actions, or `--fail-on-actions` when any ready or blocked
 profile action should force a scheduler handoff instead of silently passing.
+For the `leadlag` profile, the scorecard recomputes the measured-edge lineage
+gate and retains its measurement-manifest SHA, edge-audit-manifest SHA,
+profitable latency budget/replay/headroom, selected stage directories, and
+`leadlag_edge_lineage_contract_sha256` in the ranked row, aggregate summary,
+JSON actions, action queue, runbook, and manifest metadata. A detached launch
+hash or legacy status-only stage therefore blocks the scorecard before
+`plan-scaleup`; these retained fields remain non-authorizing audit evidence.
 
 To score the operational live-dry-run chain for one strategy after scale-up,
 cutover, route enable, and broker dispatch proof are present, include the

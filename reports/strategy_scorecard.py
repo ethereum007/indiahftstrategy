@@ -307,6 +307,11 @@ def write_strategy_scorecard(
                     0,
                 )
             ),
+            **_leadlag_lineage_fields(
+                report.summary.iloc[0]
+                if not report.summary.empty
+                else {}
+            ),
             "authorizes_submission": False,
         },
     )
@@ -786,6 +791,47 @@ def _research_family_gap_row(
     }
 
 
+def _leadlag_lineage_fields(source: Any) -> dict[str, Any]:
+    return {
+        "leadlag_edge_lineage_ready": _to_bool(
+            source.get("leadlag_edge_lineage_ready", False)
+        ),
+        "leadlag_lineage_bound_stages": int(
+            _numeric(source.get("leadlag_lineage_bound_stages", 0))
+        ),
+        "leadlag_lineage_required_stages": int(
+            _numeric(source.get("leadlag_lineage_required_stages", 0))
+        ),
+        "leadlag_lineage_selected_stage_count": int(
+            _numeric(source.get("leadlag_lineage_selected_stage_count", 0))
+        ),
+        "leadlag_lineage_selected_run_dirs": _value_text(
+            source.get("leadlag_lineage_selected_run_dirs", "")
+        ),
+        "leadlag_measurement_manifest_sha256": _value_text(
+            source.get("leadlag_measurement_manifest_sha256", "")
+        ),
+        "leadlag_edge_candidate_manifest_sha256": _value_text(
+            source.get("leadlag_edge_candidate_manifest_sha256", "")
+        ),
+        "leadlag_edge_latency_budget_ns": float(
+            _numeric(source.get("leadlag_edge_latency_budget_ns", 0.0))
+        ),
+        "leadlag_total_replay_latency_ns": float(
+            _numeric(source.get("leadlag_total_replay_latency_ns", 0.0))
+        ),
+        "leadlag_edge_latency_headroom_ns": float(
+            _numeric(source.get("leadlag_edge_latency_headroom_ns", 0.0))
+        ),
+        "leadlag_edge_lineage_contract_version": _value_text(
+            source.get("leadlag_edge_lineage_contract_version", "")
+        ),
+        "leadlag_edge_lineage_contract_sha256": _value_text(
+            source.get("leadlag_edge_lineage_contract_sha256", "")
+        ),
+    }
+
+
 def _scorecard_row(
     profile: str,
     expected_strategy: str,
@@ -822,6 +868,7 @@ def _scorecard_row(
         "failed_checks": int(_numeric(summary.get("failed_checks", 0))),
         "evidence_failed_checks": ";".join(evidence_failed_checks),
         "evidence_first_failed_reason": _first_evidence_failed_reason(evidence.checks),
+        **_leadlag_lineage_fields(summary),
         "broker_roundtrip_portfolio_safe_runs": int(
             _numeric(summary.get("broker_roundtrip_portfolio_safe_runs", 0))
         ),
@@ -1018,6 +1065,7 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                     "research_family_registration_id": "",
                     "research_family_path": "",
                     "research_family_manifest_sha256": "",
+                    **_leadlag_lineage_fields({}),
                     "authorizes_submission": False,
                     "recommendation": "no_profiles_to_score",
                 }
@@ -1039,6 +1087,14 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
     family_rows = scorecard.loc[family_enabled]
     family_reference = (
         family_rows.iloc[0] if not family_rows.empty else pd.Series(dtype=object)
+    )
+    leadlag_rows = scorecard.loc[
+        scorecard["profile"].map(_profile_key) == "leadlag"
+    ]
+    leadlag_reference = (
+        leadlag_rows.iloc[0]
+        if not leadlag_rows.empty
+        else pd.Series(dtype=object)
     )
     return pd.DataFrame(
         [
@@ -1100,6 +1156,7 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                         "",
                     )
                 ),
+                **_leadlag_lineage_fields(leadlag_reference),
                 "authorizes_submission": False,
                 "recommendation": _summary_recommendation(str(best["profile"]), has_ready),
             }
@@ -1169,6 +1226,7 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "research_family_manifest_sha256": str(
             summary_row.get("research_family_manifest_sha256", "")
         ),
+        **_leadlag_lineage_fields(summary_row),
         "authorizes_submission": False,
         "next_actions": next_actions,
         "ready_actions": ready_actions,
@@ -1332,6 +1390,7 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         "blocked_required_run_types": _split_items(row.get("blocked_required_run_types", "")),
         "evidence_failed_checks": _split_items(row.get("evidence_failed_checks", "")),
         "evidence_first_failed_reason": str(row.get("evidence_first_failed_reason", "")),
+        **_leadlag_lineage_fields(row),
         "research_family_enabled": bool(
             row.get("research_family_enabled", False)
         ),
@@ -1510,6 +1569,21 @@ def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
                 "blocked_required_run_types": _list_text(action.get("blocked_required_run_types")),
                 "evidence_failed_checks": _list_text(action.get("evidence_failed_checks")),
                 "evidence_first_failed_reason": str(action.get("evidence_first_failed_reason", "")),
+                "leadlag_edge_lineage_ready": bool(
+                    action.get("leadlag_edge_lineage_ready", False)
+                ),
+                "leadlag_measurement_manifest_sha256": str(
+                    action.get("leadlag_measurement_manifest_sha256", "")
+                ),
+                "leadlag_edge_candidate_manifest_sha256": str(
+                    action.get("leadlag_edge_candidate_manifest_sha256", "")
+                ),
+                "leadlag_edge_lineage_contract_version": str(
+                    action.get("leadlag_edge_lineage_contract_version", "")
+                ),
+                "leadlag_edge_lineage_contract_sha256": str(
+                    action.get("leadlag_edge_lineage_contract_sha256", "")
+                ),
                 "research_family_required": bool(
                     action.get("research_family_required", False)
                 ),
@@ -1552,6 +1626,11 @@ def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
             "blocked_required_run_types",
             "evidence_failed_checks",
             "evidence_first_failed_reason",
+            "leadlag_edge_lineage_ready",
+            "leadlag_measurement_manifest_sha256",
+            "leadlag_edge_candidate_manifest_sha256",
+            "leadlag_edge_lineage_contract_version",
+            "leadlag_edge_lineage_contract_sha256",
             "research_family_required",
             "registered_research_detected",
             "research_family_provided",
@@ -1586,6 +1665,14 @@ def _runbook_markdown(config: dict[str, Any]) -> str:
         "- Research-family passed profiles: "
         f"{int(_numeric(config.get('research_family_gate_passed_profiles', 0)))}",
         f"- Research family: {_code(config.get('research_family_id'))}",
+        "- Lead-lag edge lineage ready: "
+        f"{'yes' if bool(config.get('leadlag_edge_lineage_ready', False)) else 'no'}",
+        "- Lead-lag measurement manifest: "
+        f"{_code(config.get('leadlag_measurement_manifest_sha256'))}",
+        "- Lead-lag edge-audit manifest: "
+        f"{_code(config.get('leadlag_edge_candidate_manifest_sha256'))}",
+        "- Lead-lag edge-lineage contract: "
+        f"{_code(config.get('leadlag_edge_lineage_contract_sha256'))}",
         "- Authorizes submission: false",
         "",
         "## Ready Actions",
