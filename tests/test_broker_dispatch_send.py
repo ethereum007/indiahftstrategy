@@ -7,6 +7,8 @@ import pytest
 from hft_cli import main
 from reports.broker_dispatch_ack import (
     BrokerDispatchAckThresholds,
+    STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS as ACK_LEADLAG_OUTPUT_FIELDS,
+    evaluate_broker_dispatch_acknowledgements,
     write_broker_dispatch_acknowledgements,
 )
 from reports.broker_dispatch_roundtrip import (
@@ -1851,8 +1853,8 @@ def _write_rehashed_send_requests(send, requests):
     expected_acks.to_csv(expected_acks_path, index=False)
 
 
-def _write_verified_ack_chain(tmp_path):
-    dispatch = write_dispatch(tmp_path)
+def _write_verified_ack_chain(tmp_path, *, canonical_leadlag=False):
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=canonical_leadlag)
     send = tmp_path / "send"
     write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
     ack_log = tmp_path / "broker_dispatch_acks.csv"
@@ -1900,6 +1902,51 @@ def _rewrite_ack_send_lineage_field(ack, column, value):
         encoding="utf-8",
     )
     _refresh_manifest(ack / "manifest.json", extra_updates={column: value})
+
+
+def _rewrite_ack_leadlag_field(ack, field, value):
+    column = f"strategy_portfolio_{field}"
+    summary_path = ack / "broker_dispatch_ack_summary.csv"
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    config_path = ack / "broker_dispatch_ack_config.json"
+    summary = pd.read_csv(summary_path)
+    acknowledgements_frame = pd.read_csv(acknowledgements_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary[column] = value
+    acknowledgements_frame[column] = value
+    config["strategy_portfolio"][field] = value
+    summary.to_csv(summary_path, index=False)
+    acknowledgements_frame.to_csv(acknowledgements_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(ack / "manifest.json", extra_updates={column: value})
+
+
+def _strip_ack_direct_leadlag_contract(ack):
+    columns = [
+        f"strategy_portfolio_{field}"
+        for field in ACK_LEADLAG_OUTPUT_FIELDS
+    ]
+    summary_path = ack / "broker_dispatch_ack_summary.csv"
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    config_path = ack / "broker_dispatch_ack_config.json"
+    summary = pd.read_csv(summary_path).drop(columns=columns, errors="ignore")
+    acknowledgements_frame = pd.read_csv(acknowledgements_path).drop(
+        columns=columns,
+        errors="ignore",
+    )
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for field in ACK_LEADLAG_OUTPUT_FIELDS:
+        config["strategy_portfolio"].pop(field, None)
+    summary.to_csv(summary_path, index=False)
+    acknowledgements_frame.to_csv(acknowledgements_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(ack / "manifest.json", extra_remove=columns)
 
 
 def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
@@ -5708,6 +5755,7 @@ def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
     config = json.loads(
         (out / "broker_dispatch_ack_config.json").read_text(encoding="utf-8")
     )
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert code == 0
     assert bool(summary.loc[0, "passed"])
     assert bool(summary.loc[0, "broker_dispatch_send_lineage_gate_passed"])
@@ -5722,6 +5770,30 @@ def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
             "leadlag_edge_lineage_contract_sha256"
         ]
     ) == {"c" * 64}
+    assert summary.loc[
+        0,
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256",
+    ] == "c" * 64
+    assert bool(
+        summary.loc[
+            0,
+            "strategy_portfolio_leadlag_send_contract_consistent",
+        ]
+    )
+    assert set(
+        acknowledgements[
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
+    assert config["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert config["strategy_portfolio"][
+        "leadlag_send_contract_consistent"
+    ]
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert config["broker_dispatch_send_lineage"][
         "broker_dispatch_send_lineage_gate_passed"
     ]
@@ -5747,8 +5819,57 @@ def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
         )
 
 
+def test_broker_dispatch_ack_blocks_dispatch_send_leadlag_disagreement(
+    tmp_path,
+):
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=True)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    send_lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+    config = json.loads(
+        (dispatch / "broker_dispatch_config.json").read_text(encoding="utf-8")
+    )
+    config["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_sha256"
+    ] = "d" * 64
+    acks = pd.read_csv(send / "broker_dispatch_expected_acks.csv")
+    acks["broker_order_id"] = [
+        f"ACK-{index + 1}" for index in range(len(acks))
+    ]
+    acks["ack_status"] = "dry_run_accepted"
+    acks["ack_ts_ns"] = range(1_000_000, 1_000_000 + len(acks))
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=pd.read_csv(
+            dispatch / "broker_dispatch_summary.csv"
+        ),
+        dispatch_orders=pd.read_csv(dispatch / "broker_dispatch_orders.csv"),
+        broker_acks=acks,
+        dispatch_config=config,
+        broker_dispatch_send_lineage=send_lineage,
+        thresholds=BrokerDispatchAckThresholds(require_send_packet=True),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.passed
+    assert "strategy_portfolio_leadlag_send_contract_consistent" in failed
+
+
 def test_broker_dispatch_ack_lineage_closes_final_roundtrip(tmp_path):
-    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    dispatch, send, ack = _write_verified_ack_chain(
+        tmp_path,
+        canonical_leadlag=True,
+    )
 
     lineage = load_broker_dispatch_ack_lineage(
         ack / "broker_dispatch_ack_config.json",
@@ -5777,6 +5898,10 @@ def test_broker_dispatch_ack_lineage_closes_final_roundtrip(tmp_path):
     assert lineage["send_matches_current"]
     assert lineage["expected_send_matches_current"]
     assert lineage["gate_passed"]
+    assert lineage[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert lineage["strategy_portfolio_leadlag_send_contract_consistent"]
     assert report.passed
     assert report.orders["broker_dispatch_ack_lineage_gate_passed"].map(
         bool
@@ -5784,6 +5909,16 @@ def test_broker_dispatch_ack_lineage_closes_final_roundtrip(tmp_path):
     assert not report.orders["authorizes_submission"].map(bool).any()
     assert report.config["broker_dispatch_ack_lineage"][
         "broker_dispatch_ack_lineage_gate_passed"
+    ]
+    assert set(
+        report.orders[
+            "broker_dispatch_ack_strategy_portfolio_"
+            "leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
+    assert report.config["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_strategy_portfolio_"
+        "leadlag_send_contract_consistent"
     ]
     assert not report.config["authorizes_submission"]
     assert verify_experiment_manifest(
@@ -5872,6 +6007,100 @@ def test_broker_dispatch_ack_lineage_blocks_consistent_send_relabel(tmp_path):
     assert not lineage["send_matches_current"]
     assert not lineage["expected_send_matches_current"]
     assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_ack_lineage_blocks_direct_leadlag_row_mismatch(
+    tmp_path,
+):
+    dispatch, send, ack = _write_verified_ack_chain(
+        tmp_path,
+        canonical_leadlag=True,
+    )
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    acknowledgement_rows = pd.read_csv(acknowledgements_path)
+    acknowledgement_rows.loc[
+        0,
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256",
+    ] = "d" * 64
+    acknowledgement_rows.to_csv(acknowledgements_path, index=False)
+    _refresh_manifest(ack / "manifest.json")
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert lineage["send_matches_current"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_ack_rows_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256_mismatch"
+    ) in lineage["contract_error"]
+
+
+def test_broker_dispatch_ack_lineage_blocks_re_manifested_leadlag_detachment(
+    tmp_path,
+):
+    dispatch, send, ack = _write_verified_ack_chain(
+        tmp_path,
+        canonical_leadlag=True,
+    )
+    _rewrite_ack_leadlag_field(
+        ack,
+        "leadlag_edge_lineage_contract_sha256",
+        "d" * 64,
+    )
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert lineage["send_matches_current"]
+    assert lineage["expected_send_matches_current"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_ack_broker_dispatch_send_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256_mismatch"
+    ) in lineage["contract_error"]
+
+
+def test_broker_dispatch_ack_lineage_reads_legacy_noncanonical_packet(
+    tmp_path,
+):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    _strip_ack_direct_leadlag_contract(ack)
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["send_lineage_gate_passed"]
+    assert lineage["send_matches_current"]
+    assert lineage["expected_send_matches_current"]
+    assert lineage["gate_passed"]
 
 
 def test_broker_dispatch_ack_lineage_blocks_authorizing_claim(tmp_path):

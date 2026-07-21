@@ -6354,7 +6354,20 @@ the dispatch batch. If dispatch planning retained strategy portfolio
 allocation evidence, the ack gate preserves the `strategy_portfolio_*` fields
 and `dispatch_total_notional` in summary/config, including concentration
 counts, top concentration names, and maximum allocation weights. It fails
-closed when dispatch notional exceeds the selected paper/shadow allocation.
+closed when dispatch notional exceeds the selected paper/shadow allocation. For
+the canonical `leadlag` profile, acknowledgement planning independently
+reconciles the dispatch summary/config fields through route consistency, then
+requires those fields plus send-owned dispatch consistency to match the
+verified send packet. The direct `leadlag_edge_lineage/v1` contract and
+`leadlag_send_contract_consistent` decision are sealed into generated
+acknowledgement rows, summary, nested strategy-portfolio config, runbook, and
+manifest metadata; raw broker acknowledgement logs are not required to echo
+internal proof fields. The shared acknowledgement-lineage verifier compares the
+ack-owned copy with the separately verified send copy, so a consistently
+re-manifested acknowledgement bundle cannot detach from its send source. Older
+noncanonical acknowledgement packets remain readable without these additive
+direct fields; an exact `leadlag` profile or explicit required marker activates
+the fail-closed contract. All acknowledgement outputs remain non-authorizing.
 `--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
 keeps paper/shadow acknowledgement reviews equally strict.
 It carries the dispatch config broker schema review status/mode,

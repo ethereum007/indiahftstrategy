@@ -6244,6 +6244,24 @@ passed`), and manifest plus experiment-catalog compatibility passes (`69
 passed`). Repository collection is healthy at `2420 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest send-to-acknowledgement lineage gate: acknowledgement planning now
+independently reconciles the canonical dispatch summary/config contract through
+route consistency, sources the dispatch-consistency decision from the verified
+send packet, and requires the resulting `leadlag_edge_lineage/v1` identity to
+match that send source. Generated acknowledgement rows, summary/config,
+runbook, and manifest metadata carry a direct
+`leadlag_send_contract_consistent` decision; raw broker logs remain free of
+internal proof requirements. The shared verifier compares ack-owned fields with
+the verified send copy, so row drift and a fully re-manifested ack detachment
+both fail closed. Legacy noncanonical ack packets remain readable; strict
+validation activates for the exact `leadlag` profile or an explicit required
+marker. The complete acknowledgement suite passes (`107 passed`), the complete
+send/ack integration suite passes (`142 passed`), the complete downstream
+round-trip suite passes (`103 passed`), and manifest plus experiment-catalog
+compatibility passes (`69 passed`). Repository collection is healthy at `2424
+tests`. All outputs remain non-authorizing; the full repository suite was not
+rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.
