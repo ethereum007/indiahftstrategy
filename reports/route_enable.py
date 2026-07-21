@@ -8,6 +8,12 @@ from typing import Any
 
 import pandas as pd
 
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_FIELDS,
+    leadlag_lineage_field_matches,
+    leadlag_lineage_fields,
+    leadlag_lineage_ready,
+)
 from reports.manifest import write_experiment_manifest
 from reports.operational_lineage import (
     cutover_lineage_fields,
@@ -42,6 +48,15 @@ ACTION_QUEUE_COLUMNS = [
 ]
 CUTOVER_LINEAGE_OUTPUT_COLUMNS = tuple(
     cutover_lineage_fields(empty_cutover_lineage()).keys()
+)
+STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
+    "leadlag_edge_lineage_required",
+    *LEADLAG_LINEAGE_FIELDS,
+    "leadlag_edge_lineage_matches_scaleup",
+)
+STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS = (
+    *STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
+    "leadlag_cutover_contract_consistent",
 )
 TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
 TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
@@ -493,6 +508,9 @@ def write_route_enable_packet(
         inputs=inputs,
         extra={
             "ready": bool(report.ready),
+            **_strategy_portfolio_leadlag_summary_fields(
+                report.summary.iloc[0]
+            ),
             **cutover_lineage_fields(cutover_lineage),
             "authorizes_submission": False,
         },
@@ -679,6 +697,14 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
         checks.extend(
             [
                 _check(
+                    "strategy_portfolio_provided",
+                    cutover["strategy_portfolio_provided"],
+                    "is",
+                    True,
+                    bool(cutover["strategy_portfolio_provided"]),
+                    "cutover strategy portfolio allocation was not provided",
+                ),
+                _check(
                     "strategy_portfolio_ready",
                     cutover["strategy_portfolio_ready"],
                     "is",
@@ -728,6 +754,74 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
                 ),
             ]
         )
+        if _strategy_portfolio_leadlag_active(cutover):
+            lineage_ready = leadlag_lineage_ready(
+                cutover,
+                prefix="strategy_portfolio_",
+            )
+            checks.extend(
+                [
+                    _check(
+                        "strategy_portfolio_leadlag_cutover_contract_consistent",
+                        cutover[
+                            "strategy_portfolio_leadlag_cutover_contract_consistent"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "strategy_portfolio_leadlag_cutover_contract_consistent"
+                            ]
+                        ),
+                        "cutover summary and config disagree on lead-lag measured-edge lineage",
+                    ),
+                    _check(
+                        "strategy_portfolio_leadlag_edge_lineage_required",
+                        cutover[
+                            "strategy_portfolio_leadlag_edge_lineage_required"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "strategy_portfolio_leadlag_edge_lineage_required"
+                            ]
+                        ),
+                        "cutover did not carry the required lead-lag lineage marker",
+                    ),
+                    _check(
+                        "strategy_portfolio_leadlag_profile",
+                        cutover["strategy_portfolio_selected_profile"],
+                        "==",
+                        "leadlag",
+                        _identity_key(cutover["strategy_portfolio_selected_profile"])
+                        == "leadlag",
+                        "cutover lead-lag lineage is attached to a different portfolio profile",
+                    ),
+                    _check(
+                        "strategy_portfolio_leadlag_edge_lineage_ready",
+                        lineage_ready,
+                        "is",
+                        True,
+                        lineage_ready,
+                        "cutover lost or malformed the lead-lag measured-edge lineage",
+                    ),
+                    _check(
+                        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                        cutover[
+                            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+                            ]
+                        ),
+                        "cutover did not retain the guard-validated lead-lag scale-up match",
+                    ),
+                ]
+            )
     if _dispatch_roundtrip_required(thresholds) or cutover["dispatch_roundtrip_provided"]:
         checks.extend(_dispatch_roundtrip_checks(cutover, target_mode))
     if _route_dispatch_roundtrip_required(thresholds, cutover):
@@ -3944,6 +4038,7 @@ def _packet(
                 "strategy_portfolio_max_market_allocation_weight": cutover[
                     "strategy_portfolio_max_market_allocation_weight"
                 ],
+                **_strategy_portfolio_leadlag_output_fields(cutover),
                 "pre_portfolio_max_notional_per_session": cutover["pre_portfolio_max_notional_per_session"],
                 **_cutover_lineage_output_fields(cutover),
                 "authorizes_submission": False,
@@ -4638,6 +4733,7 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_max_market_allocation_weight": float(
                     packet["strategy_portfolio_max_market_allocation_weight"]
                 ),
+                **_strategy_portfolio_leadlag_summary_fields(packet),
                 "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
                 **_cutover_lineage_summary_fields(packet),
                 "authorizes_submission": False,
@@ -5539,6 +5635,7 @@ def _config(
             "top_market_by_weight": str(packet["strategy_portfolio_top_market_by_weight"]),
             "max_strategy_allocation_weight": float(packet["strategy_portfolio_max_strategy_allocation_weight"]),
             "max_market_allocation_weight": float(packet["strategy_portfolio_max_market_allocation_weight"]),
+            **_strategy_portfolio_leadlag_config(packet),
             "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
         },
         "cutover_lineage": _cutover_lineage_config(packet),
@@ -5809,6 +5906,9 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Cutover lineage current: {'yes' if _to_bool(summary_row.get('cutover_lineage_gate_passed')) else 'no'}",
         f"- Research family: {_object_text(summary_row.get('cutover_runtime_scaleup_research_family_id')).strip()}",
+        f"- Lead-lag cutover contract consistent: {'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_cutover_contract_consistent')) else 'no'}",
+        f"- Lead-lag lineage matches scale-up: {'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",
+        f"- Lead-lag lineage contract: {_code(summary_row.get('strategy_portfolio_leadlag_edge_lineage_contract_version'))} / {_code(summary_row.get('strategy_portfolio_leadlag_edge_lineage_contract_sha256'))}",
         "- Submission authorization: no",
         f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
         f"- Blocked actions: {_int_value(summary_row.get('blocked_action_count'))}",
@@ -6741,6 +6841,10 @@ def _cutover_state(
     scaleup_dispatch = config.get("scaleup_dispatch_roundtrip", {}) or {}
     scaleup_route_enable = scaleup_dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
+    strategy_portfolio_leadlag = _strategy_portfolio_leadlag_state(
+        row,
+        strategy_portfolio,
+    )
     return {
         "ready": _to_bool(row.get("ready", config.get("ready", False))),
         "target_mode": _identity_key(_first_text(row.get("target_mode", ""), config.get("target_mode", ""))),
@@ -6960,6 +7064,7 @@ def _cutover_state(
                 ),
             )
         ),
+        **strategy_portfolio_leadlag,
         **cutover_lineage_fields(lineage),
         "proof_refresh_ready": _to_bool(proof.get("ready", row.get("proof_refresh_ready", False))),
         "proof_refresh_strategy": _strategy_key(
@@ -8585,7 +8690,136 @@ def _route_readiness_required(thresholds: RouteEnableThresholds, cutover: dict[s
 
 
 def _strategy_portfolio_active(cutover: dict[str, Any]) -> bool:
-    return bool(cutover["strategy_portfolio_required"] or cutover["strategy_portfolio_provided"])
+    return bool(
+        cutover["strategy_portfolio_required"]
+        or cutover["strategy_portfolio_provided"]
+        or _strategy_portfolio_leadlag_active(cutover)
+    )
+
+
+def _strategy_portfolio_leadlag_active(cutover: dict[str, Any]) -> bool:
+    return bool(
+        cutover["strategy_portfolio_leadlag_edge_lineage_required"]
+        or _identity_key(cutover["strategy_portfolio_selected_profile"])
+        == "leadlag"
+    )
+
+
+def _strategy_portfolio_leadlag_state(
+    row: pd.Series,
+    strategy_portfolio: dict[str, Any],
+) -> dict[str, Any]:
+    prefixes = ("runtime_strategy_portfolio_", "strategy_portfolio_")
+    summary_prefix = next(
+        (
+            prefix
+            for prefix in prefixes
+            if any(
+                f"{prefix}{field}" in row.index
+                for field in STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            )
+        ),
+        prefixes[0],
+    )
+    config_lineage = leadlag_lineage_fields(strategy_portfolio)
+    summary_lineage = leadlag_lineage_fields(
+        row,
+        source_prefix=summary_prefix,
+    )
+    config_required = _to_bool(
+        strategy_portfolio.get("leadlag_edge_lineage_required", False)
+    )
+    summary_required = _to_bool(
+        row.get(f"{summary_prefix}leadlag_edge_lineage_required", False)
+    )
+    config_matches = _to_bool(
+        strategy_portfolio.get(
+            "leadlag_edge_lineage_matches_scaleup",
+            False,
+        )
+    )
+    summary_matches = _to_bool(
+        row.get(
+            f"{summary_prefix}leadlag_edge_lineage_matches_scaleup",
+            False,
+        )
+    )
+    config_profile = _first_text(strategy_portfolio.get("selected_profile", ""))
+    summary_profile = _first_text(
+        row.get("runtime_strategy_portfolio_selected_profile", ""),
+        row.get("strategy_portfolio_selected_profile", ""),
+    )
+    config_has_lineage = any(
+        field in strategy_portfolio
+        for field in STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    )
+    summary_has_lineage = any(
+        f"{summary_prefix}{field}" in row.index
+        for field in STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    )
+    active = bool(
+        config_required
+        or summary_required
+        or _identity_key(config_profile) == "leadlag"
+        or _identity_key(summary_profile) == "leadlag"
+    )
+    consistent = bool(
+        not active
+        or (
+            config_has_lineage
+            and summary_has_lineage
+            and _identity_key(config_profile) == _identity_key(summary_profile)
+            and config_required == summary_required
+            and config_matches == summary_matches
+            and all(
+                leadlag_lineage_field_matches(
+                    field,
+                    config_lineage[field],
+                    summary_lineage[field],
+                )
+                for field in LEADLAG_LINEAGE_FIELDS
+            )
+        )
+    )
+    selected_lineage = config_lineage if config_has_lineage else summary_lineage
+    return {
+        "strategy_portfolio_leadlag_edge_lineage_required": (
+            config_required if config_has_lineage else summary_required
+        ),
+        **{
+            f"strategy_portfolio_{field}": value
+            for field, value in selected_lineage.items()
+        },
+        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": (
+            config_matches if config_has_lineage else summary_matches
+        ),
+        "strategy_portfolio_leadlag_cutover_contract_consistent": consistent,
+    }
+
+
+def _strategy_portfolio_leadlag_output_fields(
+    cutover: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        f"strategy_portfolio_{field}": cutover[f"strategy_portfolio_{field}"]
+        for field in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS
+    }
+
+
+def _strategy_portfolio_leadlag_summary_fields(
+    packet: pd.Series,
+) -> dict[str, Any]:
+    return {
+        f"strategy_portfolio_{field}": packet[f"strategy_portfolio_{field}"]
+        for field in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS
+    }
+
+
+def _strategy_portfolio_leadlag_config(packet: pd.Series) -> dict[str, Any]:
+    return {
+        field: _jsonable_check_value(packet[f"strategy_portfolio_{field}"])
+        for field in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS
+    }
 
 
 def _cutover_lineage_output_fields(cutover: dict[str, Any]) -> dict[str, Any]:

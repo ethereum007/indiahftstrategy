@@ -18,6 +18,33 @@ from reports.route_enable import (
 )
 
 
+def leadlag_lineage(prefix=""):
+    fields = {
+        "leadlag_edge_lineage_required": True,
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "edge-audit",
+                "replay-walkforward",
+                "promotion",
+                "order-plan",
+                "launch-pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "a" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "b" * 64,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "c" * 64,
+        "leadlag_edge_latency_budget_ns": 5_000.0,
+        "leadlag_total_replay_latency_ns": 3_000.0,
+        "leadlag_edge_latency_headroom_ns": 2_000.0,
+    }
+    return {f"{prefix}{field}": value for field, value in fields.items()}
+
+
 def target_application_lineage_sha256(datasets):
     identity_fields = (
         "source_file_sha256",
@@ -523,6 +550,7 @@ def cutover_summary(
     strategy_portfolio_selected_market="india_nse_index_derivatives",
     strategy_portfolio_selected_eligible=False,
     strategy_portfolio_selected_allocation_notional=0.0,
+    canonical_leadlag=False,
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -560,6 +588,21 @@ def cutover_summary(
         if broker_route_readiness_recommendation is None
         else broker_route_readiness_recommendation
     )
+    portfolio_leadlag = {}
+    if canonical_leadlag:
+        strategy_portfolio_required = True
+        strategy_portfolio_provided = True
+        strategy_portfolio_ready = True
+        strategy_portfolio_selected_eligible = True
+        strategy_portfolio_selected_allocation_notional = (
+            strategy_portfolio_selected_allocation_notional or 1200.0
+        )
+        portfolio_leadlag = leadlag_lineage(
+            prefix="runtime_strategy_portfolio_"
+        )
+        portfolio_leadlag[
+            "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+        ] = True
     return pd.DataFrame(
         [
             {
@@ -577,7 +620,9 @@ def cutover_summary(
                 "runtime_strategy_portfolio_deployment_mode": "paper_shadow",
                 "runtime_strategy_portfolio_allocation_mode": "readiness_weighted",
                 "runtime_strategy_portfolio_capital_currency": "INR",
-                "runtime_strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "runtime_strategy_portfolio_selected_profile": (
+                    "leadlag" if canonical_leadlag else "leadlag-live-dryrun"
+                ),
                 "runtime_strategy_portfolio_selected_strategy": strategy_portfolio_selected_strategy,
                 "runtime_strategy_portfolio_selected_market": strategy_portfolio_selected_market,
                 "runtime_strategy_portfolio_selected_eligible": strategy_portfolio_selected_eligible,
@@ -625,6 +670,7 @@ def cutover_summary(
                 "runtime_pre_portfolio_max_notional_per_session": 25_000.0
                 if strategy_portfolio_selected_allocation_notional
                 else 0.0,
+                **portfolio_leadlag,
                 "proof_refresh_ready": True,
                 "proof_refresh_strategy": "lead_lag_taker",
                 "proof_refresh_market": "india_nse_index_derivatives",
@@ -778,6 +824,7 @@ def cutover_config(
     strategy_portfolio_selected_market="india_nse_index_derivatives",
     strategy_portfolio_selected_eligible=False,
     strategy_portfolio_selected_allocation_notional=0.0,
+    canonical_leadlag=False,
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -815,6 +862,19 @@ def cutover_config(
         if broker_route_readiness_recommendation is None
         else broker_route_readiness_recommendation
     )
+    portfolio_leadlag = {}
+    if canonical_leadlag:
+        strategy_portfolio_required = True
+        strategy_portfolio_provided = True
+        strategy_portfolio_ready = True
+        strategy_portfolio_selected_eligible = True
+        strategy_portfolio_selected_allocation_notional = (
+            strategy_portfolio_selected_allocation_notional or 1200.0
+        )
+        portfolio_leadlag = leadlag_lineage()
+        portfolio_leadlag[
+            "leadlag_edge_lineage_matches_scaleup"
+        ] = True
     return {
         "schema_version": 1,
         "ready": True,
@@ -841,7 +901,9 @@ def cutover_config(
                 "deployment_mode": "paper_shadow",
                 "allocation_mode": "readiness_weighted",
                 "capital_currency": "INR",
-                "selected_profile": "leadlag-live-dryrun",
+                "selected_profile": (
+                    "leadlag" if canonical_leadlag else "leadlag-live-dryrun"
+                ),
                 "selected_strategy": strategy_portfolio_selected_strategy,
                 "selected_market": strategy_portfolio_selected_market,
                 "selected_eligible": strategy_portfolio_selected_eligible,
@@ -873,6 +935,7 @@ def cutover_config(
                 "pre_portfolio_max_notional_per_session": 25_000.0
                 if strategy_portfolio_selected_allocation_notional
                 else 0.0,
+                **portfolio_leadlag,
             }
         },
         "scaleup_route_readiness": {
@@ -1530,6 +1593,12 @@ def cutover_runtime_lineage():
 
 def refresh_cutover_manifest(cutover):
     lineage = cutover_runtime_lineage()
+    summary = pd.read_csv(cutover / "cutover_summary.csv").iloc[0]
+    leadlag = {
+        column: value
+        for column, value in summary.items()
+        if column.startswith("runtime_strategy_portfolio_leadlag_")
+    }
     write_experiment_manifest(
         cutover,
         run_type="cutover_gate",
@@ -1538,7 +1607,8 @@ def refresh_cutover_manifest(cutover):
             "cutover_source": cutover.parent / "cutover_source.csv",
         },
         extra={
-            "ready": bool(pd.read_csv(cutover / "cutover_summary.csv").iloc[0]["ready"]),
+            "ready": bool(summary["ready"]),
+            **leadlag,
             **lineage,
             "authorizes_submission": False,
         },
@@ -1554,6 +1624,7 @@ def write_inputs(
     export_notional=25_000.0,
     dispatch=True,
     route_readiness=True,
+    canonical_leadlag=False,
 ):
     cutover = root / "cutover"
     upload = root / "upload"
@@ -1568,6 +1639,7 @@ def write_inputs(
         dispatch_ready=dispatch,
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
+        canonical_leadlag=canonical_leadlag,
     )
     for column, value in lineage.items():
         summary[column] = value
@@ -1578,6 +1650,7 @@ def write_inputs(
         dispatch_ready=dispatch,
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
+        canonical_leadlag=canonical_leadlag,
     )
     config["runtime_lineage"] = lineage
     config["authorizes_submission"] = False
@@ -1723,6 +1796,101 @@ def test_route_enable_carries_strategy_portfolio_allocation():
     assert portfolio["top_strategy_by_weight"] == "lead_lag_taker"
     assert portfolio["max_strategy_allocation_weight"] == 0.45
     assert portfolio["pre_portfolio_max_notional_per_session"] == 25_000.0
+
+
+def test_route_enable_carries_reconciled_leadlag_edge_lineage():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(canonical_leadlag=True),
+        cutover_config=cutover_config(canonical_leadlag=True),
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(total_notional=1_000.0),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert report.ready
+    packet = report.packet.iloc[0]
+    summary = report.summary.iloc[0]
+    portfolio = report.config["strategy_portfolio"]
+    assert bool(packet["strategy_portfolio_leadlag_cutover_contract_consistent"])
+    assert bool(summary["strategy_portfolio_leadlag_edge_lineage_required"])
+    assert bool(summary["strategy_portfolio_leadlag_edge_lineage_ready"])
+    assert bool(
+        summary["strategy_portfolio_leadlag_edge_lineage_matches_scaleup"]
+    )
+    assert summary["strategy_portfolio_leadlag_lineage_selected_stage_count"] == 5
+    assert summary[
+        "strategy_portfolio_leadlag_edge_lineage_contract_version"
+    ] == "leadlag_edge_lineage/v1"
+    assert summary[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert summary[
+        "strategy_portfolio_leadlag_edge_latency_headroom_ns"
+    ] == 2_000.0
+    assert portfolio["leadlag_cutover_contract_consistent"]
+    assert portfolio["leadlag_edge_lineage_contract_sha256"] == "c" * 64
+
+
+@pytest.mark.parametrize(
+    ("source", "field", "value", "failed_check"),
+    [
+        (
+            "summary",
+            "runtime_strategy_portfolio_leadlag_edge_lineage_contract_sha256",
+            "d" * 64,
+            "strategy_portfolio_leadlag_cutover_contract_consistent",
+        ),
+        (
+            "config",
+            "leadlag_edge_lineage_required",
+            False,
+            "strategy_portfolio_leadlag_edge_lineage_required",
+        ),
+        (
+            "config",
+            "leadlag_edge_lineage_contract_sha256",
+            "bad-contract-hash",
+            "strategy_portfolio_leadlag_edge_lineage_ready",
+        ),
+        (
+            "config",
+            "leadlag_edge_lineage_matches_scaleup",
+            False,
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+        ),
+        (
+            "config",
+            "provided",
+            False,
+            "strategy_portfolio_provided",
+        ),
+    ],
+)
+def test_route_enable_blocks_bad_cutover_leadlag_edge_lineage(
+    source,
+    field,
+    value,
+    failed_check,
+):
+    summary = cutover_summary(canonical_leadlag=True)
+    config = cutover_config(canonical_leadlag=True)
+    if source == "summary":
+        summary.loc[0, field] = value
+    else:
+        config["runtime_session"]["strategy_portfolio"][field] = value
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=summary,
+        cutover_config=config,
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(total_notional=1_000.0),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert failed_check in failed
+    assert not bool(report.summary.iloc[0]["ready"])
 
 
 def test_route_enable_blocks_order_export_above_strategy_portfolio_allocation():
@@ -5198,7 +5366,11 @@ def test_route_enable_blocks_unready_cutover_and_upload_pack():
 
 
 def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path):
-    cutover, upload, export = write_inputs(tmp_path)
+    cutover, upload, export = write_inputs(
+        tmp_path,
+        export_notional=1_000.0,
+        canonical_leadlag=True,
+    )
     out_dir = tmp_path / "route_enable"
 
     report = write_route_enable_packet(
@@ -5222,9 +5394,10 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert int(saved_summary.loc[0, "action_queue_count"]) == 0
     assert saved_config["action_queue_count"] == 0
     assert saved_config["next_actions"] == []
-    assert (out_dir / "route_enable_runbook.md").read_text(encoding="utf-8").startswith(
-        "# Route Enable Runbook"
-    )
+    runbook = (out_dir / "route_enable_runbook.md").read_text(encoding="utf-8")
+    assert runbook.startswith("# Route Enable Runbook")
+    assert "Lead-lag cutover contract consistent: yes" in runbook
+    assert "c" * 64 in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {item["path"] for item in manifest["artifacts"]}
     assert "route_enable_action_queue.csv" in artifact_paths
@@ -5250,9 +5423,21 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert not bool(report.packet.iloc[0]["authorizes_submission"])
     assert not bool(report.summary.iloc[0]["authorizes_submission"])
     assert report.config["cutover_lineage"]["cutover_lineage_gate_passed"]
+    assert report.config["strategy_portfolio"][
+        "leadlag_cutover_contract_consistent"
+    ]
+    assert report.config["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert not report.config["authorizes_submission"]
     assert {"cutover_artifacts", "cutover_dependencies"} <= set(manifest["inputs"])
     assert manifest["extra"]["cutover_lineage_gate_passed"]
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_cutover_contract_consistent"
+    ]
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert not manifest["extra"]["authorizes_submission"]
     assert verify_experiment_manifest(
         out_dir / "manifest.json",

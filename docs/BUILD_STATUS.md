@@ -917,6 +917,12 @@
   runtime guard's current scale-up match result, then carries every field
   through authorization, summary, nested runtime-session config, runbook, and
   manifest metadata.
+- Route-enable now independently reconciles that canonical `leadlag` contract
+  between the cutover summary and nested strategy-portfolio config. Both
+  sources must retain the required marker, exact profile, complete five-stage
+  lineage, identical contract identity, and the guard-to-scale-up match result
+  before routing can be enabled. The reconciled contract is carried through
+  the route packet, summary, nested config, runbook, and manifest metadata.
 - Cutover and route-enable gates now carry strategy portfolio allocation
   evidence downstream from runtime-session proof, fail closed on bad allocation
   readiness/identity, and block route enablement when exported order notional
@@ -6189,6 +6195,18 @@ complete downstream route-enable suite passes (`115 passed`), and manifest
 plus catalog compatibility passes (`69 passed`). Repository collection is
 healthy at `2395 tests`. All outputs remain non-authorizing; the full
 repository suite was not rerun for this slice.
+
+Latest cutover-to-route-enable lineage gate: route-enable now requires the
+cutover summary and nested config to reproduce the same canonical
+`leadlag_edge_lineage/v1` contract, then validates the five stage bindings,
+upstream manifest hashes, latency budget/replay/headroom identity, required
+marker, exact profile, and guard-to-scale-up match result. Missing source
+claims, malformed lineage, a valid but different contract hash, and false
+required/match markers all fail closed. The complete route-enable suite passes
+(`121 passed`), the downstream broker-dispatch compatibility suite passes
+(`116 passed`), and manifest plus experiment-catalog compatibility passes (`69
+passed`). Repository collection is healthy at `2401 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
 
 ## Next Build Targets
 

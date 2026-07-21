@@ -5540,6 +5540,15 @@ notional cap. If cutover retained strategy portfolio allocation from the
 runtime-session guard chain, route-enable carries it as `strategy_portfolio_*`
 fields and a `strategy_portfolio` config block, including the carried
 concentration counts, top concentration names, and maximum allocation weights.
+For a canonical `leadlag` selection, route-enable independently reads the
+cutover summary and nested `strategy_portfolio` config and requires both to
+carry the same complete `leadlag_edge_lineage/v1` contract. The
+`strategy_portfolio_leadlag_cutover_contract_consistent` check fails closed if
+the required marker, exact profile, five selected stage bindings, upstream
+manifest hashes, latency budget/replay/headroom identity, contract hash, or
+guard-to-scale-up match result is missing or differs between those sources.
+The reconciled fields are retained in the route packet, summary, nested config,
+runbook, and manifest metadata for the dispatch-planning boundary.
 It also fails closed when the optional order-export notional exceeds the
 selected paper/shadow allocation even if the broader cutover notional limit
 would allow it. Route-enable also revalidates cutover-retained route-readiness
