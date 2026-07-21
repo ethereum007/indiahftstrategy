@@ -26,6 +26,9 @@ def promotion_summary(*, ready=True):
                 "candidate_scenario_key": scenario_key(),
                 "failed_checks": 0 if ready else 1,
                 "edge_audit_bound": True,
+                "edge_candidate_manifest_bound": True,
+                "edge_candidate_manifest_current": True,
+                "edge_candidate_manifest_sha256": "c" * 64,
                 "edge_latency_budget_ns": 100_000,
                 "total_replay_latency_ns": 50_000,
                 "edge_latency_headroom_ns": 50_000,
@@ -71,6 +74,12 @@ def candidate_config(*, ready=True):
                 "best_latency_cost_drag_ratio": 0.2,
                 "best_latency_net_edge_bps": 2.0,
             },
+        },
+        "edge_candidate_manifest": {
+            "edge_candidate_manifest_required": True,
+            "edge_candidate_manifest_current": True,
+            "edge_candidate_manifest_sha256": "c" * 64,
+            "edge_measurement_manifest_sha256": "b" * 64,
         },
     }
 
@@ -160,12 +169,16 @@ def test_write_leadlag_launch_pipeline_runs_full_shadow_handoff(tmp_path):
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert "order_plan_manifest" in manifest["inputs"]
     assert "order_plan_dependencies" in manifest["inputs"]
+    assert manifest["extra"]["order_plan_edge_candidate_manifest_bound"]
     assert bool(report.summary.loc[0, "order_plan_promotion_manifest_current"])
     assert bool(report.summary.loc[0, "order_plan_edge_audit_bound"])
+    assert bool(report.summary.loc[0, "order_plan_edge_candidate_manifest_bound"])
+    assert report.summary.loc[0, "order_plan_edge_candidate_manifest_sha256"] == "c" * 64
     assert bool(report.summary.loc[0, "order_plan_edge_latency_budget_respected"])
     assert report.summary.loc[0, "order_plan_edge_measurement_manifest_sha256"] == "b" * 64
     assert bool(order_plan_summary.loc[0, "promotion_manifest_current"])
     assert set(order_templates["edge_measurement_manifest_sha256"]) == {"b" * 64}
+    assert set(order_templates["edge_candidate_manifest_sha256"]) == {"c" * 64}
     assert set(order_templates["edge_latency_headroom_ns"]) == {50_000}
     assert report.output_dir == out_dir
     assert report.broker_readiness is not None

@@ -17,9 +17,25 @@ from reports.leadlag_candidate_contract import (
     edge_latency_budget_ns,
     replay_latency_ns,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    ManifestIntegrity,
+    file_sha256,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_leadlag_replay import LEAD_LAG_STRATEGY, LeadLagReplayResult, run_leadlag_replay
+
+
+EDGE_AUDIT_RUN_TYPE = "leadlag_edge_audit"
+EDGE_AUDIT_REQUIRED_ARTIFACTS = (
+    "leadlag_edge_metrics.csv",
+    "leadlag_edge_checks.csv",
+    "leadlag_edge_summary.csv",
+    "leadlag_edge_measurement_provenance.csv",
+    "candidate_config.json",
+)
 
 
 @dataclass(frozen=True)
@@ -87,6 +103,10 @@ def write_leadlag_replay_walkforward(
     _validate_thresholds(thresholds)
     proof_thresholds = proof_thresholds or ProofThresholds()
     candidate_path, candidate = _load_candidate(candidate_config)
+    candidate_integrity = _edge_candidate_manifest_integrity(
+        candidate_path,
+        candidate,
+    )
     replay_defaults = candidate.get("replay_defaults", {}) if candidate else {}
     if not isinstance(replay_defaults, dict):
         raise ValueError("candidate config replay_defaults must be an object")
@@ -173,6 +193,11 @@ def write_leadlag_replay_walkforward(
         candidate=candidate,
         replay_params=replay_params,
     )
+    if candidate_integrity is not None:
+        checks = pd.concat(
+            [_edge_candidate_manifest_check(candidate_integrity), checks],
+            ignore_index=True,
+        )
     summary = _summary(
         folds,
         checks,
@@ -181,6 +206,25 @@ def write_leadlag_replay_walkforward(
     )
     summary["strategy"] = LEAD_LAG_STRATEGY
     summary["market"] = replay_params["market"]
+    candidate_manifest = (
+        candidate_integrity.manifest_path
+        if candidate_integrity is not None
+        else None
+    )
+    candidate_audit = edge_audit(candidate)
+    summary["edge_candidate_manifest_required"] = candidate_integrity is not None
+    summary["edge_candidate_manifest_current"] = bool(
+        candidate_integrity is not None and candidate_integrity.passed
+    )
+    summary["edge_candidate_manifest_error"] = (
+        str(candidate_integrity.error) if candidate_integrity is not None else ""
+    )
+    summary["edge_candidate_manifest_sha256"] = _current_file_sha256(
+        candidate_manifest
+    )
+    summary["edge_measurement_manifest_sha256"] = str(
+        candidate_audit.get("measurement_manifest_sha256", "")
+    ).strip()
     config = _candidate_config(
         candidate,
         candidate_path,
@@ -196,6 +240,21 @@ def write_leadlag_replay_walkforward(
         json.dumps(_jsonable(config), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    manifest_inputs: dict[str, Any] = {
+        "leaders": leaders,
+        "laggards": laggards,
+        "candidate_config": candidate_path,
+        "run_dirs": run_dirs,
+    }
+    if candidate_manifest is not None:
+        manifest_inputs.update(
+            {
+                "edge_candidate_manifest": candidate_manifest,
+                "edge_candidate_dependencies": manifest_dependency_paths(
+                    candidate_manifest
+                ),
+            }
+        )
     write_experiment_manifest(
         out,
         run_type="leadlag_replay_walkforward",
@@ -223,7 +282,20 @@ def write_leadlag_replay_walkforward(
             "proof_thresholds": asdict(proof_thresholds),
             "thresholds": asdict(thresholds),
         },
-        inputs={"leaders": leaders, "laggards": laggards, "candidate_config": candidate_path, "run_dirs": run_dirs},
+        inputs=manifest_inputs,
+        extra={
+            "edge_candidate_manifest_required": candidate_integrity is not None,
+            "edge_candidate_manifest_current": bool(
+                candidate_integrity is not None and candidate_integrity.passed
+            ),
+            "edge_candidate_manifest_sha256": _current_file_sha256(
+                candidate_manifest
+            ),
+            "edge_measurement_manifest_sha256": str(
+                candidate_audit.get("measurement_manifest_sha256", "")
+            ).strip(),
+            "authorizes_submission": False,
+        },
     )
     return LeadLagReplayWalkForwardReport(
         folds=folds,
@@ -261,6 +333,47 @@ def _load_candidate(path: str | Path | None) -> tuple[Path | None, dict[str, Any
         failed = candidate.get("failed_checks", []) or []
         raise ValueError(f"lead-lag candidate config is not ready: {failed}")
     return candidate_path, candidate
+
+
+def _edge_candidate_manifest_integrity(
+    candidate_path: Path | None,
+    candidate: dict[str, Any],
+) -> ManifestIntegrity | None:
+    if not edge_audit(candidate):
+        return None
+    manifest_path = (
+        candidate_path.parent / "manifest.json"
+        if candidate_path is not None
+        else Path("manifest.json")
+    )
+    return verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=EDGE_AUDIT_RUN_TYPE,
+        required_artifacts=EDGE_AUDIT_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+
+
+def _edge_candidate_manifest_check(
+    integrity: ManifestIntegrity,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "check": "edge_candidate_manifest_current",
+                "value": float(bool(integrity.passed)),
+                "operator": "is",
+                "threshold": 1.0,
+                "passed": bool(integrity.passed),
+                "reason": (
+                    ""
+                    if integrity.passed
+                    else "lead-lag edge candidate manifest failed: "
+                    f"{integrity.error or 'verification_failed'}"
+                ),
+            }
+        ]
+    )
 
 
 def _fold_row(
@@ -462,8 +575,32 @@ def _candidate_config(
         "edge_latency_headroom_ns": _jsonable(
             summary.get("edge_latency_headroom_ns")
         ),
+        "edge_candidate_manifest_required": _jsonable(
+            summary.get("edge_candidate_manifest_required")
+        ),
+        "edge_candidate_manifest_current": _jsonable(
+            summary.get("edge_candidate_manifest_current")
+        ),
+        "edge_candidate_manifest_error": _jsonable(
+            summary.get("edge_candidate_manifest_error")
+        ),
+        "edge_candidate_manifest_sha256": _jsonable(
+            summary.get("edge_candidate_manifest_sha256")
+        ),
+        "edge_measurement_manifest_sha256": _jsonable(
+            summary.get("edge_measurement_manifest_sha256")
+        ),
     }
     return config
+
+
+def _current_file_sha256(path: Path | None) -> str:
+    if path is None or not path.is_file():
+        return ""
+    try:
+        return file_sha256(path).lower()
+    except OSError:
+        return ""
 
 
 def _threshold_check(name: str, value: Any, operator: str, threshold: float | int) -> dict[str, Any]:

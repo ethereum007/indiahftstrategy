@@ -1370,8 +1370,12 @@
   Passed audits now emit a non-authorizing, measurement-bound candidate config
   with replay defaults, conservative edge metrics, and that latency budget.
 - Lead-lag replay walk-forward preserves the edge candidate contract and fails
-  when feed plus order latency exceeds `max_profitable_latency_ns`. Candidate
-  promotion verifies the walk-forward manifest and exact candidate/summary,
+  when feed plus order latency exceeds `max_profitable_latency_ns`. It now
+  verifies the source edge-audit manifest, all five canonical audit artifacts,
+  and recorded measurement inputs before trusting candidate JSON, then carries
+  both audit-manifest and measurement-manifest SHA-256 identities forward.
+  Candidate promotion verifies the walk-forward manifest and exact candidate/
+  summary, rejects legacy walk-forwards without that audit-manifest binding,
   then requires passed/current measurement evidence and respected latency
   headroom by default, while retaining an explicit research-migration override.
 - Lead-lag edge, replay, replay walk-forward, promotion, order-plan,
@@ -4042,8 +4046,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 2373 tests. Last completed full-suite baseline: 1110
+Current collected suite: 2376 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
+
+Latest lead-lag edge-audit-to-walk-forward lineage gate: replay walk-forward
+now verifies that an edge-bearing candidate comes from a current
+`leadlag_edge_audit` manifest with all canonical artifacts and source
+fingerprints. Drift adds a failed `edge_candidate_manifest_current` check,
+keeps the next candidate non-ready, and is recorded in summary/config/manifest
+artifacts. Audit and measurement SHA-256 identities plus transitive measurement
+dependencies flow through walk-forward; promotion and order planning reject
+legacy packages lacking this source binding, and launch reporting preserves it.
+All 29 focused chain tests passed in 102.6 seconds, all 47 lead-lag lane tests
+passed in 82.5 seconds, and all 69 manifest/catalog tests passed in 108.7
+seconds. Collection passes at 2376 tests across 155 files. The full repository
+and broader broker lifecycle chains were not rerun.
 
 Latest lead-lag promotion-to-launch proof gate: order planning now verifies the
 promotion manifest, its exact artifacts, and source fingerprints before

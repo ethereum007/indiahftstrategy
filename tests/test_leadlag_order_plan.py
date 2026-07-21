@@ -20,6 +20,9 @@ def promotion_summary(*, ready=True, edge_bound=True):
                 "candidate_scenario_key": scenario_key(),
                 "failed_checks": 0 if ready else 1,
                 "edge_audit_bound": edge_bound,
+                "edge_candidate_manifest_bound": edge_bound,
+                "edge_candidate_manifest_current": edge_bound,
+                "edge_candidate_manifest_sha256": "b" * 64 if edge_bound else "",
                 "edge_latency_budget_ns": 100_000 if edge_bound else None,
                 "total_replay_latency_ns": 50_000,
                 "edge_latency_headroom_ns": 50_000 if edge_bound else None,
@@ -67,6 +70,12 @@ def promoted_candidate_config(*, ready=True, strategy="lead_lag_taker", edge_bou
                 "best_latency_cost_drag_ratio": 0.2,
                 "best_latency_net_edge_bps": 2.0,
             },
+        }
+        candidate["edge_candidate_manifest"] = {
+            "edge_candidate_manifest_required": True,
+            "edge_candidate_manifest_current": True,
+            "edge_candidate_manifest_sha256": "b" * 64,
+            "edge_measurement_manifest_sha256": "a" * 64,
         }
     return candidate
 
@@ -136,10 +145,12 @@ def test_build_leadlag_order_plan_creates_stageable_buy_and_sell_templates():
     assert set(report.orders["lifecycle_action"]) == {"SIGNAL_TEMPLATE"}
     assert set(report.orders["template_only"]) == {True}
     assert set(report.orders["edge_measurement_manifest_sha256"]) == {"a" * 64}
+    assert set(report.orders["edge_candidate_manifest_sha256"]) == {"b" * 64}
     assert set(report.orders["edge_latency_budget_ns"]) == {100_000}
     assert set(report.orders["total_replay_latency_ns"]) == {50_000}
     assert set(report.orders["edge_latency_headroom_ns"]) == {50_000}
     assert bool(report.summary.loc[0, "edge_audit_bound"])
+    assert bool(report.summary.loc[0, "edge_candidate_manifest_bound"])
     assert bool(report.summary.loc[0, "edge_latency_budget_respected"])
 
     staged = stage_orders(
@@ -176,6 +187,7 @@ def test_write_leadlag_order_plan_outputs_files_and_manifest(tmp_path):
     assert bool(report.summary.loc[0, "promotion_manifest_current"])
     assert manifest["extra"]["promotion_manifest_current"]
     assert manifest["extra"]["edge_audit_bound"]
+    assert manifest["extra"]["edge_candidate_manifest_bound"]
     assert "promotion_manifest" in manifest["inputs"]
     assert "promotion_dependencies" in manifest["inputs"]
     assert (out_dir / "leadlag_order_candidates.csv").exists()
@@ -195,6 +207,27 @@ def test_leadlag_order_plan_fails_closed_for_wrong_strategy():
     assert not report.ready
     assert report.orders.empty
     assert "valid_strategy" in failed
+
+
+def test_leadlag_order_plan_rejects_legacy_unverified_edge_candidate():
+    summary = promotion_summary()
+    summary.loc[0, "edge_candidate_manifest_bound"] = False
+    legacy = promoted_candidate_config()
+    legacy.pop("edge_candidate_manifest")
+
+    report = build_leadlag_order_plan(
+        summary,
+        legacy,
+        config=LeadLagOrderPlanConfig(reference_price=10.0),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.orders.empty
+    assert failed == {
+        "edge_candidate_manifest_bound",
+        "promotion_edge_candidate_manifest_bound",
+    }
 
 
 def test_write_leadlag_order_plan_fails_closed_for_drifted_promotion(tmp_path):

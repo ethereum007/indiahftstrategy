@@ -67,6 +67,10 @@ def candidate_config(*, ready=True):
         },
         "replay_walkforward": {
             "edge_audit_bound": True,
+            "edge_candidate_manifest_required": True,
+            "edge_candidate_manifest_current": True,
+            "edge_candidate_manifest_sha256": "b" * 64,
+            "edge_measurement_manifest_sha256": "a" * 64,
             "edge_latency_budget_ns": 100_000,
             "total_replay_latency_ns": 50_000,
             "edge_latency_headroom_ns": 50_000,
@@ -141,8 +145,13 @@ def test_evaluate_leadlag_candidate_promotion_outputs_launch_compatible_config()
     assert report.candidate_config["strategy"] == "lead_lag_taker"
     assert report.candidate_config["parameters"]["trigger_ticks"] == 10.0
     assert report.summary.iloc[0]["edge_audit_bound"]
+    assert report.summary.iloc[0]["edge_candidate_manifest_bound"]
+    assert report.summary.iloc[0]["edge_candidate_manifest_sha256"] == "b" * 64
     assert report.summary.iloc[0]["edge_latency_headroom_ns"] == 50_000
     assert report.candidate_config["edge_audit"]["max_profitable_latency_ns"] == 100_000
+    assert report.candidate_config["edge_candidate_manifest"][
+        "edge_candidate_manifest_current"
+    ]
     assert report.candidate_config["metrics"]["edge_best_latency_avg_net_edge"] == 5.0
 
     launch = evaluate_launch_bundle(
@@ -177,6 +186,22 @@ def test_leadlag_candidate_promotion_requires_bound_edge_audit():
     assert research_override.ready
 
 
+def test_leadlag_candidate_promotion_rejects_legacy_unverified_edge_candidate():
+    legacy = candidate_config()
+    legacy["replay_walkforward"].pop("edge_candidate_manifest_required")
+    legacy["replay_walkforward"].pop("edge_candidate_manifest_current")
+    legacy["replay_walkforward"].pop("edge_candidate_manifest_sha256")
+
+    report = evaluate_leadlag_candidate_promotion(
+        walkforward_summary(),
+        legacy,
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert failed == {"edge_candidate_manifest_bound"}
+
+
 def test_write_leadlag_candidate_promotion_outputs_artifacts(tmp_path):
     walkforward_dir = tmp_path / "replay_walkforward"
     out_dir = tmp_path / "promotion"
@@ -192,6 +217,7 @@ def test_write_leadlag_candidate_promotion_outputs_artifacts(tmp_path):
     assert bool(report.summary.iloc[0]["walkforward_manifest_current"])
     assert manifest["parameters"]["strategy"] == "lead_lag_taker"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    assert manifest["extra"]["edge_candidate_manifest_bound"]
     assert (out_dir / "promotion_candidate.csv").exists()
     assert (out_dir / "promotion_checks.csv").exists()
     assert (out_dir / "promotion_summary.csv").exists()

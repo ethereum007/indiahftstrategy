@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 import numpy as np
@@ -32,6 +33,26 @@ def edge_audit_bound(candidate: Mapping[str, Any] | None) -> bool:
         and _to_bool(audit.get("measurement_manifest_current", False))
         and str(audit.get("measurement_manifest_sha256", "")).strip()
         and not np.isnan(edge_latency_budget_ns(candidate))
+    )
+
+
+def edge_candidate_manifest(candidate: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not candidate:
+        return {}
+    value = candidate.get("edge_candidate_manifest", {})
+    if isinstance(value, dict) and value:
+        return value
+    value = candidate.get("replay_walkforward", {})
+    return value if isinstance(value, dict) else {}
+
+
+def edge_candidate_manifest_bound(candidate: Mapping[str, Any] | None) -> bool:
+    value = edge_candidate_manifest(candidate)
+    sha256 = str(value.get("edge_candidate_manifest_sha256", "")).strip()
+    return bool(
+        _to_bool(value.get("edge_candidate_manifest_required", False))
+        and _to_bool(value.get("edge_candidate_manifest_current", False))
+        and re.fullmatch(r"[0-9a-fA-F]{64}", sha256)
     )
 
 

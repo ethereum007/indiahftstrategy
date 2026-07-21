@@ -252,6 +252,11 @@ def write_leadlag_launch_pipeline(
             "order_plan_edge_audit_bound": bool(
                 summary.iloc[0].get("order_plan_edge_audit_bound", False)
             ),
+            "order_plan_edge_candidate_manifest_bound": bool(
+                summary.iloc[0].get(
+                    "order_plan_edge_candidate_manifest_bound", False
+                )
+            ),
         },
     )
     return LeadLagLaunchPipelineReport(
@@ -337,6 +342,12 @@ def _summary(
                 ),
                 "order_plan_edge_audit_bound": bool(
                     order_row.get("edge_audit_bound", False)
+                ),
+                "order_plan_edge_candidate_manifest_bound": bool(
+                    order_row.get("edge_candidate_manifest_bound", False)
+                ),
+                "order_plan_edge_candidate_manifest_sha256": str(
+                    order_row.get("edge_candidate_manifest_sha256", "")
                 ),
                 "order_plan_edge_latency_budget_respected": bool(
                     order_row.get("edge_latency_budget_respected", False)

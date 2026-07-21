@@ -12,6 +12,8 @@ from reports.leadlag_candidate_contract import (
     candidate_replay_latency_ns,
     edge_audit,
     edge_audit_bound,
+    edge_candidate_manifest,
+    edge_candidate_manifest_bound,
     edge_latency_budget_ns,
     edge_metrics,
     latency_budget_respected,
@@ -155,6 +157,11 @@ def write_leadlag_candidate_promotion(
         extra={
             "promotion_source": WALKFORWARD_RUN_TYPE,
             "walkforward_manifest_current": bool(integrity.passed),
+            "edge_candidate_manifest_bound": bool(
+                report.summary.iloc[0].get(
+                    "edge_candidate_manifest_bound", False
+                )
+            ),
         },
     )
     return LeadLagCandidatePromotionReport(
@@ -196,6 +203,7 @@ def _checks(
     walkforward_passed = _to_bool(row.get("passed", False))
     candidate_ready = _to_bool(candidate_config.get("ready", False))
     audit_bound = edge_audit_bound(candidate_config)
+    candidate_manifest_bound = edge_candidate_manifest_bound(candidate_config)
     budget_respected = latency_budget_respected(candidate_config)
     checks = [
         _check(
@@ -221,6 +229,14 @@ def _checks(
             True,
             audit_bound or not thresholds.require_edge_audit_bound,
             "candidate is not bound to a passed, current lead-lag edge audit",
+        ),
+        _check(
+            "edge_candidate_manifest_bound",
+            candidate_manifest_bound,
+            "is",
+            True,
+            candidate_manifest_bound or not thresholds.require_edge_audit_bound,
+            "walk-forward candidate is not bound to its current edge-audit manifest",
         ),
         _check(
             "edge_latency_budget_respected",
@@ -254,6 +270,7 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
         replay_defaults = {}
     scenario_key = _scenario_key(replay_defaults)
     audit_metrics = edge_metrics(candidate_config)
+    candidate_manifest = edge_candidate_manifest(candidate_config)
     return {
         "scenario_key": scenario_key,
         "strategy": LEAD_LAG_STRATEGY,
@@ -278,6 +295,18 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
         "median_markout_mean": _float(row, "median_markout_mean"),
         "median_robust_score": _float(row, "median_robust_score"),
         "edge_audit_bound": edge_audit_bound(candidate_config),
+        "edge_candidate_manifest_bound": edge_candidate_manifest_bound(
+            candidate_config
+        ),
+        "edge_candidate_manifest_current": _to_bool(
+            candidate_manifest.get("edge_candidate_manifest_current", False)
+        ),
+        "edge_candidate_manifest_sha256": str(
+            candidate_manifest.get("edge_candidate_manifest_sha256", "")
+        ).strip(),
+        "edge_measurement_manifest_sha256": str(
+            candidate_manifest.get("edge_measurement_manifest_sha256", "")
+        ).strip(),
         "edge_latency_budget_ns": edge_latency_budget_ns(candidate_config),
         "total_replay_latency_ns": candidate_replay_latency_ns(candidate_config),
         "edge_latency_headroom_ns": latency_headroom_ns(candidate_config),
@@ -309,6 +338,18 @@ def _summary(candidate: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "failed_checks": failed,
                 "edge_audit_bound": _to_bool(
                     row.get("edge_audit_bound", False)
+                ),
+                "edge_candidate_manifest_bound": _to_bool(
+                    row.get("edge_candidate_manifest_bound", False)
+                ),
+                "edge_candidate_manifest_current": _to_bool(
+                    row.get("edge_candidate_manifest_current", False)
+                ),
+                "edge_candidate_manifest_sha256": str(
+                    row.get("edge_candidate_manifest_sha256", "")
+                ),
+                "edge_measurement_manifest_sha256": str(
+                    row.get("edge_measurement_manifest_sha256", "")
                 ),
                 "edge_latency_budget_ns": row.get(
                     "edge_latency_budget_ns", np.nan
@@ -383,6 +424,22 @@ def _promotion_candidate_config(
             ),
         },
         "edge_audit": _jsonable(edge_audit(source_config)),
+        "edge_candidate_manifest": {
+            "edge_candidate_manifest_required": _jsonable(
+                edge_candidate_manifest(source_config).get(
+                    "edge_candidate_manifest_required"
+                )
+            ),
+            "edge_candidate_manifest_current": _jsonable(
+                candidate.get("edge_candidate_manifest_current")
+            ),
+            "edge_candidate_manifest_sha256": _jsonable(
+                candidate.get("edge_candidate_manifest_sha256")
+            ),
+            "edge_measurement_manifest_sha256": _jsonable(
+                candidate.get("edge_measurement_manifest_sha256")
+            ),
+        },
         "source_candidate": _jsonable(source_config),
         "failed_checks": list(dict.fromkeys(failed_checks)),
         "thresholds": asdict(thresholds),

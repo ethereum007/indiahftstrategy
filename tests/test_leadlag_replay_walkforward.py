@@ -8,6 +8,7 @@ from reports.leadlag_replay_walkforward import (
     LeadLagReplayWalkForwardThresholds,
     write_leadlag_replay_walkforward,
 )
+from reports.manifest import write_experiment_manifest
 from reports.proof import ProofThresholds
 
 
@@ -126,6 +127,25 @@ def write_us_candidate(path):
         + "\n",
         encoding="utf-8",
     )
+    pd.DataFrame([{"max_profitable_latency_ns": 100_000}]).to_csv(
+        path / "leadlag_edge_metrics.csv", index=False
+    )
+    pd.DataFrame([{"check": "measurement_manifest_current", "passed": True}]).to_csv(
+        path / "leadlag_edge_checks.csv", index=False
+    )
+    pd.DataFrame([{"passed": True}]).to_csv(
+        path / "leadlag_edge_summary.csv", index=False
+    )
+    pd.DataFrame([{"manifest_sha256": "a" * 64}]).to_csv(
+        path / "leadlag_edge_measurement_provenance.csv", index=False
+    )
+    source = path.parent / f"{path.name}_measurement_source.csv"
+    pd.DataFrame([{"measurement": "current"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        path,
+        run_type="leadlag_edge_audit",
+        inputs={"measurement_source": source},
+    )
 
 
 def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_row(tmp_path):
@@ -205,6 +225,13 @@ def test_write_leadlag_replay_walkforward_inherits_us_generic_costs(tmp_path):
     assert config["edge_audit"]["max_profitable_latency_ns"] == 100_000
     assert config["replay_walkforward"]["edge_audit_bound"]
     assert config["replay_walkforward"]["edge_latency_headroom_ns"] == 100_000
+    assert config["replay_walkforward"]["edge_candidate_manifest_current"]
+    assert len(config["replay_walkforward"]["edge_candidate_manifest_sha256"]) == 64
+    assert config["replay_walkforward"]["edge_measurement_manifest_sha256"] == "a" * 64
+    assert bool(report.summary.loc[0, "edge_candidate_manifest_current"])
+    assert manifest["extra"]["edge_candidate_manifest_current"]
+    assert "edge_candidate_manifest" in manifest["inputs"]
+    assert "edge_candidate_dependencies" in manifest["inputs"]
     assert manifest["parameters"]["generic_costs"]["per_order_fee"] == 0.01
 
 
@@ -240,6 +267,44 @@ def test_write_leadlag_replay_walkforward_blocks_latency_above_edge_budget(tmp_p
     assert report.summary.iloc[0]["edge_latency_headroom_ns"] == -10_000
     assert not config["ready"]
     assert "total_replay_latency_ns" in config["failed_checks"]
+
+
+def test_write_leadlag_replay_walkforward_blocks_drifted_edge_candidate(tmp_path):
+    leader, laggard = write_pair(tmp_path, "2026-06-10", us=True, label="us_day1")
+    candidate_dir = tmp_path / "us_edge"
+    out_dir = tmp_path / "us_leadlag_drifted_edge"
+    write_us_candidate(candidate_dir)
+    candidate_path = candidate_dir / "candidate_config.json"
+    candidate_path.write_text(
+        candidate_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_leadlag_replay_walkforward(
+        [leader],
+        [laggard],
+        output_dir=out_dir,
+        candidate_config=candidate_dir,
+        lot_size=1,
+        proof_thresholds=ProofThresholds(min_net_pnl=-1000.0, min_fills=0),
+        thresholds=LeadLagReplayWalkForwardThresholds(
+            min_folds=1,
+            min_proof_pass_rate=0.0,
+            min_total_fills=0,
+            min_total_net_pnl=-1000.0,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.passed
+    assert failed == {"edge_candidate_manifest_current"}
+    assert not bool(report.summary.loc[0, "edge_candidate_manifest_current"])
+    assert report.summary.loc[0, "edge_candidate_manifest_error"] == "artifact_drift"
+    assert not config["ready"]
+    assert "edge_candidate_manifest_current" in config["failed_checks"]
+    assert manifest["extra"]["edge_candidate_manifest_current"] is False
 
 
 def test_cli_leadlag_replay_walkforward_can_fail_on_breach(tmp_path):

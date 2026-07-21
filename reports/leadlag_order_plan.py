@@ -14,6 +14,8 @@ from reports.leadlag_candidate_contract import (
     candidate_replay_latency_ns,
     edge_audit,
     edge_audit_bound,
+    edge_candidate_manifest,
+    edge_candidate_manifest_bound,
     edge_latency_budget_ns,
     edge_metrics,
     latency_budget_respected,
@@ -190,6 +192,11 @@ def write_leadlag_order_plan(
         extra={
             "promotion_manifest_current": bool(integrity.passed),
             "edge_audit_bound": bool(report.summary.iloc[0].get("edge_audit_bound", False)),
+            "edge_candidate_manifest_bound": bool(
+                report.summary.iloc[0].get(
+                    "edge_candidate_manifest_bound", False
+                )
+            ),
             "edge_audit_override_used": bool(
                 report.summary.iloc[0].get("edge_audit_override_used", False)
             ),
@@ -358,8 +365,12 @@ def _checks(
     tick_size = float(plan["tick_size"])
     reference_price = float(plan["reference_price"])
     audit_bound = edge_audit_bound(candidate_config)
+    candidate_manifest_bound = edge_candidate_manifest_bound(candidate_config)
     budget_respected = latency_budget_respected(candidate_config)
     promotion_audit_bound = _to_bool(summary.get("edge_audit_bound", False))
+    promotion_candidate_manifest_bound = _to_bool(
+        summary.get("edge_candidate_manifest_bound", False)
+    )
     candidate_budget = edge_latency_budget_ns(candidate_config)
     promotion_budget = number(summary.get("edge_latency_budget_ns"))
     candidate_latency = candidate_replay_latency_ns(candidate_config)
@@ -398,12 +409,29 @@ def _checks(
             "candidate replay latency exceeds or omits the measured edge budget",
         ),
         _check(
+            "edge_candidate_manifest_bound",
+            candidate_manifest_bound,
+            "is",
+            True,
+            candidate_manifest_bound or not config.require_edge_audit_bound,
+            "candidate is not bound to its source edge-audit manifest",
+        ),
+        _check(
             "promotion_edge_audit_bound",
             promotion_audit_bound,
             "is",
             True,
             promotion_audit_bound or not config.require_edge_audit_bound,
             "promotion summary is not bound to the lead-lag edge audit",
+        ),
+        _check(
+            "promotion_edge_candidate_manifest_bound",
+            promotion_candidate_manifest_bound,
+            "is",
+            True,
+            promotion_candidate_manifest_bound
+            or not config.require_edge_audit_bound,
+            "promotion summary is not bound to the source edge-audit manifest",
         ),
         _check(
             "promotion_edge_latency_budget_matches",
@@ -564,6 +592,8 @@ def _empty_orders() -> pd.DataFrame:
             "lifecycle_reason",
             "lifecycle_message_count",
             "edge_audit_bound",
+            "edge_candidate_manifest_bound",
+            "edge_candidate_manifest_sha256",
             "edge_measurement_manifest_sha256",
             "edge_latency_budget_ns",
             "total_replay_latency_ns",
@@ -598,8 +628,15 @@ def _promotion_manifest_check(integrity: ManifestIntegrity) -> pd.DataFrame:
 def _edge_evidence(candidate_config: dict[str, Any]) -> dict[str, Any]:
     audit = edge_audit(candidate_config)
     metrics = edge_metrics(candidate_config)
+    candidate_manifest = edge_candidate_manifest(candidate_config)
     return {
         "edge_audit_bound": edge_audit_bound(candidate_config),
+        "edge_candidate_manifest_bound": edge_candidate_manifest_bound(
+            candidate_config
+        ),
+        "edge_candidate_manifest_sha256": str(
+            candidate_manifest.get("edge_candidate_manifest_sha256", "")
+        ).strip(),
         "edge_measurement_manifest_sha256": str(
             audit.get("measurement_manifest_sha256", "")
         ).strip(),

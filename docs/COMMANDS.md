@@ -1112,10 +1112,16 @@ For US research, provide `--market us_equities_regular` or
 `--market us_options_regular` plus explicit generic fee flags, or supply a
 ready lead-lag `candidate_config.json` with `replay_defaults.generic_costs`.
 When the candidate carries an edge audit, walk-forward requires that audit to
-remain passed and measurement-current. It also checks that feed latency plus
-order latency, converted to nanoseconds, does not exceed the measured
-`max_profitable_latency_ns`; budget, realized latency, and headroom are retained
-in the summary and next candidate contract.
+remain passed and measurement-current. The candidate must come from a current
+`leadlag_edge_audit` manifest containing the canonical metrics, checks,
+summary, measurement-provenance, and candidate artifacts; a loose or drifted
+`candidate_config.json` fails `edge_candidate_manifest_current`. The
+walk-forward manifest fingerprints that edge-audit manifest and all transitive
+measurement inputs, while its summary and next candidate retain both the
+edge-audit-manifest and measurement-manifest SHA-256 identities. It also checks
+that feed latency plus order latency, converted to nanoseconds, does not exceed
+the measured `max_profitable_latency_ns`; budget, realized latency, and
+headroom are retained in the summary and next candidate contract.
 
 ## Lead-Lag Candidate Promotion
 
@@ -1143,9 +1149,11 @@ manifest.json
 ```
 
 Promotion requires a passed, current, measurement-bound edge audit and a
-respected latency budget by default. `--allow-unbound-edge-audit` exists only
-for research migration or diagnosis; using it keeps the missing evidence
-visible in promotion checks and must not be treated as launch-grade proof.
+current edge-audit source manifest plus a respected latency budget by default.
+Legacy walk-forward candidates that never verified their source audit fail
+`edge_candidate_manifest_bound`. `--allow-unbound-edge-audit` exists only for
+research migration or diagnosis; using it keeps the missing evidence visible
+in promotion checks and must not be treated as launch-grade proof.
 The promotion writer also verifies the walk-forward manifest and its exact
 summary/candidate artifacts before evaluating these gates. Artifact or source
 drift adds a failed `walkforward_manifest_current` check and is bound
