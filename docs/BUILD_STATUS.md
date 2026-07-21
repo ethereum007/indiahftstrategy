@@ -6262,6 +6262,23 @@ compatibility passes (`69 passed`). Repository collection is healthy at `2424
 tests`. All outputs remain non-authorizing; the full repository suite was not
 rerun for this slice.
 
+Latest acknowledgement-to-round-trip lead-lag lineage gate: final broker-neutral
+review now independently reconciles the canonical `leadlag_edge_lineage/v1`
+contract across dispatch, send, and acknowledgement summaries plus nested
+configs, then requires the acknowledgement-owned copy through
+`leadlag_send_contract_consistent` to match the separately verified ack
+lineage. Final order rows, summary/config, runbook, and manifest metadata carry
+the measured-edge identity and a direct `leadlag_ack_contract_consistent`
+decision. Exact-profile and explicit-required-marker contracts fail closed on
+missing fields, profile drift, malformed lineage, cross-hop disagreement, or a
+source-detached acknowledgement; legacy noncanonical packets remain readable.
+The final writer now attaches lineage metadata in one frame operation, removing
+the prior pandas fragmentation warnings. The complete round-trip suite passes
+(`103 passed`), the complete dispatch/send/ack integration suite passes (`143
+passed`), and manifest plus experiment-catalog compatibility passes (`69
+passed`). Repository collection is healthy at `2425 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

@@ -6534,6 +6534,19 @@ The final manifest fingerprints all acknowledgement artifacts and recursively
 flattened dependencies, source/output overlap is rejected, and final artifacts
 remain explicitly non-authorizing.
 
+For the exact `leadlag` portfolio profile, or whenever
+`leadlag_edge_lineage_required` is set, final review also owns a direct
+`leadlag_ack_contract_consistent` decision. It independently compares the
+dispatch, send, and acknowledgement summary/config copies, then requires the
+acknowledgement-owned contract through `leadlag_send_contract_consistent` to
+match the verified acknowledgement lineage. The measured-edge identity and
+the new decision are sealed into every final order, summary/config, runbook,
+and manifest metadata. A profile mismatch, missing field, malformed lineage,
+cross-hop drift, or source-detached but freshly re-manifested acknowledgement
+therefore fails the round-trip gate. Legacy noncanonical packets remain
+readable, and raw broker acknowledgement logs do not need internal proof
+columns.
+
 When the provider broker-dispatch-ack wrapper retained validated dispatch
 round-trip capture provenance, the final provider round-trip wrapper carries
 the same `dispatch_roundtrip_capture_bundle_*`,

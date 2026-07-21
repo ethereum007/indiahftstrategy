@@ -8,6 +8,12 @@ from typing import Any
 
 import pandas as pd
 
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_FIELDS,
+    leadlag_lineage_field_matches,
+    leadlag_lineage_fields,
+    leadlag_lineage_ready,
+)
 from reports.manifest import write_experiment_manifest
 from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
@@ -44,6 +50,29 @@ BROKER_DISPATCH_ACK_LINEAGE_OUTPUT_COLUMNS = tuple(
     broker_dispatch_ack_lineage_fields(
         empty_broker_dispatch_ack_lineage()
     ).keys()
+)
+STRATEGY_PORTFOLIO_LEADLAG_DISPATCH_FIELDS = (
+    "leadlag_edge_lineage_required",
+    *LEADLAG_LINEAGE_FIELDS,
+    "leadlag_edge_lineage_matches_scaleup",
+    "leadlag_cutover_contract_consistent",
+    "leadlag_route_contract_consistent",
+)
+STRATEGY_PORTFOLIO_LEADLAG_SEND_FIELDS = (
+    *STRATEGY_PORTFOLIO_LEADLAG_DISPATCH_FIELDS,
+    "leadlag_dispatch_contract_consistent",
+)
+STRATEGY_PORTFOLIO_LEADLAG_ACK_FIELDS = (
+    *STRATEGY_PORTFOLIO_LEADLAG_SEND_FIELDS,
+    "leadlag_send_contract_consistent",
+)
+STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS = (
+    *STRATEGY_PORTFOLIO_LEADLAG_ACK_FIELDS,
+    "leadlag_ack_contract_consistent",
+)
+STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_COLUMNS = tuple(
+    f"strategy_portfolio_{field}"
+    for field in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS
 )
 TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
 TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
@@ -345,22 +374,47 @@ def evaluate_broker_dispatch_roundtrip(
     send_requests = _require_nonempty(send_requests, "send_requests")
     ack_summary = _require_nonempty(ack_summary, "ack_summary")
     acknowledgements = _require_nonempty(acknowledgements, "acknowledgements")
-    dispatch_row = _component_summary_state(dispatch_summary.iloc[0], dispatch_config or {})
-    send_row = _component_summary_state(send_summary.iloc[0], send_config or {})
-    ack_row = _component_summary_state(ack_summary.iloc[0], ack_config or {})
+    dispatch_config = dispatch_config or {}
+    send_config = send_config or {}
+    ack_config = ack_config or {}
+    dispatch_summary_row = dispatch_summary.iloc[0]
+    send_summary_row = send_summary.iloc[0]
+    ack_summary_row = ack_summary.iloc[0]
+    dispatch_row = _component_summary_state(dispatch_summary_row, dispatch_config)
+    send_row = _component_summary_state(send_summary_row, send_config)
+    ack_row = _component_summary_state(ack_summary_row, ack_config)
+    ack_lineage = broker_dispatch_ack_lineage or empty_broker_dispatch_ack_lineage(
+        required=thresholds.require_ack_lineage
+    )
     ack_lineage_fields = broker_dispatch_ack_lineage_fields(
-        broker_dispatch_ack_lineage
-        or empty_broker_dispatch_ack_lineage(
-            required=thresholds.require_ack_lineage
-        )
+        ack_lineage
     )
     for column, value in ack_lineage_fields.items():
         ack_row[column] = value
+    for column, value in _strategy_portfolio_leadlag_roundtrip_state(
+        dispatch_summary_row,
+        dispatch_config,
+        send_summary_row,
+        send_config,
+        ack_summary_row,
+        ack_config,
+        ack_lineage,
+    ).items():
+        ack_row[column] = value
 
     orders = _roundtrip_orders(dispatch_orders, send_requests, acknowledgements)
-    for column, value in ack_lineage_fields.items():
-        orders[column] = value
-    orders["authorizes_submission"] = False
+    roundtrip_metadata = {
+        **ack_lineage_fields,
+        **_strategy_portfolio_leadlag_summary_fields(ack_row),
+        "authorizes_submission": False,
+    }
+    orders = pd.concat(
+        [
+            orders,
+            pd.DataFrame(roundtrip_metadata, index=orders.index),
+        ],
+        axis=1,
+    )
     checks = _checks(
         dispatch_row,
         send_row,
@@ -520,6 +574,9 @@ def write_broker_dispatch_roundtrip(
         extra={
             "passed": bool(report.passed),
             **broker_dispatch_ack_lineage_fields(ack_lineage),
+            **_strategy_portfolio_leadlag_summary_fields(
+                report.summary.iloc[0]
+            ),
             "authorizes_submission": False,
         },
     )
@@ -3179,7 +3236,7 @@ def _resume_route_readiness_checks(
 def _strategy_portfolio_checks(*rows: pd.Series) -> list[dict[str, object]]:
     dispatch_total_notional = _strategy_portfolio_dispatch_total_notional(rows)
     selected_allocation = _strategy_portfolio_number_min(rows, "strategy_portfolio_selected_allocation_notional")
-    return [
+    checks = [
         _check(
             "strategy_portfolio_provided",
             _strategy_portfolio_provided(*rows),
@@ -3261,6 +3318,162 @@ def _strategy_portfolio_checks(*rows: pd.Series) -> list[dict[str, object]]:
             "dispatch notional exceeds selected strategy portfolio allocation",
         ),
     ]
+    if _strategy_portfolio_leadlag_active(*rows):
+        proof = rows[-1]
+        lineage_ready = leadlag_lineage_ready(
+            proof,
+            prefix="strategy_portfolio_",
+        )
+        checks.extend(
+            [
+                _check(
+                    "strategy_portfolio_leadlag_ack_contract_consistent",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_ack_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_ack_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "dispatch, send, acknowledgement, and verified acknowledgement lineage disagree on the lead-lag contract",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_send_contract_consistent",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_send_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_send_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "acknowledgement proof did not retain a consistent send contract",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_dispatch_contract_consistent",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_dispatch_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_dispatch_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "send proof did not retain a consistent dispatch contract",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_route_contract_consistent",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_route_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_route_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "dispatch proof did not retain a consistent route-enable contract",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_cutover_contract_consistent",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_cutover_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_cutover_contract_consistent",
+                            False,
+                        )
+                    ),
+                    "dispatch proof did not retain a consistent cutover contract",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_edge_lineage_required",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_edge_lineage_required",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_edge_lineage_required",
+                            False,
+                        )
+                    ),
+                    "round-trip proof did not carry the required lead-lag lineage marker",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_profile",
+                    _text(proof, "strategy_portfolio_selected_profile"),
+                    "==",
+                    "leadlag",
+                    _identity_key(
+                        proof.get("strategy_portfolio_selected_profile", "")
+                    )
+                    == "leadlag",
+                    "round-trip lead-lag lineage is attached to a different portfolio profile",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_edge_lineage_ready",
+                    lineage_ready,
+                    "is",
+                    True,
+                    lineage_ready,
+                    "round-trip proof lost or malformed the measured-edge lead-lag lineage",
+                ),
+                _check(
+                    "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                            False,
+                        )
+                    ),
+                    "is",
+                    True,
+                    _to_bool(
+                        proof.get(
+                            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                            False,
+                        )
+                    ),
+                    "round-trip proof did not retain the guard-validated lead-lag scale-up match",
+                ),
+            ]
+        )
+    return checks
 
 
 def _route_roundtrip_checks(
@@ -6322,6 +6535,7 @@ def _summary(
                 "scenario_key": _text(dispatch_summary, "scenario_key"),
                 "adapter": _text(dispatch_summary, "adapter"),
                 **_broker_dispatch_ack_lineage_output_fields(ack_summary),
+                **_strategy_portfolio_leadlag_summary_fields(ack_summary),
                 "authorizes_submission": False,
                 "broker_schema_status": _broker_schema_text(proof_rows, "broker_schema_status"),
                 "broker_schema_reviewed": _broker_schema_reviewed(proof_rows),
@@ -6732,6 +6946,8 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 def _component(check: str) -> str:
     if check.startswith("broker_dispatch_ack_"):
         return "broker_dispatch_ack"
+    if check == "strategy_portfolio_leadlag_ack_contract_consistent":
+        return "broker_dispatch_roundtrip"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
         return "strategy_portfolio"
     if "vendor_market_data_batch" in check:
@@ -7956,6 +8172,7 @@ def _config(
             ),
             "max_market_allocation_weight": float(summary["strategy_portfolio_max_market_allocation_weight"]),
             "pre_portfolio_max_notional_per_session": float(summary["pre_portfolio_max_notional_per_session"]),
+            **_strategy_portfolio_leadlag_config(summary),
         },
         "send_requests": int(summary["send_requests"]),
         "acked_orders": int(summary["acked_orders"]),
@@ -8154,6 +8371,13 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Missing request acknowledgements: {_int_value(summary_row.get('missing_request_acks'))}",
         f"- Rejected orders: {_int_value(summary_row.get('rejected_orders'))}",
         f"- Acknowledgement lineage current: {ack_lineage_label}",
+        "- Lead-lag acknowledgement contract consistent: "
+        f"{'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_ack_contract_consistent')) else 'no'}",
+        "- Lead-lag lineage matches scale-up: "
+        f"{'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",
+        "- Lead-lag lineage contract: "
+        f"{_code(summary_row.get('strategy_portfolio_leadlag_edge_lineage_contract_version'))} / "
+        f"{_code(summary_row.get('strategy_portfolio_leadlag_edge_lineage_contract_sha256'))}",
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Resume broker route ready: {_object_text(summary_row.get('route_broker_resume_broker_route_readiness_ready')).strip()}",
         f"- Resume incident route ready: {_object_text(summary_row.get('route_broker_resume_incident_broker_route_readiness_ready')).strip()}",
@@ -8337,8 +8561,256 @@ def _strategy_portfolio_active(*rows: pd.Series) -> bool:
     return any(
         _to_bool(row.get("strategy_portfolio_required", False))
         or _to_bool(row.get("strategy_portfolio_provided", False))
+        or _strategy_portfolio_leadlag_active(row)
         for row in rows
     )
+
+
+def _strategy_portfolio_leadlag_active(*rows: pd.Series) -> bool:
+    return any(
+        _to_bool(
+            row.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _identity_key(
+            row.get("strategy_portfolio_selected_profile", "")
+        )
+        == "leadlag"
+        for row in rows
+    )
+
+
+def _strategy_portfolio_leadlag_roundtrip_state(
+    dispatch_row: pd.Series,
+    dispatch_config: dict[str, Any],
+    send_row: pd.Series,
+    send_config: dict[str, Any],
+    ack_row: pd.Series,
+    ack_config: dict[str, Any],
+    ack_lineage: dict[str, Any],
+) -> dict[str, Any]:
+    dispatch = _strategy_portfolio_leadlag_component_state(
+        dispatch_row,
+        dispatch_config,
+        STRATEGY_PORTFOLIO_LEADLAG_DISPATCH_FIELDS,
+    )
+    send = _strategy_portfolio_leadlag_component_state(
+        send_row,
+        send_config,
+        STRATEGY_PORTFOLIO_LEADLAG_SEND_FIELDS,
+    )
+    ack = _strategy_portfolio_leadlag_component_state(
+        ack_row,
+        ack_config,
+        STRATEGY_PORTFOLIO_LEADLAG_ACK_FIELDS,
+    )
+    lineage_values = _strategy_portfolio_leadlag_values(
+        ack_lineage,
+        prefix="strategy_portfolio_",
+        fields=STRATEGY_PORTFOLIO_LEADLAG_ACK_FIELDS,
+    )
+    active = bool(
+        dispatch["active"]
+        or send["active"]
+        or ack["active"]
+        or _to_bool(
+            ack_lineage.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+    )
+    source_profiles = (
+        dispatch["summary_profile"],
+        dispatch["config_profile"],
+        send["summary_profile"],
+        send["config_profile"],
+        ack["summary_profile"],
+        ack["config_profile"],
+    )
+    profiles_consistent = bool(
+        not active
+        or all(_identity_key(profile) == "leadlag" for profile in source_profiles)
+    )
+    dispatch_to_send_consistent = bool(
+        not active
+        or (
+            dispatch["internally_consistent"]
+            and send["internally_consistent"]
+            and _strategy_portfolio_leadlag_values_match(
+                dispatch["values"],
+                send["values"],
+                STRATEGY_PORTFOLIO_LEADLAG_DISPATCH_FIELDS,
+            )
+        )
+    )
+    send_to_ack_consistent = bool(
+        not active
+        or (
+            dispatch_to_send_consistent
+            and ack["internally_consistent"]
+            and _strategy_portfolio_leadlag_values_match(
+                send["values"],
+                ack["values"],
+                STRATEGY_PORTFOLIO_LEADLAG_SEND_FIELDS,
+            )
+        )
+    )
+    lineage_has_contract = all(
+        f"strategy_portfolio_{field}" in ack_lineage
+        for field in STRATEGY_PORTFOLIO_LEADLAG_ACK_FIELDS
+    )
+    ack_contract_consistent = bool(
+        not active
+        or (
+            profiles_consistent
+            and send_to_ack_consistent
+            and lineage_has_contract
+            and _to_bool(ack_lineage.get("provided", False))
+            and _to_bool(ack_lineage.get("gate_passed", False))
+            and _strategy_portfolio_leadlag_values_match(
+                ack["values"],
+                lineage_values,
+                STRATEGY_PORTFOLIO_LEADLAG_ACK_FIELDS,
+            )
+        )
+    )
+    return {
+        **{
+            f"strategy_portfolio_{field}": value
+            for field, value in ack["values"].items()
+        },
+        "strategy_portfolio_leadlag_ack_contract_consistent": (
+            ack_contract_consistent
+        ),
+    }
+
+
+def _strategy_portfolio_leadlag_component_state(
+    row: pd.Series,
+    config: dict[str, Any],
+    fields: tuple[str, ...],
+) -> dict[str, Any]:
+    raw_portfolio = config.get("strategy_portfolio", {})
+    portfolio = raw_portfolio if isinstance(raw_portfolio, dict) else {}
+    summary_values = _strategy_portfolio_leadlag_values(
+        row,
+        prefix="strategy_portfolio_",
+        fields=fields,
+    )
+    config_values = _strategy_portfolio_leadlag_values(
+        portfolio,
+        prefix="",
+        fields=fields,
+    )
+    summary_profile = _first_text(
+        row.get("strategy_portfolio_selected_profile", "")
+    )
+    config_profile = _first_text(portfolio.get("selected_profile", ""))
+    active = bool(
+        _identity_key(summary_profile) == "leadlag"
+        or _identity_key(config_profile) == "leadlag"
+        or summary_values["leadlag_edge_lineage_required"]
+        or config_values["leadlag_edge_lineage_required"]
+    )
+    summary_has_contract = all(
+        f"strategy_portfolio_{field}" in row.index for field in fields
+    )
+    config_has_contract = all(field in portfolio for field in fields)
+    internally_consistent = bool(
+        not active
+        or (
+            summary_has_contract
+            and config_has_contract
+            and _identity_key(summary_profile) == _identity_key(config_profile)
+            and _strategy_portfolio_leadlag_values_match(
+                summary_values,
+                config_values,
+                fields,
+            )
+        )
+    )
+    return {
+        "active": active,
+        "summary_profile": summary_profile,
+        "config_profile": config_profile,
+        "values": summary_values,
+        "internally_consistent": internally_consistent,
+    }
+
+
+def _strategy_portfolio_leadlag_values(
+    source: Any,
+    *,
+    prefix: str,
+    fields: tuple[str, ...],
+) -> dict[str, Any]:
+    getter = source.get if hasattr(source, "get") else lambda _key, default: default
+    values = {
+        "leadlag_edge_lineage_required": _to_bool(
+            getter(f"{prefix}leadlag_edge_lineage_required", False)
+        ),
+        **leadlag_lineage_fields(source, source_prefix=prefix),
+        "leadlag_edge_lineage_matches_scaleup": _to_bool(
+            getter(f"{prefix}leadlag_edge_lineage_matches_scaleup", False)
+        ),
+        "leadlag_cutover_contract_consistent": _to_bool(
+            getter(f"{prefix}leadlag_cutover_contract_consistent", False)
+        ),
+        "leadlag_route_contract_consistent": _to_bool(
+            getter(f"{prefix}leadlag_route_contract_consistent", False)
+        ),
+        "leadlag_dispatch_contract_consistent": _to_bool(
+            getter(f"{prefix}leadlag_dispatch_contract_consistent", False)
+        ),
+        "leadlag_send_contract_consistent": _to_bool(
+            getter(f"{prefix}leadlag_send_contract_consistent", False)
+        ),
+    }
+    return {field: values[field] for field in fields}
+
+
+def _strategy_portfolio_leadlag_values_match(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    fields: tuple[str, ...],
+) -> bool:
+    return all(
+        _strategy_portfolio_leadlag_field_matches(
+            field,
+            left.get(field),
+            right.get(field),
+        )
+        for field in fields
+    )
+
+
+def _strategy_portfolio_leadlag_field_matches(
+    field: str,
+    left: Any,
+    right: Any,
+) -> bool:
+    if field in LEADLAG_LINEAGE_FIELDS:
+        return leadlag_lineage_field_matches(field, left, right)
+    return _to_bool(left) == _to_bool(right)
+
+
+def _strategy_portfolio_leadlag_summary_fields(source: Any) -> dict[str, Any]:
+    return {
+        f"strategy_portfolio_{field}": source[
+            f"strategy_portfolio_{field}"
+        ]
+        for field in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS
+    }
+
+
+def _strategy_portfolio_leadlag_config(summary: pd.Series) -> dict[str, Any]:
+    return {
+        field: _jsonable_check_value(summary[f"strategy_portfolio_{field}"])
+        for field in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_FIELDS
+    }
 
 
 def _strategy_portfolio_required(*rows: pd.Series) -> bool:
