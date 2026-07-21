@@ -104,6 +104,11 @@ def catalog_rows(*, dirty=False, commit="abc123", strategy="leadlag", market="in
 
 def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
     parameters = json.dumps({"strategy": "lead_lag_taker", "market": market})
+    measurement_manifest_sha256 = "a" * 64
+    edge_candidate_manifest_sha256 = "b" * 64
+    edge_latency_budget_ns = 100_000
+    total_replay_latency_ns = 50_000
+    edge_latency_headroom_ns = 50_000
     return pd.DataFrame(
         [
             {
@@ -116,6 +121,9 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "summary_file": "leadlag_edge_summary.csv",
                 "summary_strategy": "lead_lag_taker",
                 "summary_market": market,
+                "summary_measurement_manifest_current": True,
+                "summary_measurement_manifest_sha256": measurement_manifest_sha256,
+                "summary_max_profitable_latency_ns": edge_latency_budget_ns,
                 "parameters_json": parameters,
             },
             {
@@ -128,6 +136,14 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "summary_file": "leadlag_replay_walkforward_summary.csv",
                 "summary_strategy": "lead_lag_taker",
                 "summary_market": market,
+                "summary_edge_candidate_manifest_required": True,
+                "summary_edge_candidate_manifest_current": True,
+                "summary_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+                "summary_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+                "summary_edge_audit_bound": True,
+                "summary_edge_latency_budget_ns": edge_latency_budget_ns,
+                "summary_total_replay_latency_ns": total_replay_latency_ns,
+                "summary_edge_latency_headroom_ns": edge_latency_headroom_ns,
                 "parameters_json": parameters,
             },
             {
@@ -153,6 +169,15 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "summary_strategy": "lead_lag_taker",
                 "summary_market": market,
                 "summary_candidate_scenario_key": f"strategy=lead_lag_taker|market={market}|trigger_ticks=2",
+                "summary_walkforward_manifest_current": True,
+                "summary_edge_candidate_manifest_bound": True,
+                "summary_edge_candidate_manifest_current": True,
+                "summary_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+                "summary_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+                "summary_edge_audit_bound": True,
+                "summary_edge_latency_budget_ns": edge_latency_budget_ns,
+                "summary_total_replay_latency_ns": total_replay_latency_ns,
+                "summary_edge_latency_headroom_ns": edge_latency_headroom_ns,
                 "parameters_json": parameters,
             },
             {
@@ -165,6 +190,16 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "summary_file": "leadlag_order_summary.csv",
                 "summary_strategy": "lead_lag_taker",
                 "summary_market": market,
+                "summary_promotion_manifest_current": True,
+                "summary_edge_candidate_manifest_bound": True,
+                "summary_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+                "summary_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+                "summary_edge_audit_bound": True,
+                "summary_edge_latency_budget_respected": True,
+                "summary_edge_audit_override_used": False,
+                "summary_edge_latency_budget_ns": edge_latency_budget_ns,
+                "summary_total_replay_latency_ns": total_replay_latency_ns,
+                "summary_edge_latency_headroom_ns": edge_latency_headroom_ns,
                 "parameters_json": parameters,
             },
             {
@@ -177,6 +212,15 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "summary_file": "leadlag_launch_pipeline_summary.csv",
                 "summary_strategy": "lead_lag_taker",
                 "summary_market": market,
+                "summary_order_plan_promotion_manifest_current": True,
+                "summary_order_plan_edge_candidate_manifest_bound": True,
+                "summary_order_plan_edge_candidate_manifest_sha256": edge_candidate_manifest_sha256,
+                "summary_order_plan_edge_measurement_manifest_sha256": measurement_manifest_sha256,
+                "summary_order_plan_edge_audit_bound": True,
+                "summary_order_plan_edge_latency_budget_respected": True,
+                "summary_order_plan_edge_latency_budget_ns": edge_latency_budget_ns,
+                "summary_order_plan_total_replay_latency_ns": total_replay_latency_ns,
+                "summary_order_plan_edge_latency_headroom_ns": edge_latency_headroom_ns,
                 "parameters_json": parameters,
             },
         ]
@@ -863,6 +907,79 @@ def test_leadlag_evidence_profile_requires_edge_walkforward_stress_promotion_ide
     assert set(review.evidence["latest_strategy"]) == {"lead_lag_taker"}
     assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
     assert review.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    checks = review.checks.set_index("check")
+    assert bool(checks.loc["leadlag_edge_audit_lineage_bound", "passed"])
+    assert bool(checks.loc["leadlag_replay_walkforward_lineage_bound", "passed"])
+    assert bool(checks.loc["leadlag_promotion_lineage_bound", "passed"])
+    assert bool(checks.loc["leadlag_order_plan_lineage_bound", "passed"])
+    assert bool(checks.loc["leadlag_launch_pipeline_lineage_bound", "passed"])
+    assert bool(checks.loc["leadlag_measurement_manifest_identity", "passed"])
+    assert bool(checks.loc["leadlag_edge_candidate_manifest_identity", "passed"])
+    assert bool(checks.loc["leadlag_latency_budget_identity", "passed"])
+    assert bool(checks.loc["leadlag_edge_lineage_contract", "passed"])
+    summary = review.summary.iloc[0]
+    assert bool(summary["leadlag_edge_lineage_ready"])
+    assert int(summary["leadlag_lineage_bound_stages"]) == 5
+    assert summary["leadlag_measurement_manifest_sha256"] == "a" * 64
+    assert summary["leadlag_edge_candidate_manifest_sha256"] == "b" * 64
+    assert summary["leadlag_edge_latency_budget_ns"] == 100_000
+    assert summary["leadlag_total_replay_latency_ns"] == 50_000
+    assert summary["leadlag_edge_latency_headroom_ns"] == 50_000
+    assert len(summary["leadlag_edge_lineage_contract_sha256"]) == 64
+
+
+def test_leadlag_evidence_profile_rejects_legacy_unbound_order_plan():
+    catalog = leadlag_catalog_rows()
+    order_plan = catalog["run_type"] == "leadlag_order_plan"
+    catalog.loc[order_plan, "summary_edge_candidate_manifest_bound"] = False
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("leadlag")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "leadlag_order_plan_lineage_bound" in failed
+    assert not bool(review.summary.iloc[0]["leadlag_edge_lineage_ready"])
+    assert review.summary.iloc[0]["leadlag_edge_lineage_contract_sha256"] == ""
+
+
+def test_leadlag_evidence_profile_rejects_measurement_manifest_identity_drift():
+    catalog = leadlag_catalog_rows()
+    launch = catalog["run_type"] == "leadlag_launch_pipeline"
+    catalog.loc[
+        launch,
+        "summary_order_plan_edge_measurement_manifest_sha256",
+    ] = "c" * 64
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("leadlag")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "leadlag_measurement_manifest_identity" in failed
+    assert "leadlag_launch_pipeline_lineage_bound" not in failed
+
+
+def test_leadlag_evidence_profile_rejects_replay_latency_identity_drift():
+    catalog = leadlag_catalog_rows()
+    launch = catalog["run_type"] == "leadlag_launch_pipeline"
+    catalog.loc[launch, "summary_order_plan_total_replay_latency_ns"] = 60_000
+    catalog.loc[launch, "summary_order_plan_edge_latency_headroom_ns"] = 40_000
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("leadlag")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "leadlag_replay_latency_identity" in failed
+    assert "leadlag_latency_headroom_identity" in failed
+    assert "leadlag_launch_pipeline_lineage_bound" not in failed
 
 
 def test_leadlag_evidence_profile_fails_without_edge_audit():
@@ -3715,9 +3832,14 @@ def test_cli_strategy_evidence_leadlag_profile(tmp_path):
 
     items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
     summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    verification = verify_strategy_evidence_review(out_dir)
     assert code == 0
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["leadlag"])
     assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "leadlag_edge_lineage_ready"])
+    assert len(summary.loc[0, "leadlag_edge_lineage_contract_sha256"]) == 64
+    assert verification.verified
+    assert verification.ready
 
 
 def test_cli_strategy_evidence_ops_launch_profile(tmp_path):

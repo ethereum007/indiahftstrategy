@@ -226,7 +226,11 @@ python -m hft_cli review-strategy-evidence `
 
 For lead-lag taker research, use the named profile after the measured edge,
 replay walk-forward, stress, promotion, order-plan, and launch-pipeline
-artifacts are present:
+artifacts are present. The profile fails closed unless the five measured-edge
+stages retain one current measurement manifest, edge-audit manifest, and
+profitable latency budget/replay/headroom identity, with no research override
+in the selected order plan. A ready review exposes the sealed lineage as
+`leadlag_edge_lineage_contract_sha256` in its summary:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `

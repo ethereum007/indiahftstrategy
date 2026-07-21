@@ -1404,7 +1404,12 @@
 - Strategy evidence review supports a `leadlag` profile that requires measured
   lead-lag edge, replay walk-forward, stress, promotion, order-plan, and
   launch-pipeline artifacts with shared strategy and market identity before
-  shadow scale-up review.
+  shadow scale-up review. The profile now selects only proof-complete edge,
+  walk-forward, promotion, order-plan, and launch rows; requires current source
+  manifests, exact measurement-manifest and edge-audit-manifest SHA continuity,
+  one profitable latency budget/replay/headroom identity, consistent latency
+  arithmetic, and an explicit no-override order plan; and seals the selected
+  five-stage chain into `leadlag_edge_lineage/v1` for downstream audit.
 - Microprice/order-book imbalance edge audit that scans top-of-book ticks for
   imbalance/microprice signals and gates forward-mid response, direction
   coverage, and win rate before replay/sweep work.
@@ -6069,7 +6074,15 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1731-test collection is fully green.
+2379-test collection across 155 files is fully green.
+
+Latest lead-lag strategy-readiness gate: proof-complete stage selection,
+measurement and edge-audit SHA continuity, latency-budget/replay/headroom
+identity, no-override enforcement, deterministic lineage-contract sealing,
+legacy unbound-order rejection, and downstream hash/latency drift rejection
+pass inside the complete strategy-evidence suite (`62 passed`). Experiment-
+catalog compatibility also passes (`64 passed`). The full repository suite was
+not rerun for this evidence-only slice.
 
 ## Next Build Targets
 

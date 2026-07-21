@@ -31,6 +31,14 @@ LEADLAG_REQUIRED_RUN_TYPES = (
     "leadlag_order_plan",
     "leadlag_launch_pipeline",
 )
+LEADLAG_EDGE_LINEAGE_RUN_TYPES = (
+    "leadlag_edge_audit",
+    "leadlag_replay_walkforward",
+    "promotion_report",
+    "leadlag_order_plan",
+    "leadlag_launch_pipeline",
+)
+LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION = "leadlag_edge_lineage/v1"
 IMBALANCE_REQUIRED_RUN_TYPES = (
     "imbalance_edge_walkforward",
     "imbalance_replay_walkforward",
@@ -267,8 +275,25 @@ def evaluate_strategy_evidence(
     frame = _normalize_catalog(catalog)
     evidence = pd.DataFrame([_evidence_row(frame, run_type, thresholds) for run_type in thresholds.required_run_types])
     provider_lineage_selection = _provider_lineage_selection(evidence, thresholds)
-    checks = _checks(frame, evidence, provider_lineage_selection, thresholds)
-    summary = _summary(frame, evidence, provider_lineage_selection, checks, thresholds)
+    leadlag_lineage_checks, leadlag_lineage_summary = _leadlag_lineage_review(
+        frame,
+        thresholds,
+    )
+    checks = _checks(
+        frame,
+        evidence,
+        provider_lineage_selection,
+        thresholds,
+        leadlag_lineage_checks=leadlag_lineage_checks,
+    )
+    summary = _summary(
+        frame,
+        evidence,
+        provider_lineage_selection,
+        checks,
+        thresholds,
+        leadlag_lineage_summary=leadlag_lineage_summary,
+    )
     return StrategyEvidenceReview(
         evidence=evidence,
         checks=checks,
@@ -1031,11 +1056,458 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
     }
 
 
+def _leadlag_lineage_review(
+    catalog: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if _profile_identity(thresholds.required_run_types) != "leadlag":
+        return [], {}
+
+    stage_check_names = {
+        "leadlag_edge_audit": "leadlag_edge_audit_lineage_bound",
+        "leadlag_replay_walkforward": "leadlag_replay_walkforward_lineage_bound",
+        "promotion_report": "leadlag_promotion_lineage_bound",
+        "leadlag_order_plan": "leadlag_order_plan_lineage_bound",
+        "leadlag_launch_pipeline": "leadlag_launch_pipeline_lineage_bound",
+    }
+    selected: dict[str, pd.Series] = {}
+    proof_counts: dict[str, int] = {}
+    checks: list[dict[str, Any]] = []
+    for run_type in LEADLAG_EDGE_LINEAGE_RUN_TYPES:
+        matched = catalog.loc[
+            (catalog["run_type"].astype(str) == run_type)
+            & _bool_column(catalog, "summary_status")
+        ].copy()
+        eligible = matched.loc[_leadlag_lineage_stage_mask(matched, run_type)].copy()
+        count = int(len(eligible))
+        proof_counts[run_type] = count
+        selected[run_type] = (
+            _latest_row(eligible) if not eligible.empty else pd.Series(dtype=object)
+        )
+        checks.append(
+            _check(
+                stage_check_names[run_type],
+                count,
+                ">=",
+                thresholds.min_passed_per_type,
+                count >= thresholds.min_passed_per_type,
+                f"{run_type} does not have enough passed manifest-bound measured-edge proofs",
+            )
+        )
+
+    measurement_hashes = [
+        _leadlag_row_hash(
+            selected["leadlag_edge_audit"],
+            "summary_measurement_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["leadlag_replay_walkforward"],
+            "summary_edge_measurement_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["promotion_report"],
+            "summary_edge_measurement_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["leadlag_order_plan"],
+            "summary_edge_measurement_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["leadlag_launch_pipeline"],
+            "summary_order_plan_edge_measurement_manifest_sha256",
+        ),
+    ]
+    edge_candidate_hashes = [
+        _leadlag_row_hash(
+            selected["leadlag_replay_walkforward"],
+            "summary_edge_candidate_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["promotion_report"],
+            "summary_edge_candidate_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["leadlag_order_plan"],
+            "summary_edge_candidate_manifest_sha256",
+        ),
+        _leadlag_row_hash(
+            selected["leadlag_launch_pipeline"],
+            "summary_order_plan_edge_candidate_manifest_sha256",
+        ),
+    ]
+    budget_values = [
+        _leadlag_row_number(
+            selected["leadlag_edge_audit"],
+            "summary_max_profitable_latency_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_replay_walkforward"],
+            "summary_edge_latency_budget_ns",
+        ),
+        _leadlag_row_number(
+            selected["promotion_report"],
+            "summary_edge_latency_budget_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_order_plan"],
+            "summary_edge_latency_budget_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_launch_pipeline"],
+            "summary_order_plan_edge_latency_budget_ns",
+        ),
+    ]
+    replay_latency_values = [
+        _leadlag_row_number(
+            selected["leadlag_replay_walkforward"],
+            "summary_total_replay_latency_ns",
+        ),
+        _leadlag_row_number(
+            selected["promotion_report"],
+            "summary_total_replay_latency_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_order_plan"],
+            "summary_total_replay_latency_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_launch_pipeline"],
+            "summary_order_plan_total_replay_latency_ns",
+        ),
+    ]
+    headroom_values = [
+        _leadlag_row_number(
+            selected["leadlag_replay_walkforward"],
+            "summary_edge_latency_headroom_ns",
+        ),
+        _leadlag_row_number(
+            selected["promotion_report"],
+            "summary_edge_latency_headroom_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_order_plan"],
+            "summary_edge_latency_headroom_ns",
+        ),
+        _leadlag_row_number(
+            selected["leadlag_launch_pipeline"],
+            "summary_order_plan_edge_latency_headroom_ns",
+        ),
+    ]
+
+    measurement_ready, measurement_hash = _leadlag_hash_identity(
+        measurement_hashes,
+        expected_count=5,
+    )
+    edge_candidate_ready, edge_candidate_hash = _leadlag_hash_identity(
+        edge_candidate_hashes,
+        expected_count=4,
+    )
+    budget_ready, edge_latency_budget_ns = _leadlag_numeric_identity(
+        budget_values,
+        expected_count=5,
+    )
+    replay_ready, total_replay_latency_ns = _leadlag_numeric_identity(
+        replay_latency_values,
+        expected_count=4,
+    )
+    headroom_ready, edge_latency_headroom_ns = _leadlag_numeric_identity(
+        headroom_values,
+        expected_count=4,
+    )
+    checks.extend(
+        [
+            _check(
+                "leadlag_measurement_manifest_identity",
+                _leadlag_hash_identity_value(measurement_hashes),
+                "is",
+                "one_sha256",
+                measurement_ready,
+                "lead-lag stages do not share one measurement manifest SHA-256",
+            ),
+            _check(
+                "leadlag_edge_candidate_manifest_identity",
+                _leadlag_hash_identity_value(edge_candidate_hashes),
+                "is",
+                "one_sha256",
+                edge_candidate_ready,
+                "lead-lag downstream stages do not share one edge-audit manifest SHA-256",
+            ),
+            _check(
+                "leadlag_latency_budget_identity",
+                _leadlag_numeric_identity_value(budget_values),
+                "all==",
+                edge_latency_budget_ns if budget_ready else "one_finite_value",
+                budget_ready,
+                "lead-lag stages do not share one profitable latency budget",
+            ),
+            _check(
+                "leadlag_replay_latency_identity",
+                _leadlag_numeric_identity_value(replay_latency_values),
+                "all==",
+                total_replay_latency_ns if replay_ready else "one_finite_value",
+                replay_ready,
+                "lead-lag downstream stages do not share one replay latency",
+            ),
+            _check(
+                "leadlag_latency_headroom_identity",
+                _leadlag_numeric_identity_value(headroom_values),
+                "all==",
+                edge_latency_headroom_ns if headroom_ready else "one_finite_value",
+                headroom_ready,
+                "lead-lag downstream stages do not share one latency headroom value",
+            ),
+        ]
+    )
+
+    precontract_ready = bool(checks and all(check["passed"] for check in checks))
+    selected_stage_rows = [selected[run_type] for run_type in LEADLAG_EDGE_LINEAGE_RUN_TYPES]
+    contract_sha256 = ""
+    if precontract_ready:
+        payload = {
+            "contract_version": LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION,
+            "measurement_manifest_sha256": measurement_hash,
+            "edge_candidate_manifest_sha256": edge_candidate_hash,
+            "edge_latency_budget_ns": edge_latency_budget_ns,
+            "total_replay_latency_ns": total_replay_latency_ns,
+            "edge_latency_headroom_ns": edge_latency_headroom_ns,
+            "stages": [
+                {
+                    "run_type": run_type,
+                    "run_dir": _row_text(selected[run_type], "run_dir"),
+                    "generated_at_utc": _row_text(
+                        selected[run_type],
+                        "generated_at_utc",
+                    ),
+                    "git_commit": _row_text(selected[run_type], "git_commit"),
+                }
+                for run_type in LEADLAG_EDGE_LINEAGE_RUN_TYPES
+            ],
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        contract_sha256 = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    contract_ready = _valid_sha256(contract_sha256)
+    checks.append(
+        _check(
+            "leadlag_edge_lineage_contract",
+            contract_sha256,
+            "is",
+            "sha256",
+            contract_ready,
+            "lead-lag measured-edge lineage could not be sealed as one complete contract",
+        )
+    )
+    lineage_ready = bool(all(check["passed"] for check in checks))
+    summary_fields = {
+        "leadlag_edge_lineage_ready": lineage_ready,
+        "leadlag_lineage_bound_stages": int(
+            sum(
+                check["passed"]
+                for check in checks
+                if check["check"] in set(stage_check_names.values())
+            )
+        ),
+        "leadlag_lineage_required_stages": len(LEADLAG_EDGE_LINEAGE_RUN_TYPES),
+        "leadlag_lineage_selected_stage_count": int(
+            sum(not row.empty for row in selected_stage_rows)
+        ),
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            _row_text(row, "run_dir") for row in selected_stage_rows if not row.empty
+        ),
+        "leadlag_measurement_manifest_sha256": measurement_hash,
+        "leadlag_edge_candidate_manifest_sha256": edge_candidate_hash,
+        "leadlag_edge_latency_budget_ns": edge_latency_budget_ns,
+        "leadlag_total_replay_latency_ns": total_replay_latency_ns,
+        "leadlag_edge_latency_headroom_ns": edge_latency_headroom_ns,
+        "leadlag_edge_lineage_contract_version": LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION,
+        "leadlag_edge_lineage_contract_sha256": contract_sha256,
+        **{
+            f"leadlag_lineage_proof_runs_{run_type}": proof_counts[run_type]
+            for run_type in LEADLAG_EDGE_LINEAGE_RUN_TYPES
+        },
+    }
+    return checks, summary_fields
+
+
+def _leadlag_lineage_stage_mask(frame: pd.DataFrame, run_type: str) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=bool)
+    if run_type == "leadlag_edge_audit":
+        budget = _leadlag_numeric_column(frame, "summary_max_profitable_latency_ns")
+        return (
+            _bool_column(frame, "summary_measurement_manifest_current")
+            & _leadlag_sha256_column(frame, "summary_measurement_manifest_sha256")
+            & pd.Series(np.isfinite(budget), index=frame.index)
+            & (budget > 0.0)
+        )
+    if run_type == "leadlag_replay_walkforward":
+        return (
+            _bool_column(frame, "summary_edge_candidate_manifest_required")
+            & _bool_column(frame, "summary_edge_candidate_manifest_current")
+            & _bool_column(frame, "summary_edge_audit_bound")
+            & _leadlag_sha256_column(frame, "summary_edge_candidate_manifest_sha256")
+            & _leadlag_sha256_column(frame, "summary_edge_measurement_manifest_sha256")
+            & _leadlag_latency_proof_mask(
+                frame,
+                budget_column="summary_edge_latency_budget_ns",
+                latency_column="summary_total_replay_latency_ns",
+                headroom_column="summary_edge_latency_headroom_ns",
+            )
+        )
+    if run_type == "promotion_report":
+        return (
+            _bool_column(frame, "summary_walkforward_manifest_current")
+            & _bool_column(frame, "summary_edge_audit_bound")
+            & _bool_column(frame, "summary_edge_candidate_manifest_bound")
+            & _bool_column(frame, "summary_edge_candidate_manifest_current")
+            & _leadlag_sha256_column(frame, "summary_edge_candidate_manifest_sha256")
+            & _leadlag_sha256_column(frame, "summary_edge_measurement_manifest_sha256")
+            & _leadlag_latency_proof_mask(
+                frame,
+                budget_column="summary_edge_latency_budget_ns",
+                latency_column="summary_total_replay_latency_ns",
+                headroom_column="summary_edge_latency_headroom_ns",
+            )
+        )
+    if run_type == "leadlag_order_plan":
+        return (
+            _bool_column(frame, "summary_promotion_manifest_current")
+            & _bool_column(frame, "summary_edge_audit_bound")
+            & _bool_column(frame, "summary_edge_candidate_manifest_bound")
+            & _bool_column(frame, "summary_edge_latency_budget_respected")
+            & _leadlag_explicit_false_column(frame, "summary_edge_audit_override_used")
+            & _leadlag_sha256_column(frame, "summary_edge_candidate_manifest_sha256")
+            & _leadlag_sha256_column(frame, "summary_edge_measurement_manifest_sha256")
+            & _leadlag_latency_proof_mask(
+                frame,
+                budget_column="summary_edge_latency_budget_ns",
+                latency_column="summary_total_replay_latency_ns",
+                headroom_column="summary_edge_latency_headroom_ns",
+            )
+        )
+    if run_type == "leadlag_launch_pipeline":
+        return (
+            _bool_column(frame, "summary_order_plan_promotion_manifest_current")
+            & _bool_column(frame, "summary_order_plan_edge_audit_bound")
+            & _bool_column(frame, "summary_order_plan_edge_candidate_manifest_bound")
+            & _bool_column(frame, "summary_order_plan_edge_latency_budget_respected")
+            & _leadlag_sha256_column(
+                frame,
+                "summary_order_plan_edge_candidate_manifest_sha256",
+            )
+            & _leadlag_sha256_column(
+                frame,
+                "summary_order_plan_edge_measurement_manifest_sha256",
+            )
+            & _leadlag_latency_proof_mask(
+                frame,
+                budget_column="summary_order_plan_edge_latency_budget_ns",
+                latency_column="summary_order_plan_total_replay_latency_ns",
+                headroom_column="summary_order_plan_edge_latency_headroom_ns",
+            )
+        )
+    return pd.Series(False, index=frame.index)
+
+
+def _leadlag_latency_proof_mask(
+    frame: pd.DataFrame,
+    *,
+    budget_column: str,
+    latency_column: str,
+    headroom_column: str,
+) -> pd.Series:
+    budget = _leadlag_numeric_column(frame, budget_column)
+    latency = _leadlag_numeric_column(frame, latency_column)
+    headroom = _leadlag_numeric_column(frame, headroom_column)
+    finite = pd.Series(
+        np.isfinite(budget) & np.isfinite(latency) & np.isfinite(headroom),
+        index=frame.index,
+    )
+    consistent = pd.Series(
+        np.isclose(budget - latency, headroom, rtol=0.0, atol=1e-9),
+        index=frame.index,
+    )
+    return finite & (budget > 0.0) & (latency >= 0.0) & (headroom >= 0.0) & consistent
+
+
+def _leadlag_numeric_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(np.nan, index=frame.index, dtype=float)
+    return pd.to_numeric(frame[column], errors="coerce")
+
+
+def _leadlag_sha256_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(False, index=frame.index)
+    return frame[column].map(_valid_sha256)
+
+
+def _leadlag_explicit_false_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(False, index=frame.index)
+    return frame[column].map(_to_optional_bool).map(lambda value: value is False)
+
+
+def _leadlag_row_hash(row: pd.Series, column: str) -> str:
+    return _row_text(row, column).strip().lower()
+
+
+def _leadlag_row_number(row: pd.Series, column: str) -> float:
+    if row.empty or column not in row.index:
+        return float("nan")
+    try:
+        value = float(row[column])
+    except (TypeError, ValueError):
+        return float("nan")
+    return value if np.isfinite(value) else float("nan")
+
+
+def _leadlag_hash_identity(
+    values: list[str],
+    *,
+    expected_count: int,
+) -> tuple[bool, str]:
+    valid = [value for value in values if _valid_sha256(value)]
+    ready = bool(
+        len(values) == expected_count
+        and len(valid) == expected_count
+        and len(set(valid)) == 1
+    )
+    return ready, valid[0] if ready else ""
+
+
+def _leadlag_hash_identity_value(values: list[str]) -> str:
+    valid = sorted({value for value in values if _valid_sha256(value)})
+    missing = int(sum(not _valid_sha256(value) for value in values))
+    if len(valid) == 1 and missing == 0:
+        return valid[0]
+    return f"valid={len(values) - missing};distinct={len(valid)};missing={missing}"
+
+
+def _leadlag_numeric_identity(
+    values: list[float],
+    *,
+    expected_count: int,
+) -> tuple[bool, float]:
+    finite = [value for value in values if np.isfinite(value)]
+    ready = bool(
+        len(values) == expected_count
+        and len(finite) == expected_count
+        and all(np.isclose(value, finite[0], rtol=0.0, atol=1e-9) for value in finite)
+    )
+    return ready, float(finite[0]) if ready else float("nan")
+
+
+def _leadlag_numeric_identity_value(values: list[float]) -> str:
+    return ";".join("missing" if not np.isfinite(value) else f"{value:g}" for value in values)
+
+
 def _checks(
     catalog: pd.DataFrame,
     evidence: pd.DataFrame,
     provider_lineage_selection: pd.DataFrame,
     thresholds: EvidenceThresholds,
+    *,
+    leadlag_lineage_checks: list[dict[str, Any]] | None = None,
 ) -> pd.DataFrame:
     rows = [
         _check(
@@ -1048,6 +1520,7 @@ def _checks(
         )
         for row in evidence.itertuples(index=False)
     ]
+    rows.extend(leadlag_lineage_checks or [])
     dirty_runs = int(catalog["git_dirty"].map(_to_bool).sum()) if not catalog.empty else 0
     if not thresholds.allow_dirty_git:
         rows.append(
@@ -1390,6 +1863,8 @@ def _summary(
     provider_lineage_selection: pd.DataFrame,
     checks: pd.DataFrame,
     thresholds: EvidenceThresholds,
+    *,
+    leadlag_lineage_summary: Mapping[str, Any] | None = None,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     profile = _profile_identity(thresholds.required_run_types)
@@ -1516,6 +1991,7 @@ def _summary(
                 "input_other_count": input_other_count,
                 "input_unfingerprinted_count": input_unfingerprinted_count,
                 "input_hashed_count": input_hashed_count,
+                **dict(leadlag_lineage_summary or {}),
             }
         ]
     )
