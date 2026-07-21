@@ -11,6 +11,33 @@ from reports.manifest import file_sha256, verify_experiment_manifest, write_expe
 from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 
 
+def leadlag_lineage(prefix=""):
+    fields = {
+        "leadlag_edge_lineage_required": True,
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "edge-audit",
+                "replay-walkforward",
+                "promotion",
+                "order-plan",
+                "launch-pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "a" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "b" * 64,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "c" * 64,
+        "leadlag_edge_latency_budget_ns": 5_000.0,
+        "leadlag_total_replay_latency_ns": 3_000.0,
+        "leadlag_edge_latency_headroom_ns": 2_000.0,
+    }
+    return {f"{prefix}{field}": value for field, value in fields.items()}
+
+
 def target_application_lineage_sha256(datasets):
     identity_fields = (
         "source_file_sha256",
@@ -1401,6 +1428,7 @@ def runtime_session_summary(
     portfolio_market=None,
     portfolio_eligible=True,
     portfolio_allocation_notional=1200.0,
+    canonical_leadlag=False,
 ):
     portfolio_strategy = strategy if portfolio_strategy is None else portfolio_strategy
     portfolio_market = market if portfolio_market is None else portfolio_market
@@ -1414,7 +1442,7 @@ def runtime_session_summary(
         "failed_checks": 1 if halted or not ready else 0,
         "recommendation": "stop_routing_and_execute_halt_response" if halted else "continue_with_controls",
     }
-    if strategy_portfolio:
+    if strategy_portfolio or canonical_leadlag:
         row.update(
             {
                 "strategy_portfolio_required": True,
@@ -1423,7 +1451,9 @@ def runtime_session_summary(
                 "strategy_portfolio_deployment_mode": "paper_shadow",
                 "strategy_portfolio_allocation_mode": "readiness_weighted",
                 "strategy_portfolio_capital_currency": "INR",
-                "strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "strategy_portfolio_selected_profile": (
+                    "leadlag" if canonical_leadlag else "leadlag-live-dryrun"
+                ),
                 "strategy_portfolio_selected_strategy": portfolio_strategy,
                 "strategy_portfolio_selected_market": portfolio_market,
                 "strategy_portfolio_selected_eligible": portfolio_eligible,
@@ -1443,6 +1473,11 @@ def runtime_session_summary(
                 "pre_portfolio_max_notional_per_session": 25_000.0,
             }
         )
+        if canonical_leadlag:
+            row.update(leadlag_lineage(prefix="strategy_portfolio_"))
+            row[
+                "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+            ] = True
     return pd.DataFrame(
         [
             row
@@ -1508,7 +1543,14 @@ def runtime_lineage(scaleup_manifest_sha256):
     return fields
 
 
-def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=True):
+def write_inputs(
+    root,
+    *,
+    target_mode="live_dryrun",
+    operator=True,
+    dispatch=True,
+    canonical_leadlag=False,
+):
     scaleup = root / "scaleup"
     broker = root / "broker"
     runtime = root / "runtime"
@@ -1558,7 +1600,10 @@ def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=Tru
         encoding="utf-8",
     )
     lineage = runtime_lineage(file_sha256(scaleup / "manifest.json"))
-    runtime_summary = runtime_session_summary(target_mode=target_mode)
+    runtime_summary = runtime_session_summary(
+        target_mode=target_mode,
+        canonical_leadlag=canonical_leadlag,
+    )
     for column, value in lineage.items():
         runtime_summary[column] = value
     runtime_summary.to_csv(runtime / "runtime_session_summary.csv", index=False)
@@ -1587,6 +1632,21 @@ def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=Tru
             column: lineage[column] for column in RUNTIME_LINEAGE_COLUMNS
         },
     }
+    runtime_row = json.loads(runtime_summary.to_json(orient="records"))[0]
+    runtime_manifest_leadlag = {
+        column: value
+        for column, value in runtime_row.items()
+        if column.startswith("strategy_portfolio_leadlag_")
+    }
+    if canonical_leadlag:
+        runtime_config["strategy_portfolio"] = {
+            column.removeprefix("strategy_portfolio_"): value
+            for column, value in runtime_row.items()
+            if column.startswith("strategy_portfolio_")
+        }
+        runtime_config["strategy_portfolio"][
+            "pre_portfolio_max_notional_per_session"
+        ] = runtime_row["pre_portfolio_max_notional_per_session"]
     (runtime / "runtime_session_config.json").write_text(
         json.dumps(runtime_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1602,6 +1662,7 @@ def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=Tru
         extra={
             "ready": True,
             "guard_action": "continue",
+            **runtime_manifest_leadlag,
             **lineage,
             "authorizes_submission": False,
         },
@@ -1748,6 +1809,94 @@ def test_cutover_gate_carries_runtime_strategy_portfolio_allocation():
     assert portfolio["top_strategy_by_weight"] == "lead_lag_taker"
     assert portfolio["max_strategy_allocation_weight"] == 0.45
     assert portfolio["pre_portfolio_max_notional_per_session"] == 25_000.0
+
+
+def test_cutover_gate_carries_runtime_leadlag_edge_lineage():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(canonical_leadlag=True),
+        operator_review=operator_review(),
+    )
+
+    assert report.ready
+    authorization = report.authorization.iloc[0]
+    summary = report.summary.iloc[0]
+    portfolio = report.config["runtime_session"]["strategy_portfolio"]
+    assert bool(
+        authorization[
+            "runtime_strategy_portfolio_leadlag_edge_lineage_required"
+        ]
+    )
+    assert bool(summary["runtime_strategy_portfolio_leadlag_edge_lineage_ready"])
+    assert bool(
+        summary[
+            "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+        ]
+    )
+    assert summary["runtime_strategy_portfolio_leadlag_lineage_bound_stages"] == 5
+    assert summary[
+        "runtime_strategy_portfolio_leadlag_edge_lineage_contract_version"
+    ] == "leadlag_edge_lineage/v1"
+    assert summary[
+        "runtime_strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert summary[
+        "runtime_strategy_portfolio_leadlag_edge_latency_headroom_ns"
+    ] == 2_000.0
+    assert portfolio["leadlag_edge_lineage_matches_scaleup"]
+    assert portfolio["leadlag_lineage_selected_stage_count"] == 5
+    assert portfolio["leadlag_edge_lineage_contract_sha256"] == "c" * 64
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "failed_check"),
+    [
+        (
+            "strategy_portfolio_provided",
+            False,
+            "runtime_strategy_portfolio_provided",
+        ),
+        (
+            "strategy_portfolio_leadlag_edge_lineage_required",
+            False,
+            "runtime_strategy_portfolio_leadlag_edge_lineage_required",
+        ),
+        (
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256",
+            "bad-contract-hash",
+            "runtime_strategy_portfolio_leadlag_edge_lineage_ready",
+        ),
+        (
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+            False,
+            "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+        ),
+    ],
+)
+def test_cutover_gate_blocks_bad_runtime_leadlag_edge_lineage(
+    field,
+    value,
+    failed_check,
+):
+    runtime = runtime_session_summary(canonical_leadlag=True)
+    runtime.loc[0, field] = value
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime,
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert failed_check in failed
+    assert not bool(report.summary.iloc[0]["ready"])
 
 
 def test_cutover_gate_blocks_bad_runtime_strategy_portfolio_allocation():
@@ -5525,7 +5674,10 @@ def test_cutover_gate_blocks_bad_scaleup_resume_route_readiness():
 
 
 def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
-    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+    scaleup, broker, runtime, review_path = write_inputs(
+        tmp_path,
+        canonical_leadlag=True,
+    )
     out_dir = tmp_path / "cutover"
 
     report = write_cutover_gate_report(
@@ -5549,7 +5701,10 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     assert int(saved_summary.loc[0, "action_queue_count"]) == 0
     assert saved_config["action_queue_count"] == 0
     assert saved_config["next_actions"] == []
-    assert (out_dir / "cutover_runbook.md").read_text(encoding="utf-8").startswith("# Cutover Gate Runbook")
+    runbook = (out_dir / "cutover_runbook.md").read_text(encoding="utf-8")
+    assert runbook.startswith("# Cutover Gate Runbook")
+    assert "Lead-lag lineage matches scale-up: yes" in runbook
+    assert "c" * 64 in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {item["path"] for item in manifest["artifacts"]}
     assert "cutover_action_queue.csv" in artifact_paths
@@ -5586,6 +5741,12 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     )
     assert not bool(report.summary.iloc[0]["authorizes_submission"])
     assert report.config["runtime_lineage"]["runtime_lineage_gate_passed"]
+    assert report.config["runtime_session"]["strategy_portfolio"][
+        "leadlag_edge_lineage_matches_scaleup"
+    ]
+    assert report.config["runtime_session"]["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert not report.config["authorizes_submission"]
     assert {
         "runtime_session_manifest",
@@ -5593,6 +5754,12 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
         "runtime_session_dependencies",
     } <= set(manifest["inputs"])
     assert manifest["extra"]["runtime_lineage_gate_passed"]
+    assert manifest["extra"][
+        "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+    ]
+    assert manifest["extra"][
+        "runtime_strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert not manifest["extra"]["authorizes_submission"]
     assert verify_experiment_manifest(
         out_dir / "manifest.json",

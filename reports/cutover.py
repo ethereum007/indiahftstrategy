@@ -8,6 +8,14 @@ from typing import Any
 
 import pandas as pd
 
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_BOOLEAN_FIELDS,
+    LEADLAG_LINEAGE_FIELDS,
+    LEADLAG_LINEAGE_INTEGER_FIELDS,
+    LEADLAG_LINEAGE_NUMERIC_FIELDS,
+    LEADLAG_LINEAGE_TEXT_FIELDS,
+    leadlag_lineage_ready,
+)
 from reports.manifest import write_experiment_manifest
 from reports.operational_lineage import (
     empty_runtime_session_lineage,
@@ -39,6 +47,11 @@ ACTION_QUEUE_COLUMNS = [
 ]
 RUNTIME_LINEAGE_OUTPUT_COLUMNS = tuple(
     runtime_session_lineage_fields(empty_runtime_session_lineage()).keys()
+)
+STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
+    "leadlag_edge_lineage_required",
+    *LEADLAG_LINEAGE_FIELDS,
+    "leadlag_edge_lineage_matches_scaleup",
 )
 TARGET_APPLICATION_BATCH_MODE = "per_dataset_verified_target_application"
 TARGET_APPLICATION_DATASET_LINEAGE_FIELDS: tuple[str, ...] = (
@@ -494,6 +507,9 @@ def write_cutover_gate_report(
         inputs=inputs,
         extra={
             "ready": bool(report.ready),
+            **_runtime_strategy_portfolio_leadlag_summary_fields(
+                report.summary.iloc[0]
+            ),
             **runtime_session_lineage_fields(runtime_lineage),
             "authorizes_submission": False,
         },
@@ -654,6 +670,14 @@ def _checks(
         checks.extend(
             [
                 _check(
+                    "runtime_strategy_portfolio_provided",
+                    runtime["strategy_portfolio_provided"],
+                    "is",
+                    True,
+                    bool(runtime["strategy_portfolio_provided"]),
+                    "runtime-session strategy portfolio allocation was not provided",
+                ),
+                _check(
                     "runtime_strategy_portfolio_ready",
                     runtime["strategy_portfolio_ready"],
                     "is",
@@ -703,6 +727,54 @@ def _checks(
                 ),
             ]
         )
+        if _runtime_strategy_portfolio_leadlag_active(runtime):
+            lineage_ready = leadlag_lineage_ready(
+                runtime,
+                prefix="strategy_portfolio_",
+            )
+            checks.extend(
+                [
+                    _check(
+                        "runtime_strategy_portfolio_leadlag_edge_lineage_required",
+                        runtime["strategy_portfolio_leadlag_edge_lineage_required"],
+                        "is",
+                        True,
+                        bool(runtime["strategy_portfolio_leadlag_edge_lineage_required"]),
+                        "runtime session did not carry the required lead-lag lineage marker",
+                    ),
+                    _check(
+                        "runtime_strategy_portfolio_leadlag_profile",
+                        runtime["strategy_portfolio_selected_profile"],
+                        "==",
+                        "leadlag",
+                        _identity_key(runtime["strategy_portfolio_selected_profile"])
+                        == "leadlag",
+                        "runtime session lead-lag lineage is attached to a different portfolio profile",
+                    ),
+                    _check(
+                        "runtime_strategy_portfolio_leadlag_edge_lineage_ready",
+                        lineage_ready,
+                        "is",
+                        True,
+                        lineage_ready,
+                        "runtime session lost or malformed the lead-lag measured-edge lineage",
+                    ),
+                    _check(
+                        "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                        runtime[
+                            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            runtime[
+                                "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+                            ]
+                        ),
+                        "runtime guard did not validate the lead-lag lineage against current scale-up",
+                    ),
+                ]
+            )
     if runtime["runtime_lineage_required"]:
         checks.extend(
             [
@@ -4287,6 +4359,7 @@ def _authorization(
                 "runtime_strategy_portfolio_max_market_allocation_weight": runtime[
                     "strategy_portfolio_max_market_allocation_weight"
                 ],
+                **_runtime_strategy_portfolio_leadlag_output_fields(runtime),
                 "runtime_pre_portfolio_max_notional_per_session": runtime[
                     "pre_portfolio_max_notional_per_session"
                 ],
@@ -5116,6 +5189,9 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "runtime_strategy_portfolio_max_market_allocation_weight": float(
                     authorization["runtime_strategy_portfolio_max_market_allocation_weight"]
+                ),
+                **_runtime_strategy_portfolio_leadlag_summary_fields(
+                    authorization
                 ),
                 "runtime_pre_portfolio_max_notional_per_session": float(
                     authorization["runtime_pre_portfolio_max_notional_per_session"]
@@ -6256,6 +6332,7 @@ def _config(
                 "max_market_allocation_weight": float(
                     authorization["runtime_strategy_portfolio_max_market_allocation_weight"]
                 ),
+                **_runtime_strategy_portfolio_leadlag_config(authorization),
                 "pre_portfolio_max_notional_per_session": float(
                     authorization["runtime_pre_portfolio_max_notional_per_session"]
                 ),
@@ -6326,6 +6403,9 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Runtime guard action: {_object_text(summary_row.get('runtime_guard_action')).strip()}",
         f"- Runtime lineage current: {'yes' if _to_bool(summary_row.get('runtime_lineage_gate_passed')) else 'no'}",
         f"- Research family: {_object_text(summary_row.get('runtime_scaleup_research_family_id')).strip()}",
+        f"- Lead-lag lineage required: {'yes' if _to_bool(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_required')) else 'no'}",
+        f"- Lead-lag lineage matches scale-up: {'yes' if _to_bool(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",
+        f"- Lead-lag lineage contract: {_code(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_contract_version'))} / {_code(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_contract_sha256'))}",
         "- Submission authorization: no",
         f"- Operator review provided: {_object_text(summary_row.get('operator_review_provided')).strip()}",
         f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
@@ -8591,6 +8671,39 @@ def _runtime_lineage_output_fields(runtime: dict[str, Any]) -> dict[str, Any]:
     return {column: runtime[column] for column in RUNTIME_LINEAGE_OUTPUT_COLUMNS}
 
 
+def _runtime_strategy_portfolio_leadlag_output_fields(
+    runtime: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        f"runtime_strategy_portfolio_{field}": runtime[
+            f"strategy_portfolio_{field}"
+        ]
+        for field in STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    }
+
+
+def _runtime_strategy_portfolio_leadlag_summary_fields(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    return {
+        f"runtime_strategy_portfolio_{field}": authorization[
+            f"runtime_strategy_portfolio_{field}"
+        ]
+        for field in STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    }
+
+
+def _runtime_strategy_portfolio_leadlag_config(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    return {
+        field: _jsonable_check_value(
+            authorization[f"runtime_strategy_portfolio_{field}"]
+        )
+        for field in STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    }
+
+
 def _runtime_lineage_summary_fields(authorization: pd.Series) -> dict[str, Any]:
     return {
         column: authorization[column]
@@ -8619,11 +8732,23 @@ def _reject_input_output_collision(
 
 
 def _runtime_strategy_portfolio_active(runtime: dict[str, Any]) -> bool:
-    return bool(runtime["strategy_portfolio_required"] or runtime["strategy_portfolio_provided"])
+    return bool(
+        runtime["strategy_portfolio_required"]
+        or runtime["strategy_portfolio_provided"]
+        or _runtime_strategy_portfolio_leadlag_active(runtime)
+    )
+
+
+def _runtime_strategy_portfolio_leadlag_active(runtime: dict[str, Any]) -> bool:
+    return bool(
+        runtime["strategy_portfolio_leadlag_edge_lineage_required"]
+        or _identity_key(runtime["strategy_portfolio_selected_profile"])
+        == "leadlag"
+    )
 
 
 def _strategy_portfolio_state(row: pd.Series, *prefixes: str) -> dict[str, Any]:
-    return {
+    fields = {
         "strategy_portfolio_required": _first_bool_field(row, "required", prefixes),
         "strategy_portfolio_provided": _first_bool_field(row, "provided", prefixes),
         "strategy_portfolio_ready": _first_bool_field(row, "ready", prefixes),
@@ -8690,6 +8815,49 @@ def _strategy_portfolio_state(row: pd.Series, *prefixes: str) -> dict[str, Any]:
             allow_unprefixed=True,
         ),
     }
+    fields.update(_strategy_portfolio_leadlag_state(row, prefixes))
+    return fields
+
+
+def _strategy_portfolio_leadlag_state(
+    row: pd.Series,
+    prefixes: tuple[str, ...],
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "strategy_portfolio_leadlag_edge_lineage_required": _first_bool_field(
+            row,
+            "leadlag_edge_lineage_required",
+            prefixes,
+        ),
+        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": _first_bool_field(
+            row,
+            "leadlag_edge_lineage_matches_scaleup",
+            prefixes,
+        ),
+    }
+    for field in LEADLAG_LINEAGE_BOOLEAN_FIELDS:
+        fields[f"strategy_portfolio_{field}"] = _first_bool_field(
+            row,
+            field,
+            prefixes,
+        )
+    for field in LEADLAG_LINEAGE_INTEGER_FIELDS:
+        fields[f"strategy_portfolio_{field}"] = int(
+            _first_number_field(row, field, prefixes)
+        )
+    for field in LEADLAG_LINEAGE_TEXT_FIELDS:
+        fields[f"strategy_portfolio_{field}"] = _first_text_field(
+            row,
+            field,
+            prefixes,
+        )
+    for field in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+        fields[f"strategy_portfolio_{field}"] = _first_number_field(
+            row,
+            field,
+            prefixes,
+        )
+    return fields
 
 
 def _first_bool_field(row: pd.Series, suffix: str, prefixes: tuple[str, ...]) -> bool:

@@ -911,6 +911,12 @@
   step rows, top-level summary, a complete nested `strategy_portfolio` config
   block, runbook, and manifest metadata. The packet retains every contract
   field plus the guard's exact scale-up match decision for cutover consumers.
+- Cutover now treats a canonical `leadlag` profile or explicit lineage marker
+  as a fail-closed measured-edge boundary. It requires the marker, exact
+  profile binding, a structurally complete five-stage contract, and the
+  runtime guard's current scale-up match result, then carries every field
+  through authorization, summary, nested runtime-session config, runbook, and
+  manifest metadata.
 - Cutover and route-enable gates now carry strategy portfolio allocation
   evidence downstream from runtime-session proof, fail closed on bad allocation
   readiness/identity, and block route enablement when exported order notional
@@ -6171,6 +6177,18 @@ cutover -> route-enable chain passes (`297 passed`), and manifest plus catalog
 compatibility passes (`69 passed`). Repository collection is healthy at `2390
 tests`. All outputs remain non-authorizing; the full repository suite was not
 rerun for this slice.
+
+Latest runtime-session-to-cutover lineage gate: cutover now independently
+parses and structurally validates the complete `leadlag_edge_lineage/v1`
+contract before accepting a canonical `leadlag` runtime session. Missing
+required markers, malformed contract hashes, and a false guard-to-scale-up
+match each block cutover explicitly. The validated identity survives cutover
+authorization, summary, nested config, runbook, and recursively verifiable
+manifest metadata. The complete cutover suite passes (`117 passed`), the
+complete downstream route-enable suite passes (`115 passed`), and manifest
+plus catalog compatibility passes (`69 passed`). Repository collection is
+healthy at `2395 tests`. All outputs remain non-authorizing; the full
+repository suite was not rerun for this slice.
 
 ## Next Build Targets
 

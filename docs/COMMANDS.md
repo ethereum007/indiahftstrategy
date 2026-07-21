@@ -5451,6 +5451,14 @@ strategy/market than the scale-up identity. The same handoff preserves
 portfolio concentration context, including minimum distinct strategy/market
 counts, observed allocated strategy/market counts, top concentration names, and
 maximum strategy/market allocation weights.
+For canonical `leadlag`, cutover additionally requires the explicit measured-
+edge marker, exact `leadlag` profile binding, a structurally complete
+`leadlag_edge_lineage/v1` contract, and the runtime guard's
+`leadlag_edge_lineage_matches_scaleup` decision. These checks surface as
+`runtime_strategy_portfolio_leadlag_*` rows and fields. The complete identity
+is retained in authorization and summary CSVs, the nested
+`runtime_session.strategy_portfolio` config, the operator runbook, and cutover
+manifest metadata for the route-enable handoff.
 Cutover now also requires the resolved runtime-session bundle to have a complete,
 current `runtime_session_monitor` manifest. It reconciles every carried scale-up,
 portfolio, scorecard, runtime-telemetry, and prospective research-family field
