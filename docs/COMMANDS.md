@@ -4694,6 +4694,13 @@ selected strategy/market, eligibility, allocation weight/notional, pre-cap
 notional, and whether the portfolio cap constrained session notional, plus the
 carried strategy/market concentration counts and maximum aggregate allocation
 weights.
+For canonical `leadlag`, every session step also retains the complete
+`strategy_portfolio_leadlag_*` measured-edge contract and the guard's
+`leadlag_edge_lineage_matches_scaleup` decision. The session summary, runbook,
+and manifest keep the same identity, while `runtime_session_config.json` now
+exposes the complete allocation and lineage under a nested
+`strategy_portfolio` object. This lets cutover consume the audited five-stage
+identity without reopening telemetry or guard artifacts.
 The session steps, summary, config, runbook, and manifest now also carry the
 guard-verified scale-up manifest SHA-256, portfolio and scorecard manifest
 SHA-256 values, prospective research-family and registration IDs, family

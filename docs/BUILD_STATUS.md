@@ -906,6 +906,11 @@
   allocation context from telemetry/guard, including selected strategy/market,
   eligibility, allocation weight/notional, pre-cap notional, and cap-applied
   state for paper/shadow operator handoff.
+- Runtime session now preserves the guard-validated canonical `leadlag`
+  measured-edge lineage through telemetry, guard, and optional halt-response
+  step rows, top-level summary, a complete nested `strategy_portfolio` config
+  block, runbook, and manifest metadata. The packet retains every contract
+  field plus the guard's exact scale-up match decision for cutover consumers.
 - Cutover and route-enable gates now carry strategy portfolio allocation
   evidence downstream from runtime-session proof, fail closed on bad allocation
   readiness/identity, and block route enablement when exported order notional
@@ -6154,6 +6159,18 @@ plus experiment-catalog compatibility passes (`69 passed`). The upstream
 scorecard -> portfolio -> controlled-scale-up contract remains green (`186
 passed`). Repository collection is healthy at `2389 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
+
+Latest runtime-session lineage handoff: a manifest-valid canonical `leadlag`
+scale-up now proves the complete `leadlag_edge_lineage/v1` identity survives
+the generated telemetry and guard steps, session summary, complete nested
+portfolio config, runbook metadata, and recursively verified session manifest.
+The guard's exact scale-up match result is retained with every contract field,
+while custom profile labels remain verbatim-compatible. The complete runtime-
+session suite passes (`13 passed`), the telemetry -> guard -> session ->
+cutover -> route-enable chain passes (`297 passed`), and manifest plus catalog
+compatibility passes (`69 passed`). Repository collection is healthy at `2390
+tests`. All outputs remain non-authorizing; the full repository suite was not
+rerun for this slice.
 
 ## Next Build Targets
 

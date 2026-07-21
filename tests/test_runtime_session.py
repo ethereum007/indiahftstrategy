@@ -8,6 +8,33 @@ from reports.manifest import file_sha256, verify_experiment_manifest, write_expe
 from reports.runtime_session import write_runtime_session_monitor
 
 
+def leadlag_lineage(prefix=""):
+    fields = {
+        "leadlag_edge_lineage_required": True,
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "edge-audit",
+                "replay-walkforward",
+                "promotion",
+                "order-plan",
+                "launch-pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "a" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "b" * 64,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "c" * 64,
+        "leadlag_edge_latency_budget_ns": 5_000.0,
+        "leadlag_total_replay_latency_ns": 3_000.0,
+        "leadlag_edge_latency_headroom_ns": 2_000.0,
+    }
+    return {f"{prefix}{field}": value for field, value in fields.items()}
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
@@ -134,6 +161,31 @@ def scaleup_config(
     return config
 
 
+def leadlag_scaleup_config():
+    config = scaleup_config(require_strategy_portfolio=True)
+    config.update(
+        {
+            "strategy": "lead_lag_taker",
+            "scenario_key": "trigger_ticks=2",
+            "identity": {
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "expected_strategy": "lead_lag_taker",
+                "expected_market": "india_nse_index_derivatives",
+            },
+        }
+    )
+    config["strategy_portfolio"].update(
+        {
+            "top_strategy_by_weight": "lead_lag_taker",
+            "selected_profile": "leadlag",
+            "selected_strategy": "lead_lag_taker",
+            **leadlag_lineage(),
+        }
+    )
+    return config
+
+
 def write_scaleup_dir(path, config=None):
     path.mkdir()
     payload = json.loads(json.dumps(config or scaleup_config()))
@@ -141,7 +193,13 @@ def write_scaleup_dir(path, config=None):
     payload["failed_check_count"] = 0
     portfolio = payload.get("strategy_portfolio", {}) or {}
     portfolio_inputs = {}
+    leadlag = {}
     if portfolio.get("required") or portfolio.get("provided"):
+        leadlag = {
+            key: value
+            for key, value in portfolio.items()
+            if key.startswith("leadlag_")
+        }
         portfolio_dir = path.parent / f"{path.name}_portfolio"
         portfolio_dir.mkdir()
         allocation = {
@@ -158,6 +216,7 @@ def write_scaleup_dir(path, config=None):
             "research_family_manifest_sha256": "",
             "research_family_matched_study_label": "",
             "authorizes_submission": False,
+            **leadlag,
         }
         portfolio_summary = {
             "ready": True,
@@ -182,6 +241,7 @@ def write_scaleup_dir(path, config=None):
             "research_family_path": "",
             "research_family_manifest_sha256": "",
             "authorizes_submission": False,
+            **leadlag,
         }
         pd.DataFrame([allocation]).to_csv(
             portfolio_dir / "strategy_portfolio_allocations.csv",
@@ -222,6 +282,7 @@ def write_scaleup_dir(path, config=None):
             "research_family_registration_id": "",
             "research_family_path": "",
             "research_family_manifest_sha256": "",
+            **leadlag,
         }
         (portfolio_dir / "strategy_portfolio_config.json").write_text(
             json.dumps(portfolio_config, indent=2, sort_keys=True) + "\n",
@@ -241,6 +302,7 @@ def write_scaleup_dir(path, config=None):
                 "ready": True,
                 "research_family_bound": False,
                 "authorizes_submission": False,
+                **leadlag,
             },
         )
         portfolio.update(
@@ -315,6 +377,10 @@ def write_scaleup_dir(path, config=None):
                 "strategy_portfolio_research_family_id": "",
                 "strategy_portfolio_research_family_registration_id": "",
                 "strategy_portfolio_research_family_manifest_sha256": "",
+                **{
+                    f"strategy_portfolio_{key}": value
+                    for key, value in leadlag.items()
+                },
             }
         )
     pd.DataFrame([row]).to_csv(path / "scaleup_summary.csv", index=False)
@@ -334,6 +400,10 @@ def write_scaleup_dir(path, config=None):
         "research_family_id": "",
         "research_family_registration_id": "",
         "research_family_manifest_sha256": "",
+        **{
+            f"strategy_portfolio_{key}": value
+            for key, value in leadlag.items()
+        },
         "authorizes_submission": False,
     }
     write_experiment_manifest(
@@ -606,6 +676,64 @@ def test_runtime_session_monitor_carries_strategy_portfolio_allocation(tmp_path)
     assert report.config["scaleup_provenance"]["scaleup_strategy_portfolio_manifest_sha256"] == (
         portfolio_manifest_sha256
     )
+    assert report.config["strategy_portfolio"]["selected_profile"] == "surface-mm-demo"
+    assert report.config["strategy_portfolio"][
+        "pre_portfolio_max_notional_per_session"
+    ] == 100_000.0
+
+
+def test_runtime_session_monitor_carries_leadlag_edge_lineage(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    write_scaleup_dir(scaleup_dir, leadlag_scaleup_config())
+
+    report = write_runtime_session_monitor(
+        scaleup_dir=scaleup_dir,
+        output_dir=out_dir,
+        snapshot_ts_ns=1_000,
+        as_of_ts_ns=1_500,
+        max_telemetry_age_ns=1_000,
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(summary["strategy_portfolio_leadlag_edge_lineage_required"])
+    assert bool(summary["strategy_portfolio_leadlag_edge_lineage_ready"])
+    assert bool(
+        summary["strategy_portfolio_leadlag_edge_lineage_matches_scaleup"]
+    )
+    assert summary["strategy_portfolio_leadlag_lineage_selected_stage_count"] == 5
+    assert summary["strategy_portfolio_leadlag_edge_lineage_contract_version"] == (
+        "leadlag_edge_lineage/v1"
+    )
+    assert summary["strategy_portfolio_leadlag_edge_lineage_contract_sha256"] == (
+        "c" * 64
+    )
+    assert summary["strategy_portfolio_leadlag_edge_latency_headroom_ns"] == 2_000.0
+    assert set(
+        report.steps["strategy_portfolio_leadlag_edge_lineage_contract_sha256"]
+    ) == {"c" * 64}
+    assert set(report.steps["strategy_portfolio_leadlag_lineage_bound_stages"]) == {
+        5
+    }
+    assert report.config["strategy_portfolio"][
+        "leadlag_edge_lineage_matches_scaleup"
+    ]
+    assert report.config["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+    ]
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):

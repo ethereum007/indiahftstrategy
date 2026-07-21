@@ -8,6 +8,12 @@ from typing import Any
 import pandas as pd
 
 from reports.halt_response import HaltResponseConfig, HaltResponseReport, write_halt_response_plan
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_BOOLEAN_FIELDS,
+    LEADLAG_LINEAGE_INTEGER_FIELDS,
+    LEADLAG_LINEAGE_NUMERIC_FIELDS,
+    LEADLAG_LINEAGE_TEXT_FIELDS,
+)
 from reports.manifest import manifest_dependency_paths, write_experiment_manifest
 from reports.runtime_guard import (
     RUNTIME_LINEAGE_COLUMNS,
@@ -149,6 +155,7 @@ def write_runtime_session_monitor(
             "ready": bool(summary.iloc[0]["ready"]),
             "guard_action": _clean(summary.iloc[0].get("guard_action")),
             **_lineage_fields(summary.iloc[0]),
+            **_portfolio_leadlag_fields(summary.iloc[0]),
             "authorizes_submission": False,
         },
     )
@@ -694,6 +701,7 @@ def _config(
     plan_halt_response: bool,
 ) -> dict[str, Any]:
     lineage = _lineage_fields(summary_row)
+    portfolio = _portfolio_fields(summary_row)
     return {
         "schema_version": 1,
         "authorizes_submission": False,
@@ -734,6 +742,16 @@ def _config(
         },
         "runtime_telemetry_lineage": {
             column: lineage[column] for column in RUNTIME_LINEAGE_COLUMNS
+        },
+        "strategy_portfolio": {
+            **{
+                column.removeprefix("strategy_portfolio_"): _jsonable_value(value)
+                for column, value in portfolio.items()
+                if column.startswith("strategy_portfolio_")
+            },
+            "pre_portfolio_max_notional_per_session": _jsonable_value(
+                portfolio["pre_portfolio_max_notional_per_session"]
+            ),
         },
         "broker_route_readiness": {
             "required": _to_bool(summary_row.get("broker_route_readiness_required")),
@@ -786,6 +804,9 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Scale-up provenance current: {'yes' if _to_bool(summary.get('scaleup_provenance_gate_passed')) else 'no'}",
         f"- Runtime lineage current: {'yes' if _to_bool(summary.get('runtime_telemetry_lineage_matches_current')) else 'no'}",
         f"- Research family: {_clean(summary.get('scaleup_research_family_id'))}",
+        f"- Lead-lag lineage required: {'yes' if _to_bool(summary.get('strategy_portfolio_leadlag_edge_lineage_required')) else 'no'}",
+        f"- Lead-lag lineage matches scale-up: {'yes' if _to_bool(summary.get('strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",
+        f"- Lead-lag lineage contract: {_code(summary.get('strategy_portfolio_leadlag_edge_lineage_contract_version'))} / {_code(summary.get('strategy_portfolio_leadlag_edge_lineage_contract_sha256'))}",
         "- Submission authorization: no",
         f"- Guard failed checks: {_clean(summary.get('guard_failed_check_names'))}",
         f"- Halt response created: {_clean(summary.get('halt_response_created'))}",
@@ -974,7 +995,7 @@ def _identity_value(primary: pd.Series, fallback: pd.Series, column: str) -> obj
 
 def _portfolio_fields(primary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
     fallback = primary if fallback is None else fallback
-    return {
+    fields = {
         "strategy_portfolio_required": _identity_bool(primary, fallback, "strategy_portfolio_required"),
         "strategy_portfolio_provided": _identity_bool(primary, fallback, "strategy_portfolio_provided"),
         "strategy_portfolio_ready": _identity_bool(primary, fallback, "strategy_portfolio_ready"),
@@ -1076,6 +1097,40 @@ def _portfolio_fields(primary: pd.Series, fallback: pd.Series | None = None) -> 
             "pre_portfolio_max_notional_per_session",
         ),
     }
+    fields.update(_portfolio_leadlag_fields(primary, fallback))
+    return fields
+
+
+def _portfolio_leadlag_fields(
+    primary: pd.Series,
+    fallback: pd.Series | None = None,
+) -> dict[str, object]:
+    fallback = primary if fallback is None else fallback
+    fields: dict[str, object] = {
+        "strategy_portfolio_leadlag_edge_lineage_required": _identity_bool(
+            primary,
+            fallback,
+            "strategy_portfolio_leadlag_edge_lineage_required",
+        ),
+        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": _identity_bool(
+            primary,
+            fallback,
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+        ),
+    }
+    for field in LEADLAG_LINEAGE_BOOLEAN_FIELDS:
+        column = f"strategy_portfolio_{field}"
+        fields[column] = _identity_bool(primary, fallback, column)
+    for field in LEADLAG_LINEAGE_INTEGER_FIELDS:
+        column = f"strategy_portfolio_{field}"
+        fields[column] = int(_identity_float(primary, fallback, column))
+    for field in LEADLAG_LINEAGE_TEXT_FIELDS:
+        column = f"strategy_portfolio_{field}"
+        fields[column] = _identity_text(primary, fallback, column)
+    for field in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+        column = f"strategy_portfolio_{field}"
+        fields[column] = _identity_float(primary, fallback, column)
+    return fields
 
 
 def _broker_route_readiness_fields(primary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
