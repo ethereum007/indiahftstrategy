@@ -90,6 +90,10 @@ BROKER_DISPATCH_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     *ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     "leadlag_route_contract_consistent",
 )
+BROKER_DISPATCH_SEND_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
+    *BROKER_DISPATCH_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
+    "leadlag_dispatch_contract_consistent",
+)
 
 
 def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
@@ -832,6 +836,7 @@ def empty_broker_dispatch_send_lineage(*, required: bool = False) -> dict[str, A
             )
         }
     )
+    state.update(_empty_broker_dispatch_send_leadlag_fields())
     return state
 
 
@@ -864,6 +869,7 @@ def load_broker_dispatch_send_lineage(
     config = _read_json(config_path)
     manifest = _read_json(manifest_path)
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    state.update(_broker_dispatch_send_strategy_portfolio_leadlag_state(row))
     dispatch_fields = broker_dispatch_lineage_fields(
         empty_broker_dispatch_lineage()
     )
@@ -1021,6 +1027,15 @@ def broker_dispatch_send_lineage_fields(
                 lineage.get(column), column
             )
             for column in dispatch_fields
+        }
+    )
+    fields.update(
+        {
+            f"broker_dispatch_send_strategy_portfolio_{field}": _normalize(
+                lineage.get(f"strategy_portfolio_{field}"),
+                field,
+            )
+            for field in BROKER_DISPATCH_SEND_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
         }
     )
     return fields
@@ -1528,6 +1543,29 @@ def _broker_dispatch_strategy_portfolio_leadlag_state(
     return fields
 
 
+def _empty_broker_dispatch_send_leadlag_fields() -> dict[str, Any]:
+    fields = _empty_broker_dispatch_leadlag_fields()
+    fields[
+        "strategy_portfolio_leadlag_dispatch_contract_consistent"
+    ] = False
+    return fields
+
+
+def _broker_dispatch_send_strategy_portfolio_leadlag_state(
+    row: pd.Series,
+) -> dict[str, Any]:
+    fields = _broker_dispatch_strategy_portfolio_leadlag_state(row)
+    fields[
+        "strategy_portfolio_leadlag_dispatch_contract_consistent"
+    ] = _bool(
+        row.get(
+            "strategy_portfolio_leadlag_dispatch_contract_consistent",
+            False,
+        )
+    )
+    return fields
+
+
 def _broker_dispatch_contract_errors(
     *,
     summary: pd.DataFrame,
@@ -1684,6 +1722,16 @@ def _broker_dispatch_send_contract_errors(
             errors.append(f"broker_dispatch_send_config_{column}_mismatch")
         if not _same(extra.get(column), expected, column):
             errors.append(f"broker_dispatch_send_manifest_{column}_mismatch")
+    errors.extend(
+        _broker_dispatch_send_leadlag_contract_errors(
+            row=row,
+            requests=requests,
+            expected_acks=expected_acks,
+            config=config,
+            extra=extra,
+            lineage=lineage,
+        )
+    )
 
     for column in (
         "dispatch_batch_id",
@@ -1710,6 +1758,80 @@ def _broker_dispatch_send_contract_errors(
         errors.append("broker_dispatch_send_request_hash_contract_mismatch")
     if not _expected_ack_template_matches_requests(expected_acks, requests):
         errors.append("broker_dispatch_send_expected_ack_template_mismatch")
+    return errors
+
+
+def _broker_dispatch_send_leadlag_contract_errors(
+    *,
+    row: pd.Series,
+    requests: pd.DataFrame,
+    expected_acks: pd.DataFrame,
+    config: Mapping[str, Any],
+    extra: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+) -> list[str]:
+    strategy_portfolio = _mapping(config.get("strategy_portfolio"))
+    summary_profile = _text(row.get("strategy_portfolio_selected_profile")).lower()
+    config_profile = _text(strategy_portfolio.get("selected_profile")).lower()
+    active = bool(
+        "leadlag" in {summary_profile, config_profile}
+        or _bool(
+            lineage.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _bool(
+            lineage.get(
+                "broker_dispatch_strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _bool(strategy_portfolio.get("leadlag_edge_lineage_required", False))
+    )
+    if not active:
+        return []
+
+    errors: list[str] = []
+    if config_profile != summary_profile:
+        errors.append(
+            "broker_dispatch_send_config_strategy_portfolio_profile_mismatch"
+        )
+    for field in BROKER_DISPATCH_SEND_STRATEGY_PORTFOLIO_LEADLAG_FIELDS:
+        summary_column = f"strategy_portfolio_{field}"
+        expected = lineage[summary_column]
+        if not _frame_column_matches(requests, summary_column, expected):
+            errors.append(
+                f"broker_dispatch_send_requests_strategy_portfolio_{field}_mismatch"
+            )
+        if not _request_payload_field_matches(
+            requests,
+            summary_column,
+            expected,
+        ):
+            errors.append(
+                f"broker_dispatch_send_payload_strategy_portfolio_{field}_mismatch"
+            )
+        if not _frame_column_matches(expected_acks, summary_column, expected):
+            errors.append(
+                f"broker_dispatch_send_expected_acks_strategy_portfolio_{field}_mismatch"
+            )
+        if not _same(strategy_portfolio.get(field), expected, field):
+            errors.append(
+                f"broker_dispatch_send_config_strategy_portfolio_{field}_mismatch"
+            )
+        if not _same(extra.get(summary_column), expected, field):
+            errors.append(
+                f"broker_dispatch_send_manifest_strategy_portfolio_{field}_mismatch"
+            )
+        if field in BROKER_DISPATCH_STRATEGY_PORTFOLIO_LEADLAG_FIELDS:
+            dispatch_value = lineage.get(
+                f"broker_dispatch_strategy_portfolio_{field}"
+            )
+            if not _same(expected, dispatch_value, field):
+                errors.append(
+                    f"broker_dispatch_send_broker_dispatch_strategy_portfolio_{field}_mismatch"
+                )
     return errors
 
 
@@ -2229,7 +2351,7 @@ def _leadlag_contract_field(column: str) -> str:
     return next(
         (
             field
-            for field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            for field in BROKER_DISPATCH_SEND_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
             if column.endswith(field)
         ),
         "",
@@ -2242,6 +2364,8 @@ def _field_default(column: str) -> Any:
         "leadlag_edge_lineage_required",
         "leadlag_edge_lineage_matches_scaleup",
         "leadlag_cutover_contract_consistent",
+        "leadlag_route_contract_consistent",
+        "leadlag_dispatch_contract_consistent",
         *LEADLAG_LINEAGE_BOOLEAN_FIELDS,
     }:
         return False

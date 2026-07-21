@@ -6145,7 +6145,18 @@ dry-run-only. If dispatch planning retained strategy portfolio allocation
 evidence, the sender packet preserves the `strategy_portfolio_*` fields and
 `dispatch_total_notional` in summary/config, including concentration counts,
 top concentration names, and maximum allocation weights. It fails closed when
-the dispatch notional exceeds the selected paper/shadow allocation.
+the dispatch notional exceeds the selected paper/shadow allocation. For the
+canonical `leadlag` profile, send preparation also independently reconciles the
+dispatch summary and config, requires the `leadlag_edge_lineage/v1` structure,
+required marker, scale-up match, and clean cutover/route contracts, and
+preserves that direct contract in every request row, hashed request payload,
+expected acknowledgement row, summary, config, runbook, and manifest. The
+shared send-lineage verifier compares the direct send copy with the separately
+verified broker-dispatch copy, so a consistently re-hashed and re-manifested
+send packet cannot detach itself from its dispatch source. Older noncanonical
+packets remain readable without these additive fields; an exact `leadlag`
+profile or explicit required marker activates the fail-closed contract. This
+proof remains non-authorizing and never enables submission.
 `--require-route-readiness` is automatic for `--target-mode live_dryrun`; the
 explicit flag keeps paper/shadow sender packets equally strict. It also
 carries the dispatch config broker schema review status/mode,

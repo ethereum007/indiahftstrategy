@@ -6229,6 +6229,21 @@ is healthy at `2410 tests`. The aggregate 128-test send suite exceeded the
 result, so it is not counted as a passing full-suite run. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest broker-dispatch-to-send lineage gate: send preparation now independently
+reconciles the canonical `leadlag_edge_lineage/v1` contract from the dispatch
+summary and nested config, requires the required/profile/structural/scale-up/
+cutover/route decisions to remain clean, and seals the direct contract into
+request rows, hashed payloads, expected acknowledgements, summary/config,
+runbook, and manifest metadata. The shared verifier compares this direct send
+copy with the separately verified broker-dispatch copy, so even a consistently
+re-hashed and re-manifested send packet cannot detach from dispatch. Legacy
+noncanonical send packets remain readable; the strict contract activates for
+the exact `leadlag` profile or an explicit required marker. The complete send
+suite passes (`138 passed`), the complete acknowledgement suite passes (`107
+passed`), and manifest plus experiment-catalog compatibility passes (`69
+passed`). Repository collection is healthy at `2420 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

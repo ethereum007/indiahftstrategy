@@ -31,6 +31,33 @@ from reports.operational_lineage import (
 )
 
 
+def leadlag_lineage(prefix=""):
+    fields = {
+        "leadlag_edge_lineage_required": True,
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "edge-audit",
+                "replay-walkforward",
+                "promotion",
+                "order-plan",
+                "launch-pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "a" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "b" * 64,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "c" * 64,
+        "leadlag_edge_latency_budget_ns": 5_000.0,
+        "leadlag_total_replay_latency_ns": 3_000.0,
+        "leadlag_edge_latency_headroom_ns": 2_000.0,
+    }
+    return {f"{prefix}{field}": value for field, value in fields.items()}
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
@@ -584,6 +611,7 @@ def dispatch_summary(
     strategy_portfolio_ready=False,
     strategy_portfolio_selected_eligible=False,
     strategy_portfolio_selected_allocation_notional=0.0,
+    canonical_leadlag=False,
 ):
     route_readiness_recommendation = (
         "eligible_for_live_dryrun_route_review"
@@ -599,6 +627,25 @@ def dispatch_summary(
         if broker_route_readiness_recommendation is None
         else broker_route_readiness_recommendation
     )
+    portfolio_leadlag = {}
+    if canonical_leadlag:
+        strategy_portfolio_required = True
+        strategy_portfolio_provided = True
+        strategy_portfolio_ready = True
+        strategy_portfolio_selected_eligible = True
+        strategy_portfolio_selected_allocation_notional = (
+            strategy_portfolio_selected_allocation_notional or 2_000.0
+        )
+        portfolio_leadlag = leadlag_lineage(prefix="strategy_portfolio_")
+        portfolio_leadlag[
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+        ] = True
+        portfolio_leadlag[
+            "strategy_portfolio_leadlag_cutover_contract_consistent"
+        ] = True
+        portfolio_leadlag[
+            "strategy_portfolio_leadlag_route_contract_consistent"
+        ] = True
     return pd.DataFrame(
         [
             {
@@ -621,7 +668,9 @@ def dispatch_summary(
                 "strategy_portfolio_deployment_mode": "paper_shadow",
                 "strategy_portfolio_allocation_mode": "readiness_weighted",
                 "strategy_portfolio_capital_currency": "INR",
-                "strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "strategy_portfolio_selected_profile": (
+                    "leadlag" if canonical_leadlag else "leadlag-live-dryrun"
+                ),
                 "strategy_portfolio_selected_strategy": "lead_lag_taker",
                 "strategy_portfolio_selected_market": "india_nse_index_derivatives",
                 "strategy_portfolio_selected_eligible": strategy_portfolio_selected_eligible,
@@ -663,6 +712,7 @@ def dispatch_summary(
                 "pre_portfolio_max_notional_per_session": 25_000.0
                 if strategy_portfolio_selected_allocation_notional
                 else 0.0,
+                **portfolio_leadlag,
                 "route_readiness_required": route_readiness_required,
                 "route_readiness_provided": route_readiness_provided,
                 "route_readiness_ready": route_readiness_ready,
@@ -821,6 +871,7 @@ def dispatch_config(
     strategy_portfolio_ready=False,
     strategy_portfolio_selected_eligible=False,
     strategy_portfolio_selected_allocation_notional=0.0,
+    canonical_leadlag=False,
 ):
     route_readiness_recommendation = (
         "eligible_for_live_dryrun_route_review"
@@ -836,6 +887,19 @@ def dispatch_config(
         if broker_route_readiness_recommendation is None
         else broker_route_readiness_recommendation
     )
+    portfolio_leadlag = {}
+    if canonical_leadlag:
+        strategy_portfolio_required = True
+        strategy_portfolio_provided = True
+        strategy_portfolio_ready = True
+        strategy_portfolio_selected_eligible = True
+        strategy_portfolio_selected_allocation_notional = (
+            strategy_portfolio_selected_allocation_notional or 2_000.0
+        )
+        portfolio_leadlag = leadlag_lineage()
+        portfolio_leadlag["leadlag_edge_lineage_matches_scaleup"] = True
+        portfolio_leadlag["leadlag_cutover_contract_consistent"] = True
+        portfolio_leadlag["leadlag_route_contract_consistent"] = True
     return {
         "broker_readiness": {
             "adapter_schema_status": broker_schema_status,
@@ -894,7 +958,9 @@ def dispatch_config(
             "deployment_mode": "paper_shadow",
             "allocation_mode": "readiness_weighted",
             "capital_currency": "INR",
-            "selected_profile": "leadlag-live-dryrun",
+            "selected_profile": (
+                "leadlag" if canonical_leadlag else "leadlag-live-dryrun"
+            ),
             "selected_strategy": "lead_lag_taker",
             "selected_market": "india_nse_index_derivatives",
             "selected_eligible": strategy_portfolio_selected_eligible,
@@ -922,6 +988,7 @@ def dispatch_config(
             "pre_portfolio_max_notional_per_session": 25_000.0
             if strategy_portfolio_selected_allocation_notional
             else 0.0,
+            **portfolio_leadlag,
         },
         "upload": {
             "orders": 2,
@@ -1395,20 +1462,41 @@ def dirty_vendor_market_data_batch_config():
     return vendor
 
 
-def _write_cutover_source(tmp_path, *, broker_readiness_config=None):
+def _write_cutover_source(
+    tmp_path,
+    *,
+    broker_readiness_config=None,
+    canonical_leadlag=False,
+):
     root = tmp_path / "cutover"
     root.mkdir()
     runtime_lineage = runtime_session_lineage_fields(empty_runtime_session_lineage())
     runtime_lineage["runtime_lineage_gate_passed"] = True
+    portfolio_summary = {}
+    portfolio_config = {}
+    if canonical_leadlag:
+        portfolio_summary = {
+            "runtime_strategy_portfolio_selected_profile": "leadlag",
+            **leadlag_lineage(prefix="runtime_strategy_portfolio_"),
+            "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup": True,
+        }
+        portfolio_config = {
+            "runtime_session": {
+                "strategy_portfolio": {
+                    "selected_profile": "leadlag",
+                    **leadlag_lineage(),
+                    "leadlag_edge_lineage_matches_scaleup": True,
+                }
+            }
+        }
     summary = {
         **runtime_lineage,
+        **portfolio_summary,
         "ready": True,
         "authorizes_submission": False,
     }
     pd.DataFrame([summary]).to_csv(root / "cutover_summary.csv", index=False)
-    pd.DataFrame(
-        [{"ready": True, "authorizes_submission": False}]
-    ).to_csv(root / "cutover_authorization.csv", index=False)
+    pd.DataFrame([summary]).to_csv(root / "cutover_authorization.csv", index=False)
     pd.DataFrame([{"check": "fixture", "passed": True}]).to_csv(
         root / "cutover_checks.csv", index=False
     )
@@ -1419,6 +1507,7 @@ def _write_cutover_source(tmp_path, *, broker_readiness_config=None):
         json.dumps(
             {
                 "ready": True,
+                **portfolio_config,
                 "runtime_lineage": runtime_lineage,
                 "authorizes_submission": False,
             },
@@ -1443,24 +1532,54 @@ def _write_cutover_source(tmp_path, *, broker_readiness_config=None):
         root,
         run_type="cutover_gate",
         inputs=inputs,
-        extra={**runtime_lineage, "ready": True, "authorizes_submission": False},
+        extra={
+            **runtime_lineage,
+            **portfolio_summary,
+            "ready": True,
+            "authorizes_submission": False,
+        },
     )
     return root
 
 
-def _write_route_source(tmp_path, cutover):
+def _write_route_source(tmp_path, cutover, *, canonical_leadlag=False):
     root = tmp_path / "route_enable"
     root.mkdir()
     cutover_lineage = load_cutover_lineage(cutover / "cutover_config.json")
     assert cutover_lineage["gate_passed"]
     lineage_fields = cutover_lineage_fields(cutover_lineage)
+    portfolio_summary = {}
+    portfolio_config = {}
+    if canonical_leadlag:
+        portfolio_summary = {
+            "strategy_portfolio_selected_profile": "leadlag",
+            **leadlag_lineage(prefix="strategy_portfolio_"),
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": True,
+            "strategy_portfolio_leadlag_cutover_contract_consistent": True,
+        }
+        portfolio_config = {
+            "strategy_portfolio": {
+                "selected_profile": "leadlag",
+                **leadlag_lineage(),
+                "leadlag_edge_lineage_matches_scaleup": True,
+                "leadlag_cutover_contract_consistent": True,
+            }
+        }
     pd.DataFrame(
-        [{**lineage_fields, "ready": True, "authorizes_submission": False}]
+        [
+            {
+                **lineage_fields,
+                **portfolio_summary,
+                "ready": True,
+                "authorizes_submission": False,
+            }
+        ]
     ).to_csv(root / "route_enable_summary.csv", index=False)
     pd.DataFrame(
         [
             {
                 **lineage_fields,
+                **portfolio_summary,
                 "route_enabled": True,
                 "authorizes_submission": False,
             }
@@ -1476,6 +1595,7 @@ def _write_route_source(tmp_path, cutover):
         json.dumps(
             {
                 "route_enabled": True,
+                **portfolio_config,
                 "cutover_lineage": lineage_fields,
                 "authorizes_submission": False,
             },
@@ -1492,7 +1612,12 @@ def _write_route_source(tmp_path, cutover):
         root,
         run_type="route_enable_packet",
         inputs={"cutover_manifest": cutover / "manifest.json"},
-        extra={**lineage_fields, "ready": True, "authorizes_submission": False},
+        extra={
+            **lineage_fields,
+            **portfolio_summary,
+            "ready": True,
+            "authorizes_submission": False,
+        },
     )
     return root
 
@@ -1505,7 +1630,12 @@ def _manifest_input_values(value):
     return value
 
 
-def _refresh_manifest(manifest_path, *, extra_updates=None):
+def _refresh_manifest(
+    manifest_path,
+    *,
+    extra_updates=None,
+    extra_remove=(),
+):
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     inputs = {
         name: _manifest_input_values(value)
@@ -1513,6 +1643,8 @@ def _refresh_manifest(manifest_path, *, extra_updates=None):
     }
     extra = dict(payload.get("extra", {}))
     extra.update(extra_updates or {})
+    for field in extra_remove:
+        extra.pop(field, None)
     write_experiment_manifest(
         manifest_path.parent,
         run_type=payload["run_type"],
@@ -1530,12 +1662,18 @@ def write_dispatch(
     route_roundtrip=True,
     route_readiness=True,
     broker_readiness_config=None,
+    canonical_leadlag=False,
 ):
     cutover = _write_cutover_source(
         tmp_path,
         broker_readiness_config=broker_readiness_config,
+        canonical_leadlag=canonical_leadlag,
     )
-    route = _write_route_source(tmp_path, cutover)
+    route = _write_route_source(
+        tmp_path,
+        cutover,
+        canonical_leadlag=canonical_leadlag,
+    )
     route_lineage = load_route_enable_lineage(route / "route_enable_config.json")
     assert route_lineage["gate_passed"]
     lineage_fields = route_enable_lineage_fields(route_lineage)
@@ -1549,19 +1687,28 @@ def write_dispatch(
         route_roundtrip_ready=route_roundtrip,
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
+        canonical_leadlag=canonical_leadlag,
     )
     for column, value in lineage_fields.items():
         summary[column] = value
     summary["authorizes_submission"] = False
     summary.to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
+    portfolio_leadlag = {
+        column: value
+        for column, value in summary.iloc[0].items()
+        if column.startswith("strategy_portfolio_leadlag_")
+    }
     orders = dispatch_orders()
     for column, value in lineage_fields.items():
+        orders[column] = value
+    for column, value in portfolio_leadlag.items():
         orders[column] = value
     orders["authorizes_submission"] = False
     orders.to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
     config = dispatch_config(
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
+        canonical_leadlag=canonical_leadlag,
     )
     config.update(
         {
@@ -1595,7 +1742,12 @@ def write_dispatch(
         dispatch,
         run_type="broker_dispatch_plan",
         inputs={"route_enable_manifest": route / "manifest.json"},
-        extra={**lineage_fields, "ready": ready, "authorizes_submission": False},
+        extra={
+            **lineage_fields,
+            **portfolio_leadlag,
+            "ready": ready,
+            "authorizes_submission": False,
+        },
     )
     return dispatch
 
@@ -1637,6 +1789,36 @@ def _rewrite_send_dispatch_lineage_field(send, column, value):
     config["broker_dispatch_lineage"][column] = value
     summary.to_csv(summary_path, index=False)
     _write_rehashed_send_requests(send, requests)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(send / "manifest.json", extra_updates={column: value})
+
+
+def _rewrite_send_leadlag_field(send, field, value):
+    column = f"strategy_portfolio_{field}"
+    summary_path = send / "broker_dispatch_send_summary.csv"
+    requests_path = send / "broker_dispatch_send_requests.csv"
+    config_path = send / "broker_dispatch_send_config.json"
+    summary = pd.read_csv(summary_path)
+    requests = pd.read_csv(requests_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary[column] = value
+    requests[column] = value
+    requests["request_payload_json"] = requests["request_payload_json"].map(
+        lambda raw: json.dumps(
+            {**json.loads(raw), column: value},
+            sort_keys=True,
+        )
+    )
+    config["strategy_portfolio"][field] = value
+    summary.to_csv(summary_path, index=False)
+    _write_rehashed_send_requests(send, requests)
+    expected_acks_path = send / "broker_dispatch_expected_acks.csv"
+    expected_acks = pd.read_csv(expected_acks_path)
+    expected_acks[column] = value
+    expected_acks.to_csv(expected_acks_path, index=False)
     config_path.write_text(
         json.dumps(config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -1902,6 +2084,114 @@ def test_broker_dispatch_send_carries_strategy_portfolio_allocation():
     assert portfolio["allocated_strategy_count"] == 2
     assert portfolio["top_strategy_by_weight"] == "lead_lag_taker"
     assert portfolio["max_strategy_allocation_weight"] == 0.45
+
+
+def test_broker_dispatch_send_carries_reconciled_leadlag_edge_lineage():
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(canonical_leadlag=True),
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=dispatch_config(canonical_leadlag=True),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    portfolio = report.config["strategy_portfolio"]
+    assert bool(
+        summary["strategy_portfolio_leadlag_dispatch_contract_consistent"]
+    )
+    assert bool(summary["strategy_portfolio_leadlag_route_contract_consistent"])
+    assert bool(
+        summary["strategy_portfolio_leadlag_cutover_contract_consistent"]
+    )
+    assert bool(summary["strategy_portfolio_leadlag_edge_lineage_required"])
+    assert bool(summary["strategy_portfolio_leadlag_edge_lineage_ready"])
+    assert bool(
+        summary["strategy_portfolio_leadlag_edge_lineage_matches_scaleup"]
+    )
+    assert summary[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert portfolio["leadlag_dispatch_contract_consistent"]
+    assert portfolio["leadlag_edge_lineage_contract_sha256"] == "c" * 64
+    assert set(
+        report.requests[
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
+    assert set(
+        report.expected_acks[
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
+    request_payload = json.loads(report.requests.loc[0, "request_payload_json"])
+    assert request_payload[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+
+
+@pytest.mark.parametrize(
+    ("source", "field", "value", "failed_check"),
+    [
+        (
+            "summary",
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256",
+            "d" * 64,
+            "strategy_portfolio_leadlag_dispatch_contract_consistent",
+        ),
+        (
+            "config",
+            "leadlag_edge_lineage_required",
+            False,
+            "strategy_portfolio_leadlag_edge_lineage_required",
+        ),
+        (
+            "config",
+            "leadlag_edge_lineage_contract_sha256",
+            "bad-contract-hash",
+            "strategy_portfolio_leadlag_edge_lineage_ready",
+        ),
+        (
+            "config",
+            "leadlag_edge_lineage_matches_scaleup",
+            False,
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+        ),
+        (
+            "config",
+            "leadlag_route_contract_consistent",
+            False,
+            "strategy_portfolio_leadlag_route_contract_consistent",
+        ),
+        (
+            "config",
+            "leadlag_cutover_contract_consistent",
+            False,
+            "strategy_portfolio_leadlag_cutover_contract_consistent",
+        ),
+    ],
+)
+def test_broker_dispatch_send_blocks_bad_leadlag_contract(
+    source,
+    field,
+    value,
+    failed_check,
+):
+    summary = dispatch_summary(canonical_leadlag=True)
+    config = dispatch_config(canonical_leadlag=True)
+    if source == "summary":
+        summary.loc[0, field] = value
+    else:
+        config["strategy_portfolio"][field] = value
+
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=summary,
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=config,
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert failed_check in failed
 
 
 def test_broker_dispatch_send_blocks_dispatch_above_strategy_portfolio_allocation():
@@ -5145,7 +5435,7 @@ def test_broker_dispatch_send_packet_blocks_unready_non_dry_run_and_bad_payloads
 
 
 def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(tmp_path):
-    dispatch = write_dispatch(tmp_path)
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=True)
     out_dir = tmp_path / "dispatch_send"
 
     report = write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=out_dir)
@@ -5161,6 +5451,7 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert (out_dir / "manifest.json").exists()
     summary = pd.read_csv(out_dir / "broker_dispatch_send_summary.csv")
     requests = pd.read_csv(out_dir / "broker_dispatch_send_requests.csv")
+    expected_acks = pd.read_csv(out_dir / "broker_dispatch_expected_acks.csv")
     action_queue = pd.read_csv(out_dir / "broker_dispatch_send_action_queue.csv")
     config = json.loads((out_dir / "broker_dispatch_send_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "broker_dispatch_send_runbook.md").read_text(encoding="utf-8")
@@ -5173,13 +5464,36 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert config["next_actions"] == []
     assert not config["authorizes_submission"]
     assert config["broker_dispatch_lineage"]["broker_dispatch_lineage_gate_passed"]
+    assert config["strategy_portfolio"]["leadlag_dispatch_contract_consistent"]
+    assert config["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert bool(summary.loc[0, "broker_dispatch_lineage_gate_passed"])
+    assert bool(
+        summary.loc[
+            0,
+            "strategy_portfolio_leadlag_dispatch_contract_consistent",
+        ]
+    )
     assert bool(summary.loc[0, "broker_dispatch_route_enable_matches_current"])
     assert not bool(summary.loc[0, "authorizes_submission"])
     assert requests["broker_dispatch_lineage_gate_passed"].astype(bool).all()
+    assert set(
+        requests[
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
+    assert set(
+        expected_acks[
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
     assert not requests["authorizes_submission"].astype(bool).any()
     request_payload = json.loads(requests.loc[0, "request_payload_json"])
     assert request_payload["broker_dispatch_lineage_gate_passed"] is True
+    assert request_payload[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert request_payload["authorizes_submission"] is False
     assert runbook.startswith("# Broker Dispatch Send Runbook")
     assert "No broker dispatch send actions." in runbook
@@ -5200,6 +5514,12 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert "broker_dispatch_artifacts" in manifest["inputs"]
     assert "broker_dispatch_dependencies" in manifest["inputs"]
     assert manifest["extra"]["broker_dispatch_lineage_gate_passed"]
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_dispatch_contract_consistent"
+    ]
+    assert manifest["extra"][
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert manifest["extra"]["authorizes_submission"] is False
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_send_packet"
@@ -5208,7 +5528,7 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
 
 
 def test_broker_dispatch_send_lineage_verifies_complete_current_packet(tmp_path):
-    dispatch = write_dispatch(tmp_path)
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=True)
     send = tmp_path / "dispatch_send"
     write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
 
@@ -5226,10 +5546,135 @@ def test_broker_dispatch_send_lineage_verifies_complete_current_packet(tmp_path)
     assert lineage["broker_dispatch_matches_current"]
     assert lineage["expected_dispatch_matches_current"]
     assert lineage["gate_passed"]
+    assert lineage[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert lineage[
+        "strategy_portfolio_leadlag_dispatch_contract_consistent"
+    ]
+
+
+def test_broker_dispatch_send_lineage_accepts_legacy_noncanonical_packet(
+    tmp_path,
+):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    fields = (
+        *leadlag_lineage().keys(),
+        "leadlag_edge_lineage_matches_scaleup",
+        "leadlag_cutover_contract_consistent",
+        "leadlag_route_contract_consistent",
+        "leadlag_dispatch_contract_consistent",
+    )
+    columns = tuple(f"strategy_portfolio_{field}" for field in fields)
+    summary_path = send / "broker_dispatch_send_summary.csv"
+    requests_path = send / "broker_dispatch_send_requests.csv"
+    expected_acks_path = send / "broker_dispatch_expected_acks.csv"
+    config_path = send / "broker_dispatch_send_config.json"
+    summary = pd.read_csv(summary_path).drop(columns=list(columns))
+    requests = pd.read_csv(requests_path).drop(columns=list(columns))
+    requests["request_payload_json"] = requests["request_payload_json"].map(
+        lambda raw: json.dumps(
+            {
+                key: value
+                for key, value in json.loads(raw).items()
+                if key not in columns
+            },
+            sort_keys=True,
+        )
+    )
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for field in fields:
+        config["strategy_portfolio"].pop(field, None)
+    summary.to_csv(summary_path, index=False)
+    _write_rehashed_send_requests(send, requests)
+    expected_acks = pd.read_csv(expected_acks_path).drop(columns=list(columns))
+    expected_acks.to_csv(expected_acks_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(
+        send / "manifest.json",
+        extra_remove=columns,
+    )
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["gate_passed"]
+
+
+def test_broker_dispatch_send_lineage_blocks_remanifested_contract_detached_from_dispatch(
+    tmp_path,
+):
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=True)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    _rewrite_send_leadlag_field(
+        send,
+        "leadlag_edge_lineage_contract_sha256",
+        "d" * 64,
+    )
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert lineage["broker_dispatch_matches_current"]
+    assert lineage["expected_dispatch_matches_current"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_send_broker_dispatch_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256_mismatch"
+    ) in lineage["contract_error"]
+
+
+def test_broker_dispatch_send_lineage_blocks_expected_ack_leadlag_mismatch(
+    tmp_path,
+):
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=True)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    expected_acks_path = send / "broker_dispatch_expected_acks.csv"
+    expected_acks = pd.read_csv(expected_acks_path)
+    expected_acks.loc[
+        0,
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256",
+    ] = "d" * 64
+    expected_acks.to_csv(expected_acks_path, index=False)
+    _refresh_manifest(send / "manifest.json")
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_send_expected_acks_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256_mismatch"
+    ) in lineage["contract_error"]
 
 
 def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
-    dispatch = write_dispatch(tmp_path)
+    dispatch = write_dispatch(tmp_path, canonical_leadlag=True)
     send = tmp_path / "dispatch_send"
     write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
     acks_path = tmp_path / "broker_acks.csv"
@@ -5257,14 +5702,32 @@ def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
     )
 
     summary = pd.read_csv(out / "broker_dispatch_ack_summary.csv")
+    acknowledgements = pd.read_csv(
+        out / "broker_dispatch_acknowledgements.csv"
+    )
     config = json.loads(
         (out / "broker_dispatch_ack_config.json").read_text(encoding="utf-8")
     )
     assert code == 0
     assert bool(summary.loc[0, "passed"])
     assert bool(summary.loc[0, "broker_dispatch_send_lineage_gate_passed"])
+    assert summary.loc[
+        0,
+        "broker_dispatch_send_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256",
+    ] == "c" * 64
+    assert set(
+        acknowledgements[
+            "broker_dispatch_send_strategy_portfolio_"
+            "leadlag_edge_lineage_contract_sha256"
+        ]
+    ) == {"c" * 64}
     assert config["broker_dispatch_send_lineage"][
         "broker_dispatch_send_lineage_gate_passed"
+    ]
+    assert config["broker_dispatch_send_lineage"][
+        "broker_dispatch_send_strategy_portfolio_"
+        "leadlag_dispatch_contract_consistent"
     ]
     assert not config["authorizes_submission"]
     with pytest.raises(ValueError, match="must not overwrite"):
