@@ -6547,6 +6547,21 @@ therefore fails the round-trip gate. Legacy noncanonical packets remain
 readable, and raw broker acknowledgement logs do not need internal proof
 columns.
 
+Downstream gates should reopen this terminal bundle with
+`load_broker_dispatch_roundtrip_lineage(...)` instead of trusting loose
+summary/config copies. The shared verifier checks all six final artifacts,
+recomputes pass and failed-check counts, enforces the non-authorizing contract,
+and recursively verifies the manifest-linked acknowledgement, send, and
+dispatch sources. `broker_dispatch_roundtrip_lineage_fields(...)` provides the
+normalized record for downstream rows/configs, while
+`broker_dispatch_roundtrip_lineage_manifest_inputs(...)` exposes the final
+manifest, artifact set, and transitive dependencies for a new manifest. For a
+canonical lead-lag packet, a consistently edited and freshly re-manifested
+terminal contract still fails unless it matches the independently reopened
+acknowledgement source. Terminal verification requires that retained source
+binding for every strategy, so a locally passing round-trip generated without
+acknowledgement lineage cannot silently advance to broker readiness.
+
 When the provider broker-dispatch-ack wrapper retained validated dispatch
 round-trip capture provenance, the final provider round-trip wrapper carries
 the same `dispatch_roundtrip_capture_bundle_*`,

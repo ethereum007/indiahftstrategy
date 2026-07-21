@@ -75,6 +75,14 @@ BROKER_DISPATCH_ACK_REQUIRED_ARTIFACTS = (
     "broker_dispatch_ack_config.json",
     "broker_dispatch_ack_runbook.md",
 )
+BROKER_DISPATCH_ROUNDTRIP_REQUIRED_ARTIFACTS = (
+    "broker_dispatch_roundtrip_orders.csv",
+    "broker_dispatch_roundtrip_checks.csv",
+    "broker_dispatch_roundtrip_summary.csv",
+    "broker_dispatch_roundtrip_action_queue.csv",
+    "broker_dispatch_roundtrip_config.json",
+    "broker_dispatch_roundtrip_runbook.md",
+)
 ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     "leadlag_edge_lineage_required",
     *LEADLAG_LINEAGE_FIELDS,
@@ -97,6 +105,10 @@ BROKER_DISPATCH_SEND_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
 BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     *BROKER_DISPATCH_SEND_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     "leadlag_send_contract_consistent",
+)
+BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
+    *BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
+    "leadlag_ack_contract_consistent",
 )
 
 
@@ -1306,6 +1318,552 @@ def broker_dispatch_ack_lineage_manifest_inputs(
     return inputs
 
 
+def empty_broker_dispatch_roundtrip_lineage(
+    *,
+    required: bool = False,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "required": required,
+        "provided": False,
+        "manifest_current": not required,
+        "manifest_run_type": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "manifest_missing" if required else "",
+        "contract_consistent": not required,
+        "contract_error": "",
+        "non_authorizing": not required,
+        "ack_lineage_gate_passed": not required,
+        "ack_matches_current": not required,
+        "expected_ack_matches_current": not required,
+        "gate_passed": not required,
+        "dependency_count": 0,
+        "dependency_paths": [],
+        "artifact_paths": [],
+    }
+    state.update(
+        {
+            column: _field_default(column)
+            for column in broker_dispatch_ack_lineage_fields(
+                empty_broker_dispatch_ack_lineage()
+            )
+        }
+    )
+    state.update(
+        {
+            f"strategy_portfolio_{field}": _field_default(field)
+            for field in (
+                BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            )
+        }
+    )
+    return state
+
+
+def load_broker_dispatch_roundtrip_lineage(
+    broker_dispatch_roundtrip_config_path: str | Path,
+    expected_broker_dispatch_ack_config_path: str | Path | None = None,
+    expected_broker_dispatch_send_config_path: str | Path | None = None,
+    expected_broker_dispatch_config_path: str | Path | None = None,
+) -> dict[str, Any]:
+    config_path = Path(broker_dispatch_roundtrip_config_path).resolve()
+    root = config_path.parent
+    summary_path = root / "broker_dispatch_roundtrip_summary.csv"
+    orders_path = root / "broker_dispatch_roundtrip_orders.csv"
+    checks_path = root / "broker_dispatch_roundtrip_checks.csv"
+    manifest_path = root / "manifest.json"
+    state = empty_broker_dispatch_roundtrip_lineage(required=True)
+    state.update(
+        {
+            "provided": summary_path.is_file(),
+            "manifest_path": str(manifest_path),
+            "artifact_paths": [
+                str(root / name)
+                for name in BROKER_DISPATCH_ROUNDTRIP_REQUIRED_ARTIFACTS
+                if (root / name).is_file()
+            ],
+        }
+    )
+
+    summary = _read_csv(summary_path)
+    orders = _read_csv(orders_path)
+    checks = _read_csv(checks_path)
+    config = _read_json(config_path)
+    manifest = _read_json(manifest_path)
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    ack_fields = broker_dispatch_ack_lineage_fields(
+        empty_broker_dispatch_ack_lineage()
+    )
+    state.update(
+        {
+            column: _normalize(row.get(column), column)
+            for column in ack_fields
+        }
+    )
+    state.update(_broker_dispatch_roundtrip_strategy_portfolio_state(row))
+
+    if manifest_path.is_file():
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="broker_dispatch_roundtrip",
+            required_artifacts=BROKER_DISPATCH_ROUNDTRIP_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        dependencies = manifest_dependency_paths(manifest_path)
+        state.update(
+            {
+                "manifest_current": bool(integrity.passed),
+                "manifest_run_type": integrity.run_type,
+                "manifest_sha256": file_sha256(manifest_path),
+                "manifest_error": integrity.error,
+                "dependency_paths": [str(path) for path in dependencies],
+                "dependency_count": len(dependencies),
+            }
+        )
+
+    leadlag_active = _broker_dispatch_roundtrip_leadlag_active(
+        row,
+        config,
+        state,
+    )
+    ack_config_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "ack_config",
+    )
+    current_ack = empty_broker_dispatch_ack_lineage(required=True)
+    if ack_config_path is not None:
+        current_ack = load_broker_dispatch_ack_lineage(
+            ack_config_path,
+            expected_broker_dispatch_send_config_path=(
+                expected_broker_dispatch_send_config_path
+            ),
+            expected_broker_dispatch_config_path=(
+                expected_broker_dispatch_config_path
+            ),
+    )
+    current_ack_fields = broker_dispatch_ack_lineage_fields(current_ack)
+    ack_lineage_gate_passed = bool(current_ack.get("gate_passed", False))
+    ack_matches_current = bool(
+        current_ack.get("gate_passed", False)
+        and all(
+            _same(state.get(column), current_ack_fields.get(column), column)
+            for column in ack_fields
+        )
+    )
+    expected_ack_matches_current = _roundtrip_matches_expected_ack(
+        manifest=manifest,
+        manifest_path=manifest_path,
+        expected_broker_dispatch_ack_config_path=(
+            expected_broker_dispatch_ack_config_path
+        ),
+    )
+    errors = _broker_dispatch_roundtrip_contract_errors(
+        summary=summary,
+        orders=orders,
+        checks=checks,
+        config=config,
+        manifest=manifest,
+        lineage=state,
+        ack_fields=tuple(ack_fields),
+        current_ack=current_ack,
+        leadlag_active=leadlag_active,
+    )
+    extra = _mapping(manifest.get("extra"))
+    orders_non_authorizing = bool(
+        not orders.empty
+        and "authorizes_submission" in orders.columns
+        and not orders["authorizes_submission"].map(_bool).any()
+    )
+    non_authorizing = bool(
+        config
+        and "authorizes_submission" in config
+        and not _bool(config.get("authorizes_submission"))
+        and "authorizes_submission" in row.index
+        and not _bool(row.get("authorizes_submission"))
+        and orders_non_authorizing
+        and extra
+        and "authorizes_submission" in extra
+        and not _bool(extra.get("authorizes_submission"))
+    )
+    state["contract_consistent"] = not errors
+    state["contract_error"] = ";".join(sorted(set(errors)))
+    state["non_authorizing"] = non_authorizing
+    state["ack_lineage_gate_passed"] = ack_lineage_gate_passed
+    state["ack_matches_current"] = ack_matches_current
+    state["expected_ack_matches_current"] = expected_ack_matches_current
+    state["gate_passed"] = bool(
+        state["provided"]
+        and state["manifest_current"]
+        and state["contract_consistent"]
+        and non_authorizing
+        and ack_lineage_gate_passed
+        and ack_matches_current
+        and expected_ack_matches_current
+    )
+    return state
+
+
+def broker_dispatch_roundtrip_lineage_fields(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    fields = {
+        "broker_dispatch_roundtrip_lineage_required": _bool(
+            lineage.get("required", False)
+        ),
+        "broker_dispatch_roundtrip_lineage_provided": _bool(
+            lineage.get("provided", False)
+        ),
+        "broker_dispatch_roundtrip_manifest_current": _bool(
+            lineage.get("manifest_current", False)
+        ),
+        "broker_dispatch_roundtrip_manifest_run_type": _text(
+            lineage.get("manifest_run_type", "")
+        ),
+        "broker_dispatch_roundtrip_manifest_path": _text(
+            lineage.get("manifest_path", "")
+        ),
+        "broker_dispatch_roundtrip_manifest_sha256": _text(
+            lineage.get("manifest_sha256", "")
+        ),
+        "broker_dispatch_roundtrip_manifest_error": _text(
+            lineage.get("manifest_error", "")
+        ),
+        "broker_dispatch_roundtrip_lineage_contract_consistent": _bool(
+            lineage.get("contract_consistent", False)
+        ),
+        "broker_dispatch_roundtrip_lineage_contract_error": _text(
+            lineage.get("contract_error", "")
+        ),
+        "broker_dispatch_roundtrip_non_authorizing": _bool(
+            lineage.get("non_authorizing", False)
+        ),
+        "broker_dispatch_roundtrip_ack_lineage_gate_passed": _bool(
+            lineage.get("ack_lineage_gate_passed", False)
+        ),
+        "broker_dispatch_roundtrip_ack_matches_current": _bool(
+            lineage.get("ack_matches_current", False)
+        ),
+        "broker_dispatch_roundtrip_expected_ack_matches_current": _bool(
+            lineage.get("expected_ack_matches_current", False)
+        ),
+        "broker_dispatch_roundtrip_lineage_gate_passed": _bool(
+            lineage.get("gate_passed", False)
+        ),
+        "broker_dispatch_roundtrip_lineage_dependency_count": int(
+            lineage.get("dependency_count", 0)
+        ),
+    }
+    ack_fields = broker_dispatch_ack_lineage_fields(
+        empty_broker_dispatch_ack_lineage()
+    )
+    fields.update(
+        {
+            f"broker_dispatch_roundtrip_{column}": _normalize(
+                lineage.get(column),
+                column,
+            )
+            for column in ack_fields
+        }
+    )
+    fields.update(
+        {
+            f"broker_dispatch_roundtrip_strategy_portfolio_{field}": (
+                _normalize(
+                    lineage.get(f"strategy_portfolio_{field}"),
+                    field,
+                )
+            )
+            for field in (
+                BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            )
+        }
+    )
+    return fields
+
+
+def broker_dispatch_roundtrip_lineage_manifest_inputs(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
+    manifest_path = _existing_path(lineage.get("manifest_path"))
+    if manifest_path is not None:
+        inputs["broker_dispatch_roundtrip_manifest"] = manifest_path
+    artifacts = _existing_paths(lineage.get("artifact_paths"))
+    if artifacts:
+        inputs["broker_dispatch_roundtrip_artifacts"] = artifacts
+    dependencies = _existing_paths(lineage.get("dependency_paths"))
+    if dependencies:
+        inputs["broker_dispatch_roundtrip_dependencies"] = dependencies
+    return inputs
+
+
+def _broker_dispatch_roundtrip_strategy_portfolio_state(
+    row: pd.Series,
+) -> dict[str, Any]:
+    return {
+        f"strategy_portfolio_{field}": _normalize(
+            row.get(f"strategy_portfolio_{field}"),
+            field,
+        )
+        for field in (
+            BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+        )
+    }
+
+
+def _broker_dispatch_roundtrip_leadlag_active(
+    row: pd.Series,
+    config: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+) -> bool:
+    strategy_portfolio = _mapping(config.get("strategy_portfolio"))
+    return bool(
+        _text(row.get("strategy_portfolio_selected_profile")).lower()
+        == "leadlag"
+        or _text(strategy_portfolio.get("selected_profile")).lower()
+        == "leadlag"
+        or _bool(
+            lineage.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _bool(
+            strategy_portfolio.get(
+                "leadlag_edge_lineage_required",
+                False,
+            )
+        )
+    )
+
+
+def _broker_dispatch_roundtrip_contract_errors(
+    *,
+    summary: pd.DataFrame,
+    orders: pd.DataFrame,
+    checks: pd.DataFrame,
+    config: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+    ack_fields: tuple[str, ...],
+    current_ack: Mapping[str, Any],
+    leadlag_active: bool,
+) -> list[str]:
+    errors: list[str] = []
+    if summary.empty:
+        errors.append("broker_dispatch_roundtrip_summary_missing_or_empty")
+    if orders.empty:
+        errors.append("broker_dispatch_roundtrip_orders_missing_or_empty")
+    if checks.empty:
+        errors.append("broker_dispatch_roundtrip_checks_missing_or_empty")
+    if not config:
+        errors.append("broker_dispatch_roundtrip_config_missing_or_invalid")
+    if not manifest:
+        errors.append("broker_dispatch_roundtrip_manifest_missing_or_invalid")
+    if errors:
+        return errors
+
+    row = summary.iloc[0]
+    extra = _mapping(manifest.get("extra"))
+    config_ack_lineage = _mapping(
+        config.get("broker_dispatch_ack_lineage")
+    )
+    for column in ack_fields:
+        expected = lineage[column]
+        if column not in row.index:
+            errors.append(
+                f"broker_dispatch_roundtrip_summary_{column}_missing"
+            )
+        if not _frame_column_matches(orders, column, expected):
+            errors.append(
+                f"broker_dispatch_roundtrip_orders_{column}_mismatch"
+            )
+        if column not in config_ack_lineage or not _same(
+            config_ack_lineage.get(column),
+            expected,
+            column,
+        ):
+            errors.append(
+                f"broker_dispatch_roundtrip_config_{column}_mismatch"
+            )
+        if column not in extra or not _same(
+            extra.get(column),
+            expected,
+            column,
+        ):
+            errors.append(
+                f"broker_dispatch_roundtrip_manifest_{column}_mismatch"
+            )
+
+    errors.extend(
+        _broker_dispatch_roundtrip_leadlag_contract_errors(
+            row=row,
+            orders=orders,
+            config=config,
+            extra=extra,
+            lineage=lineage,
+            current_ack=current_ack,
+            active=leadlag_active,
+        )
+    )
+    for column in (
+        "target_mode",
+        "strategy",
+        "market",
+        "scenario_key",
+        "adapter",
+    ):
+        expected = row.get(column)
+        if column not in row.index or column not in config or not _same_text(
+            config.get(column),
+            expected,
+        ):
+            errors.append(
+                f"broker_dispatch_roundtrip_config_{column}_mismatch"
+            )
+    if "passed" not in config or not _same(
+        config.get("passed"),
+        row.get("passed"),
+        "passed",
+    ):
+        errors.append("broker_dispatch_roundtrip_config_passed_mismatch")
+    if "passed" not in extra or not _same(
+        extra.get("passed"),
+        row.get("passed"),
+        "passed",
+    ):
+        errors.append("broker_dispatch_roundtrip_manifest_passed_mismatch")
+    if "passed" not in checks.columns:
+        errors.append("broker_dispatch_roundtrip_checks_passed_missing")
+        return errors
+    failed_checks = int((~checks["passed"].map(_bool)).sum())
+    checks_passed = failed_checks == 0
+    if _bool(row.get("passed")) != checks_passed:
+        errors.append("broker_dispatch_roundtrip_summary_checks_mismatch")
+    if (
+        "failed_check_count" not in row.index
+        or _integer(row.get("failed_check_count")) != failed_checks
+    ):
+        errors.append(
+            "broker_dispatch_roundtrip_summary_failed_check_count_mismatch"
+        )
+    if (
+        "failed_check_count" not in config
+        or _integer(config.get("failed_check_count")) != failed_checks
+    ):
+        errors.append(
+            "broker_dispatch_roundtrip_config_failed_check_count_mismatch"
+        )
+    return errors
+
+
+def _broker_dispatch_roundtrip_leadlag_contract_errors(
+    *,
+    row: pd.Series,
+    orders: pd.DataFrame,
+    config: Mapping[str, Any],
+    extra: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+    current_ack: Mapping[str, Any],
+    active: bool,
+) -> list[str]:
+    strategy_portfolio = _mapping(config.get("strategy_portfolio"))
+    direct_fields = (
+        BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    )
+    if not active:
+        return []
+
+    errors: list[str] = []
+    summary_profile = _text(
+        row.get("strategy_portfolio_selected_profile")
+    ).lower()
+    config_profile = _text(
+        strategy_portfolio.get("selected_profile")
+    ).lower()
+    if active and (
+        summary_profile != "leadlag" or config_profile != "leadlag"
+    ):
+        errors.append(
+            "broker_dispatch_roundtrip_strategy_portfolio_profile_mismatch"
+        )
+    for field in direct_fields:
+        column = f"strategy_portfolio_{field}"
+        expected = lineage[column]
+        if column not in row.index:
+            errors.append(
+                f"broker_dispatch_roundtrip_summary_{column}_missing"
+            )
+        if not _frame_column_matches(orders, column, expected):
+            errors.append(
+                f"broker_dispatch_roundtrip_orders_{column}_mismatch"
+            )
+        if field not in strategy_portfolio or not _same(
+            strategy_portfolio.get(field),
+            expected,
+            field,
+        ):
+            errors.append(
+                f"broker_dispatch_roundtrip_config_{column}_mismatch"
+            )
+        if column not in extra or not _same(
+            extra.get(column),
+            expected,
+            field,
+        ):
+            errors.append(
+                f"broker_dispatch_roundtrip_manifest_{column}_mismatch"
+            )
+        if (
+            active
+            and field
+            in BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            and not _same(
+                expected,
+                current_ack.get(column),
+                field,
+            )
+        ):
+            errors.append(
+                "broker_dispatch_roundtrip_broker_dispatch_ack_"
+                f"strategy_portfolio_{field}_mismatch"
+            )
+    if active and not _bool(
+        lineage.get(
+            "strategy_portfolio_leadlag_ack_contract_consistent",
+            False,
+        )
+    ):
+        errors.append(
+            "broker_dispatch_roundtrip_leadlag_ack_contract_not_consistent"
+        )
+    return errors
+
+
+def _roundtrip_matches_expected_ack(
+    *,
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+    expected_broker_dispatch_ack_config_path: str | Path | None,
+) -> bool:
+    if expected_broker_dispatch_ack_config_path is None:
+        return True
+    expected_path = Path(
+        expected_broker_dispatch_ack_config_path
+    ).resolve()
+    current_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "ack_config",
+    )
+    return bool(
+        current_path is not None
+        and current_path.is_file()
+        and current_path == expected_path
+    )
+
+
 def _runtime_session_contract_errors(
     *,
     summary: pd.DataFrame,
@@ -2463,7 +3021,9 @@ def _leadlag_contract_field(column: str) -> str:
     return next(
         (
             field
-            for field in BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            for field in (
+                BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            )
             if column.endswith(field)
         ),
         "",
@@ -2479,6 +3039,7 @@ def _field_default(column: str) -> Any:
         "leadlag_route_contract_consistent",
         "leadlag_dispatch_contract_consistent",
         "leadlag_send_contract_consistent",
+        "leadlag_ack_contract_consistent",
         *LEADLAG_LINEAGE_BOOLEAN_FIELDS,
     }:
         return False

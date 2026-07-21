@@ -6279,6 +6279,24 @@ passed`), and manifest plus experiment-catalog compatibility passes (`69
 passed`). Repository collection is healthy at `2425 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest terminal broker-dispatch round-trip verifier: the shared operational
+lineage API now reopens all six final round-trip artifacts, verifies their
+manifest and transitive inputs, recomputes check outcomes, enforces the
+non-authorizing contract, and recursively verifies the exact acknowledgement,
+send, and dispatch sources. It exports normalized downstream fields plus
+manifest inputs for the next broker-readiness boundary. Canonical lead-lag
+proof must reproduce the independently verified acknowledgement-owned contract,
+so both single-row drift and a consistently edited, freshly re-manifested final
+bundle fail closed; legacy noncanonical bundles without the new direct fields
+remain readable when they retain the recursive acknowledgement binding. A
+locally passing final bundle that omitted that binding is rejected for every
+strategy. The focused canonical/tamper/legacy proof passes (`5 passed`),
+the complete dispatch/send/ack integration suite passes (`146 passed`), the
+complete downstream round-trip suite passes (`103 passed`), and manifest plus
+experiment-catalog compatibility passes (`69 passed`). Repository collection is
+healthy at `2428 tests`. All outputs remain non-authorizing; the full repository
+suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.
