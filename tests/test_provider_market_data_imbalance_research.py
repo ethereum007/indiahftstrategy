@@ -9853,8 +9853,17 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_missing_roundtri
 
 
 def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispatch_roundtrip_root(tmp_path):
-    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
-    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    runtime_source = tmp_path / "runtime_source"
+    roundtrip_source = tmp_path / "roundtrip_source"
+    runtime_source.mkdir()
+    roundtrip_source.mkdir()
+    runtime_session = _write_ready_provider_imbalance_runtime_session(
+        runtime_source
+    )
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(
+        roundtrip_source,
+        require_ack_lineage=True,
+    )
     out_dir = tmp_path / "provider_imbalance_broker_readiness_with_provider_roundtrip"
 
     report = write_provider_market_data_imbalance_broker_readiness(

@@ -786,7 +786,13 @@ def dispatch_summary(
     )
 
 
-def dispatch_orders(*, dry_run=True, malformed_payload=False, route_roundtrip_batch_id="BDP-0"):
+def dispatch_orders(
+    *,
+    dry_run=True,
+    malformed_payload=False,
+    route_roundtrip_batch_id="BDP-0",
+    adapter="arrow_money",
+):
     payloads = [
         {
             "exchange": "NFO",
@@ -829,7 +835,7 @@ def dispatch_orders(*, dry_run=True, malformed_payload=False, route_roundtrip_ba
                 "strategy": "lead_lag_taker",
                 "market": "india_nse_index_derivatives",
                 "scenario_key": "trigger_ticks=2",
-                "adapter": "arrow_money",
+                "adapter": adapter,
                 "source_order_id": f"ORD-{index}",
                 "source_payload_hash": f"hash-{index}",
                 "upload_file_hash": "upload-hash",
@@ -1670,6 +1676,7 @@ def write_dispatch(
     route_readiness=True,
     broker_readiness_config=None,
     canonical_leadlag=False,
+    adapter="arrow_money",
 ):
     cutover = _write_cutover_source(
         tmp_path,
@@ -1695,6 +1702,7 @@ def write_dispatch(
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
         canonical_leadlag=canonical_leadlag,
+        adapter=adapter,
     )
     for column, value in lineage_fields.items():
         summary[column] = value
@@ -1705,7 +1713,7 @@ def write_dispatch(
         for column, value in summary.iloc[0].items()
         if column.startswith("strategy_portfolio_leadlag_")
     }
-    orders = dispatch_orders()
+    orders = dispatch_orders(adapter=adapter)
     for column, value in lineage_fields.items():
         orders[column] = value
     for column, value in portfolio_leadlag.items():
@@ -1726,7 +1734,7 @@ def write_dispatch(
             "strategy": "lead_lag_taker",
             "market": "india_nse_index_derivatives",
             "scenario_key": "trigger_ticks=2",
-            "adapter": "arrow_money",
+            "adapter": adapter,
             "dry_run_only": True,
             "authorizes_submission": False,
             "route_enable_lineage": lineage_fields,
@@ -1858,8 +1866,17 @@ def _write_rehashed_send_requests(send, requests):
     expected_acks.to_csv(expected_acks_path, index=False)
 
 
-def _write_verified_ack_chain(tmp_path, *, canonical_leadlag=False):
-    dispatch = write_dispatch(tmp_path, canonical_leadlag=canonical_leadlag)
+def _write_verified_ack_chain(
+    tmp_path,
+    *,
+    canonical_leadlag=False,
+    adapter="arrow_money",
+):
+    dispatch = write_dispatch(
+        tmp_path,
+        canonical_leadlag=canonical_leadlag,
+        adapter=adapter,
+    )
     send = tmp_path / "send"
     write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
     ack_log = tmp_path / "broker_dispatch_acks.csv"

@@ -6297,6 +6297,23 @@ experiment-catalog compatibility passes (`69 passed`). Repository collection is
 healthy at `2428 tests`. All outputs remain non-authorizing; the full repository
 suite was not rerun for this slice.
 
+Latest terminal round-trip-to-broker-readiness lineage gate: filesystem-backed
+broker readiness now consumes the shared terminal verifier instead of trusting
+loose final summary/config files. It requires a current six-artifact manifest,
+cross-artifact contract consistency, non-authorizing execution, and recursive
+binding to the current acknowledgement, send, dispatch, route-enable, cutover,
+runtime-session, and scale-up sources. The compact gate plus the complete direct
+lead-lag identity survive readiness items, summary/config, runbook, and manifest
+metadata, while the readiness manifest fingerprints both final artifacts and
+all transitive dependencies. A loose green pair and a tampered order with a
+freshly regenerated manifest both fail closed and route repair back to
+`review-broker-dispatch-roundtrip`. The complete broker-readiness suite passes
+(`130 passed`), the complete dispatch/send/ack/round-trip integration suite
+passes (`146 passed`), the strict provider-wrapper nested-round-trip proof
+passes (`1 passed`), and manifest plus experiment-catalog compatibility passes
+(`69 passed`). Repository collection is healthy at `2430 tests`. All outputs
+remain non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

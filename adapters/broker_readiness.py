@@ -11,6 +11,13 @@ import pandas as pd
 
 from adapters.broker import adapter_schema_status, get_adapter
 from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
+    broker_dispatch_roundtrip_lineage_fields,
+    broker_dispatch_roundtrip_lineage_manifest_inputs,
+    empty_broker_dispatch_roundtrip_lineage,
+    load_broker_dispatch_roundtrip_lineage,
+)
 from reports.vendor_market_data import select_vendor_market_data_batch_source
 
 
@@ -27,6 +34,77 @@ SUMMARY_FILES = {
     "dispatch_roundtrip": "broker_dispatch_roundtrip_summary.csv",
 }
 SCHEMA_REVIEW_CHECKLIST_FILE = "adapter_schema_review_checklist.csv"
+BROKER_DISPATCH_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
+    "broker_dispatch_roundtrip_lineage_required",
+    "broker_dispatch_roundtrip_lineage_provided",
+    "broker_dispatch_roundtrip_manifest_current",
+    "broker_dispatch_roundtrip_manifest_run_type",
+    "broker_dispatch_roundtrip_manifest_path",
+    "broker_dispatch_roundtrip_manifest_sha256",
+    "broker_dispatch_roundtrip_manifest_error",
+    "broker_dispatch_roundtrip_lineage_contract_consistent",
+    "broker_dispatch_roundtrip_lineage_contract_error",
+    "broker_dispatch_roundtrip_non_authorizing",
+    "broker_dispatch_roundtrip_ack_lineage_gate_passed",
+    "broker_dispatch_roundtrip_ack_matches_current",
+    "broker_dispatch_roundtrip_expected_ack_matches_current",
+    "broker_dispatch_roundtrip_lineage_gate_passed",
+    "broker_dispatch_roundtrip_lineage_dependency_count",
+)
+BROKER_DISPATCH_ROUNDTRIP_LINEAGE_RETAINED_FIELDS = (
+    *BROKER_DISPATCH_ROUNDTRIP_LINEAGE_BASE_FIELDS,
+    *(
+        f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
+        for field in (
+            BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+        )
+    ),
+)
+BROKER_DISPATCH_ROUNDTRIP_LINEAGE_DEFAULTS = {
+    field: value
+    for field, value in broker_dispatch_roundtrip_lineage_fields(
+        empty_broker_dispatch_roundtrip_lineage()
+    ).items()
+    if field in BROKER_DISPATCH_ROUNDTRIP_LINEAGE_RETAINED_FIELDS
+}
+
+
+def _broker_dispatch_roundtrip_retained_lineage_fields(
+    lineage: dict[str, Any],
+) -> dict[str, Any]:
+    fields = broker_dispatch_roundtrip_lineage_fields(lineage)
+    return {
+        field: fields.get(field, default)
+        for field, default in BROKER_DISPATCH_ROUNDTRIP_LINEAGE_DEFAULTS.items()
+    }
+
+
+def _broker_dispatch_roundtrip_lineage_record(
+    source: Any,
+) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for field, default in BROKER_DISPATCH_ROUNDTRIP_LINEAGE_DEFAULTS.items():
+        value = source.get(field, default)
+        if isinstance(default, bool):
+            record[field] = _to_bool(value)
+        elif isinstance(default, int):
+            record[field] = int(_number_value(value, float(default)))
+        elif isinstance(default, float):
+            record[field] = float(_number_value(value, default))
+        else:
+            record[field] = _object_text(value)
+    return record
+
+
+def _broker_dispatch_roundtrip_lineage_item_fields(
+    component: str,
+    row: pd.Series,
+) -> dict[str, Any]:
+    if component != "dispatch_roundtrip" or row.empty:
+        return _broker_dispatch_roundtrip_lineage_record({})
+    return _broker_dispatch_roundtrip_lineage_record(row)
+
+
 BROKER_READINESS_NEXT_GATES = {
     "schema_audit": "audit-adapter-schema",
     "order_export": "export-launch-orders",
@@ -381,6 +459,7 @@ def evaluate_broker_readiness(
     resume_summary: pd.DataFrame | None = None,
     dispatch_roundtrip_summary: pd.DataFrame | None = None,
     dispatch_roundtrip_config: dict[str, Any] | None = None,
+    dispatch_roundtrip_lineage: dict[str, Any] | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
@@ -388,6 +467,13 @@ def evaluate_broker_readiness(
     dispatch_roundtrip = _dispatch_roundtrip_frame(
         dispatch_roundtrip_summary,
         dispatch_roundtrip_config or {},
+        lineage_fields=(
+            _broker_dispatch_roundtrip_retained_lineage_fields(
+                dispatch_roundtrip_lineage
+            )
+            if dispatch_roundtrip_lineage is not None
+            else None
+        ),
     )
     summaries = {
         "schema_audit": _optional_frame(schema_audit_summary),
@@ -434,6 +520,14 @@ def write_broker_readiness_report(
     thresholds = thresholds or BrokerReadinessThresholds()
     _validate_thresholds(thresholds)
     vendor_market_data_batch_root_dir = vendor_market_data_batch_dir
+    dispatch_roundtrip_lineage = None
+    if dispatch_roundtrip_dir is not None:
+        dispatch_roundtrip_lineage = load_broker_dispatch_roundtrip_lineage(
+            _config_path(
+                dispatch_roundtrip_dir,
+                "broker_dispatch_roundtrip_config.json",
+            )
+        )
     broker_vendor_data_readiness_config_path = _manifest_config_input(
         vendor_market_data_batch_root_dir,
         "broker_vendor_data_readiness_config.json",
@@ -479,6 +573,12 @@ def write_broker_readiness_report(
         input_paths["dispatch_roundtrip_config"] = dispatch_roundtrip_config_path
     if dispatch_roundtrip_manifest_path is not None:
         input_paths["dispatch_roundtrip_manifest"] = dispatch_roundtrip_manifest_path
+    if dispatch_roundtrip_lineage is not None:
+        input_paths.update(
+            broker_dispatch_roundtrip_lineage_manifest_inputs(
+                dispatch_roundtrip_lineage
+            )
+        )
     if vendor_market_data_batch_config_path is not None:
         input_paths["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
     if vendor_market_data_batch_manifest_path is not None:
@@ -511,6 +611,7 @@ def write_broker_readiness_report(
         resume_summary=_read_optional_summary(resume_dir, "resume_gate"),
         dispatch_roundtrip_summary=_read_optional_summary(dispatch_roundtrip_dir, "dispatch_roundtrip"),
         dispatch_roundtrip_config=dispatch_roundtrip_config,
+        dispatch_roundtrip_lineage=dispatch_roundtrip_lineage,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -533,6 +634,16 @@ def write_broker_readiness_report(
         run_type="broker_readiness",
         parameters={"thresholds": asdict(thresholds)},
         inputs=input_paths,
+        extra={
+            "ready": bool(report.ready),
+            **(
+                _broker_dispatch_roundtrip_retained_lineage_fields(
+                    dispatch_roundtrip_lineage
+                )
+                if dispatch_roundtrip_lineage is not None
+                else {}
+            ),
+        },
     )
     return BrokerReadinessReport(
         items=report.items,
@@ -563,7 +674,12 @@ def _items(
     )
 
 
-def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, Any]) -> pd.DataFrame:
+def _dispatch_roundtrip_frame(
+    summary: pd.DataFrame | None,
+    config: dict[str, Any],
+    *,
+    lineage_fields: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     frame = _optional_frame(summary)
     if frame.empty:
         vendor_market_data_batch = config.get("roundtrip_vendor_market_data_batch", {}) or {}
@@ -576,6 +692,15 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
         ):
             return frame
         frame = pd.DataFrame([{"vendor_market_data_batch_only": True}])
+    if lineage_fields:
+        overlap = [column for column in lineage_fields if column in frame.columns]
+        frame = pd.concat(
+            [
+                frame.drop(columns=overlap),
+                pd.DataFrame([lineage_fields], index=frame.index),
+            ],
+            axis=1,
+        )
     dispatch_config = config.get("dispatch_roundtrip", {}) or {}
     route_readiness = config.get("route_readiness", {}) or dispatch_config.get("route_readiness", {}) or {}
     if route_readiness:
@@ -1916,7 +2041,23 @@ def _item(
     dispatch_roundtrip_context = component == "dispatch_roundtrip" and (
         provided or vendor_market_data_batch_only
     )
+    dispatch_roundtrip_lineage = _broker_dispatch_roundtrip_lineage_item_fields(
+        component,
+        row,
+    )
     ready = _component_ready(component, row) if provided else False
+    if (
+        component == "dispatch_roundtrip"
+        and dispatch_roundtrip_lineage[
+            "broker_dispatch_roundtrip_lineage_required"
+        ]
+    ):
+        ready = bool(
+            ready
+            and dispatch_roundtrip_lineage[
+                "broker_dispatch_roundtrip_lineage_gate_passed"
+            ]
+        )
     adapter = str(row.get("adapter", "")).strip()
     schema_status = str(row.get("adapter_schema_status", "")).strip()
     failed_checks = _number(row, "failed_checks", fallback=_number(row, "unmapped_required_columns", fallback=0.0))
@@ -1935,6 +2076,7 @@ def _item(
         "adapter_match": adapter_match,
         "adapter_schema_status": schema_status,
         **_schema_review_checklist_item_fields(component, schema_review_checklist),
+        **dispatch_roundtrip_lineage,
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
         "runtime_guard_action": str(row.get("guard_action", "")).strip() if component == "runtime_session" else "",
         "runtime_guard_halted": _guard_halted(row) if component == "runtime_session" and provided else False,
@@ -3525,6 +3667,8 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
             if _resume_incident_broker_route_readiness_active(row):
                 checks.extend(_resume_incident_broker_route_readiness_checks(row))
         if row.component == "dispatch_roundtrip" and bool(row.provided):
+            if bool(row.broker_dispatch_roundtrip_lineage_required):
+                checks.extend(_broker_dispatch_roundtrip_lineage_checks(row))
             checks.append(
                 _check(
                     "route_enable_dispatch_roundtrip_failed_checks",
@@ -3589,6 +3733,62 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                     )
                 )
     return pd.DataFrame(checks)
+
+
+def _broker_dispatch_roundtrip_lineage_checks(row: Any) -> list[dict[str, Any]]:
+    specs = (
+        (
+            "provided",
+            bool(row.broker_dispatch_roundtrip_lineage_provided),
+            "terminal broker dispatch round-trip artifacts are missing",
+        ),
+        (
+            "manifest_current",
+            bool(row.broker_dispatch_roundtrip_manifest_current),
+            "terminal broker dispatch round-trip manifest is stale or invalid",
+        ),
+        (
+            "contract_consistent",
+            bool(row.broker_dispatch_roundtrip_lineage_contract_consistent),
+            "terminal broker dispatch round-trip artifacts disagree on their retained lineage contract",
+        ),
+        (
+            "non_authorizing",
+            bool(row.broker_dispatch_roundtrip_non_authorizing),
+            "terminal broker dispatch round-trip no longer proves non-authorizing execution",
+        ),
+        (
+            "ack_lineage_gate_passed",
+            bool(row.broker_dispatch_roundtrip_ack_lineage_gate_passed),
+            "terminal broker dispatch round-trip acknowledgement source lineage is not verified",
+        ),
+        (
+            "ack_matches_current",
+            bool(row.broker_dispatch_roundtrip_ack_matches_current),
+            "terminal broker dispatch round-trip does not match its current acknowledgement source",
+        ),
+        (
+            "expected_ack_matches_current",
+            bool(row.broker_dispatch_roundtrip_expected_ack_matches_current),
+            "terminal broker dispatch round-trip does not match the expected acknowledgement source",
+        ),
+        (
+            "gate_passed",
+            bool(row.broker_dispatch_roundtrip_lineage_gate_passed),
+            "terminal broker dispatch round-trip recursive lineage gate failed",
+        ),
+    )
+    return [
+        _check(
+            f"dispatch_roundtrip_lineage_{name}",
+            value,
+            "is",
+            True,
+            value,
+            reason,
+        )
+        for name, value, reason in specs
+    ]
 
 
 def _resume_broker_route_readiness_active(row: Any) -> bool:
@@ -6909,6 +7109,7 @@ def _summary(
                 "dispatch_roundtrip_failed_checks": int(
                     _number(dispatch_item, "dispatch_roundtrip_failed_checks", 0.0)
                 ),
+                **_broker_dispatch_roundtrip_lineage_record(dispatch_item),
                 "route_enable_dispatch_roundtrip_failed_checks": int(
                     _number(dispatch_item, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
                 ),
@@ -7862,6 +8063,12 @@ def _runbook_markdown(summary: pd.DataFrame, items: pd.DataFrame, action_queue: 
         f"- Missing required components: {int(_number(row, 'missing_required_components', 0.0))}",
         f"- Schema blocked checks: {_item_text(row, 'schema_review_blocked_check_names')}",
         f"- Schema review checks: {_item_text(row, 'schema_review_review_check_names')}",
+        f"- Terminal round-trip lineage required: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_lineage_required'))}",
+        f"- Terminal round-trip manifest current: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_manifest_current'))}",
+        f"- Terminal round-trip contract consistent: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_lineage_contract_consistent'))}",
+        f"- Terminal round-trip source binding passed: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_lineage_gate_passed'))}",
+        f"- Terminal round-trip manifest error: {_item_text(row, 'broker_dispatch_roundtrip_manifest_error')}",
+        f"- Terminal round-trip contract error: {_item_text(row, 'broker_dispatch_roundtrip_lineage_contract_error')}",
         "",
         "## Components",
         "",
@@ -8002,6 +8209,7 @@ def _resume_broker_route_readiness_config(row: pd.Series, *, prefix: str) -> dic
 
 
 def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
+    lineage = _broker_dispatch_roundtrip_lineage_record(row)
     return {
         "provided": _item_bool(row, "dispatch_roundtrip_provided"),
         "ready": _item_bool(row, "dispatch_roundtrip_ready"),
@@ -8016,6 +8224,10 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
         "rejected_orders": int(_number(row, "dispatch_roundtrip_rejected_orders", 0.0)),
         "unmatched_acks": int(_number(row, "dispatch_roundtrip_unmatched_acks", 0.0)),
         "failed_checks": int(_number(row, "dispatch_roundtrip_failed_checks", 0.0)),
+        "lineage": {
+            field.removeprefix("broker_dispatch_roundtrip_"): value
+            for field, value in lineage.items()
+        },
         "route_enable_dispatch_roundtrip": {
             "failed_checks": int(_number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)),
         },

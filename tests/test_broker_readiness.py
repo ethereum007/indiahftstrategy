@@ -11,11 +11,19 @@ from adapters.broker_readiness import (
     write_broker_readiness_report,
 )
 from hft_cli import main
+from reports.broker_dispatch_roundtrip import (
+    BrokerDispatchRoundTripThresholds,
+    write_broker_dispatch_roundtrip,
+)
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
 )
 from tests.broker_vendor_data_helpers import write_broker_vendor_data_proof
+from tests.test_broker_dispatch_send import (
+    _refresh_manifest as refresh_dispatch_manifest,
+    _write_verified_ack_chain,
+)
 
 
 def broker_vendor_ticks(day: str, *, base: float = 100.0, session_open: str = "09:15"):
@@ -1406,24 +1414,48 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
-def write_broker_readiness_input_dirs(root, adapter):
+def write_broker_readiness_input_dirs(
+    root,
+    adapter,
+    *,
+    verified_roundtrip=False,
+    canonical_leadlag=False,
+):
     schema_dir = root / "schema"
     export_dir = root / "export"
     upload_dir = root / "upload"
     roundtrip_dir = root / "roundtrip"
-    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+    for path in (schema_dir, export_dir, upload_dir):
         path.mkdir(parents=True)
     schema_summary(adapter, True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
     order_export_summary(adapter, True).to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary(adapter, True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
-    dispatch_roundtrip_summary(adapter, True).to_csv(
-        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
-        index=False,
-    )
-    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
-        json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
-        encoding="utf-8",
-    )
+    if verified_roundtrip:
+        dispatch, send, ack = _write_verified_ack_chain(
+            root,
+            adapter=adapter,
+            canonical_leadlag=canonical_leadlag,
+        )
+        roundtrip_report = write_broker_dispatch_roundtrip(
+            dispatch_dir=dispatch,
+            send_dir=send,
+            ack_dir=ack,
+            output_dir=roundtrip_dir,
+            thresholds=BrokerDispatchRoundTripThresholds(
+                require_ack_lineage=True,
+            ),
+        )
+        assert roundtrip_report.passed
+    else:
+        roundtrip_dir.mkdir()
+        dispatch_roundtrip_summary(adapter, True).to_csv(
+            roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
+            index=False,
+        )
+        (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+            json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
+            encoding="utf-8",
+        )
     return schema_dir, export_dir, upload_dir, roundtrip_dir
 
 
@@ -5592,27 +5624,21 @@ def test_broker_readiness_fails_when_required_resume_gate_is_missing():
 
 
 def test_write_broker_readiness_outputs_artifacts(tmp_path):
-    schema_dir = tmp_path / "schema"
-    export_dir = tmp_path / "export"
-    upload_dir = tmp_path / "upload"
-    resume_dir = tmp_path / "resume"
-    roundtrip_dir = tmp_path / "roundtrip"
-    out_dir = tmp_path / "readiness"
-    schema_dir.mkdir()
-    export_dir.mkdir()
-    upload_dir.mkdir()
-    resume_dir.mkdir()
-    roundtrip_dir.mkdir()
-    schema_summary("arrow_money", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
-    schema_review_checklist().to_csv(schema_dir / "adapter_schema_review_checklist.csv", index=False)
-    order_export_summary("arrow_money", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
-    upload_summary("arrow_money", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
-    resume_summary("arrow_money", True).to_csv(resume_dir / "resume_summary.csv", index=False)
-    dispatch_roundtrip_summary("arrow_money", True).to_csv(
-        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
-        index=False,
+    schema_dir, export_dir, upload_dir, roundtrip_dir = (
+        write_broker_readiness_input_dirs(
+            tmp_path,
+            "arrow_money",
+            verified_roundtrip=True,
+            canonical_leadlag=True,
+        )
     )
-    roundtrip_config = dispatch_roundtrip_config()
+    resume_dir = tmp_path / "resume"
+    out_dir = tmp_path / "readiness"
+    resume_dir.mkdir()
+    schema_review_checklist().to_csv(schema_dir / "adapter_schema_review_checklist.csv", index=False)
+    resume_summary("arrow_money", True).to_csv(resume_dir / "resume_summary.csv", index=False)
+    roundtrip_config_path = roundtrip_dir / "broker_dispatch_roundtrip_config.json"
+    roundtrip_config = json.loads(roundtrip_config_path.read_text(encoding="utf-8"))
     roundtrip_config["shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
     roundtrip_config["broker_shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
     roundtrip_config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
@@ -5620,25 +5646,11 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
         vendor_market_data_batch_config()
     )
     roundtrip_config["roundtrip_broker_vendor_data_readiness"] = broker_vendor_data_readiness_config()
-    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+    roundtrip_config_path.write_text(
         json.dumps(roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
     )
-    (roundtrip_dir / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_type": "broker_dispatch_roundtrip",
-                "inputs": {
-                    "dispatch_manifest": {"path": "dispatch.json"},
-                    "send_manifest": {"path": "send.json"},
-                    "ack_manifest": {"path": "ack.json"},
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    refresh_dispatch_manifest(roundtrip_dir / "manifest.json")
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", pd.errors.PerformanceWarning)
@@ -5666,6 +5678,26 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert report.summary.iloc[0]["schema_review_blocked_check_names"] == "vendor_schema_reviewed"
     assert bool(report.summary.iloc[0]["resume_gate_ready"])
     assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
+    assert bool(report.summary.iloc[0]["broker_dispatch_roundtrip_lineage_required"])
+    assert bool(report.summary.iloc[0]["broker_dispatch_roundtrip_manifest_current"])
+    assert bool(report.summary.iloc[0]["broker_dispatch_roundtrip_lineage_contract_consistent"])
+    assert bool(report.summary.iloc[0]["broker_dispatch_roundtrip_lineage_gate_passed"])
+    assert bool(
+        report.summary.iloc[0][
+            "broker_dispatch_roundtrip_strategy_portfolio_"
+            "leadlag_edge_lineage_required"
+        ]
+    )
+    assert report.summary.iloc[0][
+        "broker_dispatch_roundtrip_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert bool(
+        report.summary.iloc[0][
+            "broker_dispatch_roundtrip_strategy_portfolio_"
+            "leadlag_ack_contract_consistent"
+        ]
+    )
     assert (out_dir / "broker_readiness_items.csv").exists()
     assert (out_dir / "broker_readiness_checks.csv").exists()
     assert (out_dir / "broker_readiness_summary.csv").exists()
@@ -5681,6 +5713,7 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     runbook = (out_dir / "broker_readiness_runbook.md").read_text(encoding="utf-8")
     assert "# Broker Readiness Runbook" in runbook
     assert "- Ready: yes" in runbook
+    assert "- Terminal round-trip source binding passed: yes" in runbook
     assert "dry_run_only_until_vendor_schema_review" in runbook
     assert "## Components" in runbook
     assert "## Blocked Actions" in runbook
@@ -5701,6 +5734,15 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert config["schema_review_checklist"]["blocked_check_names"] == ["vendor_schema_reviewed"]
     assert config["schema_review_checklist"]["review_check_names"] == ["extra_columns_classified"]
     assert config["components"]["dispatch_roundtrip"]["ready"]
+    assert config["dispatch_roundtrip"]["lineage"]["lineage_required"]
+    assert config["dispatch_roundtrip"]["lineage"]["manifest_current"]
+    assert config["dispatch_roundtrip"]["lineage"]["lineage_gate_passed"]
+    assert config["dispatch_roundtrip"]["lineage"][
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
+    assert config["dispatch_roundtrip"]["lineage"][
+        "strategy_portfolio_leadlag_ack_contract_consistent"
+    ]
     assert config["resume_gate"]["proof_refresh"]["strategy"] == "surface_mm"
     assert config["dispatch_roundtrip"]["route_readiness"]["gap_pairs"] == 0
     assert config["dispatch_roundtrip"]["route_readiness"]["ops_launch_controls_present"]
@@ -5734,6 +5776,13 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert path_tail(manifest["inputs"]["dispatch_roundtrip_manifest"]["path"]).endswith(
         "/roundtrip/manifest.json"
     )
+    assert len(manifest["inputs"]["broker_dispatch_roundtrip_artifacts"]) == 6
+    assert manifest["inputs"]["broker_dispatch_roundtrip_dependencies"]
+    assert manifest["extra"]["broker_dispatch_roundtrip_lineage_gate_passed"]
+    assert manifest["extra"][
+        "broker_dispatch_roundtrip_strategy_portfolio_"
+        "leadlag_edge_lineage_contract_sha256"
+    ] == "c" * 64
     assert path_tail(manifest["inputs"]["schema_review_checklist"]["path"]).endswith(
         "/schema/adapter_schema_review_checklist.csv"
     )
@@ -5742,10 +5791,115 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert "broker_readiness_runbook.md" in artifact_paths
 
 
+def test_broker_readiness_blocks_remanifested_terminal_roundtrip_tamper(
+    tmp_path,
+):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = (
+        write_broker_readiness_input_dirs(
+            tmp_path,
+            "arrow_money",
+            verified_roundtrip=True,
+        )
+    )
+    orders_path = roundtrip_dir / "broker_dispatch_roundtrip_orders.csv"
+    orders = pd.read_csv(orders_path)
+    orders.loc[0, "broker_dispatch_ack_lineage_required"] = False
+    orders.to_csv(orders_path, index=False)
+    refresh_dispatch_manifest(roundtrip_dir / "manifest.json")
+    out_dir = tmp_path / "readiness"
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["broker_dispatch_roundtrip_manifest_current"])
+    assert not bool(
+        summary["broker_dispatch_roundtrip_lineage_contract_consistent"]
+    )
+    assert not bool(summary["broker_dispatch_roundtrip_lineage_gate_passed"])
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert {
+        "dispatch_roundtrip_lineage_contract_consistent",
+        "dispatch_roundtrip_lineage_gate_passed",
+    } <= failed
+    action = report.action_queue.loc[
+        report.action_queue["check"].eq(
+            "dispatch_roundtrip_lineage_contract_consistent"
+        )
+    ].iloc[0]
+    assert action["component"] == "dispatch_roundtrip"
+    assert action["next_gate"] == "review-broker-dispatch-roundtrip"
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["inputs"]["broker_dispatch_roundtrip_dependencies"]
+    assert not manifest["extra"][
+        "broker_dispatch_roundtrip_lineage_gate_passed"
+    ]
+
+
+def test_broker_readiness_rejects_loose_roundtrip_summary_and_config(
+    tmp_path,
+):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = (
+        write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    )
+
+    report = write_broker_readiness_report(
+        output_dir=tmp_path / "readiness",
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["broker_dispatch_roundtrip_lineage_required"])
+    assert bool(summary["broker_dispatch_roundtrip_lineage_provided"])
+    assert not bool(summary["broker_dispatch_roundtrip_manifest_current"])
+    assert not bool(summary["broker_dispatch_roundtrip_lineage_gate_passed"])
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert {
+        "dispatch_roundtrip_lineage_manifest_current",
+        "dispatch_roundtrip_lineage_gate_passed",
+    } <= failed
+
+
 def test_broker_readiness_reads_vendor_market_data_batch_artifact(tmp_path):
     for adapter in ("arrow_money", "irage"):
         root = tmp_path / adapter
-        schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(root, adapter)
+        schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(
+            root,
+            adapter,
+            verified_roundtrip=True,
+        )
         vendor_batch_dir = write_vendor_market_data_batch(root, adapter)
         out_dir = root / "readiness"
 
@@ -5794,6 +5948,7 @@ def test_broker_readiness_preserves_stronger_roundtrip_vendor_proof_with_vendor_
     schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(
         tmp_path,
         "arrow_money",
+        verified_roundtrip=True,
     )
     roundtrip_config_path = roundtrip_dir / "broker_dispatch_roundtrip_config.json"
     roundtrip_config = json.loads(roundtrip_config_path.read_text(encoding="utf-8"))
@@ -5806,6 +5961,7 @@ def test_broker_readiness_preserves_stronger_roundtrip_vendor_proof_with_vendor_
         json.dumps(roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
     )
+    refresh_dispatch_manifest(roundtrip_dir / "manifest.json")
     vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money")
     out_dir = tmp_path / "readiness"
 
@@ -5839,7 +5995,11 @@ def test_broker_readiness_preserves_stronger_roundtrip_vendor_proof_with_vendor_
 
 
 def test_cli_broker_readiness_accepts_vendor_market_data_batch_artifact(tmp_path):
-    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(
+        tmp_path,
+        "arrow_money",
+        verified_roundtrip=True,
+    )
     vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money")
     out_dir = tmp_path / "readiness"
 
@@ -6071,7 +6231,11 @@ def test_cli_broker_readiness_blocks_wrong_manifest_vendor_only_market_data_batc
 
 
 def test_cli_broker_readiness_blocks_wrong_market_vendor_market_data_batch_artifact(tmp_path):
-    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(
+        tmp_path,
+        "arrow_money",
+        verified_roundtrip=True,
+    )
     vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money", market="us_options_regular")
     out_dir = tmp_path / "readiness"
 

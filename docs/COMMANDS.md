@@ -3565,7 +3565,17 @@ counts, failed-check count, route-enable dispatch round-trip failed-check
 count from the round-trip config when present, the round-trip shadow
 broker-readiness aggregate, the broker-readiness-carried shadow broker
 aggregate, plus the nested route dispatch round-trip proof
-batch and quality counters. If the round-trip config carries shadow-broker
+batch and quality counters. Filesystem-backed round-trip evidence is reopened
+through the shared terminal lineage verifier: all six final artifacts must match
+their current manifest, remain non-authorizing, agree on their retained
+contract, and bind recursively to the current acknowledgement, send, dispatch,
+route-enable, cutover, runtime-session, and scale-up sources. A loose summary
+and config pair, a stale manifest, or a freshly re-manifested but source-detached
+bundle fails closed. The compact terminal gate and direct lead-lag identity are
+retained in `broker_readiness_items.csv`, `broker_readiness_summary.csv`,
+`broker_readiness_config.json`, the runbook, and manifest metadata; all final
+artifacts and transitive dependencies are fingerprinted again as readiness
+inputs. If the round-trip config carries shadow-broker
 broker-vendor wrapper aggregates, broker readiness revalidates coverage and
 retains them as `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and as
