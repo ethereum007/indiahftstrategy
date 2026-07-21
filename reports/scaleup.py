@@ -9,6 +9,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from reports.evidence import (
+    LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION,
+    LEADLAG_EDGE_LINEAGE_RUN_TYPES,
+)
 from reports.manifest import (
     file_sha256,
     manifest_dependency_paths,
@@ -41,6 +45,30 @@ RESEARCH_FAMILY_REQUIRED_ARTIFACTS = (
     "research_family_launch_attempt_census.csv",
     "research_family_config.json",
     "research_family_runbook.md",
+)
+LEADLAG_LINEAGE_BOOLEAN_FIELDS = ("leadlag_edge_lineage_ready",)
+LEADLAG_LINEAGE_INTEGER_FIELDS = (
+    "leadlag_lineage_bound_stages",
+    "leadlag_lineage_required_stages",
+    "leadlag_lineage_selected_stage_count",
+)
+LEADLAG_LINEAGE_TEXT_FIELDS = (
+    "leadlag_lineage_selected_run_dirs",
+    "leadlag_measurement_manifest_sha256",
+    "leadlag_edge_candidate_manifest_sha256",
+    "leadlag_edge_lineage_contract_version",
+    "leadlag_edge_lineage_contract_sha256",
+)
+LEADLAG_LINEAGE_NUMERIC_FIELDS = (
+    "leadlag_edge_latency_budget_ns",
+    "leadlag_total_replay_latency_ns",
+    "leadlag_edge_latency_headroom_ns",
+)
+LEADLAG_LINEAGE_FIELDS = (
+    *LEADLAG_LINEAGE_BOOLEAN_FIELDS,
+    *LEADLAG_LINEAGE_INTEGER_FIELDS,
+    *LEADLAG_LINEAGE_TEXT_FIELDS,
+    *LEADLAG_LINEAGE_NUMERIC_FIELDS,
 )
 
 
@@ -720,6 +748,17 @@ def write_scaleup_plan(
             ),
             "strategy_portfolio_manifest_sha256": str(
                 strategy_portfolio_provenance.get("manifest_sha256", "")
+            ),
+            "strategy_portfolio_leadlag_edge_lineage_required": bool(
+                report.summary.iloc[0].get(
+                    "strategy_portfolio_leadlag_edge_lineage_required",
+                    False,
+                )
+            ),
+            **_leadlag_lineage_fields(
+                report.summary.iloc[0],
+                source_prefix="strategy_portfolio_",
+                target_prefix="strategy_portfolio_",
             ),
             "research_family_bound": bool(
                 strategy_portfolio_provenance.get(
@@ -1434,6 +1473,20 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         allocation_available = _to_bool(strategy_portfolio.get("selected_allocation_provided", False))
         allocation_eligible = _to_bool(strategy_portfolio.get("selected_eligible", False))
         allocation_notional = _number(strategy_portfolio, "selected_allocation_notional", fallback=0.0)
+        if _to_bool(
+            strategy_portfolio.get("leadlag_edge_lineage_required", False)
+        ):
+            lineage_ready = _leadlag_lineage_ready(strategy_portfolio)
+            checks.append(
+                _check(
+                    "strategy_portfolio_leadlag_edge_lineage_ready",
+                    lineage_ready,
+                    "is",
+                    True,
+                    lineage_ready,
+                    "canonical lead-lag allocation lacks complete measured-edge lineage",
+                )
+            )
         checks.extend(
             [
                 _check(
@@ -2336,6 +2389,16 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "strategy_portfolio_research_family_manifest_sha256": str(
                     strategy_portfolio.get("research_family_manifest_sha256", "")
                 ),
+                "strategy_portfolio_leadlag_edge_lineage_required": _to_bool(
+                    strategy_portfolio.get(
+                        "leadlag_edge_lineage_required",
+                        False,
+                    )
+                ),
+                **_leadlag_lineage_fields(
+                    strategy_portfolio,
+                    target_prefix="strategy_portfolio_",
+                ),
                 "strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
                 "strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
                 "strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
@@ -3200,6 +3263,16 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                         "strategy_portfolio_research_family_manifest_sha256"
                     ]
                 ),
+                "strategy_portfolio_leadlag_edge_lineage_required": _to_bool(
+                    plan_row[
+                        "strategy_portfolio_leadlag_edge_lineage_required"
+                    ]
+                ),
+                **_leadlag_lineage_fields(
+                    plan_row,
+                    source_prefix="strategy_portfolio_",
+                    target_prefix="strategy_portfolio_",
+                ),
                 "strategy_portfolio_deployment_mode": str(plan_row["strategy_portfolio_deployment_mode"]),
                 "strategy_portfolio_allocation_mode": str(plan_row["strategy_portfolio_allocation_mode"]),
                 "strategy_portfolio_capital_currency": str(plan_row["strategy_portfolio_capital_currency"]),
@@ -3813,6 +3886,13 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                     ]
                 ),
             },
+            "leadlag_edge_lineage_required": _to_bool(
+                plan_row["strategy_portfolio_leadlag_edge_lineage_required"]
+            ),
+            **_leadlag_lineage_fields(
+                plan_row,
+                source_prefix="strategy_portfolio_",
+            ),
             "deployment_mode": str(plan_row["strategy_portfolio_deployment_mode"]),
             "allocation_mode": str(plan_row["strategy_portfolio_allocation_mode"]),
             "capital_currency": str(plan_row["strategy_portfolio_capital_currency"]),
@@ -8573,6 +8653,7 @@ def load_strategy_portfolio_provenance(
                     config.get("research_family_manifest_sha256", ""),
                 )
             ),
+            **_leadlag_lineage_fields(summary_row),
         }
     )
     family_ok = bool(
@@ -8648,6 +8729,39 @@ def _strategy_portfolio_contract_errors(
                 config_summary.get(field, "")
             ):
                 errors.append(f"portfolio_summary_config_{field}_mismatch")
+    active_leadlag_rows = allocations.loc[
+        allocations.apply(_active_leadlag_allocation, axis=1)
+    ] if not allocations.empty else allocations
+    if not active_leadlag_rows.empty:
+        lineage_reference = _leadlag_lineage_fields(summary_row)
+        if not _leadlag_lineage_ready(lineage_reference):
+            errors.append("portfolio_leadlag_edge_lineage_not_ready:summary")
+        for source, row in (
+            ("config_summary", config_summary),
+            ("config", config),
+            ("manifest", extra),
+        ):
+            for field in LEADLAG_LINEAGE_FIELDS:
+                if not _leadlag_lineage_field_matches(
+                    field,
+                    row.get(field, ""),
+                    lineage_reference[field],
+                ):
+                    errors.append(
+                        f"portfolio_{field}_mismatch:{source}"
+                    )
+        scorecard_value = config.get("scorecard_provenance", {})
+        scorecard = scorecard_value if isinstance(scorecard_value, dict) else {}
+        if (
+            _to_bool(scorecard.get("manifest_required", False))
+            or _to_bool(scorecard.get("manifest_provided", False))
+        ):
+            errors.extend(
+                _strategy_portfolio_scorecard_lineage_errors(
+                    scorecard,
+                    lineage_reference,
+                )
+            )
     config_allocations_value = config.get("allocations", [])
     config_allocations = config_allocations_value if isinstance(config_allocations_value, list) else []
     records = allocations.to_dict(orient="records")
@@ -8673,6 +8787,7 @@ def _strategy_portfolio_contract_errors(
                 "research_family_registration_id",
                 "research_family_manifest_sha256",
                 "research_family_matched_study_label",
+                *LEADLAG_LINEAGE_FIELDS,
                 "authorizes_submission",
             ):
                 if field in row or field in config_row:
@@ -8680,6 +8795,20 @@ def _strategy_portfolio_contract_errors(
                         config_row.get(field, "")
                     ):
                         errors.append(f"portfolio_allocation_{field}_mismatch:{index}")
+            if _active_leadlag_allocation(pd.Series(row)):
+                if not _leadlag_lineage_ready(row):
+                    errors.append(
+                        f"portfolio_leadlag_edge_lineage_not_ready:allocation:{index}"
+                    )
+                for field in LEADLAG_LINEAGE_FIELDS:
+                    if not _leadlag_lineage_field_matches(
+                        field,
+                        row.get(field, ""),
+                        lineage_reference[field],
+                    ):
+                        errors.append(
+                            f"portfolio_{field}_mismatch:allocation:{index}"
+                        )
     positive = int(
         allocations.get(
             "allocation_weight",
@@ -8700,6 +8829,92 @@ def _strategy_portfolio_contract_errors(
     if not _strategy_portfolio_non_authorizing(summary, allocations, config, extra):
         errors.append("portfolio_authorizes_submission")
     return sorted(set(errors))
+
+
+def _strategy_portfolio_scorecard_lineage_errors(
+    scorecard: dict[str, Any],
+    lineage_reference: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    raw_manifest_path = _text(scorecard.get("manifest_path", ""))
+    manifest_path = Path(raw_manifest_path) if raw_manifest_path else Path()
+    if not raw_manifest_path or not manifest_path.is_file():
+        return ["portfolio_nested_scorecard_manifest_missing"]
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="strategy_scorecard",
+        required_artifacts=STRATEGY_SCORECARD_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    if not integrity.passed:
+        errors.append(
+            "portfolio_nested_scorecard_manifest_not_current:"
+            f"{integrity.error}"
+        )
+    if file_sha256(manifest_path) != _text(scorecard.get("manifest_sha256", "")):
+        errors.append("portfolio_nested_scorecard_manifest_sha256_mismatch")
+
+    root = manifest_path.parent
+    ranked = _read_optional_csv(root / "strategy_scorecard.csv")
+    summary = _read_optional_csv(root / "strategy_scorecard_summary.csv")
+    config = _read_json_object(root / "strategy_scorecard_next_actions.json")
+    manifest = _read_json_object(manifest_path)
+    extra_value = manifest.get("extra", {})
+    extra = extra_value if isinstance(extra_value, dict) else {}
+    ranked_rows = ranked.loc[
+        ranked.get(
+            "profile",
+            pd.Series("", index=ranked.index),
+        ).map(_identity_key)
+        == "leadlag"
+    ] if not ranked.empty else ranked
+    if ranked_rows.empty:
+        errors.append("portfolio_nested_scorecard_leadlag_row_missing")
+    else:
+        ranked_row = ranked_rows.iloc[0]
+        if not _leadlag_lineage_ready(ranked_row):
+            errors.append("portfolio_nested_scorecard_leadlag_lineage_not_ready")
+        errors.extend(
+            _leadlag_lineage_mismatch_errors(
+                ranked_row,
+                lineage_reference,
+                source="nested_scorecard_ranked",
+            )
+        )
+    summary_row = (
+        summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    )
+    for source, row in (
+        ("nested_scorecard_summary", summary_row),
+        ("nested_scorecard_config", config),
+        ("nested_scorecard_manifest", extra),
+    ):
+        errors.extend(
+            _leadlag_lineage_mismatch_errors(
+                row,
+                lineage_reference,
+                source=source,
+            )
+        )
+    actions_value = config.get("next_actions", [])
+    actions = actions_value if isinstance(actions_value, list) else []
+    leadlag_actions = [
+        action
+        for action in actions
+        if isinstance(action, dict)
+        and _identity_key(action.get("profile", "")) == "leadlag"
+    ]
+    if not leadlag_actions:
+        errors.append("portfolio_nested_scorecard_leadlag_action_missing")
+    else:
+        errors.extend(
+            _leadlag_lineage_mismatch_errors(
+                leadlag_actions[0],
+                lineage_reference,
+                source="nested_scorecard_action",
+            )
+        )
+    return errors
 
 
 def _strategy_portfolio_family_contract_errors(
@@ -8997,6 +9212,158 @@ def _to_number(value: Any) -> float:
     return 0.0 if np.isnan(number) else number
 
 
+def _active_leadlag_allocation(row: pd.Series) -> bool:
+    return bool(
+        _identity_key(row.get("profile", "")) == "leadlag"
+        and (
+            _to_bool(row.get("eligible", False))
+            or _to_number(row.get("allocation_weight", 0.0)) > 0.0
+            or _to_number(row.get("allocation_notional", 0.0)) > 0.0
+        )
+    )
+
+
+def _leadlag_lineage_fields(
+    source: Any,
+    *,
+    source_prefix: str = "",
+    target_prefix: str = "",
+) -> dict[str, Any]:
+    getter = source.get if hasattr(source, "get") else lambda _key, default: default
+
+    def value(field: str, default: Any) -> Any:
+        return getter(f"{source_prefix}{field}", default)
+
+    fields: dict[str, Any] = {
+        "leadlag_edge_lineage_ready": _to_bool(
+            value("leadlag_edge_lineage_ready", False)
+        ),
+        "leadlag_lineage_bound_stages": _lineage_integer(
+            value("leadlag_lineage_bound_stages", 0)
+        ),
+        "leadlag_lineage_required_stages": _lineage_integer(
+            value("leadlag_lineage_required_stages", 0)
+        ),
+        "leadlag_lineage_selected_stage_count": _lineage_integer(
+            value("leadlag_lineage_selected_stage_count", 0)
+        ),
+        "leadlag_lineage_selected_run_dirs": _text(
+            value("leadlag_lineage_selected_run_dirs", "")
+        ),
+        "leadlag_measurement_manifest_sha256": _text(
+            value("leadlag_measurement_manifest_sha256", "")
+        ),
+        "leadlag_edge_candidate_manifest_sha256": _text(
+            value("leadlag_edge_candidate_manifest_sha256", "")
+        ),
+        "leadlag_edge_lineage_contract_version": _text(
+            value("leadlag_edge_lineage_contract_version", "")
+        ),
+        "leadlag_edge_lineage_contract_sha256": _text(
+            value("leadlag_edge_lineage_contract_sha256", "")
+        ),
+        "leadlag_edge_latency_budget_ns": _to_number(
+            value("leadlag_edge_latency_budget_ns", 0.0)
+        ),
+        "leadlag_total_replay_latency_ns": _to_number(
+            value("leadlag_total_replay_latency_ns", 0.0)
+        ),
+        "leadlag_edge_latency_headroom_ns": _to_number(
+            value("leadlag_edge_latency_headroom_ns", 0.0)
+        ),
+    }
+    return {f"{target_prefix}{field}": value for field, value in fields.items()}
+
+
+def _lineage_integer(value: Any) -> int:
+    number = _to_number(value)
+    return int(number) if np.isfinite(number) else 0
+
+
+def _leadlag_lineage_ready(source: Any, *, prefix: str = "") -> bool:
+    fields = _leadlag_lineage_fields(source, source_prefix=prefix)
+    expected_stages = len(LEADLAG_EDGE_LINEAGE_RUN_TYPES)
+    run_dirs = [
+        item.strip()
+        for item in fields["leadlag_lineage_selected_run_dirs"].split(";")
+        if item.strip()
+    ]
+    budget = fields["leadlag_edge_latency_budget_ns"]
+    replay = fields["leadlag_total_replay_latency_ns"]
+    headroom = fields["leadlag_edge_latency_headroom_ns"]
+    return bool(
+        fields["leadlag_edge_lineage_ready"]
+        and fields["leadlag_lineage_bound_stages"] == expected_stages
+        and fields["leadlag_lineage_required_stages"] == expected_stages
+        and fields["leadlag_lineage_selected_stage_count"] == expected_stages
+        and len(run_dirs) == expected_stages
+        and len(set(run_dirs)) == expected_stages
+        and _valid_sha256(fields["leadlag_measurement_manifest_sha256"])
+        and _valid_sha256(fields["leadlag_edge_candidate_manifest_sha256"])
+        and fields["leadlag_edge_lineage_contract_version"]
+        == LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION
+        and _valid_sha256(fields["leadlag_edge_lineage_contract_sha256"])
+        and np.isfinite(budget)
+        and np.isfinite(replay)
+        and np.isfinite(headroom)
+        and budget > 0.0
+        and replay >= 0.0
+        and headroom >= 0.0
+        and np.isclose(
+            budget - replay,
+            headroom,
+            rtol=0.0,
+            atol=1e-9,
+        )
+    )
+
+
+def _leadlag_lineage_field_matches(
+    field: str,
+    actual: Any,
+    expected: Any,
+) -> bool:
+    if field in LEADLAG_LINEAGE_BOOLEAN_FIELDS:
+        return _to_bool(actual) == _to_bool(expected)
+    if field in LEADLAG_LINEAGE_INTEGER_FIELDS:
+        return _lineage_integer(actual) == _lineage_integer(expected)
+    if field in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+        return bool(
+            np.isclose(
+                _to_number(actual),
+                _to_number(expected),
+                rtol=0.0,
+                atol=1e-9,
+            )
+        )
+    return _text(actual) == _text(expected)
+
+
+def _leadlag_lineage_mismatch_errors(
+    row: Any,
+    expected: dict[str, Any],
+    *,
+    source: str | None = None,
+) -> list[str]:
+    label = source or "unknown"
+    return [
+        f"portfolio_{field}_mismatch:{label}"
+        for field in LEADLAG_LINEAGE_FIELDS
+        if not _leadlag_lineage_field_matches(
+            field,
+            row.get(field, "") if hasattr(row, "get") else "",
+            expected[field],
+        )
+    ]
+
+
+def _valid_sha256(value: Any) -> bool:
+    text = _text(value).strip().lower()
+    return len(text) == 64 and all(
+        character in "0123456789abcdef" for character in text
+    )
+
+
 def _strategy_portfolio_state(
     summary: pd.DataFrame,
     allocations: pd.DataFrame,
@@ -9038,17 +9405,40 @@ def _strategy_portfolio_state(
         not _to_bool(proof.get("manifest_required", False))
         or _to_bool(proof.get("gate_passed", False))
     )
+    selected_profile = (
+        _identity_key(selected.get("profile", "")) if not selected.empty else ""
+    )
+    leadlag_lineage_required = selected_profile == "leadlag"
+    leadlag_lineage = _leadlag_lineage_fields(
+        selected if not selected.empty else summary_row
+    )
+    leadlag_lineage_ready = bool(
+        leadlag_lineage_required and _leadlag_lineage_ready(selected)
+    )
+    if leadlag_lineage_required:
+        leadlag_lineage["leadlag_edge_lineage_ready"] = leadlag_lineage_ready
+    leadlag_lineage_gate = bool(
+        not leadlag_lineage_required or leadlag_lineage_ready
+    )
     selected_source_eligible = _to_bool(selected.get("eligible", False)) if not selected.empty else False
     selected_source_notional = (
         _number(selected, "allocation_notional", fallback=0.0)
         if not selected.empty
         else 0.0
     )
-    selected_eligible = bool(selected_source_eligible and provenance_gate)
-    selected_notional = selected_source_notional if provenance_gate else 0.0
+    selected_eligible = bool(
+        selected_source_eligible and provenance_gate and leadlag_lineage_gate
+    )
+    selected_notional = (
+        selected_source_notional
+        if provenance_gate and leadlag_lineage_gate
+        else 0.0
+    )
     selected_reason = str(selected.get("eligibility_reason", "")) if not selected.empty else ""
     if not provenance_gate and not selected.empty:
         selected_reason = "strategy_portfolio_provenance_not_current"
+    elif leadlag_lineage_required and not leadlag_lineage_ready:
+        selected_reason = "strategy_portfolio_leadlag_edge_lineage_not_ready"
     return pd.Series(
         {
             "provided": summary is not None and not summary.empty,
@@ -9098,6 +9488,8 @@ def _strategy_portfolio_state(
             "research_family_manifest_sha256": str(
                 proof.get("research_family_manifest_sha256", "")
             ),
+            "leadlag_edge_lineage_required": leadlag_lineage_required,
+            **leadlag_lineage,
             "deployment_mode": str(summary_row.get("deployment_mode", "")) if not summary_row.empty else "",
             "allocation_mode": str(summary_row.get("allocation_mode", "")) if not summary_row.empty else "",
             "capital_currency": str(summary_row.get("capital_currency", "")) if not summary_row.empty else "",

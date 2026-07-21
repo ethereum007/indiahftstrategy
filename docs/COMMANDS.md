@@ -3996,6 +3996,17 @@ also carries the portfolio-level strategy/market diversity requirements,
 allocated strategy/market counts, top concentration names, and maximum
 strategy/market allocation weights so later runtime and broker gates can audit
 why the selected allocation was allowed without reopening the portfolio folder.
+For the exact canonical `leadlag` profile, scale-up independently requires the
+complete five-stage `leadlag_edge_lineage/v1` contract on the selected
+allocation. It reconciles every lineage field across the portfolio summary,
+config summary, root config, allocation rows, and manifest metadata; when a
+scorecard manifest was supplied, it also reopens the ranked scorecard, summary,
+JSON action, and scorecard manifest claims. A legacy status-only row, malformed
+latency identity, invalid SHA-256, or refreshed scorecard with a different
+contract identity makes the selected allocation ineligible, sets its usable
+notional to zero, and prevents the portfolio cap from being applied. Custom
+profile names remain outside this canonical contract unless they use the exact
+`leadlag` profile key.
 Any supplied strategy portfolio must now be a complete current
 `strategy_portfolio_allocation` artifact, even when
 `--require-strategy-portfolio` is omitted. Scale-up verifies the portfolio
@@ -4012,6 +4023,11 @@ fingerprints all portfolio artifacts plus the recursively flattened portfolio,
 scorecard, family, registration, robust-study, and source-data dependencies,
 so later nested drift invalidates the scale-up plan. Scale-up remains
 non-authorizing and cannot enable broker submission.
+The plan and summary expose the retained contract as
+`strategy_portfolio_leadlag_*` fields, the nested `strategy_portfolio` config
+keeps the original `leadlag_*` names plus
+`leadlag_edge_lineage_required`, and scale-up manifest metadata carries the
+same prefixed identity for downstream provenance review.
 If a launch-pipeline broker-readiness summary is thin but its
 `broker_readiness_config.json` retains
 `broker_dispatch_roundtrip_vendor_market_data_batch`, scale-up hydrates the

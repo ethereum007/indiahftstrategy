@@ -5,12 +5,59 @@ import pandas as pd
 import pytest
 
 from hft_cli import main
-from reports.manifest import verify_experiment_manifest, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
 
 
 def path_tail(value):
     return str(value).replace("\\", "/")
+
+
+def leadlag_lineage(*, ready=True):
+    if not ready:
+        return {
+            "leadlag_edge_lineage_ready": False,
+            "leadlag_lineage_bound_stages": 0,
+            "leadlag_lineage_required_stages": 0,
+            "leadlag_lineage_selected_stage_count": 0,
+            "leadlag_lineage_selected_run_dirs": "",
+            "leadlag_measurement_manifest_sha256": "",
+            "leadlag_edge_candidate_manifest_sha256": "",
+            "leadlag_edge_latency_budget_ns": 0.0,
+            "leadlag_total_replay_latency_ns": 0.0,
+            "leadlag_edge_latency_headroom_ns": 0.0,
+            "leadlag_edge_lineage_contract_version": "",
+            "leadlag_edge_lineage_contract_sha256": "",
+        }
+    return {
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "runs/leadlag_edge_audit",
+                "runs/leadlag_replay_walkforward",
+                "runs/promotion_report",
+                "runs/leadlag_order_plan",
+                "runs/leadlag_launch_pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "a" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "b" * 64,
+        "leadlag_edge_latency_budget_ns": 100_000.0,
+        "leadlag_total_replay_latency_ns": 50_000.0,
+        "leadlag_edge_latency_headroom_ns": 50_000.0,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "c" * 64,
+    }
+
+
+LEADLAG_LINEAGE_FIELDS = tuple(leadlag_lineage(ready=False))
 
 
 def target_application_lineage_sha256(datasets):
@@ -1512,6 +1559,7 @@ def strategy_portfolio_summary(ready=True):
                 "failed_check_names": "" if ready else "eligible_profile_count",
                 "first_failed_reason": "" if ready else "at least one strategy profile must pass readiness filters",
                 "recommendation": "paper_shadow_allocation_ready" if ready else "complete_strategy_scorecard_evidence",
+                **leadlag_lineage(ready=ready),
             }
         ]
     )
@@ -1553,6 +1601,9 @@ def strategy_portfolio_allocations(
                 "next_gate": "plan-scaleup",
                 "next_gate_help_command": "python -m hft_cli plan-scaleup --help",
                 "recommendation": "ready_for_shadow_scaleup_review",
+                **leadlag_lineage(
+                    ready=str(profile).strip().lower() == "leadlag"
+                ),
             }
         ]
     )
@@ -1688,6 +1739,7 @@ def write_strategy_portfolio(root, *, ready=True, allocation_notional=1200.0):
                 "allocation_count": int(
                     (allocations["allocation_weight"] > 0.0).sum()
                 ),
+                **leadlag_lineage(ready=ready),
                 "allocations": allocation_records,
                 "authorizes_submission": False,
             }
@@ -1699,7 +1751,15 @@ def write_strategy_portfolio(root, *, ready=True, allocation_notional=1200.0):
         encoding="utf-8",
     )
     source = portfolio / "strategy_scorecard_source.csv"
-    pd.DataFrame([{"profile": "leadlag", "ready": ready}]).to_csv(
+    pd.DataFrame(
+        [
+            {
+                "profile": "leadlag",
+                "ready": ready,
+                **leadlag_lineage(ready=ready),
+            }
+        ]
+    ).to_csv(
         source,
         index=False,
     )
@@ -1710,10 +1770,132 @@ def write_strategy_portfolio(root, *, ready=True, allocation_notional=1200.0):
         extra={
             "ready": ready,
             "research_family_bound": False,
+            **leadlag_lineage(ready=ready),
             "authorizes_submission": False,
         },
     )
     return portfolio
+
+
+def write_lineage_scorecard(root, lineage):
+    root.mkdir(parents=True, exist_ok=True)
+    ranked = {
+        "profile": "leadlag",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "ready": True,
+        **lineage,
+        "authorizes_submission": False,
+    }
+    pd.DataFrame([ranked]).to_csv(
+        root / "strategy_scorecard.csv",
+        index=False,
+    )
+    pd.DataFrame([{"profile": "leadlag", "gap": ""}]).to_csv(
+        root / "strategy_scorecard_gaps.csv",
+        index=False,
+    )
+    pd.DataFrame([{**lineage, "authorizes_submission": False}]).to_csv(
+        root / "strategy_scorecard_summary.csv",
+        index=False,
+    )
+    pd.DataFrame([{"profile": "leadlag", "queue_status": "ready"}]).to_csv(
+        root / "strategy_scorecard_action_queue.csv",
+        index=False,
+    )
+    (root / "strategy_scorecard_next_actions.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                **lineage,
+                "next_actions": [ranked],
+                "authorizes_submission": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "strategy_scorecard_runbook.md").write_text(
+        "# Strategy Scorecard\n",
+        encoding="utf-8",
+    )
+    source = root / "catalog.csv"
+    pd.DataFrame([{"run_type": "strategy_evidence"}]).to_csv(
+        source,
+        index=False,
+    )
+    write_experiment_manifest(
+        root,
+        run_type="strategy_scorecard",
+        inputs={"catalog": source},
+        extra={
+            "ready": True,
+            **lineage,
+            "authorizes_submission": False,
+        },
+    )
+    return root
+
+
+def bind_portfolio_to_scorecard(portfolio, scorecard):
+    manifest_path = scorecard / "manifest.json"
+    manifest_sha = file_sha256(manifest_path)
+    proof = {
+        "scorecard_manifest_required": True,
+        "scorecard_manifest_current": True,
+        "scorecard_manifest_sha256": manifest_sha,
+        "scorecard_contract_consistent": True,
+        "scorecard_non_authorizing": True,
+        "scorecard_provenance_gate_passed": True,
+    }
+    summary_path = portfolio / "strategy_portfolio_summary.csv"
+    summary = pd.read_csv(summary_path)
+    for field, value in proof.items():
+        summary[field] = value
+    summary.to_csv(summary_path, index=False)
+    allocations_path = portfolio / "strategy_portfolio_allocations.csv"
+    allocations = pd.read_csv(allocations_path)
+    allocations["scorecard_manifest_sha256"] = manifest_sha
+    allocations.to_csv(allocations_path, index=False)
+    config_path = portfolio / "strategy_portfolio_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config.update(proof)
+    config["summary"].update(proof)
+    for row in config["allocations"]:
+        row["scorecard_manifest_sha256"] = manifest_sha
+    config["scorecard_provenance"] = {
+        "manifest_required": True,
+        "manifest_provided": True,
+        "manifest_current": True,
+        "manifest_path": str(manifest_path.resolve()),
+        "manifest_sha256": manifest_sha,
+        "contract_consistent": True,
+        "non_authorizing": True,
+        "gate_passed": True,
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    inputs = {
+        "strategy_scorecard": scorecard / "strategy_scorecard.csv",
+        "strategy_scorecard_manifest": manifest_path,
+    }
+    for artifact in (
+        "strategy_scorecard_gaps.csv",
+        "strategy_scorecard_summary.csv",
+        "strategy_scorecard_action_queue.csv",
+        "strategy_scorecard_next_actions.json",
+        "strategy_scorecard_runbook.md",
+    ):
+        inputs[f"strategy_scorecard_artifact:{artifact}"] = scorecard / artifact
+    write_experiment_manifest(
+        portfolio,
+        run_type="strategy_portfolio_allocation",
+        inputs=inputs,
+        extra={
+            "ready": True,
+            "research_family_bound": False,
+            **leadlag_lineage(),
+            "authorizes_submission": False,
+        },
+    )
 
 
 def write_settlement_pipeline(root, *, launch_ready=True, broker_ready=True):
@@ -1954,6 +2136,13 @@ def test_scaleup_plan_caps_notional_with_strategy_portfolio_allocation():
     assert report.summary.iloc[0]["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
     assert report.summary.iloc[0]["strategy_portfolio_max_strategy_allocation_weight"] == 0.45
     assert report.summary.iloc[0]["strategy_portfolio_max_market_allocation_weight"] == 0.90
+    assert report.summary.iloc[0]["strategy_portfolio_leadlag_edge_lineage_ready"]
+    assert (
+        report.summary.iloc[0][
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+        == "c" * 64
+    )
     assert report.config["strategy_portfolio"]["required"]
     assert report.config["strategy_portfolio"]["selected_strategy"] == "lead_lag_taker"
     assert report.config["strategy_portfolio"]["selected_market"] == "india_nse_index_derivatives"
@@ -1968,9 +2157,46 @@ def test_scaleup_plan_caps_notional_with_strategy_portfolio_allocation():
     assert report.config["strategy_portfolio"]["top_market_by_weight"] == "india_nse_index_derivatives"
     assert report.config["strategy_portfolio"]["max_strategy_allocation_weight"] == 0.45
     assert report.config["strategy_portfolio"]["max_market_allocation_weight"] == 0.90
+    assert report.config["strategy_portfolio"]["leadlag_edge_lineage_required"]
+    assert report.config["strategy_portfolio"]["leadlag_edge_lineage_ready"]
+    assert (
+        report.config["strategy_portfolio"][
+            "leadlag_edge_lineage_contract_version"
+        ]
+        == "leadlag_edge_lineage/v1"
+    )
     assert report.config["strategy_portfolio"]["notional_cap_applied"]
     assert report.config["limits"]["pre_portfolio_max_notional_per_session"] == 3000.0
     assert report.config["limits"]["max_notional_per_session"] == 1200.0
+
+
+def test_scaleup_plan_blocks_legacy_leadlag_portfolio_without_edge_lineage():
+    allocations = strategy_portfolio_allocations().drop(
+        columns=list(LEADLAG_LINEAGE_FIELDS)
+    )
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        strategy_portfolio_summary=strategy_portfolio_summary(True),
+        strategy_portfolio_allocations=allocations,
+        thresholds=ScaleUpThresholds(
+            max_scale_multiplier=2.0,
+            require_strategy_portfolio=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert "strategy_portfolio_leadlag_edge_lineage_ready" in failed
+    assert not report.plan.loc[0, "strategy_portfolio_selected_eligible"]
+    assert (
+        report.plan.loc[0, "strategy_portfolio_selected_eligibility_reason"]
+        == "strategy_portfolio_leadlag_edge_lineage_not_ready"
+    )
+    assert report.plan.loc[0, "strategy_portfolio_selected_allocation_notional"] == 0.0
+    assert not report.plan.loc[0, "strategy_portfolio_notional_cap_applied"]
 
 
 def test_scaleup_plan_blocks_required_missing_strategy_portfolio():
@@ -6162,6 +6388,13 @@ def test_write_scaleup_plan_carries_strategy_portfolio_inputs(tmp_path):
     assert config["strategy_portfolio"]["dependency_count"] == 1
     assert config["strategy_portfolio"]["selected_profile"] == "leadlag"
     assert config["strategy_portfolio"]["selected_allocation_notional"] == 1200.0
+    assert config["strategy_portfolio"]["leadlag_edge_lineage_required"]
+    assert config["strategy_portfolio"]["leadlag_edge_lineage_ready"]
+    assert config["strategy_portfolio"]["leadlag_lineage_bound_stages"] == 5
+    assert (
+        config["strategy_portfolio"]["leadlag_edge_lineage_contract_sha256"]
+        == "c" * 64
+    )
     assert config["strategy_portfolio"]["notional_cap_applied"]
     assert config["limits"]["max_notional_per_session"] == 1200.0
     assert path_tail(manifest["inputs"]["strategy_portfolio"]["path"]).endswith(
@@ -6174,6 +6407,13 @@ def test_write_scaleup_plan_carries_strategy_portfolio_inputs(tmp_path):
         manifest["inputs"]["strategy_portfolio_manifest"]["path"]
     ).endswith("/strategy_portfolio/manifest.json")
     assert len(manifest["inputs"]["strategy_portfolio_dependencies"]) == 1
+    assert manifest["extra"]["strategy_portfolio_leadlag_edge_lineage_ready"]
+    assert (
+        manifest["extra"][
+            "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+        ]
+        == "c" * 64
+    )
     assert not config["authorizes_submission"]
     assert not manifest["extra"]["authorizes_submission"]
     assert verify_experiment_manifest(
@@ -6259,6 +6499,7 @@ def test_write_scaleup_blocks_current_but_detached_portfolio_config(tmp_path):
         extra={
             "ready": True,
             "research_family_bound": False,
+            **leadlag_lineage(),
             "authorizes_submission": False,
         },
     )
@@ -6280,6 +6521,115 @@ def test_write_scaleup_blocks_current_but_detached_portfolio_config(tmp_path):
     assert "portfolio_allocation_allocation_notional_mismatch:0" in report.config[
         "strategy_portfolio"
     ]["contract_error"]
+
+
+def test_write_scaleup_blocks_freshly_manifested_malformed_leadlag_lineage(
+    tmp_path,
+):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    malformed_sha = "not-a-sha256"
+    summary_path = portfolio / "strategy_portfolio_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary["leadlag_edge_lineage_contract_sha256"] = malformed_sha
+    summary.to_csv(summary_path, index=False)
+    allocations_path = portfolio / "strategy_portfolio_allocations.csv"
+    allocations = pd.read_csv(allocations_path)
+    allocations["leadlag_edge_lineage_contract_sha256"] = malformed_sha
+    allocations.to_csv(allocations_path, index=False)
+    config_path = portfolio / "strategy_portfolio_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["leadlag_edge_lineage_contract_sha256"] = malformed_sha
+    config["summary"]["leadlag_edge_lineage_contract_sha256"] = malformed_sha
+    for row in config["allocations"]:
+        row["leadlag_edge_lineage_contract_sha256"] = malformed_sha
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    malformed_lineage = leadlag_lineage()
+    malformed_lineage["leadlag_edge_lineage_contract_sha256"] = malformed_sha
+    write_experiment_manifest(
+        portfolio,
+        run_type="strategy_portfolio_allocation",
+        inputs={
+            "strategy_scorecard": portfolio / "strategy_scorecard_source.csv"
+        },
+        extra={
+            "ready": True,
+            "research_family_bound": False,
+            **malformed_lineage,
+            "authorizes_submission": False,
+        },
+    )
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    portfolio_config = report.config["strategy_portfolio"]
+    assert not report.ready
+    assert portfolio_config["manifest_current"]
+    assert not portfolio_config["contract_consistent"]
+    assert "strategy_portfolio_contract_consistent" in failed
+    assert "portfolio_leadlag_edge_lineage_not_ready:summary" in portfolio_config[
+        "contract_error"
+    ]
+    assert portfolio_config["selected_source_allocation_notional"] == 1200.0
+    assert portfolio_config["selected_allocation_notional"] == 0.0
+
+
+def test_write_scaleup_rejects_refreshed_nested_scorecard_lineage_drift(
+    tmp_path,
+):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    scorecard = write_lineage_scorecard(
+        tmp_path / "strategy_scorecard",
+        leadlag_lineage(),
+    )
+    bind_portfolio_to_scorecard(portfolio, scorecard)
+
+    accepted = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "accepted_scaleup",
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    assert accepted.ready
+
+    drifted_lineage = leadlag_lineage()
+    drifted_lineage["leadlag_edge_lineage_contract_sha256"] = "d" * 64
+    write_lineage_scorecard(scorecard, drifted_lineage)
+    bind_portfolio_to_scorecard(portfolio, scorecard)
+    rejected = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "rejected_scaleup",
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    failed = set(rejected.checks.loc[~rejected.checks["passed"], "check"])
+    portfolio_config = rejected.config["strategy_portfolio"]
+    assert not rejected.ready
+    assert portfolio_config["manifest_current"]
+    assert not portfolio_config["contract_consistent"]
+    assert "strategy_portfolio_contract_consistent" in failed
+    assert (
+        "portfolio_leadlag_edge_lineage_contract_sha256_mismatch:"
+        "nested_scorecard_ranked"
+        in portfolio_config["contract_error"]
+    )
+    assert portfolio_config["selected_source_allocation_notional"] == 1200.0
+    assert portfolio_config["selected_allocation_notional"] == 0.0
 
 
 def test_write_scaleup_rejects_authorizing_portfolio_bundle(tmp_path):
@@ -6309,6 +6659,7 @@ def test_write_scaleup_rejects_authorizing_portfolio_bundle(tmp_path):
         extra={
             "ready": True,
             "research_family_bound": False,
+            **leadlag_lineage(),
             "authorizes_submission": True,
         },
     )

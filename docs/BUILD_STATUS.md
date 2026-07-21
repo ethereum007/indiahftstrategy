@@ -882,6 +882,12 @@
 - Controlled scale-up now also carries strategy portfolio concentration
   context, including distinct strategy/market counts and maximum aggregate
   strategy/market allocation weights, into summary/config handoffs.
+- Controlled scale-up now independently validates the exact canonical
+  `leadlag` allocation's complete five-stage measured-edge lineage. It
+  reconciles portfolio row/summary/config/manifest claims, reopens a supplied
+  scorecard manifest to bind the ranked row and JSON action to the same
+  contract, zeros unusable notional on legacy or drifted proof, and retains the
+  identity through scale-up plan, summary, config, and manifest metadata.
 - Runtime telemetry and guard reports now carry the selected strategy portfolio
   allocation context from `scaleup_config.json` and explicitly halt if session
   notional breaches the selected paper/shadow allocation notional.
@@ -6109,6 +6115,21 @@ boundary passes (`47 passed`). The broader portfolio/scorecard/family/manifest/
 catalog boundary passes (`116 passed`), and repository collection is healthy at
 `2383 tests`. All artifacts remain non-authorizing; the full repository suite
 was not rerun for this slice.
+
+Latest portfolio-to-scale-up lineage gate: controlled scale-up now requires a
+selected canonical `leadlag` allocation to reproduce the complete
+`leadlag_edge_lineage/v1` contract before its notional can cap the session. It
+reconciles the portfolio bundle, reopens any supplied scorecard manifest, and
+retains all five-stage hashes and latency identity fields through plan,
+summary, nested config, and manifest metadata. Legacy status-only rows,
+structurally malformed but freshly re-manifested portfolios, and refreshed
+scorecards carrying a different contract identity all fail closed with zero
+usable allocation notional. The complete scale-up suite passes (`150 passed`),
+the adjacent scorecard/portfolio/scale-up boundary passes (`186 passed`), and
+the broader runtime-telemetry/guard/session, cutover, route-enable, manifest,
+and catalog boundary passes (`548 passed`). Repository collection is healthy at
+`2386 tests`. All outputs remain non-authorizing; the full repository suite was
+not rerun for this slice.
 
 ## Next Build Targets
 
