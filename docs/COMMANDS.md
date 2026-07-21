@@ -4521,6 +4521,13 @@ the portfolio cap was applied. These telemetry fields now also include
 portfolio-level strategy/market diversity requirements, allocated
 strategy/market counts, top concentration names, and maximum aggregate
 strategy/market allocation weights.
+For the exact canonical `leadlag` profile, telemetry also requires and
+structurally validates the complete `leadlag_edge_lineage/v1` contract: five
+unique selected stage directories, measurement and edge-candidate manifest
+hashes, contract version/hash, and a consistent latency
+budget/replay/headroom equation. Missing or malformed proof blocks telemetry
+before guard evaluation. The validated fields are retained as
+`strategy_portfolio_leadlag_*` columns and in telemetry manifest metadata.
 Telemetry now additionally carries the current scale-up manifest SHA-256,
 contract and non-authorizing status, recursively verified dependency count,
 portfolio-manifest SHA-256, scorecard-manifest SHA-256, and registered
@@ -4592,6 +4599,12 @@ appears as an explicit `strategy_portfolio_session_notional` check in
 portfolio concentration fields carried by telemetry, so a halt packet or
 runtime session can explain the paper/shadow allocation context without
 reopening the scale-up folder.
+For canonical `leadlag`, the guard independently validates the lineage carried
+by both scale-up and telemetry, requires telemetry to preserve the explicit
+lineage marker and selected profile, and compares every contract field against
+the current scale-up copy. A missing field or a different otherwise-valid
+contract hash halts with a `runtime_strategy_portfolio_*` check; the reconciled
+identity is retained in guard metrics, summary/config, and manifest metadata.
 Before applying any limit, the guard independently re-verifies the current
 scale-up manifest, artifact contract, recursive inputs, and non-authorizing
 status. It then compares the scale-up manifest hash and, when applicable, the

@@ -7,6 +7,33 @@ from reports.manifest import write_experiment_manifest
 from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
 
 
+def leadlag_lineage(prefix=""):
+    fields = {
+        "leadlag_edge_lineage_required": True,
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "edge-audit",
+                "replay-walkforward",
+                "promotion",
+                "order-plan",
+                "launch-pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "1" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "2" * 64,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "3" * 64,
+        "leadlag_edge_latency_budget_ns": 5_000.0,
+        "leadlag_total_replay_latency_ns": 3_000.0,
+        "leadlag_edge_latency_headroom_ns": 2_000.0,
+    }
+    return {f"{prefix}{field}": value for field, value in fields.items()}
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
@@ -122,6 +149,7 @@ def scaleup_config(
             "selected_allocation_weight": 0.0012,
             "selected_allocation_notional": 1200.0,
             "notional_cap_applied": True,
+            **leadlag_lineage(),
         }
         config["limits"]["pre_portfolio_max_notional_per_session"] = 3000.0
         config["limits"]["max_notional_per_session"] = 1200.0
@@ -600,6 +628,8 @@ def test_runtime_guard_continues_with_required_strategy_portfolio_allocation():
             strategy_portfolio_selected_eligible=True,
             strategy_portfolio_selected_allocation_notional=1200.0,
             strategy_portfolio_notional_cap_applied=True,
+            strategy_portfolio_selected_profile="leadlag",
+            **leadlag_lineage("strategy_portfolio_"),
         ),
     )
 
@@ -617,6 +647,15 @@ def test_runtime_guard_continues_with_required_strategy_portfolio_allocation():
     assert summary["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
     assert report.config["strategy_portfolio"]["allocated_strategy_count"] == 2
     assert report.config["strategy_portfolio"]["max_strategy_allocation_weight"] == 0.45
+    assert bool(
+        summary["strategy_portfolio_leadlag_edge_lineage_matches_scaleup"]
+    )
+    assert summary["strategy_portfolio_leadlag_edge_lineage_contract_sha256"] == (
+        "3" * 64
+    )
+    assert report.config["strategy_portfolio"][
+        "leadlag_edge_lineage_contract_version"
+    ] == "leadlag_edge_lineage/v1"
     assert bool(summary["strategy_portfolio_notional_cap_applied"])
 
 
@@ -632,6 +671,8 @@ def test_runtime_guard_halts_when_strategy_portfolio_allocation_is_breached():
             strategy_portfolio_selected_eligible=True,
             strategy_portfolio_selected_allocation_notional=1200.0,
             strategy_portfolio_notional_cap_applied=True,
+            strategy_portfolio_selected_profile="leadlag",
+            **leadlag_lineage("strategy_portfolio_"),
         ),
     )
 
@@ -640,6 +681,64 @@ def test_runtime_guard_halts_when_strategy_portfolio_allocation_is_breached():
     assert "session_notional" in failed
     assert "strategy_portfolio_session_notional" in failed
     assert report.summary.iloc[0]["strategy_portfolio_selected_allocation_notional"] == 1200.0
+
+
+def test_runtime_guard_halts_when_telemetry_drops_required_leadlag_lineage():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_strategy_portfolio=True),
+        telemetry(
+            session_notional=1_000.0,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_profile="leadlag",
+            strategy_portfolio_selected_strategy="leadlag",
+            strategy_portfolio_selected_market="india_nse_index_derivatives",
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+            strategy_portfolio_notional_cap_applied=True,
+        ),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "runtime_strategy_portfolio_leadlag_edge_lineage_required",
+        "runtime_strategy_portfolio_leadlag_edge_lineage_ready",
+    } <= failed
+
+
+def test_runtime_guard_halts_when_leadlag_contract_hash_differs_from_scaleup():
+    runtime_lineage = leadlag_lineage("strategy_portfolio_")
+    runtime_lineage[
+        "strategy_portfolio_leadlag_edge_lineage_contract_sha256"
+    ] = "f" * 64
+    report = evaluate_runtime_guard(
+        scaleup_config(require_strategy_portfolio=True),
+        telemetry(
+            session_notional=1_000.0,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_profile="leadlag",
+            strategy_portfolio_selected_strategy="leadlag",
+            strategy_portfolio_selected_market="india_nse_index_derivatives",
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+            strategy_portfolio_notional_cap_applied=True,
+            **runtime_lineage,
+        ),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert (
+        "runtime_strategy_portfolio_leadlag_edge_lineage_contract_sha256_matches_scaleup"
+        in failed
+    )
+    assert not bool(
+        report.summary.iloc[0][
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+        ]
+    )
 
 
 def test_runtime_guard_halts_on_bad_strategy_portfolio_identity():

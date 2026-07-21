@@ -8,6 +8,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_FIELDS,
+    leadlag_lineage_field_matches,
+    leadlag_lineage_fields,
+    leadlag_lineage_ready,
+)
 from reports.manifest import write_experiment_manifest
 from reports.scaleup_runtime_provenance import (
     empty_scaleup_runtime_provenance,
@@ -176,6 +182,12 @@ def write_runtime_guard_report(
             "runtime_telemetry_lineage_matches_current": bool(
                 report.summary.iloc[0]["runtime_telemetry_lineage_matches_current"]
             ),
+            "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": bool(
+                report.summary.iloc[0].get(
+                    "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                    False,
+                )
+            ),
             "authorizes_submission": False,
         },
     )
@@ -203,6 +215,66 @@ def _metrics(
     strategy_portfolio = scaleup_config.get("strategy_portfolio", {}) or {}
     if not isinstance(strategy_portfolio, dict):
         strategy_portfolio = {}
+    scaleup_strategy_portfolio_profile = str(
+        strategy_portfolio.get("selected_profile", "")
+    )
+    scaleup_strategy_portfolio_profile_key = _identity_key(
+        scaleup_strategy_portfolio_profile
+    )
+    scaleup_strategy_portfolio_leadlag_required = bool(
+        _bool_from(strategy_portfolio, "leadlag_edge_lineage_required")
+        or scaleup_strategy_portfolio_profile_key == "leadlag"
+    )
+    scaleup_strategy_portfolio_leadlag_lineage = leadlag_lineage_fields(
+        strategy_portfolio,
+        target_prefix="scaleup_strategy_portfolio_",
+    )
+    runtime_strategy_portfolio_profile = str(
+        _value(latest, "strategy_portfolio_selected_profile", "")
+    )
+    runtime_strategy_portfolio_profile_key = _identity_key(
+        runtime_strategy_portfolio_profile
+    )
+    runtime_strategy_portfolio_leadlag_required = _bool_value(
+        latest,
+        "strategy_portfolio_leadlag_edge_lineage_required",
+        fallback=False,
+    )
+    runtime_strategy_portfolio_leadlag_lineage = leadlag_lineage_fields(
+        latest,
+        source_prefix="strategy_portfolio_",
+        target_prefix="runtime_strategy_portfolio_",
+    )
+    scaleup_strategy_portfolio_leadlag_ready = leadlag_lineage_ready(
+        strategy_portfolio
+    )
+    runtime_strategy_portfolio_leadlag_ready = leadlag_lineage_ready(
+        latest,
+        prefix="strategy_portfolio_",
+    )
+    runtime_strategy_portfolio_leadlag_matches_scaleup = bool(
+        not scaleup_strategy_portfolio_leadlag_required
+        or (
+            runtime_strategy_portfolio_leadlag_required
+            and scaleup_strategy_portfolio_profile_key == "leadlag"
+            and runtime_strategy_portfolio_profile_key
+            == scaleup_strategy_portfolio_profile_key
+            and scaleup_strategy_portfolio_leadlag_ready
+            and runtime_strategy_portfolio_leadlag_ready
+            and all(
+                leadlag_lineage_field_matches(
+                    field,
+                    runtime_strategy_portfolio_leadlag_lineage[
+                        f"runtime_strategy_portfolio_{field}"
+                    ],
+                    scaleup_strategy_portfolio_leadlag_lineage[
+                        f"scaleup_strategy_portfolio_{field}"
+                    ],
+                )
+                for field in LEADLAG_LINEAGE_FIELDS
+            )
+        )
+    )
     broker_resume_gate = broker_readiness.get("resume_gate", {}) or {}
     if not isinstance(broker_resume_gate, dict):
         broker_resume_gate = {}
@@ -241,6 +313,10 @@ def _metrics(
                 "scaleup_strategy_portfolio_required": _bool_from(strategy_portfolio, "required"),
                 "scaleup_strategy_portfolio_provided": _bool_from(strategy_portfolio, "provided"),
                 "scaleup_strategy_portfolio_ready": _bool_from(strategy_portfolio, "ready"),
+                "scaleup_strategy_portfolio_leadlag_edge_lineage_required": (
+                    scaleup_strategy_portfolio_leadlag_required
+                ),
+                **scaleup_strategy_portfolio_leadlag_lineage,
                 "scaleup_strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
                 "scaleup_strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
                 "scaleup_strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
@@ -310,6 +386,14 @@ def _metrics(
                     latest,
                     "strategy_portfolio_ready",
                     fallback=_bool_from(strategy_portfolio, "ready"),
+                ),
+                "runtime_strategy_portfolio_selected_profile": runtime_strategy_portfolio_profile,
+                "runtime_strategy_portfolio_leadlag_edge_lineage_required": (
+                    runtime_strategy_portfolio_leadlag_required
+                ),
+                **runtime_strategy_portfolio_leadlag_lineage,
+                "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup": (
+                    runtime_strategy_portfolio_leadlag_matches_scaleup
                 ),
                 "runtime_strategy_portfolio_selected_strategy": _strategy_key(
                     _value(
@@ -860,6 +944,83 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 ),
             ]
         )
+        if bool(
+            row["scaleup_strategy_portfolio_leadlag_edge_lineage_required"]
+        ):
+            scaleup_lineage_ready = leadlag_lineage_ready(
+                row,
+                prefix="scaleup_strategy_portfolio_",
+            )
+            runtime_lineage_required = bool(
+                row["runtime_strategy_portfolio_leadlag_edge_lineage_required"]
+            )
+            runtime_lineage_ready = leadlag_lineage_ready(
+                row,
+                prefix="runtime_strategy_portfolio_",
+            )
+            profile_matches = bool(
+                row["runtime_strategy_portfolio_selected_profile"]
+                and _identity_key(
+                    row["runtime_strategy_portfolio_selected_profile"]
+                )
+                == _identity_key(
+                    row["scaleup_strategy_portfolio_selected_profile"]
+                )
+            )
+            checks.extend(
+                [
+                    _check(
+                        "scaleup_strategy_portfolio_leadlag_edge_lineage_ready",
+                        scaleup_lineage_ready,
+                        "is",
+                        True,
+                        scaleup_lineage_ready,
+                        "scale-up lead-lag allocation is missing its complete measured-edge lineage",
+                    ),
+                    _check(
+                        "runtime_strategy_portfolio_leadlag_edge_lineage_required",
+                        runtime_lineage_required,
+                        "is",
+                        True,
+                        runtime_lineage_required,
+                        "runtime telemetry did not carry the required lead-lag lineage marker",
+                    ),
+                    _check(
+                        "runtime_strategy_portfolio_selected_profile_matches_scaleup",
+                        row["runtime_strategy_portfolio_selected_profile"],
+                        "==",
+                        row["scaleup_strategy_portfolio_selected_profile"],
+                        profile_matches,
+                        "runtime telemetry lead-lag profile differs from current scale-up",
+                    ),
+                    _check(
+                        "runtime_strategy_portfolio_leadlag_edge_lineage_ready",
+                        runtime_lineage_ready,
+                        "is",
+                        True,
+                        runtime_lineage_ready,
+                        "runtime telemetry lost or malformed the lead-lag measured-edge lineage",
+                    ),
+                ]
+            )
+            for field in LEADLAG_LINEAGE_FIELDS:
+                actual = row[f"runtime_strategy_portfolio_{field}"]
+                expected = row[f"scaleup_strategy_portfolio_{field}"]
+                field_matches = leadlag_lineage_field_matches(
+                    field,
+                    actual,
+                    expected,
+                )
+                checks.append(
+                    _check(
+                        f"runtime_strategy_portfolio_{field}_matches_scaleup",
+                        actual,
+                        "==",
+                        expected,
+                        field_matches,
+                        f"runtime telemetry {field} differs from current scale-up",
+                    )
+                )
     for value_column, threshold_column in (
         ("lifecycle_orders", "max_lifecycle_orders"),
         ("replace_orders", "max_replace_orders"),
@@ -1450,6 +1611,25 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_required": bool(row["scaleup_strategy_portfolio_required"]),
                 "strategy_portfolio_provided": bool(row["runtime_strategy_portfolio_provided"]),
                 "strategy_portfolio_ready": bool(row["runtime_strategy_portfolio_ready"]),
+                "strategy_portfolio_selected_profile": row[
+                    "runtime_strategy_portfolio_selected_profile"
+                ],
+                "strategy_portfolio_leadlag_edge_lineage_required": bool(
+                    row[
+                        "scaleup_strategy_portfolio_leadlag_edge_lineage_required"
+                    ]
+                ),
+                "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": bool(
+                    row[
+                        "runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+                    ]
+                ),
+                **{
+                    f"strategy_portfolio_{field}": row[
+                        f"runtime_strategy_portfolio_{field}"
+                    ]
+                    for field in LEADLAG_LINEAGE_FIELDS
+                },
                 "strategy_portfolio_selected_strategy": row["runtime_strategy_portfolio_selected_strategy"],
                 "strategy_portfolio_selected_market": row["runtime_strategy_portfolio_selected_market"],
                 "strategy_portfolio_selected_eligible": bool(
@@ -1715,6 +1895,25 @@ def _config(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any
             "required": _to_bool(summary_row.get("strategy_portfolio_required")),
             "provided": _to_bool(summary_row.get("strategy_portfolio_provided")),
             "ready": _to_bool(summary_row.get("strategy_portfolio_ready")),
+            "selected_profile": _clean(
+                summary_row.get("strategy_portfolio_selected_profile")
+            ),
+            "leadlag_edge_lineage_required": _to_bool(
+                summary_row.get(
+                    "strategy_portfolio_leadlag_edge_lineage_required"
+                )
+            ),
+            "leadlag_edge_lineage_matches_scaleup": _to_bool(
+                summary_row.get(
+                    "strategy_portfolio_leadlag_edge_lineage_matches_scaleup"
+                )
+            ),
+            **{
+                field: _jsonable_value(
+                    summary_row.get(f"strategy_portfolio_{field}")
+                )
+                for field in LEADLAG_LINEAGE_FIELDS
+            },
             "selected_strategy": _clean(summary_row.get("strategy_portfolio_selected_strategy")),
             "selected_market": _clean(summary_row.get("strategy_portfolio_selected_market")),
             "selected_eligible": _to_bool(summary_row.get("strategy_portfolio_selected_eligible")),

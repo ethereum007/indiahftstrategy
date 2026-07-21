@@ -8,6 +8,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_FIELDS,
+    leadlag_lineage_fields,
+    leadlag_lineage_ready,
+)
 from reports.manifest import write_experiment_manifest
 from reports.scaleup_runtime_provenance import (
     empty_scaleup_runtime_provenance,
@@ -264,6 +269,16 @@ def write_runtime_telemetry_snapshot(
         extra={
             "ready": bool(report.ready),
             **scaleup_runtime_manifest_extra(scaleup_provenance),
+            "strategy_portfolio_leadlag_edge_lineage_required": _to_bool(
+                report.summary.iloc[0].get(
+                    "strategy_portfolio_leadlag_edge_lineage_required",
+                    False,
+                )
+            ),
+            "strategy_portfolio_leadlag_edge_lineage_ready": leadlag_lineage_ready(
+                report.summary.iloc[0],
+                prefix="strategy_portfolio_",
+            ),
             "authorizes_submission": False,
         },
     )
@@ -298,6 +313,17 @@ def _telemetry(
     strategy_portfolio = scaleup_config.get("strategy_portfolio", {}) or {}
     if not isinstance(strategy_portfolio, dict):
         strategy_portfolio = {}
+    strategy_portfolio_leadlag_required = bool(
+        _to_bool(
+            strategy_portfolio.get("leadlag_edge_lineage_required", False)
+        )
+        or _identity_key(strategy_portfolio.get("selected_profile", ""))
+        == "leadlag"
+    )
+    strategy_portfolio_leadlag_lineage = leadlag_lineage_fields(
+        strategy_portfolio,
+        target_prefix="strategy_portfolio_",
+    )
     broker_resume_gate = broker_readiness.get("resume_gate", {}) or {}
     if not isinstance(broker_resume_gate, dict):
         broker_resume_gate = {}
@@ -334,6 +360,8 @@ def _telemetry(
         "strategy_portfolio_required": _to_bool(strategy_portfolio.get("required", False)),
         "strategy_portfolio_provided": _to_bool(strategy_portfolio.get("provided", False)),
         "strategy_portfolio_ready": _to_bool(strategy_portfolio.get("ready", False)),
+        "strategy_portfolio_leadlag_edge_lineage_required": strategy_portfolio_leadlag_required,
+        **strategy_portfolio_leadlag_lineage,
         "strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
         "strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
         "strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
@@ -701,6 +729,24 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                 ),
             ]
         )
+        leadlag_lineage_required = _to_bool(
+            row.get("strategy_portfolio_leadlag_edge_lineage_required", False)
+        )
+        if leadlag_lineage_required:
+            lineage_ready = leadlag_lineage_ready(
+                row,
+                prefix="strategy_portfolio_",
+            )
+            checks.append(
+                _check(
+                    "strategy_portfolio_leadlag_edge_lineage_ready",
+                    lineage_ready,
+                    "is",
+                    True,
+                    lineage_ready,
+                    "lead-lag strategy portfolio allocation is missing its complete measured-edge lineage",
+                )
+            )
     proof_refresh_required = _to_bool(row.get("proof_refresh_required", False))
     proof_refresh_provided = _to_bool(row.get("proof_refresh_provided", False))
     if proof_refresh_required:
@@ -977,6 +1023,15 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_required": _to_bool(row["strategy_portfolio_required"]),
                 "strategy_portfolio_provided": _to_bool(row["strategy_portfolio_provided"]),
                 "strategy_portfolio_ready": _to_bool(row["strategy_portfolio_ready"]),
+                "strategy_portfolio_leadlag_edge_lineage_required": _to_bool(
+                    row["strategy_portfolio_leadlag_edge_lineage_required"]
+                ),
+                **{
+                    f"strategy_portfolio_{field}": row[
+                        f"strategy_portfolio_{field}"
+                    ]
+                    for field in LEADLAG_LINEAGE_FIELDS
+                },
                 "strategy_portfolio_deployment_mode": row["strategy_portfolio_deployment_mode"],
                 "strategy_portfolio_allocation_mode": row["strategy_portfolio_allocation_mode"],
                 "strategy_portfolio_capital_currency": row["strategy_portfolio_capital_currency"],

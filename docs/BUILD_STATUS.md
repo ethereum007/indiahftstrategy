@@ -891,6 +891,13 @@
 - Runtime telemetry and guard reports now carry the selected strategy portfolio
   allocation context from `scaleup_config.json` and explicitly halt if session
   notional breaches the selected paper/shadow allocation notional.
+- Runtime telemetry now independently validates the exact canonical `leadlag`
+  allocation's complete `leadlag_edge_lineage/v1` structure and carries all
+  five stage bindings, upstream manifest hashes, contract identity, and latency
+  budget/replay/headroom values into its row, summary, and manifest metadata.
+  Runtime guard then requires that marker and structure in telemetry and
+  compares every lineage field with the current scale-up config before it can
+  return `continue`.
 - Runtime telemetry, guard, and session handoffs now also preserve strategy
   portfolio concentration context from scale-up, including distinct
   strategy/market counts and maximum aggregate strategy/market allocation
@@ -2667,6 +2674,8 @@
 - Runtime guard now independently repeats the current scale-up verification
   before applying session limits and compares telemetry-carried scale-up,
   portfolio, scorecard, and research-family lineage against that source.
+  For a canonical `leadlag` allocation it additionally revalidates both copies
+  of `leadlag_edge_lineage/v1` and requires exact field-by-field agreement.
   Stale inputs, freshly re-manifested but semantically detached limits,
   authorizing claims, missing lineage, old scale-up snapshots, or family
   relabeling halt with explicit provenance repair actions. Telemetry and guard
@@ -6130,6 +6139,21 @@ the broader runtime-telemetry/guard/session, cutover, route-enable, manifest,
 and catalog boundary passes (`548 passed`). Repository collection is healthy at
 `2386 tests`. All outputs remain non-authorizing; the full repository suite was
 not rerun for this slice.
+
+Latest scale-up-to-runtime lineage gate: runtime telemetry now independently
+requires the canonical `leadlag` allocation's complete
+`leadlag_edge_lineage/v1` proof and retains its five selected stages, upstream
+manifest hashes, contract identity, and latency budget/replay/headroom values.
+Runtime guard requires telemetry to carry that marker and selected profile,
+revalidates both the scale-up and telemetry structures, and compares every
+lineage field before returning `continue`. Missing telemetry lineage and an
+otherwise-valid but different contract hash both halt explicitly. The focused
+telemetry/guard boundary passes (`57 passed`), the telemetry -> guard -> runtime
+session -> cutover -> route-enable chain passes (`296 passed`), and manifest
+plus experiment-catalog compatibility passes (`69 passed`). The upstream
+scorecard -> portfolio -> controlled-scale-up contract remains green (`186
+passed`). Repository collection is healthy at `2389 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
 
 ## Next Build Targets
 

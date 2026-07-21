@@ -7,6 +7,33 @@ from reports.manifest import write_experiment_manifest
 from reports.runtime_telemetry import evaluate_runtime_telemetry, write_runtime_telemetry_snapshot
 
 
+def leadlag_lineage(prefix=""):
+    fields = {
+        "leadlag_edge_lineage_required": True,
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "edge-audit",
+                "replay-walkforward",
+                "promotion",
+                "order-plan",
+                "launch-pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "1" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "2" * 64,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "3" * 64,
+        "leadlag_edge_latency_budget_ns": 5_000.0,
+        "leadlag_total_replay_latency_ns": 3_000.0,
+        "leadlag_edge_latency_headroom_ns": 2_000.0,
+    }
+    return {f"{prefix}{field}": value for field, value in fields.items()}
+
+
 def scaleup_config(
     scenario_key="trigger_ticks=2",
     adapter="arrow_money",
@@ -130,6 +157,7 @@ def scaleup_config(
             "selected_allocation_weight": 0.0012,
             "selected_allocation_notional": 1200.0,
             "notional_cap_applied": True,
+            **leadlag_lineage(),
         }
         config["limits"]["pre_portfolio_max_notional_per_session"] = 3000.0
     return config
@@ -550,6 +578,16 @@ def test_runtime_telemetry_carries_strategy_portfolio_config():
     assert bool(row["strategy_portfolio_required"])
     assert bool(row["strategy_portfolio_provided"])
     assert bool(row["strategy_portfolio_ready"])
+    assert bool(row["strategy_portfolio_leadlag_edge_lineage_required"])
+    assert bool(row["strategy_portfolio_leadlag_edge_lineage_ready"])
+    assert row["strategy_portfolio_leadlag_lineage_bound_stages"] == 5
+    assert row["strategy_portfolio_leadlag_edge_lineage_contract_version"] == (
+        "leadlag_edge_lineage/v1"
+    )
+    assert row["strategy_portfolio_leadlag_edge_lineage_contract_sha256"] == (
+        "3" * 64
+    )
+    assert row["strategy_portfolio_leadlag_edge_latency_headroom_ns"] == 2_000.0
     assert row["strategy_portfolio_selected_profile"] == "leadlag"
     assert row["strategy_portfolio_selected_strategy"] == "lead_lag_taker"
     assert row["strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
@@ -567,6 +605,22 @@ def test_runtime_telemetry_carries_strategy_portfolio_config():
     assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
     assert summary["strategy_portfolio_allocated_strategy_count"] == 2
     assert summary["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert summary["strategy_portfolio_leadlag_edge_lineage_contract_sha256"] == (
+        "3" * 64
+    )
+
+
+def test_runtime_telemetry_blocks_missing_leadlag_edge_lineage():
+    config = scaleup_config(require_strategy_portfolio=True)
+    config["strategy_portfolio"].pop(
+        "leadlag_edge_lineage_contract_sha256"
+    )
+
+    report = evaluate_runtime_telemetry(config)
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "strategy_portfolio_leadlag_edge_lineage_ready" in failed
 
 
 def test_runtime_telemetry_blocks_bad_strategy_portfolio_config():
