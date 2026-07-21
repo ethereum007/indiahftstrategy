@@ -6096,6 +6096,20 @@ strategy-scorecard suite (`16 passed`). Adjacent strategy-portfolio and
 lead-lag evidence compatibility passes (`29 passed`). The handoff remains
 non-authorizing and the full repository suite was not rerun.
 
+Latest scorecard-to-portfolio lineage gate: the portfolio allocator now
+preserves the complete `leadlag_edge_lineage/v1` identity through allocation
+rows, summary/config, scheduler actions, runbook, and manifest metadata. The
+canonical `leadlag` profile cannot receive paper/shadow weight unless all five
+stages, both upstream manifest hashes, the latency budget/replay/headroom
+identity, and the contract hash are structurally complete; `--allow-unready`
+does not bypass this proof. A current but semantically inconsistent scorecard
+bundle is rejected before weighting. The focused portfolio suite passes (`20
+passed`) and the combined scorecard, prospective research-family, and portfolio
+boundary passes (`47 passed`). The broader portfolio/scorecard/family/manifest/
+catalog boundary passes (`116 passed`), and repository collection is healthy at
+`2383 tests`. All artifacts remain non-authorizing; the full repository suite
+was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

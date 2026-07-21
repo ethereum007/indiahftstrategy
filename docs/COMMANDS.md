@@ -598,6 +598,14 @@ manifest hash. Missing, stale, semantically detached, mismatched, or
 authorizing proof makes every affected profile ineligible and routes repair to
 `score-strategy-readiness` or `audit-research-family`. This family boundary
 cannot be bypassed with `--allow-unready`.
+For the canonical `leadlag` profile, allocation also requires the complete
+five-stage `leadlag_edge_lineage/v1` contract: all stages must be bound and
+selected, measurement and edge-candidate manifest hashes must be valid, and
+latency budget minus replay latency must equal retained headroom. A legacy
+status-only row or malformed contract remains ineligible even with
+`--allow-unready`. When a scorecard manifest is present, the allocator also
+reconciles every lineage field across the ranked CSV, summary, JSON actions,
+config, and manifest metadata before assigning paper/shadow weight.
 Use `--require-scorecard-manifest` to apply the same bundle-integrity gate to
 ops-only or exploratory scorecards that do not automatically require family
 proof. A supplied manifest is always verified even when the flag is omitted.
@@ -628,8 +636,10 @@ fingerprints every scorecard artifact, the scorecard manifest, and the family
 root/manifest. It also flattens transitive manifest dependencies, so later
 catalog, family-registration, robust-study, or raw-source drift invalidates the
 portfolio allocation manifest instead of silently preserving an obsolete
-capital plan. All outputs remain non-authorizing and do not enable broker
-submission.
+capital plan. The same allocation, action queue, summary/config, runbook, and
+manifest metadata retain the selected lead-lag run directories, measurement
+and edge-candidate hashes, latency values, contract version, and contract
+SHA-256. All outputs remain non-authorizing and do not enable broker submission.
 
 ## Market Profile Report
 

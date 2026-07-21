@@ -16,6 +16,73 @@ from reports.strategy_portfolio import (
 )
 
 
+def leadlag_lineage(*, ready=True):
+    if not ready:
+        return {
+            "leadlag_edge_lineage_ready": False,
+            "leadlag_lineage_bound_stages": 0,
+            "leadlag_lineage_required_stages": 0,
+            "leadlag_lineage_selected_stage_count": 0,
+            "leadlag_lineage_selected_run_dirs": "",
+            "leadlag_measurement_manifest_sha256": "",
+            "leadlag_edge_candidate_manifest_sha256": "",
+            "leadlag_edge_latency_budget_ns": 0.0,
+            "leadlag_total_replay_latency_ns": 0.0,
+            "leadlag_edge_latency_headroom_ns": 0.0,
+            "leadlag_edge_lineage_contract_version": "",
+            "leadlag_edge_lineage_contract_sha256": "",
+        }
+    return {
+        "leadlag_edge_lineage_ready": True,
+        "leadlag_lineage_bound_stages": 5,
+        "leadlag_lineage_required_stages": 5,
+        "leadlag_lineage_selected_stage_count": 5,
+        "leadlag_lineage_selected_run_dirs": ";".join(
+            [
+                "runs/leadlag_edge_audit",
+                "runs/leadlag_replay_walkforward",
+                "runs/promotion_report",
+                "runs/leadlag_order_plan",
+                "runs/leadlag_launch_pipeline",
+            ]
+        ),
+        "leadlag_measurement_manifest_sha256": "a" * 64,
+        "leadlag_edge_candidate_manifest_sha256": "b" * 64,
+        "leadlag_edge_latency_budget_ns": 100_000.0,
+        "leadlag_total_replay_latency_ns": 50_000.0,
+        "leadlag_edge_latency_headroom_ns": 50_000.0,
+        "leadlag_edge_lineage_contract_version": "leadlag_edge_lineage/v1",
+        "leadlag_edge_lineage_contract_sha256": "c" * 64,
+    }
+
+
+def normalized_leadlag_lineage(source=None):
+    source = source if source is not None else {}
+    defaults = leadlag_lineage(ready=False)
+    integer_fields = {
+        "leadlag_lineage_bound_stages",
+        "leadlag_lineage_required_stages",
+        "leadlag_lineage_selected_stage_count",
+    }
+    numeric_fields = {
+        "leadlag_edge_latency_budget_ns",
+        "leadlag_total_replay_latency_ns",
+        "leadlag_edge_latency_headroom_ns",
+    }
+    normalized = {}
+    for field, default in defaults.items():
+        value = source.get(field, default)
+        if field == "leadlag_edge_lineage_ready":
+            normalized[field] = bool(value)
+        elif field in integer_fields:
+            normalized[field] = int(value)
+        elif field in numeric_fields:
+            normalized[field] = float(value)
+        else:
+            normalized[field] = str(value)
+    return normalized
+
+
 def scorecard_row(
     rank,
     profile,
@@ -26,7 +93,7 @@ def scorecard_row(
     market="india_nse_index_derivatives",
     next_gate="plan-scaleup",
 ):
-    return {
+    row = {
         "rank": rank,
         "profile": profile,
         "strategy": strategy,
@@ -46,6 +113,9 @@ def scorecard_row(
         "latest_generated_at_utc": "2026-06-18T09:30:00Z",
         "recommendation": "ready_for_shadow_scaleup_review" if ready else "complete_profile_evidence_gaps",
     }
+    if str(profile).strip().lower() == "leadlag":
+        row.update(leadlag_lineage())
+    return row
 
 
 def mixed_scorecard():
@@ -184,7 +254,13 @@ def family_bound_scorecard(family_root, family_manifest_sha):
     return frame
 
 
-def write_scorecard_bundle(root, frame, *, contract_mismatch=False):
+def write_scorecard_bundle(
+    root,
+    frame,
+    *,
+    contract_mismatch=False,
+    lineage_contract_mismatch=False,
+):
     root.mkdir(parents=True, exist_ok=True)
     frame.to_csv(root / "strategy_scorecard.csv", index=False)
     pd.DataFrame(columns=["profile", "gap"]).to_csv(
@@ -206,6 +282,12 @@ def write_scorecard_bundle(root, frame, *, contract_mismatch=False):
     ).map(bool)
     family_rows = frame.loc[family_enabled | registered]
     reference = family_rows.iloc[0].to_dict() if not family_rows.empty else {}
+    leadlag_rows = frame.loc[
+        frame["profile"].astype(str).str.strip().str.lower() == "leadlag"
+    ]
+    lineage_reference = normalized_leadlag_lineage(
+        leadlag_rows.iloc[0] if not leadlag_rows.empty else None
+    )
     summary = {
         "ready": bool(ready.any()),
         "profile_count": len(frame),
@@ -225,6 +307,7 @@ def write_scorecard_bundle(root, frame, *, contract_mismatch=False):
             "research_family_manifest_sha256",
             "",
         ),
+        **lineage_reference,
         "authorizes_submission": False,
     }
     pd.DataFrame([summary]).to_csv(
@@ -287,6 +370,7 @@ def write_scorecard_bundle(root, frame, *, contract_mismatch=False):
                         0.0,
                     )
                 ),
+                **normalized_leadlag_lineage(row),
                 "authorizes_submission": False,
             }
         )
@@ -304,11 +388,14 @@ def write_scorecard_bundle(root, frame, *, contract_mismatch=False):
             "research_family_manifest_sha256",
             "",
         ),
+        **lineage_reference,
         "authorizes_submission": False,
         "next_actions": actions,
     }
     if contract_mismatch:
         config["research_family_id"] = "different_family"
+    if lineage_contract_mismatch:
+        config["leadlag_edge_lineage_contract_sha256"] = "d" * 64
     (root / "strategy_scorecard_next_actions.json").write_text(
         json.dumps(config),
         encoding="utf-8",
@@ -362,6 +449,7 @@ def write_scorecard_bundle(root, frame, *, contract_mismatch=False):
             "research_family_gate_passed_profiles": int(
                 (family_enabled & family_passed).sum()
             ),
+            **lineage_reference,
             "authorizes_submission": False,
         },
     )
@@ -382,6 +470,14 @@ def test_strategy_portfolio_allocates_ready_profiles_with_reserve():
     assert allocations.loc["leadlag", "allocation_weight"] == 0.45
     assert allocations.loc["parity", "allocation_weight"] == 0.45
     assert allocations.loc["leadlag", "allocation_notional"] == 450_000
+    assert bool(allocations.loc["leadlag", "leadlag_edge_lineage_ready"])
+    assert (
+        allocations.loc[
+            "leadlag",
+            "leadlag_edge_lineage_contract_sha256",
+        ]
+        == "c" * 64
+    )
     assert report.summary.loc[0, "allocated_weight"] == 0.90
     assert report.summary.loc[0, "reserve_notional"] == 100_000
     assert report.summary.loc[0, "allocated_strategy_count"] == 2
@@ -389,9 +485,19 @@ def test_strategy_portfolio_allocates_ready_profiles_with_reserve():
     assert report.summary.loc[0, "max_strategy_allocation_weight"] == 0.45
     assert report.summary.loc[0, "max_market_allocation_weight"] == 0.90
     assert int(report.summary.loc[0, "failed_check_count"]) == 0
+    assert bool(report.summary.loc[0, "leadlag_edge_lineage_ready"])
+    assert (
+        report.summary.loc[0, "leadlag_measurement_manifest_sha256"]
+        == "a" * 64
+    )
     assert report.config["schema_version"] == 1
     assert report.config["allocation_count"] == 2
     assert report.config["ready_allocations"][0]["profile"] == "leadlag"
+    assert report.config["leadlag_edge_lineage_ready"]
+    assert (
+        report.config["leadlag_edge_lineage_contract_sha256"]
+        == "c" * 64
+    )
     assert report.config["blocked_allocations"][0]["profile"] == "imbalance"
     assert report.action_queue is not None
     assert int(report.summary.loc[0, "action_queue_count"]) == 3
@@ -403,8 +509,90 @@ def test_strategy_portfolio_allocates_ready_profiles_with_reserve():
     assert report.config["blocked_action_count"] == 1
     assert report.config["primary_action_status"] == "ready"
     assert report.config["primary_action"]["profile"] == "leadlag"
+    assert report.config["primary_action"]["leadlag_edge_lineage_ready"]
+    assert (
+        report.config["primary_action"][
+            "leadlag_edge_lineage_contract_sha256"
+        ]
+        == "c" * 64
+    )
     assert {item["profile"] for item in report.config["ready_actions"]} == {"leadlag", "parity"}
     assert {item["profile"] for item in report.config["blocked_actions"]} == {"imbalance"}
+
+
+def test_strategy_portfolio_blocks_status_only_leadlag_scorecard():
+    row = scorecard_row(1, "leadlag", "lead_lag_taker")
+    for field in leadlag_lineage():
+        row.pop(field)
+
+    report = evaluate_strategy_portfolio(
+        pd.DataFrame([row]),
+        config=StrategyPortfolioConfig(
+            max_profile_weight=1.0,
+            require_ready=False,
+        ),
+    )
+
+    allocation = report.allocations.iloc[0]
+    assert not report.ready
+    assert not bool(allocation["eligible"])
+    assert allocation["allocation_weight"] == 0.0
+    assert allocation["eligibility_reason"] == (
+        "leadlag_edge_lineage_not_ready"
+    )
+    assert not bool(allocation["leadlag_edge_lineage_ready"])
+    assert report.action_queue is not None
+    profile_action = report.action_queue.loc[
+        report.action_queue["check"] == "profile_eligible:leadlag"
+    ].iloc[0]
+    assert profile_action["next_gate"] == "score-strategy-readiness"
+    assert profile_action["next_gate_help_command"] == (
+        "python -m hft_cli score-strategy-readiness --help"
+    )
+    assert profile_action["recommendation"] == (
+        "regenerate_leadlag_scorecard_lineage_before_allocating"
+    )
+
+
+def test_strategy_portfolio_validates_each_leadlag_lineage_clause():
+    mutations = [
+        ("leadlag_edge_lineage_ready", False),
+        ("leadlag_lineage_bound_stages", 4),
+        ("leadlag_lineage_required_stages", 4),
+        ("leadlag_lineage_selected_stage_count", 4),
+        (
+            "leadlag_lineage_selected_run_dirs",
+            ";".join(
+                [
+                    "runs/leadlag_edge_audit",
+                    "runs/leadlag_replay_walkforward",
+                    "runs/promotion_report",
+                    "runs/leadlag_order_plan",
+                ]
+            ),
+        ),
+        ("leadlag_measurement_manifest_sha256", "not-a-sha256"),
+        ("leadlag_edge_candidate_manifest_sha256", "not-a-sha256"),
+        ("leadlag_edge_latency_budget_ns", 99_999.0),
+        ("leadlag_total_replay_latency_ns", -1.0),
+        ("leadlag_edge_latency_headroom_ns", -1.0),
+        ("leadlag_edge_lineage_contract_version", "leadlag_edge_lineage/v0"),
+        ("leadlag_edge_lineage_contract_sha256", "not-a-sha256"),
+    ]
+
+    for field, value in mutations:
+        row = scorecard_row(1, "leadlag", "lead_lag_taker")
+        row[field] = value
+        report = evaluate_strategy_portfolio(
+            pd.DataFrame([row]),
+            config=StrategyPortfolioConfig(max_profile_weight=1.0),
+        )
+        allocation = report.allocations.iloc[0]
+        assert not bool(allocation["eligible"]), field
+        assert allocation["allocation_weight"] == 0.0, field
+        assert allocation["eligibility_reason"] == (
+            "leadlag_edge_lineage_not_ready"
+        ), field
 
 
 def test_strategy_portfolio_caps_profiles_and_leaves_unallocated_budget():
@@ -525,6 +713,10 @@ def test_write_strategy_portfolio_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "strategy_portfolio_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     action_queue = pd.read_csv(out_dir / "strategy_portfolio_action_queue.csv")
+    allocations = pd.read_csv(
+        out_dir / "strategy_portfolio_allocations.csv"
+    ).set_index("profile")
+    summary = pd.read_csv(out_dir / "strategy_portfolio_summary.csv").iloc[0]
     config = json.loads((out_dir / "strategy_portfolio_config.json").read_text(encoding="utf-8"))
     assert config == report.config
     assert config["ready"]
@@ -532,15 +724,37 @@ def test_write_strategy_portfolio_outputs_files_and_manifest(tmp_path):
     assert len(action_queue) == config["action_queue_count"]
     assert int((action_queue["queue_status"] == "ready").sum()) == config["ready_action_count"]
     assert int((action_queue["queue_status"] == "blocked").sum()) == config["blocked_action_count"]
+    assert bool(allocations.loc["leadlag", "leadlag_edge_lineage_ready"])
+    assert (
+        summary["leadlag_edge_lineage_contract_sha256"] == "c" * 64
+    )
+    leadlag_action = action_queue.loc[
+        action_queue["profile"] == "leadlag"
+    ].iloc[0]
+    assert bool(leadlag_action["leadlag_edge_lineage_ready"])
+    assert (
+        leadlag_action["leadlag_edge_candidate_manifest_sha256"]
+        == "b" * 64
+    )
+    assert config["leadlag_edge_lineage_contract_version"] == (
+        "leadlag_edge_lineage/v1"
+    )
     runbook = (out_dir / "strategy_portfolio_runbook.md").read_text(encoding="utf-8")
     assert "# Strategy Portfolio Allocation Runbook" in runbook
     assert "## Allocations" in runbook
     assert "## Scheduler Actions" in runbook
+    assert "Lead-lag edge lineage ready: yes" in runbook
+    assert "c" * 64 in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "strategy_portfolio_allocations.csv" in artifact_paths
     assert "strategy_portfolio_action_queue.csv" in artifact_paths
     assert "strategy_portfolio_runbook.md" in artifact_paths
+    assert manifest["extra"]["leadlag_edge_lineage_ready"]
+    assert (
+        manifest["extra"]["leadlag_edge_lineage_contract_sha256"]
+        == "c" * 64
+    )
 
 
 def test_strategy_portfolio_carries_current_family_bound_scorecard_proof(tmp_path):
@@ -717,6 +931,36 @@ def test_strategy_portfolio_blocks_fresh_but_inconsistent_scorecard_contract(tmp
         "scorecard_provenance"
     ]["contract_error"]
     assert report.allocations.loc[0, "allocation_weight"] == 0.0
+
+
+def test_strategy_portfolio_blocks_fresh_leadlag_lineage_contract_drift(
+    tmp_path,
+):
+    scorecard_root = tmp_path / "scorecard"
+    write_scorecard_bundle(
+        scorecard_root,
+        mixed_scorecard().iloc[:1],
+        lineage_contract_mismatch=True,
+    )
+
+    report = write_strategy_portfolio_allocations(
+        scorecard_root,
+        output_dir=tmp_path / "portfolio",
+        config=StrategyPortfolioConfig(max_profile_weight=1.0),
+    )
+
+    checks = report.checks.set_index("check")
+    assert not report.ready
+    assert bool(checks.loc["scorecard_manifest_current", "passed"])
+    assert not bool(checks.loc["scorecard_contract_consistent", "passed"])
+    assert (
+        "config_leadlag_edge_lineage_contract_sha256_mismatch"
+        in report.config["scorecard_provenance"]["contract_error"]
+    )
+    assert report.allocations.loc[0, "allocation_weight"] == 0.0
+    assert report.allocations.loc[0, "eligibility_reason"] == (
+        "scorecard_provenance_not_current"
+    )
 
 
 def test_strategy_portfolio_blocks_fresh_scorecard_relabeling_family_bundle(tmp_path):

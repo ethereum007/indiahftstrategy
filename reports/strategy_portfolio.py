@@ -8,7 +8,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.evidence import _normalize_identity, _normalize_strategy
+from reports.evidence import (
+    LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION,
+    LEADLAG_EDGE_LINEAGE_RUN_TYPES,
+    _normalize_identity,
+    _normalize_strategy,
+)
 from reports.manifest import (
     file_sha256,
     manifest_dependency_paths,
@@ -34,6 +39,30 @@ RESEARCH_FAMILY_REQUIRED_ARTIFACTS = (
     "research_family_config.json",
     "research_family_runbook.md",
 )
+LEADLAG_LINEAGE_BOOLEAN_FIELDS = ("leadlag_edge_lineage_ready",)
+LEADLAG_LINEAGE_INTEGER_FIELDS = (
+    "leadlag_lineage_bound_stages",
+    "leadlag_lineage_required_stages",
+    "leadlag_lineage_selected_stage_count",
+)
+LEADLAG_LINEAGE_TEXT_FIELDS = (
+    "leadlag_lineage_selected_run_dirs",
+    "leadlag_measurement_manifest_sha256",
+    "leadlag_edge_candidate_manifest_sha256",
+    "leadlag_edge_lineage_contract_version",
+    "leadlag_edge_lineage_contract_sha256",
+)
+LEADLAG_LINEAGE_NUMERIC_FIELDS = (
+    "leadlag_edge_latency_budget_ns",
+    "leadlag_total_replay_latency_ns",
+    "leadlag_edge_latency_headroom_ns",
+)
+LEADLAG_LINEAGE_FIELDS = (
+    *LEADLAG_LINEAGE_BOOLEAN_FIELDS,
+    *LEADLAG_LINEAGE_INTEGER_FIELDS,
+    *LEADLAG_LINEAGE_TEXT_FIELDS,
+    *LEADLAG_LINEAGE_NUMERIC_FIELDS,
+)
 
 
 ACTION_QUEUE_COLUMNS = [
@@ -49,6 +78,7 @@ ACTION_QUEUE_COLUMNS = [
     "strategy",
     "market",
     "readiness_score",
+    *LEADLAG_LINEAGE_FIELDS,
     "allocation_weight",
     "allocation_notional",
     "eligibility_reason",
@@ -246,6 +276,11 @@ def write_strategy_portfolio_allocations(
                     "research_family_manifest_sha256",
                     "",
                 )
+            ),
+            **_leadlag_lineage_fields(
+                report.summary.iloc[0]
+                if not report.summary.empty
+                else {}
             ),
             "authorizes_submission": False,
         },
@@ -464,6 +499,7 @@ def _scorecard_contract_errors(
                 "profile",
                 "strategy",
                 "market",
+                *LEADLAG_LINEAGE_TEXT_FIELDS,
                 "research_family_id",
                 "research_family_registration_id",
                 "research_family_manifest_sha256",
@@ -474,6 +510,7 @@ def _scorecard_contract_errors(
                     errors.append(f"scorecard_action_{column}_mismatch:{index}")
             for column in (
                 "ready",
+                *LEADLAG_LINEAGE_BOOLEAN_FIELDS,
                 "research_family_enabled",
                 "research_family_required",
                 "registered_research_detected",
@@ -485,6 +522,20 @@ def _scorecard_contract_errors(
             ):
                 if _bool(row.get(column, False)) != _bool(
                     action.get(column, False)
+                ):
+                    errors.append(f"scorecard_action_{column}_mismatch:{index}")
+            for column in LEADLAG_LINEAGE_INTEGER_FIELDS:
+                if _integer(row.get(column, 0)) != _integer(
+                    action.get(column, 0)
+                ):
+                    errors.append(f"scorecard_action_{column}_mismatch:{index}")
+            for column in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+                if not np.isclose(
+                    _numeric(row.get(column, 0.0)),
+                    _numeric(action.get(column, 0.0)),
+                    rtol=0.0,
+                    atol=1e-9,
+                    equal_nan=False,
                 ):
                     errors.append(f"scorecard_action_{column}_mismatch:{index}")
             if abs(
@@ -509,6 +560,14 @@ def _scorecard_contract_errors(
                 errors.append(
                     "scorecard_action_research_family_matched_"
                     f"holm_adjusted_pvalue_mismatch:{index}"
+                )
+            if (
+                _profile_key(row.get("profile", "")) == "leadlag"
+                and _bool(row.get("ready", False))
+                and not _leadlag_lineage_ready(row)
+            ):
+                errors.append(
+                    f"scorecard_leadlag_edge_lineage_not_ready:{index}"
                 )
 
     ready_count = int(scorecard["ready"].map(_bool).sum()) if not scorecard.empty else 0
@@ -586,6 +645,27 @@ def _scorecard_contract_errors(
             errors.append(
                 "manifest_research_family_gate_passed_profiles_mismatch"
             )
+    lineage_reference = _leadlag_lineage_reference(scorecard)
+    for column in LEADLAG_LINEAGE_FIELDS:
+        expected = lineage_reference[column]
+        if not _leadlag_lineage_field_matches(
+            column,
+            summary.get(column, ""),
+            expected,
+        ):
+            errors.append(f"summary_{column}_mismatch")
+        if not _leadlag_lineage_field_matches(
+            column,
+            config.get(column, ""),
+            expected,
+        ):
+            errors.append(f"config_{column}_mismatch")
+        if not _leadlag_lineage_field_matches(
+            column,
+            extra.get(column, ""),
+            expected,
+        ):
+            errors.append(f"manifest_{column}_mismatch")
     if not _non_authorizing_contract(scorecard, summary, config, extra):
         errors.append("source_authorizes_submission")
     return sorted(set(errors))
@@ -965,6 +1045,130 @@ def _read_frame(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _leadlag_lineage_fields(source: Any) -> dict[str, Any]:
+    return {
+        "leadlag_edge_lineage_ready": _bool(
+            source.get("leadlag_edge_lineage_ready", False)
+        ),
+        "leadlag_lineage_bound_stages": _integer(
+            source.get("leadlag_lineage_bound_stages", 0)
+        ),
+        "leadlag_lineage_required_stages": _integer(
+            source.get("leadlag_lineage_required_stages", 0)
+        ),
+        "leadlag_lineage_selected_stage_count": _integer(
+            source.get("leadlag_lineage_selected_stage_count", 0)
+        ),
+        "leadlag_lineage_selected_run_dirs": _text(
+            source.get("leadlag_lineage_selected_run_dirs", "")
+        ),
+        "leadlag_measurement_manifest_sha256": _text(
+            source.get("leadlag_measurement_manifest_sha256", "")
+        ),
+        "leadlag_edge_candidate_manifest_sha256": _text(
+            source.get("leadlag_edge_candidate_manifest_sha256", "")
+        ),
+        "leadlag_edge_latency_budget_ns": _numeric(
+            source.get("leadlag_edge_latency_budget_ns", 0.0)
+        ),
+        "leadlag_total_replay_latency_ns": _numeric(
+            source.get("leadlag_total_replay_latency_ns", 0.0)
+        ),
+        "leadlag_edge_latency_headroom_ns": _numeric(
+            source.get("leadlag_edge_latency_headroom_ns", 0.0)
+        ),
+        "leadlag_edge_lineage_contract_version": _text(
+            source.get("leadlag_edge_lineage_contract_version", "")
+        ),
+        "leadlag_edge_lineage_contract_sha256": _text(
+            source.get("leadlag_edge_lineage_contract_sha256", "")
+        ),
+    }
+
+
+def _leadlag_lineage_reference(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty or "profile" not in frame.columns:
+        return _leadlag_lineage_fields({})
+    rows = frame.loc[frame["profile"].map(_profile_key) == "leadlag"]
+    if rows.empty:
+        return _leadlag_lineage_fields({})
+    return _leadlag_lineage_fields(rows.iloc[0])
+
+
+def _leadlag_lineage_ready(source: Any) -> bool:
+    fields = _leadlag_lineage_fields(source)
+    expected_stages = len(LEADLAG_EDGE_LINEAGE_RUN_TYPES)
+    run_dirs = [
+        item.strip()
+        for item in fields["leadlag_lineage_selected_run_dirs"].split(";")
+        if item.strip()
+    ]
+    budget = fields["leadlag_edge_latency_budget_ns"]
+    replay = fields["leadlag_total_replay_latency_ns"]
+    headroom = fields["leadlag_edge_latency_headroom_ns"]
+    latency_ready = bool(
+        np.isfinite(budget)
+        and np.isfinite(replay)
+        and np.isfinite(headroom)
+        and budget > 0.0
+        and replay >= 0.0
+        and headroom >= 0.0
+        and np.isclose(
+            budget - replay,
+            headroom,
+            rtol=0.0,
+            atol=1e-9,
+        )
+    )
+    return bool(
+        fields["leadlag_edge_lineage_ready"]
+        and fields["leadlag_lineage_bound_stages"] == expected_stages
+        and fields["leadlag_lineage_required_stages"] == expected_stages
+        and fields["leadlag_lineage_selected_stage_count"] == expected_stages
+        and len(run_dirs) == expected_stages
+        and len(set(run_dirs)) == expected_stages
+        and _valid_sha256(fields["leadlag_measurement_manifest_sha256"])
+        and _valid_sha256(
+            fields["leadlag_edge_candidate_manifest_sha256"]
+        )
+        and fields["leadlag_edge_lineage_contract_version"]
+        == LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION
+        and _valid_sha256(
+            fields["leadlag_edge_lineage_contract_sha256"]
+        )
+        and latency_ready
+    )
+
+
+def _valid_sha256(value: Any) -> bool:
+    text = _text(value).strip().lower()
+    return len(text) == 64 and all(
+        character in "0123456789abcdef" for character in text
+    )
+
+
+def _leadlag_lineage_field_matches(
+    column: str,
+    actual: Any,
+    expected: Any,
+) -> bool:
+    if column in LEADLAG_LINEAGE_BOOLEAN_FIELDS:
+        return _bool(actual) == _bool(expected)
+    if column in LEADLAG_LINEAGE_INTEGER_FIELDS:
+        return _integer(actual) == _integer(expected)
+    if column in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+        return bool(
+            np.isclose(
+                _numeric(actual),
+                _numeric(expected),
+                rtol=0.0,
+                atol=1e-9,
+                equal_nan=False,
+            )
+        )
+    return _text(actual) == _text(expected)
+
+
 def _normalize_scorecard(scorecard: pd.DataFrame) -> pd.DataFrame:
     defaults: dict[str, Any] = {
         "rank": 0,
@@ -979,6 +1183,18 @@ def _normalize_scorecard(scorecard: pd.DataFrame) -> pd.DataFrame:
         "next_gate": "",
         "next_gate_help_command": "",
         "recommendation": "",
+        "leadlag_edge_lineage_ready": False,
+        "leadlag_lineage_bound_stages": 0,
+        "leadlag_lineage_required_stages": 0,
+        "leadlag_lineage_selected_stage_count": 0,
+        "leadlag_lineage_selected_run_dirs": "",
+        "leadlag_measurement_manifest_sha256": "",
+        "leadlag_edge_candidate_manifest_sha256": "",
+        "leadlag_edge_latency_budget_ns": 0.0,
+        "leadlag_total_replay_latency_ns": 0.0,
+        "leadlag_edge_latency_headroom_ns": 0.0,
+        "leadlag_edge_lineage_contract_version": "",
+        "leadlag_edge_lineage_contract_sha256": "",
         "research_family_applicable": False,
         "research_family_enabled": False,
         "research_family_required": False,
@@ -1024,6 +1240,14 @@ def _normalize_scorecard(scorecard: pd.DataFrame) -> pd.DataFrame:
     frame["next_gate"] = frame["next_gate"].map(_text)
     frame["next_gate_help_command"] = frame["next_gate_help_command"].map(_text)
     frame["recommendation"] = frame["recommendation"].map(_text)
+    for column in LEADLAG_LINEAGE_BOOLEAN_FIELDS:
+        frame[column] = frame[column].map(_bool)
+    for column in LEADLAG_LINEAGE_INTEGER_FIELDS:
+        frame[column] = frame[column].map(_integer)
+    for column in LEADLAG_LINEAGE_TEXT_FIELDS:
+        frame[column] = frame[column].map(_text)
+    for column in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+        frame[column] = frame[column].map(_numeric)
     boolean_columns = (
         "research_family_applicable",
         "research_family_enabled",
@@ -1112,6 +1336,7 @@ def _allocations(scorecard: pd.DataFrame, config: StrategyPortfolioConfig) -> pd
             "next_gate",
             "next_gate_help_command",
             "recommendation",
+            *LEADLAG_LINEAGE_FIELDS,
             "scorecard_manifest_required",
             "scorecard_manifest_provided",
             "scorecard_manifest_current",
@@ -1374,6 +1599,7 @@ def _summary(
     reserve_weight = _bounded_reserve_weight(config)
     unallocated_weight = max(0.0, 1.0 - reserve_weight - allocated_weight)
     concentration = _concentration(allocations)
+    leadlag_lineage = _leadlag_lineage_reference(allocations)
     ready = failed.empty
     return pd.DataFrame(
         [
@@ -1455,6 +1681,7 @@ def _summary(
                 "research_family_manifest_sha256": _text(
                     evidence.get("research_family_manifest_sha256", "")
                 ),
+                **leadlag_lineage,
                 "authorizes_submission": False,
                 "failed_check_count": int(len(failed)),
                 "failed_check_names": ";".join(failed["check"].astype(str).tolist()) if not failed.empty else "",
@@ -1533,6 +1760,7 @@ def _config(
         "research_family_manifest_sha256": _text(
             evidence.get("research_family_manifest_sha256", "")
         ),
+        **_leadlag_lineage_fields(summary_row),
         "authorizes_submission": False,
         "summary": summary_row,
         "allocation_count": len(ready_allocations),
@@ -1591,6 +1819,8 @@ def _eligibility_reason(
         row.get("research_family_gate_passed", False)
     ):
         return "research_family_gate_not_passed"
+    if profile == "leadlag" and not _leadlag_lineage_ready(row):
+        return "leadlag_edge_lineage_not_ready"
     if config.require_ready and not _bool(row.get("ready", False)):
         return "profile_not_ready"
     if _numeric(row.get("readiness_score", 0.0)) < _numeric(config.min_readiness_score):
@@ -1731,6 +1961,7 @@ def _allocation_action(row: pd.Series, *, queue_status: str) -> dict[str, Any]:
         "strategy": _text(row.get("strategy")),
         "market": _text(row.get("market")),
         "readiness_score": float(_numeric(row.get("readiness_score", 0.0))),
+        **_leadlag_lineage_fields(row),
         "allocation_weight": float(_numeric(row.get("allocation_weight", 0.0))),
         "allocation_notional": float(_numeric(row.get("allocation_notional", 0.0))),
         "eligibility_reason": _text(row.get("eligibility_reason")),
@@ -1767,7 +1998,10 @@ def _allocation_check(row: pd.Series, queue_status: str) -> str:
 
 def _allocation_next_gate(row: pd.Series, queue_status: str) -> str:
     reason = _text(row.get("eligibility_reason"))
-    if reason == "scorecard_provenance_not_current":
+    if reason in {
+        "scorecard_provenance_not_current",
+        "leadlag_edge_lineage_not_ready",
+    }:
         return "score-strategy-readiness"
     if reason == "research_family_gate_not_passed":
         return "audit-research-family"
@@ -1798,7 +2032,8 @@ def _check_next_gate(check: str) -> str:
 
 def _help_command(row: pd.Series, next_gate: str) -> str:
     explicit = _text(row.get("next_gate_help_command"))
-    if explicit:
+    explicit_gate = _text(row.get("next_gate"))
+    if explicit and (not explicit_gate or explicit_gate == next_gate):
         return explicit
     return f"python -m hft_cli {next_gate} --help" if next_gate else ""
 
@@ -1820,6 +2055,8 @@ def _allocation_recommendation(row: pd.Series, queue_status: str) -> str:
         return "regenerate_and_verify_strategy_scorecard_before_allocating"
     if reason == "research_family_gate_not_passed":
         return "close_registered_research_family_before_allocating"
+    if reason == "leadlag_edge_lineage_not_ready":
+        return "regenerate_leadlag_scorecard_lineage_before_allocating"
     if reason == "profile_not_ready":
         return "complete_strategy_scorecard_evidence_before_allocating"
     if reason == "readiness_score_below_threshold":
@@ -1973,6 +2210,11 @@ def _runbook_markdown(config: dict[str, Any]) -> str:
         f"- Research family current: {'yes' if bool(config.get('research_family_provenance_current', False)) else 'no'}",
         f"- Research family: {_code(config.get('research_family_id'))}",
         f"- Registration: {_code(config.get('research_family_registration_id'))}",
+        f"- Lead-lag edge lineage ready: {'yes' if bool(config.get('leadlag_edge_lineage_ready', False)) else 'no'}",
+        f"- Lead-lag lineage stages: {_integer(config.get('leadlag_lineage_bound_stages'))}/{_integer(config.get('leadlag_lineage_required_stages'))}",
+        f"- Lead-lag measurement manifest: {_code(config.get('leadlag_measurement_manifest_sha256'))}",
+        f"- Lead-lag edge candidate manifest: {_code(config.get('leadlag_edge_candidate_manifest_sha256'))}",
+        f"- Lead-lag lineage contract: {_code(config.get('leadlag_edge_lineage_contract_version'))} / {_code(config.get('leadlag_edge_lineage_contract_sha256'))}",
         "- Submission authorization: no",
         "",
         "## Allocations",

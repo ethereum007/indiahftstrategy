@@ -301,30 +301,94 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         ("leadlag_order_plan", "leadlag_order_summary.csv"),
         ("leadlag_launch_pipeline", "leadlag_launch_pipeline_summary.csv"),
     )
-    pd.DataFrame(
-        [
-            {
-                "run_dir": f"runs/leadlag/{run_type}",
-                "run_type": run_type,
-                "generated_at_utc": f"2026-06-10T09:{index + 10:02d}:00Z",
-                "git_commit": "abc123",
-                "git_dirty": False,
-                "summary_status": True,
-                "summary_file": summary_file,
-                "summary_strategy": "leadlag",
-                "summary_market": "india_nse_index_derivatives",
-                "summary_candidate_scenario_key": "scenario=leadlag",
-                "parameters_json": "{}",
-                "input_count": 1,
-                "input_file_count": 1,
-                "input_directory_count": 0,
-                "input_other_count": 0,
-                "input_unfingerprinted_count": 0,
-                "input_hashed_count": 1,
-            }
-            for index, (run_type, summary_file) in enumerate(required)
-        ]
-    ).to_csv(catalog_path, index=False)
+    catalog_rows = [
+        {
+            "run_dir": f"runs/leadlag/{run_type}",
+            "run_type": run_type,
+            "generated_at_utc": f"2026-06-10T09:{index + 10:02d}:00Z",
+            "git_commit": "abc123",
+            "git_dirty": False,
+            "summary_status": True,
+            "summary_file": summary_file,
+            "summary_strategy": "leadlag",
+            "summary_market": "india_nse_index_derivatives",
+            "summary_candidate_scenario_key": "scenario=leadlag",
+            "parameters_json": "{}",
+            "input_count": 1,
+            "input_file_count": 1,
+            "input_directory_count": 0,
+            "input_other_count": 0,
+            "input_unfingerprinted_count": 0,
+            "input_hashed_count": 1,
+        }
+        for index, (run_type, summary_file) in enumerate(required)
+    ]
+    by_type = {row["run_type"]: row for row in catalog_rows}
+    measurement_hash = "a" * 64
+    candidate_hash = "b" * 64
+    budget_ns = 100_000
+    replay_ns = 50_000
+    headroom_ns = 50_000
+    by_type["leadlag_edge_audit"].update(
+        {
+            "summary_measurement_manifest_current": True,
+            "summary_measurement_manifest_sha256": measurement_hash,
+            "summary_max_profitable_latency_ns": budget_ns,
+        }
+    )
+    by_type["leadlag_replay_walkforward"].update(
+        {
+            "summary_edge_candidate_manifest_required": True,
+            "summary_edge_candidate_manifest_current": True,
+            "summary_edge_candidate_manifest_sha256": candidate_hash,
+            "summary_edge_measurement_manifest_sha256": measurement_hash,
+            "summary_edge_audit_bound": True,
+            "summary_edge_latency_budget_ns": budget_ns,
+            "summary_total_replay_latency_ns": replay_ns,
+            "summary_edge_latency_headroom_ns": headroom_ns,
+        }
+    )
+    by_type["promotion_report"].update(
+        {
+            "summary_walkforward_manifest_current": True,
+            "summary_edge_audit_bound": True,
+            "summary_edge_candidate_manifest_bound": True,
+            "summary_edge_candidate_manifest_current": True,
+            "summary_edge_candidate_manifest_sha256": candidate_hash,
+            "summary_edge_measurement_manifest_sha256": measurement_hash,
+            "summary_edge_latency_budget_ns": budget_ns,
+            "summary_total_replay_latency_ns": replay_ns,
+            "summary_edge_latency_headroom_ns": headroom_ns,
+        }
+    )
+    by_type["leadlag_order_plan"].update(
+        {
+            "summary_promotion_manifest_current": True,
+            "summary_edge_audit_bound": True,
+            "summary_edge_candidate_manifest_bound": True,
+            "summary_edge_candidate_manifest_sha256": candidate_hash,
+            "summary_edge_measurement_manifest_sha256": measurement_hash,
+            "summary_edge_latency_budget_respected": True,
+            "summary_edge_audit_override_used": False,
+            "summary_edge_latency_budget_ns": budget_ns,
+            "summary_total_replay_latency_ns": replay_ns,
+            "summary_edge_latency_headroom_ns": headroom_ns,
+        }
+    )
+    by_type["leadlag_launch_pipeline"].update(
+        {
+            "summary_order_plan_promotion_manifest_current": True,
+            "summary_order_plan_edge_audit_bound": True,
+            "summary_order_plan_edge_candidate_manifest_bound": True,
+            "summary_order_plan_edge_candidate_manifest_sha256": candidate_hash,
+            "summary_order_plan_edge_measurement_manifest_sha256": measurement_hash,
+            "summary_order_plan_edge_latency_budget_respected": True,
+            "summary_order_plan_edge_latency_budget_ns": budget_ns,
+            "summary_order_plan_total_replay_latency_ns": replay_ns,
+            "summary_order_plan_edge_latency_headroom_ns": headroom_ns,
+        }
+    )
+    pd.DataFrame(catalog_rows).to_csv(catalog_path, index=False)
     scorecard = write_strategy_scorecard(
         catalog_path,
         output_dir=tmp_path / "scorecard",
