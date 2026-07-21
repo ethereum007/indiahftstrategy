@@ -5943,6 +5943,19 @@ field across the route packet, summary, config, and manifest. Explicit
 The carried cutover fields are also compared with the independently reopened
 current cutover bundle, so a consistently re-manifested route-family relabel
 cannot detach dispatch from its source proof.
+For canonical `leadlag`, the planner independently reconciles the route summary
+and nested route config, requiring the exact profile, required marker, complete
+`leadlag_edge_lineage/v1` identity, guard-to-scale-up match, and prior cutover
+contract-consistency decision. These decisions surface as
+`strategy_portfolio_leadlag_route_contract_consistent`,
+`strategy_portfolio_leadlag_cutover_contract_consistent`, and the related
+required, ready, and match checks. The shared route verifier also requires the
+route packet, summary, config, and manifest to agree with one another and with
+the currently reopened cutover bundle. Every dispatch-order row, the dispatch
+summary, nested strategy-portfolio config, runbook, and manifest then retain
+the verified contract. The broker-dispatch verifier seals those direct outputs
+against the carried route copy, so a freshly re-manifested dispatch bundle with
+a different otherwise valid contract is rejected before send preparation.
 The verified state is carried as `route_enable_lineage_*` and
 `route_enable_cutover_*` fields in the dispatch summary, config, manifest, and
 every dry-run dispatch-order row, including the exact prospective-family and

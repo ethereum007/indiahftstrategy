@@ -8,6 +8,15 @@ from typing import Any
 
 import pandas as pd
 
+from reports.leadlag_lineage import (
+    LEADLAG_LINEAGE_BOOLEAN_FIELDS,
+    LEADLAG_LINEAGE_FIELDS,
+    LEADLAG_LINEAGE_INTEGER_FIELDS,
+    LEADLAG_LINEAGE_NUMERIC_FIELDS,
+    LEADLAG_LINEAGE_TEXT_FIELDS,
+    leadlag_lineage_field_matches,
+    leadlag_lineage_fields,
+)
 from reports.manifest import (
     file_sha256,
     manifest_dependency_paths,
@@ -65,6 +74,21 @@ BROKER_DISPATCH_ACK_REQUIRED_ARTIFACTS = (
     "broker_dispatch_ack_action_queue.csv",
     "broker_dispatch_ack_config.json",
     "broker_dispatch_ack_runbook.md",
+)
+ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
+    "leadlag_edge_lineage_required",
+    *LEADLAG_LINEAGE_FIELDS,
+    "leadlag_edge_lineage_matches_scaleup",
+    "leadlag_cutover_contract_consistent",
+)
+ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_SOURCE_FIELDS = (
+    "leadlag_edge_lineage_required",
+    *LEADLAG_LINEAGE_FIELDS,
+    "leadlag_edge_lineage_matches_scaleup",
+)
+BROKER_DISPATCH_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
+    *ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
+    "leadlag_route_contract_consistent",
 )
 
 
@@ -422,6 +446,7 @@ def empty_route_enable_lineage(*, required: bool = False) -> dict[str, Any]:
             for column in cutover_lineage_fields(empty_cutover_lineage())
         }
     )
+    state.update(_empty_strategy_portfolio_leadlag_fields())
     return state
 
 
@@ -449,6 +474,7 @@ def load_route_enable_lineage(route_enable_config_path: str | Path) -> dict[str,
     config = _read_json(config_path)
     manifest = _read_json(manifest_path)
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    state.update(_route_enable_strategy_portfolio_leadlag_state(row))
     route_fields = cutover_lineage_fields(empty_cutover_lineage())
     state.update(
         {
@@ -555,6 +581,15 @@ def route_enable_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
             for column in route_fields
         }
     )
+    fields.update(
+        {
+            f"route_enable_strategy_portfolio_{field}": _normalize(
+                lineage.get(f"strategy_portfolio_{field}"),
+                field,
+            )
+            for field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+        }
+    )
     return fields
 
 
@@ -596,6 +631,7 @@ def empty_broker_dispatch_lineage(*, required: bool = False) -> dict[str, Any]:
             for column in route_enable_lineage_fields(empty_route_enable_lineage())
         }
     )
+    state.update(_empty_broker_dispatch_leadlag_fields())
     return state
 
 
@@ -625,6 +661,7 @@ def load_broker_dispatch_lineage(
     config = _read_json(config_path)
     manifest = _read_json(manifest_path)
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    state.update(_broker_dispatch_strategy_portfolio_leadlag_state(row))
     route_fields = route_enable_lineage_fields(empty_route_enable_lineage())
     state.update(
         {
@@ -738,6 +775,15 @@ def broker_dispatch_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]
         {
             f"broker_dispatch_{column}": _normalize(lineage.get(column), column)
             for column in route_fields
+        }
+    )
+    fields.update(
+        {
+            f"broker_dispatch_strategy_portfolio_{field}": _normalize(
+                lineage.get(f"strategy_portfolio_{field}"),
+                field,
+            )
+            for field in BROKER_DISPATCH_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
         }
     )
     return fields
@@ -1337,6 +1383,15 @@ def _route_enable_contract_errors(
             errors.append(f"route_enable_config_{column}_mismatch")
         if not _same(extra.get(column), expected, column):
             errors.append(f"route_enable_manifest_{column}_mismatch")
+    errors.extend(
+        _route_enable_leadlag_contract_errors(
+            row=row,
+            packet_row=packet_row,
+            config=config,
+            extra=extra,
+            lineage=lineage,
+        )
+    )
     if not _same(config.get("route_enabled"), row.get("ready"), "ready"):
         errors.append("route_enable_config_ready_mismatch")
     if not _same(packet_row.get("route_enabled"), row.get("ready"), "ready"):
@@ -1344,6 +1399,133 @@ def _route_enable_contract_errors(
     if not _same(extra.get("ready"), row.get("ready"), "ready"):
         errors.append("route_enable_manifest_ready_mismatch")
     return errors
+
+
+def _empty_strategy_portfolio_leadlag_fields() -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "strategy_portfolio_leadlag_edge_lineage_required": False,
+        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": False,
+        "strategy_portfolio_leadlag_cutover_contract_consistent": False,
+    }
+    fields.update(
+        {
+            f"strategy_portfolio_{field}": False
+            for field in LEADLAG_LINEAGE_BOOLEAN_FIELDS
+        }
+    )
+    fields.update(
+        {
+            f"strategy_portfolio_{field}": 0
+            for field in LEADLAG_LINEAGE_INTEGER_FIELDS
+        }
+    )
+    fields.update(
+        {
+            f"strategy_portfolio_{field}": ""
+            for field in LEADLAG_LINEAGE_TEXT_FIELDS
+        }
+    )
+    fields.update(
+        {
+            f"strategy_portfolio_{field}": 0.0
+            for field in LEADLAG_LINEAGE_NUMERIC_FIELDS
+        }
+    )
+    return fields
+
+
+def _route_enable_strategy_portfolio_leadlag_state(
+    row: pd.Series,
+) -> dict[str, Any]:
+    return {
+        "strategy_portfolio_leadlag_edge_lineage_required": _bool(
+            row.get("strategy_portfolio_leadlag_edge_lineage_required", False)
+        ),
+        **leadlag_lineage_fields(
+            row,
+            source_prefix="strategy_portfolio_",
+            target_prefix="strategy_portfolio_",
+        ),
+        "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": _bool(
+            row.get(
+                "strategy_portfolio_leadlag_edge_lineage_matches_scaleup",
+                False,
+            )
+        ),
+        "strategy_portfolio_leadlag_cutover_contract_consistent": _bool(
+            row.get(
+                "strategy_portfolio_leadlag_cutover_contract_consistent",
+                False,
+            )
+        ),
+    }
+
+
+def _route_enable_leadlag_contract_errors(
+    *,
+    row: pd.Series,
+    packet_row: pd.Series,
+    config: Mapping[str, Any],
+    extra: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+) -> list[str]:
+    strategy_portfolio = _mapping(config.get("strategy_portfolio"))
+    summary_profile = _text(row.get("strategy_portfolio_selected_profile")).lower()
+    packet_profile = _text(packet_row.get("strategy_portfolio_selected_profile")).lower()
+    config_profile = _text(strategy_portfolio.get("selected_profile")).lower()
+    active = bool(
+        "leadlag" in {summary_profile, packet_profile, config_profile}
+        or _bool(
+            lineage.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _bool(strategy_portfolio.get("leadlag_edge_lineage_required", False))
+        or _bool(
+            packet_row.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+    )
+    if not active:
+        return []
+
+    errors: list[str] = []
+    if packet_profile != summary_profile:
+        errors.append("route_enable_packet_strategy_portfolio_profile_mismatch")
+    if config_profile != summary_profile:
+        errors.append("route_enable_config_strategy_portfolio_profile_mismatch")
+    for field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS:
+        summary_column = f"strategy_portfolio_{field}"
+        expected = lineage[summary_column]
+        if not _same(packet_row.get(summary_column), expected, field):
+            errors.append(f"route_enable_packet_strategy_portfolio_{field}_mismatch")
+        if not _same(strategy_portfolio.get(field), expected, field):
+            errors.append(f"route_enable_config_strategy_portfolio_{field}_mismatch")
+        if not _same(extra.get(summary_column), expected, field):
+            errors.append(f"route_enable_manifest_strategy_portfolio_{field}_mismatch")
+    return errors
+
+
+def _empty_broker_dispatch_leadlag_fields() -> dict[str, Any]:
+    fields = _empty_strategy_portfolio_leadlag_fields()
+    fields["strategy_portfolio_leadlag_route_contract_consistent"] = False
+    return fields
+
+
+def _broker_dispatch_strategy_portfolio_leadlag_state(
+    row: pd.Series,
+) -> dict[str, Any]:
+    fields = _route_enable_strategy_portfolio_leadlag_state(row)
+    fields["strategy_portfolio_leadlag_route_contract_consistent"] = _bool(
+        row.get(
+            "strategy_portfolio_leadlag_route_contract_consistent",
+            False,
+        )
+    )
+    return fields
 
 
 def _broker_dispatch_contract_errors(
@@ -1378,6 +1560,15 @@ def _broker_dispatch_contract_errors(
             errors.append(f"broker_dispatch_config_{column}_mismatch")
         if not _same(extra.get(column), expected, column):
             errors.append(f"broker_dispatch_manifest_{column}_mismatch")
+    errors.extend(
+        _broker_dispatch_leadlag_contract_errors(
+            row=row,
+            orders=orders,
+            config=config,
+            extra=extra,
+            lineage=lineage,
+        )
+    )
 
     for column in (
         "dispatch_batch_id",
@@ -1400,6 +1591,59 @@ def _broker_dispatch_contract_errors(
         errors.append("broker_dispatch_manifest_ready_mismatch")
     if not _frame_column_matches(orders, "dispatch_action", "dry_run_submit"):
         errors.append("broker_dispatch_orders_dispatch_action_mismatch")
+    return errors
+
+
+def _broker_dispatch_leadlag_contract_errors(
+    *,
+    row: pd.Series,
+    orders: pd.DataFrame,
+    config: Mapping[str, Any],
+    extra: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+) -> list[str]:
+    strategy_portfolio = _mapping(config.get("strategy_portfolio"))
+    summary_profile = _text(row.get("strategy_portfolio_selected_profile")).lower()
+    config_profile = _text(strategy_portfolio.get("selected_profile")).lower()
+    active = bool(
+        "leadlag" in {summary_profile, config_profile}
+        or _bool(
+            lineage.get(
+                "strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _bool(
+            lineage.get(
+                "route_enable_strategy_portfolio_leadlag_edge_lineage_required",
+                False,
+            )
+        )
+        or _bool(strategy_portfolio.get("leadlag_edge_lineage_required", False))
+    )
+    if not active:
+        return []
+
+    errors: list[str] = []
+    if config_profile != summary_profile:
+        errors.append("broker_dispatch_config_strategy_portfolio_profile_mismatch")
+    for field in BROKER_DISPATCH_STRATEGY_PORTFOLIO_LEADLAG_FIELDS:
+        summary_column = f"strategy_portfolio_{field}"
+        expected = lineage[summary_column]
+        if not _frame_column_matches(orders, summary_column, expected):
+            errors.append(f"broker_dispatch_orders_strategy_portfolio_{field}_mismatch")
+        if not _same(strategy_portfolio.get(field), expected, field):
+            errors.append(f"broker_dispatch_config_strategy_portfolio_{field}_mismatch")
+        if not _same(extra.get(summary_column), expected, field):
+            errors.append(f"broker_dispatch_manifest_strategy_portfolio_{field}_mismatch")
+        if field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS:
+            route_value = lineage.get(
+                f"route_enable_strategy_portfolio_{field}"
+            )
+            if not _same(expected, route_value, field):
+                errors.append(
+                    f"broker_dispatch_route_enable_strategy_portfolio_{field}_mismatch"
+                )
     return errors
 
 
@@ -1776,7 +2020,67 @@ def _route_cutover_matches_current(
             _same(lineage.get(column), current_fields.get(column), column)
             for column in route_fields
         )
+        and _route_leadlag_matches_current_cutover(
+            lineage=lineage,
+            cutover_config_path=cutover_config_path,
+        )
     )
+
+
+def _route_leadlag_matches_current_cutover(
+    *,
+    lineage: Mapping[str, Any],
+    cutover_config_path: Path,
+) -> bool:
+    if not _bool(
+        lineage.get("strategy_portfolio_leadlag_edge_lineage_required", False)
+    ):
+        return True
+
+    root = cutover_config_path.parent
+    summary = _read_csv(root / "cutover_summary.csv")
+    authorization = _read_csv(root / "cutover_authorization.csv")
+    config = _read_json(cutover_config_path)
+    manifest = _read_json(root / "manifest.json")
+    if summary.empty or authorization.empty or not config or not manifest:
+        return False
+
+    row = summary.iloc[0]
+    authorization_row = authorization.iloc[0]
+    runtime_session = _mapping(config.get("runtime_session"))
+    strategy_portfolio = _mapping(runtime_session.get("strategy_portfolio"))
+    extra = _mapping(manifest.get("extra"))
+    prefixes = ("runtime_strategy_portfolio_", "strategy_portfolio_")
+    prefix = next(
+        (
+            candidate
+            for candidate in prefixes
+            if any(
+                f"{candidate}{field}" in row.index
+                for field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_SOURCE_FIELDS
+            )
+        ),
+        prefixes[0],
+    )
+    if _text(row.get(f"{prefix}selected_profile")).lower() != "leadlag":
+        return False
+    if _text(authorization_row.get(f"{prefix}selected_profile")).lower() != "leadlag":
+        return False
+    if _text(strategy_portfolio.get("selected_profile")).lower() != "leadlag":
+        return False
+
+    for field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_SOURCE_FIELDS:
+        expected = lineage[f"strategy_portfolio_{field}"]
+        source_column = f"{prefix}{field}"
+        if not _same(row.get(source_column), expected, field):
+            return False
+        if not _same(authorization_row.get(source_column), expected, field):
+            return False
+        if not _same(strategy_portfolio.get(field), expected, field):
+            return False
+        if not _same(extra.get(source_column), expected, field):
+            return False
+    return True
 
 
 def _frame_column_matches(frame: pd.DataFrame, column: str, expected: Any) -> bool:
@@ -1921,7 +2225,32 @@ def _source_manifest_path(config_path: str | Path) -> Path:
     return candidate.parent / "manifest.json"
 
 
+def _leadlag_contract_field(column: str) -> str:
+    return next(
+        (
+            field
+            for field in ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+            if column.endswith(field)
+        ),
+        "",
+    )
+
+
 def _field_default(column: str) -> Any:
+    leadlag_field = _leadlag_contract_field(column)
+    if leadlag_field in {
+        "leadlag_edge_lineage_required",
+        "leadlag_edge_lineage_matches_scaleup",
+        "leadlag_cutover_contract_consistent",
+        *LEADLAG_LINEAGE_BOOLEAN_FIELDS,
+    }:
+        return False
+    if leadlag_field in LEADLAG_LINEAGE_INTEGER_FIELDS:
+        return 0
+    if leadlag_field in LEADLAG_LINEAGE_NUMERIC_FIELDS:
+        return 0.0
+    if leadlag_field in LEADLAG_LINEAGE_TEXT_FIELDS:
+        return ""
     if column.endswith("_count"):
         return 0
     if column == "guard_action" or column.endswith(
@@ -1939,10 +2268,17 @@ def _normalize(value: Any, column: str) -> Any:
         return _bool(value)
     if isinstance(default, int):
         return _integer(value)
+    if isinstance(default, float):
+        return _number(value)
     return _text(value)
 
 
 def _same(left: Any, right: Any, column: str) -> bool:
+    leadlag_field = _leadlag_contract_field(column)
+    if leadlag_field in LEADLAG_LINEAGE_FIELDS:
+        return leadlag_lineage_field_matches(leadlag_field, left, right)
+    if leadlag_field:
+        return _bool(left) == _bool(right)
     return _normalize(left, column) == _normalize(right, column)
 
 
@@ -2006,6 +2342,15 @@ def _integer(value: Any, *, fallback: int = 0) -> int:
         return fallback
     try:
         return int(float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _number(value: Any, *, fallback: float = 0.0) -> float:
+    if _missing(value):
+        return fallback
+    try:
+        return float(value)
     except (TypeError, ValueError):
         return fallback
 

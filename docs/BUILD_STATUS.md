@@ -939,6 +939,13 @@
   concentration context into dispatch summary/config artifacts, keeping
   distinct count, top concentration, and maximum allocation-weight evidence
   available before dry-run send packets.
+- Broker dispatch planning now independently reconciles the canonical
+  `leadlag_edge_lineage/v1` contract between the route summary and nested
+  config. The shared operational-lineage verifier requires route packet,
+  summary, config, and manifest agreement with the current cutover, then seals
+  dispatch orders, summary, nested config, runbook, and manifest against that
+  verified route copy. Fully re-manifested route or dispatch bundles with a
+  different otherwise valid contract now fail closed.
 - Broker dispatch planning now emits manifest-tracked
   `broker_dispatch_action_queue.csv` and `broker_dispatch_runbook.md`
   scheduler handoffs, routing route-enable, allocation, route-readiness,
@@ -6206,6 +6213,20 @@ required/match markers all fail closed. The complete route-enable suite passes
 (`121 passed`), the downstream broker-dispatch compatibility suite passes
 (`116 passed`), and manifest plus experiment-catalog compatibility passes (`69
 passed`). Repository collection is healthy at `2401 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
+Latest route-enable-to-broker-dispatch lineage gate: dispatch planning now
+reconciles the canonical `leadlag_edge_lineage/v1` contract from both route
+sources, requires the route bundle to remain bound to the current cutover, and
+retains the verified identity in every dispatch artifact. The shared verifier
+also compares the dispatch-carried contract with the verified route copy, so
+valid-but-different route and dispatch re-manifesting regressions both fail
+closed. The complete broker-dispatch suite passes (`125 passed`), focused
+downstream send/ack lineage coverage passes (`8 passed`), and manifest plus
+experiment-catalog compatibility passes (`69 passed`). Repository collection
+is healthy at `2410 tests`. The aggregate 128-test send suite exceeded the
+304.7-second local command timeout without reporting a test failure or a final
+result, so it is not counted as a passing full-suite run. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
 ## Next Build Targets
