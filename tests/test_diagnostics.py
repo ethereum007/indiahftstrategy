@@ -32,6 +32,63 @@ def test_tick_diagnostics_reports_quality_issues_and_spread_stats(tmp_path):
     assert (out.output_dir / "diagnostic_issues.csv").exists()
 
 
+def test_tick_and_chain_diagnostics_split_non_trading_day_from_intraday_issues():
+    timestamps = [
+        ns_ist("2026-06-12 08:00:00"),
+        ns_ist("2026-06-13 10:00:00"),
+    ]
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": timestamp,
+                "bid": 100.0,
+                "ask": 100.05,
+                "bid_qty": 75,
+                "ask_qty": 150,
+            }
+            for timestamp in timestamps
+        ]
+    )
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": timestamp,
+                "expiry": "2026-06-25",
+                "strike": 22500.0,
+                "call_bid": 100.0,
+                "call_ask": 100.5,
+                "call_bid_qty": 75,
+                "call_ask_qty": 75,
+                "put_bid": 90.0,
+                "put_ask": 90.5,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+            for timestamp in timestamps
+        ]
+    )
+
+    tick_result = tick_diagnostics(ticks)
+    chain_result = chain_diagnostics(chain)
+
+    tick_summary = tick_result.summary.iloc[0]
+    chain_summary = chain_result.summary.loc[
+        chain_result.summary["scope"] == "overall"
+    ].iloc[0]
+    assert int(tick_summary["non_trading_day_rows"]) == 1
+    assert int(tick_summary["out_of_session_rows"]) == 1
+    assert set(tick_result.issues["issue"]) == {
+        "non_trading_day",
+        "out_of_session",
+    }
+    assert int(chain_summary["non_trading_day_rows"]) == 1
+    assert int(chain_summary["out_of_session_rows"]) == 1
+    assert set(chain_result.issues["issue"]) == {
+        "non_trading_day",
+        "out_of_session",
+    }
+
+
 def test_chain_diagnostics_reports_expiry_coverage_and_issues():
     chain = pd.DataFrame(
         [

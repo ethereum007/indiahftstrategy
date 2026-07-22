@@ -6453,10 +6453,30 @@ compatibility set passes (`40 passed`). Repository collection is healthy at
 complete within the 10-minute runner limit, so it is not counted as a pass for
 this slice.
 
+Latest mapped-data quarantine lineage gate: tick and option-chain
+normalization now preserves every quarantine counter in mapped-data summaries,
+configs, operator-reviewed receipts, target-applied receipts, and runbooks.
+Data-readiness checks evaluate the pre-filter quarantine evidence as well as
+post-filter diagnostics, closing the false-green case where a usable row could
+hide crossed, nonpositive, nonmonotonic, weekend, or intraday session rows that
+normalization removed. Diagnostics classify `non_trading_day` separately from
+valid-weekday `out_of_session`, and `max_non_trading_day_rows` propagates
+through vendor, provider single/batch, broker-vendor, and direct readiness CLI
+paths. The unique normalization, diagnostics, readiness, reviewed/applied
+receipt, market-profile, loader, chain, and provider compatibility set passes
+(`86 passed`), and repository collection is healthy at `2470 tests`. The
+broker-vendor suite currently has four legacy fixture failures (`3 passed`, `4
+failed`): its hand-written terminal round-trip artifacts lack the current
+manifest and recursive lineage contracts required by the already-published
+broker verifier. No production broker verifier was weakened or changed in this
+slice, and the full repository suite was not rerun.
+
 ## Next Build Targets
 
-1. Add data adapters for the first real vendor export once files are available.
-2. Replace placeholder Arrow.money/iRage column maps once real export schemas
+1. Replace legacy broker-vendor terminal round-trip test fixtures with current
+   manifest-backed generated evidence.
+2. Add data adapters for the first real vendor export once files are available.
+3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-3. Replace the built-in upload review templates with broker-signed
+4. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.

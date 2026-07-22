@@ -59,6 +59,40 @@ def test_normalize_mapped_tick_data_uses_reviewed_vendor_mapping():
     assert report.action_queue.empty
 
 
+def test_normalize_mapped_tick_data_preserves_session_quarantine_provenance():
+    rows = []
+    for timestamp in (
+        "2026-06-12 09:14:59",
+        "2026-06-12 10:00:00",
+        "2026-06-13 10:00:00",
+    ):
+        rows.append(
+            {
+                "exchange_ts": ns_ist(timestamp),
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        )
+
+    report = normalize_mapped_data(
+        pd.DataFrame(rows),
+        tick_mapping(),
+        config=MappedDataConfig(adapter="arrow_money", kind="ticks"),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert int(summary["input_rows"]) == 3
+    assert int(summary["output_rows"]) == 1
+    assert int(summary["quarantined_rows"]) == 2
+    assert int(summary["dropped_non_trading_day_rows"]) == 1
+    assert int(summary["dropped_out_of_session_rows"]) == 1
+
+
 def test_normalize_mapped_data_fails_closed_for_missing_required_source():
     mapping = tick_mapping()
     mapping.loc[mapping["normalized_column"] == "ask_qty", "source_column"] = "missing_ask_size"

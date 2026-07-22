@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data.loaders import trading_session_mask
+from data.loaders import trading_day_mask, trading_session_time_mask
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -49,6 +49,10 @@ def tick_diagnostics(
     else:
         frame["spread_ticks"] = np.nan
     gaps = frame["ts"].sort_values().diff().dropna()
+    non_trading_days, out_of_session = _session_issue_masks(
+        frame["ts"],
+        market=market,
+    )
     summary = pd.DataFrame(
         [
             {
@@ -59,7 +63,8 @@ def tick_diagnostics(
                 "crossed_quote_rows": int((frame["ask"] < frame["bid"]).sum()),
                 "nonpositive_quote_rows": int(((frame["bid"] <= 0) | (frame["ask"] <= 0)).sum()),
                 "nonpositive_depth_rows": int(((frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0)).sum()),
-                "out_of_session_rows": int((~trading_session_mask(frame["ts"], market=market)).sum()) if len(frame) else 0,
+                "non_trading_day_rows": int(non_trading_days.sum()),
+                "out_of_session_rows": int(out_of_session.sum()),
                 "median_gap_ns": float(gaps.median()) if len(gaps) else 0.0,
                 "p99_gap_ns": float(gaps.quantile(0.99)) if len(gaps) else 0.0,
                 "median_spread": float(frame["spread"].median()) if len(frame) else 0.0,
@@ -68,7 +73,14 @@ def tick_diagnostics(
             }
         ]
     )
-    return DiagnosticResult(summary=summary, issues=_tick_issues(frame, market=market))
+    return DiagnosticResult(
+        summary=summary,
+        issues=_tick_issues(
+            frame,
+            non_trading_days=non_trading_days,
+            out_of_session=out_of_session,
+        ),
+    )
 
 
 def chain_diagnostics(
@@ -87,6 +99,10 @@ def chain_diagnostics(
     else:
         frame["call_spread_ticks"] = np.nan
         frame["put_spread_ticks"] = np.nan
+    non_trading_days, out_of_session = _session_issue_masks(
+        frame["ts"],
+        market=market,
+    )
     by_expiry = (
         frame.groupby("expiry", dropna=False)
         .agg(
@@ -126,12 +142,20 @@ def chain_diagnostics(
                         | (frame["put_ask_qty"] <= 0)
                     ).sum()
                 ),
-                "out_of_session_rows": int((~trading_session_mask(frame["ts"], market=market)).sum()) if len(frame) else 0,
+                "non_trading_day_rows": int(non_trading_days.sum()),
+                "out_of_session_rows": int(out_of_session.sum()),
             }
         ]
     )
     summary = pd.concat([overall.assign(scope="overall"), by_expiry.assign(scope="expiry")], ignore_index=True, sort=False)
-    return DiagnosticResult(summary=summary, issues=_chain_issues(frame, market=market))
+    return DiagnosticResult(
+        summary=summary,
+        issues=_chain_issues(
+            frame,
+            non_trading_days=non_trading_days,
+            out_of_session=out_of_session,
+        ),
+    )
 
 
 def write_diagnostics(result: DiagnosticResult, output_dir: str | Path) -> DiagnosticResult:
@@ -142,14 +166,20 @@ def write_diagnostics(result: DiagnosticResult, output_dir: str | Path) -> Diagn
     return DiagnosticResult(result.summary, result.issues, out)
 
 
-def _tick_issues(frame: pd.DataFrame, *, market: str) -> pd.DataFrame:
+def _tick_issues(
+    frame: pd.DataFrame,
+    *,
+    non_trading_days: pd.Series,
+    out_of_session: pd.Series,
+) -> pd.DataFrame:
     rows = []
     checks = {
         "nonmonotonic_ts": frame["ts"].diff().fillna(0) < 0,
         "crossed_quote": frame["ask"] < frame["bid"],
         "nonpositive_quote": (frame["bid"] <= 0) | (frame["ask"] <= 0),
         "nonpositive_depth": (frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0),
-        "out_of_session": ~trading_session_mask(frame["ts"], market=market),
+        "non_trading_day": non_trading_days,
+        "out_of_session": out_of_session,
     }
     for issue, mask in checks.items():
         for idx in frame.index[mask]:
@@ -157,7 +187,12 @@ def _tick_issues(frame: pd.DataFrame, *, market: str) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["row_index", "ts", "issue"])
 
 
-def _chain_issues(frame: pd.DataFrame, *, market: str) -> pd.DataFrame:
+def _chain_issues(
+    frame: pd.DataFrame,
+    *,
+    non_trading_days: pd.Series,
+    out_of_session: pd.Series,
+) -> pd.DataFrame:
     rows = []
     checks = {
         "crossed_quote": (frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"]),
@@ -169,7 +204,8 @@ def _chain_issues(frame: pd.DataFrame, *, market: str) -> pd.DataFrame:
         | (frame["call_ask_qty"] <= 0)
         | (frame["put_bid_qty"] <= 0)
         | (frame["put_ask_qty"] <= 0),
-        "out_of_session": ~trading_session_mask(frame["ts"], market=market),
+        "non_trading_day": non_trading_days,
+        "out_of_session": out_of_session,
     }
     for issue, mask in checks.items():
         for idx in frame.index[mask]:
@@ -183,6 +219,16 @@ def _chain_issues(frame: pd.DataFrame, *, market: str) -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(rows, columns=["row_index", "ts", "expiry", "strike", "issue"])
+
+
+def _session_issue_masks(
+    ts_ns: pd.Series,
+    *,
+    market: str,
+) -> tuple[pd.Series, pd.Series]:
+    trading_days = trading_day_mask(ts_ns, market=market)
+    session_times = trading_session_time_mask(ts_ns, market=market)
+    return ~trading_days, trading_days & ~session_times
 
 
 def _require(df: pd.DataFrame, columns: list[str], name: str):

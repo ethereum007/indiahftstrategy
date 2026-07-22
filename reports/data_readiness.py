@@ -48,6 +48,7 @@ class DataReadinessThresholds:
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
+    max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_tick_p99_gap_ns: float | None = None
     max_tick_median_spread_ticks: float | None = None
@@ -289,6 +290,8 @@ def _checks(
                 )
             )
 
+    if not summaries["mapped_data"].empty:
+        checks.extend(_mapped_quarantine_checks(summaries["mapped_data"], thresholds))
     if not summaries["tick_diagnostics"].empty:
         checks.extend(_tick_checks(summaries["tick_diagnostics"], thresholds))
     if not summaries["chain_diagnostics"].empty:
@@ -791,6 +794,12 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
             "<=",
             thresholds.max_nonpositive_depth_rows,
         ),
+        _threshold_check(
+            "tick_non_trading_day_rows",
+            _number(row, "non_trading_day_rows", fallback=0.0),
+            "<=",
+            thresholds.max_non_trading_day_rows,
+        ),
         _threshold_check("tick_out_of_session_rows", _number(row, "out_of_session_rows"), "<=", thresholds.max_out_of_session_rows),
     ]
     if thresholds.max_tick_p99_gap_ns is not None:
@@ -826,6 +835,12 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
             "<=",
             thresholds.max_nonpositive_depth_rows,
         ),
+        _threshold_check(
+            "chain_non_trading_day_rows",
+            _number(row, "non_trading_day_rows", fallback=0.0),
+            "<=",
+            thresholds.max_non_trading_day_rows,
+        ),
         _threshold_check("chain_out_of_session_rows", _number(row, "out_of_session_rows"), "<=", thresholds.max_out_of_session_rows),
     ]
     if thresholds.max_chain_median_spread_ticks is not None:
@@ -838,6 +853,69 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 max(call_spread, put_spread),
                 "<=",
                 thresholds.max_chain_median_spread_ticks,
+            )
+        )
+    return checks
+
+
+def _mapped_quarantine_checks(
+    summary: pd.DataFrame,
+    thresholds: DataReadinessThresholds,
+) -> list[dict[str, Any]]:
+    quarantine_fields = {
+        "dropped_crossed_quote_rows",
+        "dropped_nonpositive_quote_rows",
+        "dropped_nonmonotonic_rows",
+        "dropped_negative_depth_rows",
+        "dropped_non_trading_day_rows",
+        "dropped_out_of_session_rows",
+    }
+    if not quarantine_fields.intersection(summary.columns):
+        return []
+    row = _overall_row(summary)
+    checks = [
+        _threshold_check(
+            "mapped_data_dropped_crossed_quote_rows",
+            _number(row, "dropped_crossed_quote_rows"),
+            "<=",
+            thresholds.max_crossed_quote_rows,
+        ),
+        _threshold_check(
+            "mapped_data_dropped_nonpositive_quote_rows",
+            _number(row, "dropped_nonpositive_quote_rows"),
+            "<=",
+            thresholds.max_nonpositive_quote_rows,
+        ),
+        _threshold_check(
+            "mapped_data_dropped_non_trading_day_rows",
+            _number(row, "dropped_non_trading_day_rows"),
+            "<=",
+            thresholds.max_non_trading_day_rows,
+        ),
+        _threshold_check(
+            "mapped_data_dropped_out_of_session_rows",
+            _number(row, "dropped_out_of_session_rows"),
+            "<=",
+            thresholds.max_out_of_session_rows,
+        ),
+    ]
+    kind = _vendor_data_kind(_text(row, "kind"))
+    if kind == "ticks":
+        checks.append(
+            _threshold_check(
+                "mapped_data_dropped_nonmonotonic_rows",
+                _number(row, "dropped_nonmonotonic_rows"),
+                "<=",
+                thresholds.max_nonmonotonic_rows,
+            )
+        )
+    if kind == "chain":
+        checks.append(
+            _threshold_check(
+                "mapped_data_dropped_negative_depth_rows",
+                _number(row, "dropped_negative_depth_rows"),
+                "<=",
+                thresholds.max_nonpositive_depth_rows,
             )
         )
     return checks
@@ -1742,6 +1820,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
         "max_nonpositive_depth_rows",
+        "max_non_trading_day_rows",
         "max_out_of_session_rows",
     ):
         if getattr(thresholds, name) < 0:

@@ -48,6 +48,7 @@ class BrokerVendorDataReadinessConfig:
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
+    max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
@@ -119,6 +120,7 @@ def write_broker_vendor_data_readiness_pipeline(
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
+        max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_p99_gap_ns=config.max_p99_gap_ns,
         max_median_spread_ticks=config.max_median_spread_ticks,

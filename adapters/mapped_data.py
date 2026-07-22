@@ -29,6 +29,19 @@ MAPPED_DATA_TRANSFORMS = frozenset(
     }
 )
 
+QUARANTINE_SUMMARY_FIELDS = (
+    "quarantine_total_rows",
+    "quarantine_kept_rows",
+    "quarantined_rows",
+    "dropped_null_rows",
+    "dropped_nonpositive_quote_rows",
+    "dropped_crossed_quote_rows",
+    "dropped_nonmonotonic_rows",
+    "dropped_negative_depth_rows",
+    "dropped_non_trading_day_rows",
+    "dropped_out_of_session_rows",
+)
+
 
 @dataclass(frozen=True)
 class MappedDataConfig:
@@ -77,13 +90,27 @@ def normalize_mapped_data(
     mapped = pd.DataFrame(mapped_columns)
     if checks_frame.empty or not bool(checks_frame["passed"].astype(bool).all()):
         data = mapped.iloc[0:0].copy()
-        summary = _summary(raw, data, checks_frame, config, canonical_kind)
+        summary = _summary(
+            raw,
+            data,
+            checks_frame,
+            config,
+            canonical_kind,
+            _empty_quarantine(),
+        )
         action_queue = _action_queue(summary.iloc[0], checks_frame)
         summary = _summary_with_actions(summary, action_queue)
         return MappedDataReport(data=data, checks=checks_frame, summary=summary, action_queue=action_queue)
 
-    data = _normalize_kind(mapped, canonical_kind, config)
-    summary = _summary(raw, data, checks_frame, config, canonical_kind)
+    data, quarantine = _normalize_kind(mapped, canonical_kind, config)
+    summary = _summary(
+        raw,
+        data,
+        checks_frame,
+        config,
+        canonical_kind,
+        quarantine,
+    )
     action_queue = _action_queue(summary.iloc[0], checks_frame)
     summary = _summary_with_actions(summary, action_queue)
     return MappedDataReport(data=data, checks=checks_frame, summary=summary, action_queue=action_queue)
@@ -242,27 +269,45 @@ def _map_column(
     return values.reset_index(drop=True), check
 
 
-def _normalize_kind(mapped: pd.DataFrame, canonical_kind: str, config: MappedDataConfig) -> pd.DataFrame:
+def _normalize_kind(
+    mapped: pd.DataFrame,
+    canonical_kind: str,
+    config: MappedDataConfig,
+) -> tuple[pd.DataFrame, dict[str, int]]:
     if canonical_kind == "ticks":
-        return normalize_ticks(
+        normalized = normalize_ticks(
             mapped,
             timestamp_unit=config.timestamp_unit,
             timestamp_tz=config.timestamp_tz,
             filter_session=config.filter_session,
             market=config.market,
-        ).data
+        )
+        return normalized.data, _quarantine_values(normalized.quarantine)
     if canonical_kind == "chain":
-        return normalize_option_chain(
+        normalized = normalize_option_chain(
             mapped,
             timestamp_unit=config.timestamp_unit,
             timestamp_tz=config.timestamp_tz,
             filter_session=config.filter_session,
             market=config.market,
-        ).data
+        )
+        return normalized.data, _quarantine_values(normalized.quarantine)
     if canonical_kind == "orders":
-        return _normalize_order_like(mapped, ts_column="ts_sent_ns", required_name="orders", config=config)
+        data = _normalize_order_like(
+            mapped,
+            ts_column="ts_sent_ns",
+            required_name="orders",
+            config=config,
+        )
+        return data, _empty_quarantine(total_rows=len(mapped), kept_rows=len(data))
     if canonical_kind == "fills":
-        return _normalize_order_like(mapped, ts_column="ts_fill_ns", required_name="fills", config=config)
+        data = _normalize_order_like(
+            mapped,
+            ts_column="ts_fill_ns",
+            required_name="fills",
+            config=config,
+        )
+        return data, _empty_quarantine(total_rows=len(mapped), kept_rows=len(data))
     raise ValueError(f"unsupported mapped data kind {canonical_kind!r}")
 
 
@@ -294,6 +339,7 @@ def _summary(
     checks: pd.DataFrame,
     config: MappedDataConfig,
     canonical_kind: str,
+    quarantine: dict[str, int],
 ) -> pd.DataFrame:
     failed_rows = _failed_check_rows(checks)
     primary_blocker = _first_failed_check(failed_rows)
@@ -324,9 +370,37 @@ def _summary(
                 else "",
                 "primary_blocker_reason": _check_reason(primary_blocker),
                 "output_file": config.output_filename,
+                **quarantine,
             }
         ]
     )
+
+
+def _quarantine_values(report: object) -> dict[str, int]:
+    values = asdict(report)
+    quarantine = _empty_quarantine(
+        total_rows=int(values.get("total_rows", 0)),
+        kept_rows=int(values.get("kept_rows", 0)),
+    )
+    for field in QUARANTINE_SUMMARY_FIELDS:
+        if field.startswith("dropped_"):
+            quarantine[field] = int(values.get(field, 0))
+    quarantine["quarantined_rows"] = (
+        quarantine["quarantine_total_rows"] - quarantine["quarantine_kept_rows"]
+    )
+    return quarantine
+
+
+def _empty_quarantine(
+    *,
+    total_rows: int = 0,
+    kept_rows: int = 0,
+) -> dict[str, int]:
+    values = {field: 0 for field in QUARANTINE_SUMMARY_FIELDS}
+    values["quarantine_total_rows"] = int(total_rows)
+    values["quarantine_kept_rows"] = int(kept_rows)
+    values["quarantined_rows"] = int(total_rows - kept_rows)
+    return values
 
 
 ACTION_QUEUE_COLUMNS = [
@@ -513,6 +587,10 @@ def _config(
             "timestamp_tz": config.timestamp_tz or "",
             "filter_session": bool(config.filter_session),
             "require_all_mapped": bool(config.require_all_mapped),
+            "quarantine": {
+                field: _int(summary_row.get(field))
+                for field in QUARANTINE_SUMMARY_FIELDS
+            },
         },
         "mapping": {
             "required_columns": _int(summary_row.get("required_columns")),
@@ -555,6 +633,9 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Kind: {_text(summary_row.get('kind'))}",
         f"- Input rows: {_int(summary_row.get('input_rows'))}",
         f"- Output rows: {_int(summary_row.get('output_rows'))}",
+        f"- Quarantined rows: {_int(summary_row.get('quarantined_rows'))}",
+        f"- Non-trading-day rows: {_int(summary_row.get('dropped_non_trading_day_rows'))}",
+        f"- Intraday out-of-session rows: {_int(summary_row.get('dropped_out_of_session_rows'))}",
         f"- Failed mappings: {_int(summary_row.get('failed_mappings'))}",
         f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
         f"- Primary next gate: {_code(summary_row.get('next_gate'))}",

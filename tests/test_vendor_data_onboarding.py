@@ -273,6 +273,82 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert ready_code == 0
 
 
+def test_vendor_market_data_pipeline_gates_filtered_session_quarantine(tmp_path):
+    out_of_session = vendor_ticks("2026-06-12").iloc[[0]].copy()
+    out_of_session["exchange_ts"] = "2026-06-12 08:00:00"
+    valid = vendor_ticks("2026-06-12").iloc[[0]].copy()
+    valid["exchange_ts"] = "2026-06-12 10:00:00"
+    weekend = vendor_ticks("2026-06-13").iloc[[0]].copy()
+    weekend["exchange_ts"] = "2026-06-13 10:00:00"
+    raw = pd.concat([out_of_session, valid, weekend], ignore_index=True)
+    raw_path = tmp_path / "session_contaminated_ticks.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=tmp_path / "blocked_pipeline",
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+        ),
+    )
+
+    mapped_summary = blocked.mapped_data.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not blocked.ready
+    assert blocked.mapped_data.ready
+    assert int(mapped_summary["quarantined_rows"]) == 2
+    assert int(mapped_summary["dropped_non_trading_day_rows"]) == 1
+    assert int(mapped_summary["dropped_out_of_session_rows"]) == 1
+    assert {
+        "mapped_data_dropped_non_trading_day_rows",
+        "mapped_data_dropped_out_of_session_rows",
+    } <= failed
+
+    allowed_dir = tmp_path / "allowed_pipeline"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--max-non-trading-day-rows",
+            "1",
+            "--max-out-of-session-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert code == 0
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_non_trading_day_rows"
+    ] == 1
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_out_of_session_rows"
+    ] == 1
+
+
 def test_vendor_market_data_pipeline_uses_exact_approved_mapping_review(tmp_path):
     review_dir, raw_path = approved_mapping_review(tmp_path)
     out_dir = tmp_path / "reviewed_pipeline"

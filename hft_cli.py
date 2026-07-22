@@ -2992,6 +2992,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--max-crossed-quote-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-non-trading-day-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-out-of-session-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-p99-gap-ns", type=float, default=None)
     provider_market_data_pipeline.add_argument("--max-median-spread-ticks", type=float, default=None)
@@ -3021,6 +3022,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    provider_market_data_batch.add_argument("--max-non-trading-day-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-out-of-session-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-p99-gap-ns", type=float, default=None)
     provider_market_data_batch.add_argument("--max-median-spread-ticks", type=float, default=None)
@@ -3068,6 +3070,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--max-crossed-quote-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-non-trading-day-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-out-of-session-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-p99-gap-ns", type=float, default=None)
     vendor_market_data.add_argument("--max-median-spread-ticks", type=float, default=None)
@@ -3107,6 +3110,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-non-trading-day-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-out-of-session-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-p99-gap-ns", type=float, default=None)
     vendor_market_data_batch.add_argument("--max-median-spread-ticks", type=float, default=None)
@@ -3152,6 +3156,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-non-trading-day-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-p99-gap-ns", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--max-median-spread-ticks", type=float, default=None)
@@ -3241,6 +3246,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    data_readiness.add_argument("--max-non-trading-day-rows", type=int, default=0)
     data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
     data_readiness.add_argument("--max-tick-p99-gap-ns", type=float, default=None)
     data_readiness.add_argument("--max-tick-median-spread-ticks", type=float, default=None)
@@ -7444,6 +7450,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
@@ -7483,6 +7490,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
@@ -7531,6 +7539,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
@@ -7573,6 +7582,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
@@ -7640,6 +7650,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
@@ -7740,6 +7751,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_tick_p99_gap_ns=args.max_tick_p99_gap_ns,
                 max_tick_median_spread_ticks=args.max_tick_median_spread_ticks,

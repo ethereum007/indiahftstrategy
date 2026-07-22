@@ -79,6 +79,13 @@ def mapped_data_summary(ready=True):
                 "input_rows": 100,
                 "output_rows": 100 if ready else 0,
                 "failed_mappings": 0 if ready else 1,
+                "quarantined_rows": 0,
+                "dropped_crossed_quote_rows": 0,
+                "dropped_nonpositive_quote_rows": 0,
+                "dropped_nonmonotonic_rows": 0,
+                "dropped_negative_depth_rows": 0,
+                "dropped_non_trading_day_rows": 0,
+                "dropped_out_of_session_rows": 0,
             }
         ]
     )
@@ -170,6 +177,25 @@ def test_data_readiness_fails_on_bad_tick_diagnostics():
     assert queue.loc["tick_crossed_quote_rows", "next_gate"] == "diagnose-ticks"
     assert queue.loc["tick_crossed_quote_rows", "next_gate_help_command"] == "python -m hft_cli diagnose-ticks --help"
     assert report.summary.loc[0, "next_gate"] == "diagnose-ticks"
+
+
+def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
+    mapped = mapped_data_summary()
+    mapped.loc[0, "dropped_non_trading_day_rows"] = 1
+    mapped.loc[0, "dropped_out_of_session_rows"] = 1
+
+    report = evaluate_data_readiness(
+        mapped_data_summary=mapped,
+        tick_diagnostic_summary=tick_summary(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {
+        "mapped_data_dropped_non_trading_day_rows",
+        "mapped_data_dropped_out_of_session_rows",
+    } <= failed
+    assert report.summary.loc[0, "next_gate"] == "normalize-mapped-data"
 
 
 def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():

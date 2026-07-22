@@ -10,7 +10,11 @@ from typing import Any, Mapping
 
 import pandas as pd
 
-from adapters.mapped_data import MappedDataConfig, normalize_mapped_data
+from adapters.mapped_data import (
+    QUARANTINE_SUMMARY_FIELDS,
+    MappedDataConfig,
+    normalize_mapped_data,
+)
 from adapters.vendor_mapping_review import (
     CONFIG_FILE as MAPPING_REVIEW_CONFIG_FILE,
     RECEIPT_FILE as MAPPING_REVIEW_RECEIPT_FILE,
@@ -690,6 +694,10 @@ def _receipt_core(
             "mapping_checks_sha256": _csv_sha256(checks),
             "binding_checks_sha256": _csv_sha256(binding_checks),
             "action_queue_sha256": _csv_sha256(action_queue),
+            "quarantine": {
+                field: _int(summary.get(field))
+                for field in QUARANTINE_SUMMARY_FIELDS
+            },
         },
         "outcome": {
             "ready": _bool(summary.get("ready", False)),
@@ -740,6 +748,10 @@ def _config_payload(
             "output_rows": _int(summary.get("output_rows")),
             "output_file": config.output_filename,
             "failed_mappings": _int(summary.get("failed_mappings")),
+            "quarantine": {
+                field: _int(summary.get(field))
+                for field in QUARANTINE_SUMMARY_FIELDS
+            },
         },
         "failed_check_count": _int(summary.get("failed_check_count")),
         "failed_check_names": _split_items(summary.get("failed_check_names")),
@@ -868,6 +880,9 @@ def _runbook_markdown(
         f"- Kind: `{_text(summary.get('kind'))}`",
         f"- Input rows: {_int(summary.get('input_rows'))}",
         f"- Output rows: {_int(summary.get('output_rows'))}",
+        f"- Quarantined rows: {_int(summary.get('quarantined_rows'))}",
+        f"- Non-trading-day rows: {_int(summary.get('dropped_non_trading_day_rows'))}",
+        f"- Intraday out-of-session rows: {_int(summary.get('dropped_out_of_session_rows'))}",
         f"- Failed mappings: {_int(summary.get('failed_mappings'))}",
         f"- Blocked actions: {_int(summary.get('blocked_action_count'))}",
         f"- Primary next gate: {_code(summary.get('next_gate'))}",

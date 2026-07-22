@@ -54,6 +54,7 @@ class VendorMarketDataPipelineConfig:
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
+    max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
@@ -598,6 +599,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
+        max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_tick_p99_gap_ns=config.max_p99_gap_ns if config.kind == "ticks" else None,
         max_tick_median_spread_ticks=config.max_median_spread_ticks if config.kind == "ticks" else None,
@@ -1404,6 +1406,7 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
         "max_nonpositive_depth_rows",
+        "max_non_trading_day_rows",
         "max_out_of_session_rows",
     ):
         if getattr(config, name) < 0:
