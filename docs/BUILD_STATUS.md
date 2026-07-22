@@ -6398,6 +6398,19 @@ and manifest plus experiment-catalog compatibility passes (`69 passed`).
 Repository collection is healthy at `2448 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest broker-dispatch-to-send broker-readiness fail-fast gate: the
+non-submitting sender packet now rechecks the four broker-bound route decisions
+before forming a transport-facing request: recursive source binding, current
+runtime lineage, scale-up broker-source identity, and current broker-readiness
+lineage. The send summary/config and request envelopes retain those decisions,
+the runbook exposes broker-source/current-manifest status, and a nested failure
+routes directly to `review-broker-readiness` even when the aggregate dispatch
+lineage flag is still green. The complete broker-dispatch-send suite passes
+(`151 passed`), and focused send-to-ack plus ack-to-round-trip lineage and
+artifact compatibility passes (`7 passed`). All outputs remain
+non-authorizing, and repository collection is healthy at `2453 tests`; the
+full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.
