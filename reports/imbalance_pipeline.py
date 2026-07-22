@@ -9,6 +9,12 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from reports.data_readiness_comparison import (
+    DataReadinessComparisonEvidence,
+    data_readiness_comparison_check,
+    data_readiness_comparison_evidence_record,
+    load_data_readiness_comparison_evidence,
+)
 from reports.imbalance_candidate_promotion import (
     ImbalanceCandidatePromotionReport,
     ImbalanceCandidatePromotionThresholds,
@@ -120,11 +126,12 @@ def write_imbalance_research_pipeline(
         input_dir=market_portability_dir,
         expected_market=market,
     )
-    comparison_summary = _read_data_readiness_comparison_summary(data_readiness_comparison_dir)
+    comparison_evidence = load_data_readiness_comparison_evidence(
+        data_readiness_comparison_dir
+    )
     comparison_stage = _data_readiness_comparison_stage(
-        comparison_summary,
+        comparison_evidence,
         required=require_data_readiness_comparison,
-        input_dir=data_readiness_comparison_dir,
     )
     parameters = _parameters(
         strategy="imbalance",
@@ -159,6 +166,9 @@ def write_imbalance_research_pipeline(
         max_position_lots=max_position_lots,
         require_market_portability=require_market_portability,
         require_data_readiness_comparison=require_data_readiness_comparison,
+        data_readiness_comparison=data_readiness_comparison_evidence_record(
+            comparison_evidence
+        ),
         sweep_thresholds=sweep_thresholds,
         selection_thresholds=selection_thresholds,
         edge_walkforward_thresholds=edge_walkforward_thresholds,
@@ -349,18 +359,26 @@ def _write_pipeline_outputs(
         json.dumps(_jsonable(config), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    inputs: dict[str, Any] = {
+        "ticks": tick_paths,
+        "edge_walkforward": output_dir / "edge_walkforward",
+        "replay_walkforward": output_dir / "replay_walkforward",
+        "promotion": output_dir / "promotion",
+        "data_readiness_comparison": data_readiness_comparison_dir,
+        "market_portability": market_portability_dir,
+    }
+    comparison_manifest_path = str(
+        (comparison_stage or {}).get("manifest_path", "")
+    ).strip()
+    if comparison_manifest_path:
+        inputs["data_readiness_comparison_manifest"] = Path(
+            comparison_manifest_path
+        )
     write_experiment_manifest(
         output_dir,
         run_type="imbalance_research_pipeline",
         parameters={"labels": labels, **parameters},
-        inputs={
-            "ticks": tick_paths,
-            "edge_walkforward": output_dir / "edge_walkforward",
-            "replay_walkforward": output_dir / "replay_walkforward",
-            "promotion": output_dir / "promotion",
-            "data_readiness_comparison": data_readiness_comparison_dir,
-            "market_portability": market_portability_dir,
-        },
+        inputs=inputs,
     )
     return ImbalanceResearchPipelineReport(
         stages=stages,
@@ -475,30 +493,38 @@ def _candidate_config(source: dict[str, Any], summary: pd.Series, stages: pd.Dat
         "failed_stages": _jsonable(summary.get("failed_stages")),
         "recommendation": _jsonable(summary.get("recommendation")),
         "stages": [
-            {
-                "stage": str(row.stage),
-                "status": bool(row.status),
-                "skipped": bool(row.skipped),
-                "recommendation": str(row.recommendation),
-            }
-            for row in stages.itertuples(index=False)
+            _candidate_stage_config(row)
+            for row in stages.to_dict(orient="records")
         ],
     }
     return config
 
 
-def _read_data_readiness_comparison_summary(path: str | Path | None) -> pd.DataFrame:
-    if path is None:
-        return pd.DataFrame()
-    candidate = Path(path)
-    if candidate.is_dir():
-        candidate = candidate / "data_readiness_comparison_summary.csv"
-    if not candidate.exists():
-        raise FileNotFoundError(f"data readiness comparison summary not found: {candidate}")
-    frame = pd.read_csv(candidate)
-    if frame.empty:
-        raise ValueError(f"data readiness comparison summary is empty: {candidate}")
-    return frame
+def _candidate_stage_config(row: dict[str, Any]) -> dict[str, Any]:
+    record = {
+        "stage": str(row.get("stage", "")),
+        "status": _to_bool(row.get("status", False)),
+        "skipped": _to_bool(row.get("skipped", False)),
+        "recommendation": str(row.get("recommendation", "")),
+    }
+    if record["stage"] == "data_readiness_comparison":
+        record["reason"] = str(row.get("reason", ""))
+        record["lineage"] = {
+            "manifest_provided": _to_bool(
+                row.get("manifest_provided", False)
+            ),
+            "manifest_current": _to_bool(row.get("manifest_current", False)),
+            "manifest_error": str(row.get("manifest_error", "")),
+            "manifest_path": str(row.get("manifest_path", "")),
+            "manifest_sha256": str(row.get("manifest_sha256", "")),
+            "input_fingerprint_count": _int(
+                pd.Series(row), "manifest_input_fingerprint_count"
+            ),
+            "input_fingerprint_match_count": _int(
+                pd.Series(row), "manifest_input_fingerprint_match_count"
+            ),
+        }
+    return record
 
 
 def _read_market_portability_config(path: str | Path | None) -> dict[str, Any]:
@@ -562,28 +588,35 @@ def _matching_portability_gap(config: dict[str, Any], expected_market: str) -> d
 
 
 def _data_readiness_comparison_stage(
-    summary: pd.DataFrame,
+    evidence: DataReadinessComparisonEvidence,
     *,
     required: bool,
-    input_dir: str | Path | None,
 ) -> dict[str, Any] | None:
-    if summary.empty and not required:
+    check = data_readiness_comparison_check(evidence, required=required)
+    if check is None:
         return None
-    provided = not summary.empty
-    row = summary.iloc[0] if provided else pd.Series(dtype=object)
-    accepted = _to_bool(row.get("accepted", False)) if provided else False
-    status = provided and accepted
-    reason = "accepted" if status else "data_readiness_comparison_missing"
-    if provided and not accepted:
-        reason = "data_readiness_comparison_not_accepted"
     return {
         "stage": "data_readiness_comparison",
-        "status": bool(status),
+        "status": bool(check["passed"]),
         "status_column": "accepted",
         "skipped": False,
-        "output_dir": str(input_dir or ""),
-        "failed_checks": _int(row, "total_failed_checks") if provided else 1,
-        "recommendation": str(row.get("recommendation", reason)) if provided else reason,
+        "output_dir": str(check["input_dir"]),
+        "failed_checks": int(check["failed_checks"]),
+        "required": bool(required),
+        "reason": str(check["reason"]),
+        "recommendation": str(check["recommendation"]),
+        "accepted": bool(check["accepted"]),
+        "manifest_provided": bool(check["manifest_provided"]),
+        "manifest_current": bool(check["manifest_current"]),
+        "manifest_error": str(check["manifest_error"]),
+        "manifest_path": str(check["manifest_path"]),
+        "manifest_sha256": str(check["manifest_sha256"]),
+        "manifest_input_fingerprint_count": int(
+            check["manifest_input_fingerprint_count"]
+        ),
+        "manifest_input_fingerprint_match_count": int(
+            check["manifest_input_fingerprint_match_count"]
+        ),
     }
 
 

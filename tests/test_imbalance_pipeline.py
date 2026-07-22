@@ -4,6 +4,9 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
+from reports.data_readiness_comparison import (
+    write_data_readiness_comparison as write_data_readiness_comparison_report,
+)
 from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evidence_profile_run_types
 from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds
 from reports.imbalance_edge_walkforward import ImbalanceEdgeWalkForwardThresholds
@@ -40,20 +43,26 @@ def write_ticks(path, day: str):
 
 
 def write_data_readiness_comparison(path, *, accepted=True):
-    path.mkdir(parents=True, exist_ok=True)
+    readiness_dir = path.parent / f"{path.name}_source"
+    readiness_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
             {
-                "accepted": accepted,
-                "dataset_count": 2,
-                "ready_datasets": 2 if accepted else 1,
-                "failed_datasets": 0 if accepted else 1,
-                "ready_rate": 1.0 if accepted else 0.5,
-                "total_failed_checks": 0 if accepted else 1,
-                "recommendation": "feed_walkforward_research" if accepted else "collect_or_fix_data",
+                "ready": accepted,
+                "components": 1,
+                "required_components": 1,
+                "provided_components": 1,
+                "ready_components": 1 if accepted else 0,
+                "failed_checks": 0 if accepted else 1,
+                "recommendation": "compare_data_readiness",
             }
         ]
-    ).to_csv(path / "data_readiness_comparison_summary.csv", index=False)
+    ).to_csv(readiness_dir / "data_readiness_summary.csv", index=False)
+    write_data_readiness_comparison_report(
+        [readiness_dir],
+        output_dir=path,
+    )
+    return readiness_dir
 
 
 def test_imbalance_research_pipeline_promotes_candidate_end_to_end(tmp_path):
@@ -212,10 +221,46 @@ def test_imbalance_research_pipeline_can_require_data_readiness_comparison(tmp_p
 
     stages = report.stages.set_index("stage")
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
     assert bool(stages.loc["data_readiness_comparison", "status"])
+    assert bool(stages.loc["data_readiness_comparison", "manifest_current"])
     assert bool(stages.loc["edge_walkforward", "status"])
     assert config["pipeline"]["stages"][0]["stage"] == "data_readiness_comparison"
+    assert config["pipeline"]["stages"][0]["lineage"]["manifest_current"]
+    assert "data_readiness_comparison_manifest" in manifest["inputs"]
+
+
+def test_imbalance_pipeline_blocks_tampered_data_readiness_comparison(tmp_path):
+    fold = tmp_path / "fold.csv"
+    comparison_dir = tmp_path / "data_readiness_comparison"
+    out_dir = tmp_path / "pipeline_tampered_data"
+    write_ticks(fold, "2026-06-10")
+    write_data_readiness_comparison(comparison_dir, accepted=True)
+    summary_path = comparison_dir / "data_readiness_comparison_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "recommendation"] = "tampered_after_manifest"
+    summary.to_csv(summary_path, index=False)
+
+    report = write_imbalance_research_pipeline(
+        [fold],
+        output_dir=out_dir,
+        data_readiness_comparison_dir=comparison_dir,
+        require_data_readiness_comparison=True,
+        entry_imbalance_values=[0.6],
+        min_microprice_edge_ticks_values=[0.25],
+        forward_horizon_ns_values=[100_000],
+    )
+
+    stages = report.stages.set_index("stage")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    comparison = stages.loc["data_readiness_comparison"]
+    assert not report.ready
+    assert not bool(comparison["status"])
+    assert comparison["reason"] == "data_readiness_comparison_manifest_artifact_drift"
+    assert comparison["manifest_error"] == "artifact_drift"
+    assert bool(stages.loc["edge_walkforward", "skipped"])
+    assert config["pipeline"]["stages"][0]["lineage"]["manifest_error"] == "artifact_drift"
 
 
 def test_imbalance_pipeline_blocks_nonportable_market_pair(tmp_path):

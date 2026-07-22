@@ -4,6 +4,9 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
+from reports.data_readiness_comparison import (
+    write_data_readiness_comparison as write_data_readiness_comparison_report,
+)
 from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evidence_profile_run_types
 from reports.settlement_candidate_promotion import (
     SettlementCandidatePromotionThresholds,
@@ -56,20 +59,26 @@ def write_fold(tmp_path, name, *, offset=0, call_ask=1.0):
 
 
 def write_data_readiness_comparison(path, *, accepted=True):
-    path.mkdir(parents=True, exist_ok=True)
+    readiness_dir = path.parent / f"{path.name}_source"
+    readiness_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
             {
-                "accepted": accepted,
-                "dataset_count": 2,
-                "ready_datasets": 2 if accepted else 1,
-                "failed_datasets": 0 if accepted else 1,
-                "ready_rate": 1.0 if accepted else 0.5,
-                "total_failed_checks": 0 if accepted else 1,
-                "recommendation": "feed_walkforward_research" if accepted else "collect_or_fix_data",
+                "ready": accepted,
+                "components": 1,
+                "required_components": 1,
+                "provided_components": 1,
+                "ready_components": 1 if accepted else 0,
+                "failed_checks": 0 if accepted else 1,
+                "recommendation": "compare_data_readiness",
             }
         ]
-    ).to_csv(path / "data_readiness_comparison_summary.csv", index=False)
+    ).to_csv(readiness_dir / "data_readiness_summary.csv", index=False)
+    write_data_readiness_comparison_report(
+        [readiness_dir],
+        output_dir=path,
+    )
+    return readiness_dir
 
 
 def test_settlement_convergence_walkforward_passes_repeated_expiry_edges(tmp_path):
@@ -211,12 +220,46 @@ def test_settlement_convergence_walkforward_can_require_data_readiness_compariso
 
     checks = report.checks.set_index("check")
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.passed
     assert bool(checks.loc["data_readiness_comparison", "passed"])
+    assert bool(checks.loc["data_readiness_comparison", "manifest_current"])
     assert config["ready"]
     assert config["research_defaults"]["require_data_readiness_comparison"]
     assert config["research_defaults"]["data_readiness_comparison"]["accepted"]
+    assert config["research_defaults"]["data_readiness_comparison"]["manifest_current"]
+    assert "data_readiness_comparison_manifest" in manifest["inputs"]
     assert (out_dir / "manifest.json").exists()
+
+
+def test_settlement_walkforward_blocks_drifted_readiness_source(tmp_path):
+    index_path, chain_path = write_fold(tmp_path, "day1", offset=0, call_ask=1.0)
+    comparison_dir = tmp_path / "data_readiness_comparison"
+    out_dir = tmp_path / "walkforward_drifted_data"
+    readiness_dir = write_data_readiness_comparison(comparison_dir, accepted=True)
+    readiness_path = readiness_dir / "data_readiness_summary.csv"
+    readiness = pd.read_csv(readiness_path)
+    readiness.loc[0, "recommendation"] = "changed_after_comparison"
+    readiness.to_csv(readiness_path, index=False)
+
+    report = write_settlement_convergence_walkforward(
+        [index_path],
+        [chain_path],
+        output_dir=out_dir,
+        data_readiness_comparison_dir=comparison_dir,
+        require_data_readiness_comparison=True,
+        window_start_ns=100,
+        window_end_ns=300,
+    )
+
+    check = report.checks.set_index("check").loc["data_readiness_comparison"]
+    comparison = report.candidate_config["research_defaults"]["data_readiness_comparison"]
+    assert not report.passed
+    assert report.folds.empty
+    assert check["reason"] == "data_readiness_comparison_manifest_input_drift"
+    assert check["manifest_error"] == "input_drift"
+    assert not comparison["manifest_current"]
+    assert comparison["manifest_error"] == "input_drift"
 
 
 def test_cli_settlement_convergence_walkforward_fails_closed_on_weak_fold(tmp_path):

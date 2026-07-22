@@ -10,6 +10,11 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from reports.data_readiness_comparison import (
+    data_readiness_comparison_check,
+    data_readiness_comparison_evidence_record,
+    load_data_readiness_comparison_evidence,
+)
 from reports.manifest import write_experiment_manifest
 from reports.settlement_convergence import (
     SettlementConvergenceReport,
@@ -77,11 +82,12 @@ def write_settlement_convergence_walkforward(
     audit_thresholds = audit_thresholds or SettlementConvergenceThresholds()
     thresholds = thresholds or SettlementConvergenceWalkForwardThresholds(min_folds=len(index_paths))
     _validate_thresholds(thresholds)
-    comparison_summary = _read_data_readiness_comparison_summary(data_readiness_comparison_dir)
-    comparison_check = _data_readiness_comparison_check(
-        comparison_summary,
+    comparison_evidence = load_data_readiness_comparison_evidence(
+        data_readiness_comparison_dir
+    )
+    comparison_check = data_readiness_comparison_check(
+        comparison_evidence,
         required=require_data_readiness_comparison,
-        input_dir=data_readiness_comparison_dir,
     )
 
     out = Path(output_dir)
@@ -101,7 +107,9 @@ def write_settlement_convergence_walkforward(
         "min_gross_edge_ticks": float(min_gross_edge_ticks),
         "min_net_edge": float(min_net_edge),
         "require_data_readiness_comparison": bool(require_data_readiness_comparison),
-        "data_readiness_comparison": _comparison_parameters(comparison_summary, data_readiness_comparison_dir),
+        "data_readiness_comparison": data_readiness_comparison_evidence_record(
+            comparison_evidence
+        ),
         "audit_thresholds": asdict(audit_thresholds),
         "thresholds": asdict(thresholds),
     }
@@ -206,6 +214,16 @@ def _write_outputs(
     inputs: dict[str, Any] = {"index_ticks": index_paths, "option_chains": chain_paths, "run_dirs": run_dirs}
     if data_readiness_comparison_dir is not None:
         inputs["data_readiness_comparison"] = Path(data_readiness_comparison_dir)
+    comparison = parameters.get("data_readiness_comparison", {})
+    comparison_manifest_path = str(
+        comparison.get("manifest_path", "")
+        if isinstance(comparison, dict)
+        else ""
+    ).strip()
+    if comparison_manifest_path:
+        inputs["data_readiness_comparison_manifest"] = Path(
+            comparison_manifest_path
+        )
     write_experiment_manifest(
         out,
         run_type="settlement_convergence_walkforward",
@@ -248,71 +266,6 @@ def _empty_folds() -> pd.DataFrame:
             "best_cost",
         ]
     )
-
-
-def _read_data_readiness_comparison_summary(path: str | Path | None) -> pd.DataFrame:
-    if path is None:
-        return pd.DataFrame()
-    candidate = Path(path)
-    if candidate.is_dir():
-        candidate = candidate / "data_readiness_comparison_summary.csv"
-    if not candidate.exists():
-        raise FileNotFoundError(f"data readiness comparison summary not found: {candidate}")
-    frame = pd.read_csv(candidate)
-    if frame.empty:
-        raise ValueError(f"data readiness comparison summary is empty: {candidate}")
-    return frame
-
-
-def _data_readiness_comparison_check(
-    summary: pd.DataFrame,
-    *,
-    required: bool,
-    input_dir: str | Path | None,
-) -> dict[str, Any] | None:
-    if summary.empty and not required:
-        return None
-    provided = not summary.empty
-    row = summary.iloc[0] if provided else pd.Series(dtype=object)
-    accepted = _to_bool(row.get("accepted", False)) if provided else False
-    passed = provided and accepted
-    reason = "accepted" if passed else "data_readiness_comparison_missing"
-    if provided and not accepted:
-        reason = "data_readiness_comparison_not_accepted"
-    return {
-        "check": "data_readiness_comparison",
-        "value": bool(accepted),
-        "operator": "accepted",
-        "threshold": True,
-        "passed": bool(passed),
-        "reason": reason,
-        "input_dir": str(input_dir or ""),
-        "failed_checks": _int(row, "total_failed_checks") if provided else 1,
-        "recommendation": str(row.get("recommendation", reason)) if provided else reason,
-    }
-
-
-def _comparison_parameters(summary: pd.DataFrame, input_dir: str | Path | None) -> dict[str, Any]:
-    if summary.empty:
-        return {
-            "provided": False,
-            "input_dir": str(input_dir or ""),
-            "accepted": False,
-            "dataset_count": 0,
-            "ready_rate": 0.0,
-            "failed_checks": 0,
-            "recommendation": "",
-        }
-    row = summary.iloc[0]
-    return {
-        "provided": True,
-        "input_dir": str(input_dir or ""),
-        "accepted": _to_bool(row.get("accepted", False)),
-        "dataset_count": _int(row, "dataset_count"),
-        "ready_rate": _float(row, "ready_rate"),
-        "failed_checks": _int(row, "total_failed_checks"),
-        "recommendation": str(row.get("recommendation", "")),
-    }
 
 
 def _fold_row(

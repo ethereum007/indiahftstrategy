@@ -1626,6 +1626,13 @@ replay_walkforward\...
 promotion\...
 ```
 
+Whenever `--data-readiness-comparison` is supplied, the pipeline verifies the
+comparison `manifest.json`, its complete artifact set, and the fingerprints of
+the source readiness runs before edge research starts. A loose summary CSV,
+artifact drift, or upstream readiness drift produces a blocked pipeline with
+the exact manifest error retained in stages, candidate config, and the
+downstream experiment manifest.
+
 Use `--market-portability` with `--require-market-portability` to fail closed
 before edge walk-forward unless `market_portability_config.json` marks
 `microprice_imbalance` ready for the pipeline `--market`.
@@ -1700,9 +1707,10 @@ runs\<fold>\...
 ```
 
 When `--require-data-readiness-comparison` is set, the run first checks the
-multi-day vendor data-readiness comparison. If the comparison is missing or not
-accepted, the walk-forward fails closed, writes the normal summary/check/config
-artifacts, and skips fold audits.
+multi-day vendor data-readiness comparison. The comparison must be accepted and
+its manifest, required artifacts, and source-readiness fingerprints must still
+be current. Missing, loose, or drifted evidence makes the walk-forward fail
+closed, write the normal summary/check/config artifacts, and skip fold audits.
 
 Promote a passed settlement walk-forward candidate into the same
 paper/shadow-ready promotion shape used by launch bundles:
@@ -1945,12 +1953,14 @@ manifest.json
 ```
 
 When `--require-data-readiness-comparison` is set, quote review fails closed
-unless the supplied comparison summary is present and accepted. This keeps
-surface market-making quotes from moving into replay or paper routing on
-unproven vendor market data. The review summary and manifest retain strategy
-and market identity so catalog evidence can verify that surface-quality,
-quote-risk, and surface market-making pipeline artifacts all belong to the same
-research track.
+unless the supplied comparison is accepted and its manifest, complete artifact
+set, and source-readiness fingerprints are current. A loose summary or any
+upstream drift is recorded as a blocking quote-risk check. This keeps surface
+market-making quotes from moving into replay or paper routing on unproven
+vendor market data. The review summary and manifest retain strategy and market
+identity so catalog evidence can verify that surface-quality, quote-risk, and
+surface market-making pipeline artifacts all belong to the same research
+track.
 
 ## Surface Quote Lifecycle Plan
 

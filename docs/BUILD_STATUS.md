@@ -6512,6 +6512,22 @@ passed`), and repository collection is healthy at `2487 tests`. All outputs
 remain non-authorizing; the full repository suite was not rerun for this
 slice.
 
+Latest research data-lineage fail-fast gate: imbalance research, settlement
+convergence walk-forward, and surface quote-risk review no longer trust an
+accepted data-readiness comparison CSV by itself. A shared evidence loader now
+requires the expected comparison run type, the complete manifest-tracked
+artifact set, and current fingerprints for every source readiness run before
+research can proceed. Loose summaries, artifact edits, and upstream readiness
+drift produce normal blocked research outputs with the exact integrity reason,
+manifest SHA-256, and fingerprint counts retained in checks, stages, configs,
+and downstream manifests. The surface market-making pipeline inherits the
+quote-risk gate, and each consumer explicitly binds the comparison manifest as
+an input. Focused comparison, imbalance, settlement, quote-risk, and surface
+pipeline regressions pass (`40 passed`), with exact provider-to-research
+wrapper compatibility also passing (`2 passed`). Repository collection is
+healthy at `2490 tests`. All outputs remain non-authorizing; the full
+repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Ingest and retain an authoritative NSE calendar artifact for the first real

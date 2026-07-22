@@ -3,6 +3,9 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.data_readiness_comparison import (
+    write_data_readiness_comparison as write_data_readiness_comparison_report,
+)
 from reports.quote_risk import QuoteRiskThresholds, evaluate_quote_risk, write_quote_risk_report
 
 
@@ -62,20 +65,26 @@ def safe_quotes():
 
 
 def write_data_readiness_comparison(path, *, accepted=True):
-    path.mkdir(parents=True, exist_ok=True)
+    readiness_dir = path.parent / f"{path.name}_source"
+    readiness_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
             {
-                "accepted": accepted,
-                "dataset_count": 2,
-                "ready_datasets": 2 if accepted else 1,
-                "failed_datasets": 0 if accepted else 1,
-                "ready_rate": 1.0 if accepted else 0.5,
-                "total_failed_checks": 0 if accepted else 1,
-                "recommendation": "feed_quote_review" if accepted else "collect_or_fix_data",
+                "ready": accepted,
+                "components": 1,
+                "required_components": 1,
+                "provided_components": 1,
+                "ready_components": 1 if accepted else 0,
+                "failed_checks": 0 if accepted else 1,
+                "recommendation": "compare_data_readiness",
             }
         ]
-    ).to_csv(path / "data_readiness_comparison_summary.csv", index=False)
+    ).to_csv(readiness_dir / "data_readiness_summary.csv", index=False)
+    write_data_readiness_comparison_report(
+        [readiness_dir],
+        output_dir=path,
+    )
+    return readiness_dir
 
 
 def test_evaluate_quote_risk_passes_balanced_nonmarketable_quotes():
@@ -153,7 +162,38 @@ def test_write_quote_risk_report_can_require_data_readiness_comparison(tmp_path)
     assert bool(report.summary.loc[0, "all_passed"])
     assert manifest["parameters"]["require_data_readiness_comparison"]
     assert manifest["parameters"]["data_readiness_comparison"]["accepted"]
+    assert manifest["parameters"]["data_readiness_comparison"]["manifest_current"]
     assert "data_readiness_comparison" in manifest["inputs"]
+    assert "data_readiness_comparison_manifest" in manifest["inputs"]
+
+
+def test_quote_risk_blocks_loose_data_readiness_comparison_summary(tmp_path):
+    quotes_path = tmp_path / "surface_quotes.csv"
+    comparison_dir = tmp_path / "data_readiness_comparison"
+    out_dir = tmp_path / "quote_review_loose_data"
+    safe_quotes().to_csv(quotes_path, index=False)
+    write_data_readiness_comparison(comparison_dir, accepted=True)
+    (comparison_dir / "manifest.json").unlink()
+
+    report = write_quote_risk_report(
+        quotes_path,
+        output_dir=out_dir,
+        thresholds=QuoteRiskThresholds(
+            min_quotes=4,
+            min_instruments=2,
+            min_quote_edge=0.1,
+        ),
+        data_readiness_comparison_dir=comparison_dir,
+    )
+
+    check = report.checks.set_index("check").loc["data_readiness_comparison"]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    comparison = manifest["parameters"]["data_readiness_comparison"]
+    assert not report.passed
+    assert check["reason"] == "data_readiness_comparison_manifest_missing"
+    assert check["manifest_error"] == "manifest_missing"
+    assert not comparison["manifest_provided"]
+    assert not comparison["manifest_current"]
 
 
 def test_unified_cli_review_quotes_can_fail_on_breach(tmp_path):

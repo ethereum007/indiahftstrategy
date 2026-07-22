@@ -7,7 +7,31 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    ManifestIntegrity,
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+
+
+DATA_READINESS_COMPARISON_RUN_TYPE = "data_readiness_comparison"
+DATA_READINESS_COMPARISON_SUMMARY_FILE = "data_readiness_comparison_summary.csv"
+DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS = (
+    "data_readiness_runs.csv",
+    "data_readiness_comparison_checks.csv",
+    DATA_READINESS_COMPARISON_SUMMARY_FILE,
+    "data_readiness_comparison_action_queue.csv",
+    "data_readiness_comparison_config.json",
+    "data_readiness_comparison_runbook.md",
+)
+DATA_READINESS_COMPARISON_REQUIRED_SUMMARY_COLUMNS = (
+    "accepted",
+    "dataset_count",
+    "ready_rate",
+    "total_failed_checks",
+    "recommendation",
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +58,180 @@ class DataReadinessComparisonReport:
     @property
     def accepted(self) -> bool:
         return bool(self.summary.iloc[0]["accepted"]) if not self.summary.empty else False
+
+
+@dataclass(frozen=True)
+class DataReadinessComparisonEvidence:
+    summary: pd.DataFrame
+    requested_path: Path | None = None
+    root: Path | None = None
+    summary_path: Path | None = None
+    manifest_path: Path | None = None
+    manifest_integrity: ManifestIntegrity | None = None
+    read_error: str = ""
+
+    @property
+    def requested(self) -> bool:
+        return self.requested_path is not None
+
+    @property
+    def provided(self) -> bool:
+        return not self.summary.empty
+
+    @property
+    def accepted(self) -> bool:
+        return bool(self.provided and _to_bool(self.summary.iloc[0].get("accepted", False)))
+
+    @property
+    def manifest_current(self) -> bool:
+        return bool(self.manifest_integrity is not None and self.manifest_integrity.passed)
+
+    @property
+    def passed(self) -> bool:
+        return bool(not self.read_error and self.accepted and self.manifest_current)
+
+    @property
+    def reason(self) -> str:
+        if not self.requested:
+            return "data_readiness_comparison_missing"
+        if self.read_error:
+            return f"data_readiness_comparison_{self.read_error}"
+        if not self.manifest_current:
+            error = (
+                self.manifest_integrity.error
+                if self.manifest_integrity is not None and self.manifest_integrity.error
+                else "invalid"
+            )
+            suffix = error if error.startswith("manifest_") else f"manifest_{error}"
+            return f"data_readiness_comparison_{suffix}"
+        if not self.accepted:
+            return "data_readiness_comparison_not_accepted"
+        return "accepted"
+
+    @property
+    def recommendation(self) -> str:
+        if not self.provided or not self.manifest_current or self.read_error:
+            return self.reason
+        value = str(self.summary.iloc[0].get("recommendation", "")).strip()
+        return value or self.reason
+
+
+def load_data_readiness_comparison_evidence(
+    path: str | Path | None,
+) -> DataReadinessComparisonEvidence:
+    if path is None:
+        return DataReadinessComparisonEvidence(summary=pd.DataFrame())
+
+    requested = Path(path).resolve()
+    if requested.is_file() or requested.suffix.lower() == ".csv":
+        root = requested.parent
+        summary_path = requested
+    else:
+        root = requested
+        summary_path = root / DATA_READINESS_COMPARISON_SUMMARY_FILE
+    manifest_path = root / "manifest.json"
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+
+    summary = pd.DataFrame()
+    read_error = ""
+    if not summary_path.is_file():
+        read_error = "summary_missing"
+    else:
+        try:
+            summary = pd.read_csv(summary_path)
+        except (OSError, UnicodeDecodeError, pd.errors.EmptyDataError, pd.errors.ParserError):
+            read_error = "summary_unreadable"
+        if not read_error and summary.empty:
+            read_error = "summary_empty"
+        if not read_error and len(summary.index) != 1:
+            read_error = "summary_row_count_invalid"
+        if not read_error:
+            missing = [
+                column
+                for column in DATA_READINESS_COMPARISON_REQUIRED_SUMMARY_COLUMNS
+                if column not in summary.columns
+            ]
+            if missing:
+                read_error = "summary_schema_invalid"
+
+    return DataReadinessComparisonEvidence(
+        summary=summary,
+        requested_path=requested,
+        root=root,
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        manifest_integrity=integrity,
+        read_error=read_error,
+    )
+
+
+def data_readiness_comparison_evidence_record(
+    evidence: DataReadinessComparisonEvidence,
+) -> dict[str, object]:
+    row = evidence.summary.iloc[0] if evidence.provided else pd.Series(dtype=object)
+    integrity = evidence.manifest_integrity
+    manifest_path = evidence.manifest_path
+    manifest_sha256 = ""
+    if manifest_path is not None and manifest_path.is_file():
+        try:
+            manifest_sha256 = file_sha256(manifest_path)
+        except OSError:
+            manifest_sha256 = ""
+    return {
+        "requested": evidence.requested,
+        "provided": evidence.provided,
+        "input_dir": str(evidence.root or ""),
+        "summary_path": str(evidence.summary_path or ""),
+        "accepted": evidence.accepted,
+        "manifest_provided": bool(integrity is not None and integrity.exists),
+        "manifest_current": evidence.manifest_current,
+        "manifest_error": str(integrity.error if integrity is not None else ""),
+        "manifest_path": str(manifest_path or ""),
+        "manifest_sha256": manifest_sha256,
+        "manifest_artifact_count": int(integrity.artifact_count if integrity is not None else 0),
+        "manifest_artifact_match_count": int(
+            integrity.artifact_match_count if integrity is not None else 0
+        ),
+        "manifest_input_fingerprint_count": int(
+            integrity.input_fingerprint_count if integrity is not None else 0
+        ),
+        "manifest_input_fingerprint_match_count": int(
+            integrity.input_fingerprint_match_count if integrity is not None else 0
+        ),
+        "dataset_count": int(_number(row, "dataset_count", fallback=0.0)),
+        "ready_rate": _number(row, "ready_rate", fallback=0.0),
+        "failed_checks": int(_number(row, "total_failed_checks", fallback=0.0)),
+        "reason": evidence.reason,
+        "recommendation": evidence.recommendation,
+    }
+
+
+def data_readiness_comparison_check(
+    evidence: DataReadinessComparisonEvidence,
+    *,
+    required: bool,
+) -> dict[str, object] | None:
+    if not evidence.requested and not required:
+        return None
+    details = data_readiness_comparison_evidence_record(evidence)
+    passed = evidence.passed
+    return {
+        **details,
+        "check": "data_readiness_comparison",
+        "value": bool(details["accepted"]),
+        "operator": "accepted_and_manifest_current",
+        "threshold": True,
+        "passed": bool(passed),
+        "required": bool(required),
+        "failed_checks": 0
+        if passed
+        else max(1, int(details["failed_checks"])),
+    }
 
 
 def compare_data_readiness(
@@ -105,7 +303,7 @@ def write_data_readiness_comparison(
     out.mkdir(parents=True, exist_ok=True)
     report.dataset_runs.to_csv(out / "data_readiness_runs.csv", index=False)
     report.checks.to_csv(out / "data_readiness_comparison_checks.csv", index=False)
-    report.summary.to_csv(out / "data_readiness_comparison_summary.csv", index=False)
+    report.summary.to_csv(out / DATA_READINESS_COMPARISON_SUMMARY_FILE, index=False)
     action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks)
     action_queue.to_csv(out / "data_readiness_comparison_action_queue.csv", index=False)
     (out / "data_readiness_comparison_config.json").write_text(
@@ -123,7 +321,7 @@ def write_data_readiness_comparison(
     )
     write_experiment_manifest(
         out,
-        run_type="data_readiness_comparison",
+        run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
         parameters={"labels": labels, "thresholds": asdict(thresholds)},
         inputs={"readiness": readiness_dirs},
     )
