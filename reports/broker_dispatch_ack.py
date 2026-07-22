@@ -2606,6 +2606,89 @@ def _checks(
                 ),
                 "send packet source does not match the dispatch being reconciled",
             ),
+            *(
+                [
+                    _check(
+                        "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+                                False,
+                            )
+                        ),
+                        "broker-bound runtime lineage is not source-bound",
+                    ),
+                    _check(
+                        "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+                                False,
+                            )
+                        ),
+                        "broker-bound runtime lineage does not match the current runtime source",
+                    ),
+                    _check(
+                        "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup",
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup",
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup",
+                                False,
+                            )
+                        ),
+                        "broker-readiness source does not match the bound scale-up packet",
+                    ),
+                    _check(
+                        "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current",
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current",
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            dispatch_summary.get(
+                                "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current",
+                                False,
+                            )
+                        ),
+                        "broker-readiness lineage does not match the current broker source",
+                    ),
+                ]
+                if _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_required",
+                        False,
+                    )
+                )
+                else []
+            ),
             _check(
                 "broker_dispatch_send_lineage_gate_passed",
                 _to_bool(
@@ -6776,6 +6859,13 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
+    if check.startswith(
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_"
+    ) or check in {
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+    }:
+        return "broker_readiness"
     if check.startswith("broker_dispatch_send_"):
         return "broker_dispatch_send"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
@@ -6839,6 +6929,10 @@ def _next_gate(check: str) -> str:
 
 def _action_recommendation(check: str) -> str:
     component = _component(check)
+    if component == "broker_readiness" and check.startswith(
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+    ):
+        return "rebuild_broker_readiness_lineage_before_ack_reconciliation"
     if component == "broker_dispatch_plan":
         return "repair_or_rebuild_broker_dispatch_plan"
     if component == "broker_dispatch_send":
@@ -8088,6 +8182,18 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Unmatched acknowledgements: {_int_value(summary_row.get('unmatched_acks'))}",
         "- Broker-dispatch send lineage current: "
         f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_lineage_gate_passed')) else 'no'}",
+        (
+            "- Broker-readiness source matches scale-up: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup')) else 'no'}"
+        ),
+        (
+            "- Broker-readiness lineage current: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current')) else 'no'}"
+        ),
+        (
+            "- Current broker-readiness manifest: "
+            f"{_code(summary_row.get('broker_dispatch_send_broker_dispatch_route_enable_cutover_current_broker_readiness_manifest_sha256'))}"
+        ),
         "- Lead-lag send contract consistent: "
         f"{'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_send_contract_consistent')) else 'no'}",
         "- Lead-lag lineage matches scale-up: "

@@ -6411,6 +6411,20 @@ artifact compatibility passes (`7 passed`). All outputs remain
 non-authorizing, and repository collection is healthy at `2453 tests`; the
 full repository suite was not rerun for this slice.
 
+Latest send-to-acknowledgement broker-readiness fail-fast gate:
+acknowledgement reconciliation now rechecks the four broker-bound decisions
+carried by the non-submitting sender packet before an accepted broker response
+can advance: recursive source binding, current runtime lineage, scale-up
+broker-source identity, and current broker-readiness lineage. The ack
+summary/config and reconciled rows retain those decisions, the runbook exposes
+broker-source/current-manifest status, and a nested failure routes directly to
+`review-broker-readiness` even when the aggregate send lineage flag remains
+green. The complete broker-dispatch-ack suite passes (`111 passed`), and
+focused terminal round-trip lineage plus artifact compatibility passes (`3
+passed`). All outputs remain non-authorizing, and repository collection is
+healthy at `2457 tests`; the full repository suite was not rerun for this
+slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

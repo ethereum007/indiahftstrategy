@@ -1435,7 +1435,7 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert report.config["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
 
 
-def test_broker_dispatch_ack_carries_verified_send_lineage():
+def broker_bound_send_lineage(**overrides):
     lineage = empty_broker_dispatch_send_lineage(required=True)
     lineage.update(
         {
@@ -1450,8 +1450,21 @@ def test_broker_dispatch_ack_carries_verified_send_lineage():
             "broker_dispatch_matches_current": True,
             "expected_dispatch_matches_current": True,
             "gate_passed": True,
+            "broker_dispatch_route_enable_cutover_broker_readiness_required": True,
+            "broker_dispatch_route_enable_cutover_runtime_lineage_source_bound": True,
+            "broker_dispatch_route_enable_cutover_current_runtime_session_manifest_sha256": "b" * 64,
+            "broker_dispatch_route_enable_cutover_runtime_lineage_matches_current": True,
+            "broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup": True,
+            "broker_dispatch_route_enable_cutover_current_broker_readiness_manifest_sha256": "c" * 64,
+            "broker_dispatch_route_enable_cutover_broker_readiness_matches_current": True,
         }
     )
+    lineage.update(overrides)
+    return lineage
+
+
+def test_broker_dispatch_ack_carries_verified_send_lineage():
+    lineage = broker_bound_send_lineage()
 
     report = evaluate_broker_dispatch_acknowledgements(
         dispatch_summary=dispatch_summary(),
@@ -1471,7 +1484,74 @@ def test_broker_dispatch_ack_carries_verified_send_lineage():
     assert report.config["broker_dispatch_send_lineage"][
         "broker_dispatch_send_lineage_gate_passed"
     ]
+    assert bool(
+        report.summary.iloc[0][
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup"
+        ]
+    )
+    assert bool(
+        report.summary.iloc[0][
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current"
+        ]
+    )
+    assert (
+        report.summary.iloc[0][
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_current_broker_readiness_manifest_sha256"
+        ]
+        == "c" * 64
+    )
+    assert report.acknowledgements[
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current"
+    ].astype(bool).all()
     assert not report.config["authorizes_submission"]
+
+
+@pytest.mark.parametrize(
+    ("lineage_field", "check"),
+    [
+        (
+            "broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+        ),
+        (
+            "broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+        ),
+        (
+            "broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup",
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup",
+        ),
+        (
+            "broker_dispatch_route_enable_cutover_broker_readiness_matches_current",
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_matches_current",
+        ),
+    ],
+)
+def test_broker_dispatch_ack_blocks_stale_broker_lineage_with_green_send_gate(
+    lineage_field,
+    check,
+):
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(by_source=True),
+        broker_dispatch_send_lineage=broker_bound_send_lineage(
+            **{lineage_field: False}
+        ),
+    )
+
+    assert not report.passed
+    assert bool(report.summary.iloc[0]["broker_dispatch_send_lineage_gate_passed"])
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert failed == {check}
+    assert report.action_queue is not None
+    action = report.action_queue.loc[report.action_queue["check"] == check].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert action["recommendation"] == (
+        "rebuild_broker_readiness_lineage_before_ack_reconciliation"
+    )
+    assert report.config["next_gate"] == "review-broker-readiness"
 
 
 def test_broker_dispatch_ack_blocks_missing_required_send_lineage():
@@ -5146,6 +5226,9 @@ def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path)
     assert config["action_queue_count"] == 0
     assert config["next_actions"] == []
     assert "# Broker Dispatch Acknowledgement Runbook" in runbook
+    assert "Broker-readiness source matches scale-up:" in runbook
+    assert "Broker-readiness lineage current:" in runbook
+    assert "Current broker-readiness manifest:" in runbook
     assert "No broker dispatch acknowledgement actions." in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert path_tail(manifest["inputs"]["dispatch_summary"]["path"]).endswith(
