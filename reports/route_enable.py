@@ -616,15 +616,69 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
                     bool(cutover["cutover_runtime_lineage_gate_passed"]),
                     "cutover did not retain a valid runtime-session lineage gate",
                 ),
-                _check(
-                    "cutover_lineage_gate_passed",
-                    cutover["cutover_lineage_gate_passed"],
-                    "is",
-                    True,
-                    bool(cutover["cutover_lineage_gate_passed"]),
-                    "cutover operational lineage gate did not pass",
-                ),
             ]
+        )
+        if cutover["cutover_broker_readiness_required"]:
+            checks.extend(
+                [
+                    _check(
+                        "cutover_runtime_lineage_source_bound",
+                        cutover["cutover_runtime_lineage_source_bound"],
+                        "is",
+                        True,
+                        bool(cutover["cutover_runtime_lineage_source_bound"]),
+                        (
+                            "cutover does not bind the runtime, scale-up, and "
+                            "broker-readiness sources needed for recursive verification"
+                        ),
+                    ),
+                    _check(
+                        "cutover_runtime_lineage_matches_current",
+                        cutover["cutover_runtime_lineage_matches_current"],
+                        "is",
+                        True,
+                        bool(cutover["cutover_runtime_lineage_matches_current"]),
+                        (
+                            "cutover runtime lineage no longer matches the current "
+                            "recursively verified source"
+                        ),
+                    ),
+                    _check(
+                        "cutover_broker_readiness_source_matches_scaleup",
+                        cutover[
+                            "cutover_broker_readiness_source_matches_scaleup"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "cutover_broker_readiness_source_matches_scaleup"
+                            ]
+                        ),
+                        "cutover broker readiness is not the source bound by scale-up",
+                    ),
+                    _check(
+                        "cutover_broker_readiness_matches_current",
+                        cutover["cutover_broker_readiness_matches_current"],
+                        "is",
+                        True,
+                        bool(cutover["cutover_broker_readiness_matches_current"]),
+                        (
+                            "cutover broker-readiness lineage no longer matches the "
+                            "current recursive source"
+                        ),
+                    ),
+                ]
+            )
+        checks.append(
+            _check(
+                "cutover_lineage_gate_passed",
+                cutover["cutover_lineage_gate_passed"],
+                "is",
+                True,
+                bool(cutover["cutover_lineage_gate_passed"]),
+                "cutover operational lineage gate did not pass",
+            )
         )
     if route_readiness_required:
         checks.append(
@@ -4940,6 +4994,11 @@ def _component(check: str) -> str:
         return "order_export"
     if check.startswith("cutover_broker_resume_") or check.startswith("broker_resume_"):
         return "resume_gate"
+    if check.startswith("cutover_broker_readiness_") or check in {
+        "cutover_runtime_lineage_source_bound",
+        "cutover_runtime_lineage_matches_current",
+    }:
+        return "broker_readiness"
     if "route_readiness" in check:
         return "route_readiness"
     if "dispatch_roundtrip" in check:
@@ -4971,6 +5030,8 @@ def _next_gate(check: str) -> str:
         return "pipeline-vendor-market-data-batch"
     if component == "broker_vendor_data_readiness":
         return "pipeline-broker-vendor-readiness"
+    if component == "broker_readiness":
+        return "review-broker-readiness"
     if component == "resume_gate":
         return "review-resume-gate"
     if component in {"cutover_gate", "strategy_portfolio"}:
@@ -4992,6 +5053,8 @@ def _action_recommendation(check: str) -> str:
         return "refresh_vendor_market_data_batch_proof"
     if component == "broker_vendor_data_readiness":
         return "refresh_broker_vendor_data_readiness_wrapper"
+    if component == "broker_readiness":
+        return "rebuild_broker_readiness_lineage_before_route_enable"
     if component == "resume_gate":
         return "repair_resume_gate_proof_before_route_enable"
     if component == "cutover_gate":

@@ -6366,6 +6366,23 @@ collection is healthy at `2440 tests`. The complete send suite exceeded the
 is not counted as passing. All outputs remain non-authorizing; the full
 repository suite was not rerun for this slice.
 
+Latest cutover-to-route-enable broker-readiness lineage gate: route enable now
+follows every broker-bound cutover manifest back to its runtime-session
+summary, scale-up config, and broker-readiness config, then reruns the shared
+runtime verifier with the exact broker source selected by cutover. It compares
+the complete current runtime lineage with cutover's carried copy and exports
+explicit source-bound, current runtime manifest, current broker manifest, and
+match decisions through route checks, packet, summary/config, and manifest
+metadata. A stale broker config hidden behind freshly written runtime and
+cutover manifests and a byte-identical substituted broker directory both fail
+closed, with repair routed to `review-broker-readiness`. The complete
+route-enable suite passes (`124 passed`), the complete cutover suite passes
+(`120 passed`), the complete broker-dispatch suite passes (`125 passed`), and
+the focused send/ack/round-trip recursive proof passes (`8 passed`). Manifest
+and experiment-catalog compatibility passes (`69 passed`), and repository
+collection is healthy at `2443 tests`. All outputs remain non-authorizing; the
+full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

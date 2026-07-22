@@ -1,5 +1,6 @@
 import hashlib
 import json
+import shutil
 
 import pandas as pd
 import pytest
@@ -8,7 +9,11 @@ from hft_cli import main
 from reports.catalog import catalog_experiment_runs
 from reports.manifest import file_sha256, verify_experiment_manifest, write_experiment_manifest
 from reports.operational_lineage import (
+    broker_readiness_lineage_fields,
+    broker_readiness_lineage_manifest_inputs,
     empty_runtime_session_lineage,
+    load_broker_readiness_lineage,
+    load_runtime_session_lineage,
     runtime_session_lineage_fields,
 )
 from reports.route_enable import (
@@ -16,6 +21,7 @@ from reports.route_enable import (
     evaluate_route_enable_packet,
     write_route_enable_packet,
 )
+from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 
 
 def leadlag_lineage(prefix=""):
@@ -1591,21 +1597,47 @@ def cutover_runtime_lineage():
     return runtime_session_lineage_fields(state)
 
 
-def refresh_cutover_manifest(cutover):
-    lineage = cutover_runtime_lineage()
-    summary = pd.read_csv(cutover / "cutover_summary.csv").iloc[0]
+def refresh_cutover_manifest(cutover, *, broker_readiness_config_path=None):
+    summary = json.loads(
+        pd.read_csv(cutover / "cutover_summary.csv").to_json(orient="records")
+    )[0]
+    lineage = {
+        column: summary.get(column, default)
+        for column, default in runtime_session_lineage_fields(
+            empty_runtime_session_lineage()
+        ).items()
+    }
     leadlag = {
         column: value
         for column, value in summary.items()
         if column.startswith("runtime_strategy_portfolio_leadlag_")
     }
+    root = cutover.parent
+    broker_config_path = (
+        broker_readiness_config_path
+        or (
+            root / "broker" / "broker_readiness_config.json"
+            if (root / "broker" / "broker_readiness_config.json").is_file()
+            else cutover / "broker_readiness_config.json"
+        )
+    )
+    inputs = {
+        "broker_readiness_config": broker_config_path,
+        "cutover_source": root / "cutover_source.csv",
+    }
+    scaleup_config_path = root / "scaleup" / "scaleup_config.json"
+    runtime_summary_path = root / "runtime" / "runtime_session_summary.csv"
+    runtime_manifest_path = root / "runtime" / "manifest.json"
+    if scaleup_config_path.is_file():
+        inputs["scaleup_config"] = scaleup_config_path
+    if runtime_summary_path.is_file():
+        inputs["runtime_session_summary"] = runtime_summary_path
+    if runtime_manifest_path.is_file():
+        inputs["runtime_session_manifest"] = runtime_manifest_path
     write_experiment_manifest(
         cutover,
         run_type="cutover_gate",
-        inputs={
-            "broker_readiness_config": cutover / "broker_readiness_config.json",
-            "cutover_source": cutover.parent / "cutover_source.csv",
-        },
+        inputs=inputs,
         extra={
             "ready": bool(summary["ready"]),
             **leadlag,
@@ -1613,6 +1645,203 @@ def refresh_cutover_manifest(cutover):
             "authorizes_submission": False,
         },
     )
+
+
+def refresh_runtime_manifest(root, broker):
+    runtime = root / "runtime"
+    summary = json.loads(
+        pd.read_csv(runtime / "runtime_session_summary.csv").to_json(
+            orient="records"
+        )
+    )[0]
+    lineage = {
+        column: summary[column]
+        for column in (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS)
+    }
+    broker_lineage = load_broker_readiness_lineage(
+        broker / "broker_readiness_config.json"
+    )
+    write_experiment_manifest(
+        runtime,
+        run_type="runtime_session_monitor",
+        inputs={
+            "scaleup_manifest": root / "scaleup" / "manifest.json",
+            "scaleup_source": root / "scaleup_source.csv",
+            "broker_readiness_config": broker / "broker_readiness_config.json",
+            **broker_readiness_lineage_manifest_inputs(broker_lineage),
+        },
+        extra={
+            "ready": True,
+            "guard_action": "continue",
+            **lineage,
+            "authorizes_submission": False,
+        },
+    )
+
+
+def bind_broker_readiness_cutover_lineage(root, cutover):
+    broker = root / "broker"
+    scaleup = root / "scaleup"
+    runtime = root / "runtime"
+    broker.mkdir()
+    scaleup.mkdir()
+    runtime.mkdir()
+
+    pd.DataFrame(
+        [{"component": "runtime_session", "required": True, "provided": True, "ready": True}]
+    ).to_csv(broker / "broker_readiness_items.csv", index=False)
+    pd.DataFrame(
+        [{"check": "runtime_session_ready", "passed": True, "reason": ""}]
+    ).to_csv(broker / "broker_readiness_checks.csv", index=False)
+    pd.DataFrame(
+        [{"ready": True, "adapter": "arrow_money", "failed_checks": 0}]
+    ).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    pd.DataFrame(columns=["priority"]).to_csv(
+        broker / "broker_readiness_action_queue.csv", index=False
+    )
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "component_counts": {"failed_checks": 0},
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (broker / "broker_readiness_runbook.md").write_text(
+        "# Broker Readiness Fixture\n", encoding="utf-8"
+    )
+    broker_source = root / "broker_readiness_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(broker_source, index=False)
+    write_experiment_manifest(
+        broker,
+        run_type="broker_readiness",
+        inputs={"source": broker_source},
+        extra={"ready": True, "authorizes_submission": False},
+    )
+    broker_lineage = load_broker_readiness_lineage(
+        broker / "broker_readiness_config.json"
+    )
+    assert broker_lineage["gate_passed"]
+    broker_fields = broker_readiness_lineage_fields(broker_lineage)
+
+    (scaleup / "scaleup_config.json").write_text(
+        json.dumps(
+            {"broker_readiness": {"required": True, "provided": True}},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    scaleup_source = root / "scaleup_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(scaleup_source, index=False)
+    write_experiment_manifest(
+        scaleup,
+        run_type="scaleup_plan",
+        inputs={
+            "source": scaleup_source,
+            "broker_readiness_config": broker / "broker_readiness_config.json",
+            **broker_readiness_lineage_manifest_inputs(broker_lineage),
+        },
+        extra={
+            "ready": True,
+            **broker_fields,
+            "authorizes_submission": False,
+        },
+    )
+
+    legacy_fields = cutover_runtime_lineage()
+    runtime_lineage = {
+        column: legacy_fields[
+            column if column.startswith("runtime_") else f"runtime_{column}"
+        ]
+        for column in (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS)
+    }
+    scaleup_manifest_sha256 = file_sha256(scaleup / "manifest.json")
+    runtime_lineage.update(
+        {
+            "scaleup_manifest_sha256": scaleup_manifest_sha256,
+            "runtime_telemetry_scaleup_manifest_sha256": scaleup_manifest_sha256,
+            "scaleup_broker_readiness_required": True,
+            "scaleup_broker_readiness_provided": True,
+            **{f"scaleup_{field}": value for field, value in broker_fields.items()},
+            "scaleup_broker_readiness_source_manifest_current": True,
+            "scaleup_broker_readiness_source_manifest_sha256": broker_fields[
+                "broker_readiness_manifest_sha256"
+            ],
+            "scaleup_broker_readiness_source_provenance_gate_passed": True,
+            "scaleup_broker_readiness_matches_current": True,
+            "runtime_telemetry_broker_readiness_manifest_sha256": broker_fields[
+                "broker_readiness_manifest_sha256"
+            ],
+            "runtime_telemetry_broker_readiness_lineage_gate_passed": True,
+            "runtime_telemetry_broker_readiness_matches_current": True,
+        }
+    )
+    pd.DataFrame(
+        [{"ready": True, "guard_action": "continue", **runtime_lineage}]
+    ).to_csv(runtime / "runtime_session_summary.csv", index=False)
+    pd.DataFrame([{"step": "runtime_guard", **runtime_lineage}]).to_csv(
+        runtime / "runtime_session_steps.csv", index=False
+    )
+    pd.DataFrame(columns=["priority"]).to_csv(
+        runtime / "runtime_session_action_queue.csv", index=False
+    )
+    (runtime / "runtime_session_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "guard_action": "continue",
+                "authorizes_submission": False,
+                "scaleup_provenance": {
+                    column: runtime_lineage[column]
+                    for column in SCALEUP_PROVENANCE_COLUMNS
+                },
+                "runtime_telemetry_lineage": {
+                    column: runtime_lineage[column]
+                    for column in RUNTIME_LINEAGE_COLUMNS
+                },
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (runtime / "runtime_session_runbook.md").write_text(
+        "# Runtime Session Fixture\n", encoding="utf-8"
+    )
+    refresh_runtime_manifest(root, broker)
+    current_runtime = load_runtime_session_lineage(
+        runtime / "runtime_session_summary.csv",
+        scaleup / "scaleup_config.json",
+        expected_broker_readiness_config_path=(
+            broker / "broker_readiness_config.json"
+        ),
+    )
+    assert current_runtime["gate_passed"]
+    current_runtime_fields = runtime_session_lineage_fields(current_runtime)
+    cutover_summary_path = cutover / "cutover_summary.csv"
+    cutover_summary_frame = pd.read_csv(cutover_summary_path).astype(object)
+    for column, value in current_runtime_fields.items():
+        cutover_summary_frame.loc[0, column] = value
+    cutover_summary_frame.to_csv(cutover_summary_path, index=False)
+    cutover_config_path = cutover / "cutover_config.json"
+    cutover_config_payload = json.loads(
+        cutover_config_path.read_text(encoding="utf-8")
+    )
+    cutover_config_payload["runtime_lineage"] = current_runtime_fields
+    cutover_config_path.write_text(
+        json.dumps(cutover_config_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    refresh_cutover_manifest(cutover)
+    return broker, broker_fields
 
 
 def write_inputs(
@@ -5469,6 +5698,117 @@ def test_route_enable_blocks_drifted_cutover_lineage(tmp_path):
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert not report.ready
     assert {"cutover_manifest_current", "cutover_lineage_gate_passed"} <= failed
+
+
+def test_route_enable_revalidates_cutover_broker_readiness_lineage(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path)
+    _, broker_fields = bind_broker_readiness_cutover_lineage(tmp_path, cutover)
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert report.ready
+    assert "cutover_runtime_lineage_matches_current" not in failed
+    assert "cutover_broker_readiness_matches_current" not in failed
+    summary = report.summary.iloc[0]
+    assert bool(summary["cutover_broker_readiness_required"])
+    assert bool(summary["cutover_runtime_lineage_source_bound"])
+    assert bool(summary["cutover_runtime_lineage_matches_current"])
+    assert bool(summary["cutover_broker_readiness_source_matches_scaleup"])
+    assert bool(summary["cutover_broker_readiness_matches_current"])
+    assert summary[
+        "cutover_current_broker_readiness_manifest_sha256"
+    ] == broker_fields["broker_readiness_manifest_sha256"]
+    manifest = json.loads(
+        (tmp_path / "route_enable" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"]["cutover_runtime_lineage_matches_current"]
+    assert manifest["extra"]["cutover_broker_readiness_matches_current"]
+
+
+def test_route_enable_blocks_remanifested_cutover_over_stale_broker_readiness(
+    tmp_path,
+):
+    cutover, upload, export = write_inputs(tmp_path)
+    broker, _ = bind_broker_readiness_cutover_lineage(tmp_path, cutover)
+    broker_config_path = broker / "broker_readiness_config.json"
+    broker_config = json.loads(broker_config_path.read_text(encoding="utf-8"))
+    broker_config["operator_note"] = "changed after cutover verification"
+    broker_config_path.write_text(
+        json.dumps(broker_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    refresh_runtime_manifest(tmp_path, broker)
+    refresh_cutover_manifest(cutover)
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert "cutover_runtime_lineage_source_bound" not in failed
+    assert "cutover_broker_readiness_source_matches_scaleup" not in failed
+    assert {
+        "cutover_runtime_lineage_matches_current",
+        "cutover_broker_readiness_matches_current",
+        "cutover_lineage_gate_passed",
+    } <= failed
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == "cutover_broker_readiness_matches_current"
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+
+
+def test_route_enable_blocks_cutover_broker_readiness_source_substitution(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path)
+    broker, _ = bind_broker_readiness_cutover_lineage(tmp_path, cutover)
+    substituted_broker = tmp_path / "substituted_broker"
+    shutil.copytree(broker, substituted_broker)
+    refresh_cutover_manifest(
+        cutover,
+        broker_readiness_config_path=(
+            substituted_broker / "broker_readiness_config.json"
+        ),
+    )
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert "cutover_runtime_lineage_source_bound" not in failed
+    assert {
+        "cutover_runtime_lineage_matches_current",
+        "cutover_broker_readiness_source_matches_scaleup",
+        "cutover_broker_readiness_matches_current",
+        "cutover_lineage_gate_passed",
+    } <= failed
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == "cutover_broker_readiness_source_matches_scaleup"
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
 
 
 def test_route_enable_blocks_remanifested_cutover_contract_and_authorization_drift(tmp_path):

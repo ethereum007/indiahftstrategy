@@ -483,6 +483,13 @@ def empty_cutover_lineage(*, required: bool = False) -> dict[str, Any]:
         "contract_error": "",
         "non_authorizing": not required,
         "runtime_lineage_gate_passed": not required,
+        "broker_readiness_required": False,
+        "runtime_lineage_source_bound": not required,
+        "current_runtime_session_manifest_sha256": "",
+        "runtime_lineage_matches_current": not required,
+        "broker_readiness_source_matches_scaleup": not required,
+        "current_broker_readiness_manifest_sha256": "",
+        "broker_readiness_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -566,6 +573,13 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         and not _bool(extra.get("authorizes_submission"))
     )
     runtime_gate = _bool(state.get("runtime_lineage_gate_passed", False))
+    current_runtime = _cutover_current_runtime_lineage_state(
+        lineage=state,
+        manifest=manifest,
+        manifest_path=manifest_path,
+        runtime_fields=tuple(runtime_fields),
+    )
+    state.update(current_runtime)
     state["contract_consistent"] = not errors
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
@@ -576,6 +590,10 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         and state["contract_consistent"]
         and non_authorizing
         and runtime_gate
+        and state["runtime_lineage_source_bound"]
+        and state["runtime_lineage_matches_current"]
+        and state["broker_readiness_source_matches_scaleup"]
+        and state["broker_readiness_matches_current"]
     )
     return state
 
@@ -597,6 +615,27 @@ def cutover_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
         "cutover_runtime_lineage_gate_passed": _bool(
             lineage.get("runtime_lineage_gate_passed", False)
         ),
+        "cutover_broker_readiness_required": _bool(
+            lineage.get("broker_readiness_required", False)
+        ),
+        "cutover_runtime_lineage_source_bound": _bool(
+            lineage.get("runtime_lineage_source_bound", False)
+        ),
+        "cutover_current_runtime_session_manifest_sha256": _text(
+            lineage.get("current_runtime_session_manifest_sha256", "")
+        ),
+        "cutover_runtime_lineage_matches_current": _bool(
+            lineage.get("runtime_lineage_matches_current", False)
+        ),
+        "cutover_broker_readiness_source_matches_scaleup": _bool(
+            lineage.get("broker_readiness_source_matches_scaleup", False)
+        ),
+        "cutover_current_broker_readiness_manifest_sha256": _text(
+            lineage.get("current_broker_readiness_manifest_sha256", "")
+        ),
+        "cutover_broker_readiness_matches_current": _bool(
+            lineage.get("broker_readiness_matches_current", False)
+        ),
         "cutover_lineage_gate_passed": _bool(lineage.get("gate_passed", False)),
         "cutover_lineage_dependency_count": int(lineage.get("dependency_count", 0)),
     }
@@ -608,6 +647,99 @@ def cutover_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
         }
     )
     return fields
+
+
+def _cutover_current_runtime_lineage_state(
+    *,
+    lineage: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+    runtime_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    broker_required = bool(
+        _bool(lineage.get("runtime_lineage_broker_readiness_required", False))
+        or _text(
+            lineage.get(
+                "runtime_lineage_current_broker_readiness_manifest_sha256",
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                "runtime_telemetry_broker_readiness_manifest_sha256",
+                "",
+            )
+        )
+    )
+    if not broker_required:
+        return {
+            "broker_readiness_required": False,
+            "runtime_lineage_source_bound": True,
+            "current_runtime_session_manifest_sha256": "",
+            "runtime_lineage_matches_current": True,
+            "broker_readiness_source_matches_scaleup": True,
+            "current_broker_readiness_manifest_sha256": "",
+            "broker_readiness_matches_current": True,
+        }
+
+    runtime_summary_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "runtime_session_summary",
+    )
+    scaleup_config_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "scaleup_config",
+    )
+    broker_readiness_config_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "broker_readiness_config",
+    )
+    source_bound = bool(
+        runtime_summary_path is not None
+        and runtime_summary_path.is_file()
+        and scaleup_config_path is not None
+        and scaleup_config_path.is_file()
+        and broker_readiness_config_path is not None
+        and broker_readiness_config_path.is_file()
+    )
+    current = empty_runtime_session_lineage(required=True)
+    if source_bound:
+        current = load_runtime_session_lineage(
+            runtime_summary_path,
+            scaleup_config_path,
+            expected_broker_readiness_config_path=broker_readiness_config_path,
+        )
+    current_fields = runtime_session_lineage_fields(current)
+    runtime_matches_current = bool(
+        source_bound
+        and current.get("gate_passed", False)
+        and all(
+            _same(lineage.get(column), current_fields.get(column), column)
+            for column in runtime_fields
+        )
+    )
+    return {
+        "broker_readiness_required": True,
+        "runtime_lineage_source_bound": source_bound,
+        "current_runtime_session_manifest_sha256": _text(
+            current.get("manifest_sha256", "")
+        ),
+        "runtime_lineage_matches_current": runtime_matches_current,
+        "broker_readiness_source_matches_scaleup": bool(
+            source_bound
+            and current.get("broker_readiness_source_matches_scaleup", False)
+        ),
+        "current_broker_readiness_manifest_sha256": _text(
+            current.get("current_broker_readiness_manifest_sha256", "")
+        ),
+        "broker_readiness_matches_current": bool(
+            source_bound
+            and current.get("broker_readiness_matches_current", False)
+        ),
+    }
 
 
 def cutover_lineage_manifest_inputs(lineage: Mapping[str, Any]) -> dict[str, Any]:
