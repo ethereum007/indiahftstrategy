@@ -627,15 +627,87 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
                     bool(route["route_enable_cutover_matches_current"]),
                     "route-enable cutover lineage does not match the current cutover source",
                 ),
-                _check(
-                    "route_enable_lineage_gate_passed",
-                    route["route_enable_lineage_gate_passed"],
-                    "is",
-                    True,
-                    bool(route["route_enable_lineage_gate_passed"]),
-                    "route-enable operational lineage gate did not pass",
-                ),
             ]
+        )
+        if route["route_enable_cutover_broker_readiness_required"]:
+            checks.extend(
+                [
+                    _check(
+                        "route_enable_cutover_runtime_lineage_source_bound",
+                        route[
+                            "route_enable_cutover_runtime_lineage_source_bound"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            route[
+                                "route_enable_cutover_runtime_lineage_source_bound"
+                            ]
+                        ),
+                        (
+                            "route-enable cutover does not bind the runtime, "
+                            "scale-up, and broker-readiness sources"
+                        ),
+                    ),
+                    _check(
+                        "route_enable_cutover_runtime_lineage_matches_current",
+                        route[
+                            "route_enable_cutover_runtime_lineage_matches_current"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            route[
+                                "route_enable_cutover_runtime_lineage_matches_current"
+                            ]
+                        ),
+                        (
+                            "route-enable cutover runtime lineage no longer "
+                            "matches its current recursive source"
+                        ),
+                    ),
+                    _check(
+                        "route_enable_cutover_broker_readiness_source_matches_scaleup",
+                        route[
+                            "route_enable_cutover_broker_readiness_source_matches_scaleup"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            route[
+                                "route_enable_cutover_broker_readiness_source_matches_scaleup"
+                            ]
+                        ),
+                        "route-enable broker readiness is not the source bound by scale-up",
+                    ),
+                    _check(
+                        "route_enable_cutover_broker_readiness_matches_current",
+                        route[
+                            "route_enable_cutover_broker_readiness_matches_current"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            route[
+                                "route_enable_cutover_broker_readiness_matches_current"
+                            ]
+                        ),
+                        (
+                            "route-enable broker-readiness lineage no longer "
+                            "matches the current recursive source"
+                        ),
+                    ),
+                ]
+            )
+        checks.append(
+            _check(
+                "route_enable_lineage_gate_passed",
+                route["route_enable_lineage_gate_passed"],
+                "is",
+                True,
+                bool(route["route_enable_lineage_gate_passed"]),
+                "route-enable operational lineage gate did not pass",
+            )
         )
     if route_readiness_required:
         checks.append(
@@ -4208,6 +4280,11 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
+    if check.startswith("route_enable_cutover_broker_readiness_") or check in {
+        "route_enable_cutover_runtime_lineage_source_bound",
+        "route_enable_cutover_runtime_lineage_matches_current",
+    }:
+        return "broker_readiness"
     if check in {"route_enabled", "target_mode_matches", "adapter_matches"} or check.startswith(
         ("route_enable_lineage_", "route_enable_manifest_", "route_enable_non_authorizing")
     ):
@@ -4249,6 +4326,8 @@ def _next_gate(check: str) -> str:
         return "pipeline-vendor-market-data-batch"
     if component == "broker_vendor_data_readiness":
         return "pipeline-broker-vendor-readiness"
+    if component == "broker_readiness":
+        return "review-broker-readiness"
     if component == "resume_gate":
         return "review-resume-gate"
     return "plan-broker-dispatch"
@@ -4268,6 +4347,8 @@ def _action_recommendation(check: str) -> str:
         return "refresh_vendor_market_data_batch_proof"
     if component == "broker_vendor_data_readiness":
         return "refresh_broker_vendor_data_readiness_wrapper"
+    if component == "broker_readiness":
+        return "rebuild_broker_readiness_lineage_before_dispatch"
     if component == "resume_gate":
         return "repair_resume_gate_proof_before_dispatch"
     if check in {"unique_source_order_id", "unique_dispatch_order_id"}:
@@ -5590,6 +5671,18 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Route dispatch round-trip ready: {_object_text(summary_row.get('route_dispatch_roundtrip_ready')).strip()}",
         f"- Route-enable lineage current: {'yes' if _to_bool(summary_row.get('route_enable_lineage_gate_passed')) else 'no'}",
+        (
+            "- Broker-readiness source matches scale-up: "
+            f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_broker_readiness_source_matches_scaleup')) else 'no'}"
+        ),
+        (
+            "- Broker-readiness lineage current: "
+            f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_broker_readiness_matches_current')) else 'no'}"
+        ),
+        (
+            "- Current broker-readiness manifest: "
+            f"{_code(summary_row.get('route_enable_cutover_current_broker_readiness_manifest_sha256'))}"
+        ),
         f"- Research family: {_object_text(summary_row.get('route_enable_cutover_runtime_scaleup_research_family_id')).strip()}",
         f"- Lead-lag route contract consistent: {'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_route_contract_consistent')) else 'no'}",
         f"- Lead-lag lineage matches scale-up: {'yes' if _to_bool(summary_row.get('strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",

@@ -6383,6 +6383,21 @@ and experiment-catalog compatibility passes (`69 passed`), and repository
 collection is healthy at `2443 tests`. All outputs remain non-authorizing; the
 full repository suite was not rerun for this slice.
 
+Latest route-enable-to-broker-dispatch broker-readiness fail-fast gate:
+broker-dispatch planning now evaluates the four broker-bound cutover decisions
+separately from the aggregate route-enable lineage gate: recursive source
+binding, current runtime lineage, scale-up broker-source identity, and current
+broker-readiness lineage. The already recursive route verifier remains the
+source of those decisions, while dispatch orders, summary/config, runbook, and
+manifest metadata retain the current broker manifest identity and exact gate
+state. Even an otherwise green aggregate route gate fails closed when any
+nested broker decision is false, and the action queue routes repair directly
+to `review-broker-readiness`. The complete broker-dispatch suite passes (`130
+passed`), the focused send/ack/round-trip recursive proof passes (`8 passed`),
+and manifest plus experiment-catalog compatibility passes (`69 passed`).
+Repository collection is healthy at `2448 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

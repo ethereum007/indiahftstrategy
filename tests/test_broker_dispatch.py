@@ -14,6 +14,7 @@ from reports.catalog import catalog_experiment_runs
 from reports.manifest import file_sha256, verify_experiment_manifest, write_experiment_manifest
 from reports.operational_lineage import (
     cutover_lineage_fields,
+    empty_route_enable_lineage,
     empty_runtime_session_lineage,
     load_broker_dispatch_lineage,
     load_cutover_lineage,
@@ -1551,6 +1552,33 @@ def cutover_runtime_lineage():
     return runtime_session_lineage_fields(state)
 
 
+def broker_bound_route_enable_lineage(**overrides):
+    state = empty_route_enable_lineage(required=True)
+    state.update(
+        {
+            "provided": True,
+            "manifest_current": True,
+            "manifest_run_type": "route_enable_packet",
+            "manifest_path": "route_enable/manifest.json",
+            "manifest_sha256": "c" * 64,
+            "contract_consistent": True,
+            "non_authorizing": True,
+            "cutover_matches_current": True,
+            "gate_passed": True,
+            "cutover_lineage_gate_passed": True,
+            "cutover_broker_readiness_required": True,
+            "cutover_runtime_lineage_source_bound": True,
+            "cutover_current_runtime_session_manifest_sha256": "d" * 64,
+            "cutover_runtime_lineage_matches_current": True,
+            "cutover_broker_readiness_source_matches_scaleup": True,
+            "cutover_current_broker_readiness_manifest_sha256": "e" * 64,
+            "cutover_broker_readiness_matches_current": True,
+        }
+    )
+    state.update(overrides)
+    return state
+
+
 def refresh_cutover_manifest(cutover):
     runtime_lineage = cutover_runtime_lineage()
     summary = pd.read_csv(cutover / "cutover_summary.csv").iloc[0]
@@ -1819,6 +1847,82 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert int(report.summary.iloc[0]["route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
     assert report.config["route_broker_route_readiness"]["ops_launch_controls_ready"]
     assert report.config["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
+
+
+def test_broker_dispatch_carries_current_broker_readiness_lineage():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=route_config(),
+        upload_orders=upload_orders(),
+        route_enable_lineage=broker_bound_route_enable_lineage(),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["route_enable_cutover_broker_readiness_required"])
+    assert bool(summary["route_enable_cutover_runtime_lineage_source_bound"])
+    assert bool(summary["route_enable_cutover_runtime_lineage_matches_current"])
+    assert bool(
+        summary["route_enable_cutover_broker_readiness_source_matches_scaleup"]
+    )
+    assert bool(summary["route_enable_cutover_broker_readiness_matches_current"])
+    assert summary[
+        "route_enable_cutover_current_broker_readiness_manifest_sha256"
+    ] == "e" * 64
+    assert report.dispatch_orders[
+        "route_enable_cutover_broker_readiness_matches_current"
+    ].astype(bool).all()
+    assert report.config["route_enable_lineage"][
+        "route_enable_cutover_current_broker_readiness_manifest_sha256"
+    ] == "e" * 64
+
+
+@pytest.mark.parametrize(
+    ("lineage_field", "failed_check"),
+    [
+        (
+            "cutover_runtime_lineage_source_bound",
+            "route_enable_cutover_runtime_lineage_source_bound",
+        ),
+        (
+            "cutover_runtime_lineage_matches_current",
+            "route_enable_cutover_runtime_lineage_matches_current",
+        ),
+        (
+            "cutover_broker_readiness_source_matches_scaleup",
+            "route_enable_cutover_broker_readiness_source_matches_scaleup",
+        ),
+        (
+            "cutover_broker_readiness_matches_current",
+            "route_enable_cutover_broker_readiness_matches_current",
+        ),
+    ],
+)
+def test_broker_dispatch_fails_fast_on_nested_broker_readiness_lineage(
+    lineage_field,
+    failed_check,
+):
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=route_config(),
+        upload_orders=upload_orders(),
+        route_enable_lineage=broker_bound_route_enable_lineage(
+            **{lineage_field: False}
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert failed_check in failed
+    assert "route_enable_lineage_gate_passed" not in failed
+    action = report.action_queue.loc[
+        report.action_queue["check"] == failed_check
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert action[
+        "recommendation"
+    ] == "rebuild_broker_readiness_lineage_before_dispatch"
 
 
 def test_broker_dispatch_carries_strategy_portfolio_allocation():
@@ -5425,6 +5529,8 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     assert config["next_actions"] == []
     assert runbook.startswith("# Broker Dispatch Runbook")
     assert "Lead-lag route contract consistent: yes" in runbook
+    assert "Broker-readiness source matches scale-up: yes" in runbook
+    assert "Broker-readiness lineage current: yes" in runbook
     assert "c" * 64 in runbook
     assert "No broker dispatch actions." in runbook
     assert "broker_dispatch_action_queue.csv" in artifact_paths
