@@ -6425,6 +6425,20 @@ passed`). All outputs remain non-authorizing, and repository collection is
 healthy at `2457 tests`; the full repository suite was not rerun for this
 slice.
 
+Latest acknowledgement-to-terminal-round-trip broker-readiness fail-fast
+gate: terminal dry-run proof now independently rechecks the four broker-bound
+decisions carried by acknowledgement lineage before it can certify the broker
+round trip: recursive source binding, current runtime lineage, scale-up
+broker-source identity, and current broker-readiness lineage. Terminal order
+rows, summary/config, and runbook retain the exact decisions and current broker
+manifest identity, while nested failures route directly to
+`review-broker-readiness` even when the aggregate acknowledgement lineage flag
+remains green. The complete broker-dispatch-round-trip suite passes (`108
+passed`), and the shared terminal-to-broker-readiness lineage verifier passes
+(`3 passed`). All outputs remain non-authorizing, and repository collection is
+healthy at `2462 tests`; the full repository suite was not rerun for this
+slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.
