@@ -6528,6 +6528,22 @@ wrapper compatibility also passing (`2 passed`). Repository collection is
 healthy at `2490 tests`. All outputs remain non-authorizing; the full
 repository suite was not rerun for this slice.
 
+Latest scale-up data-lineage fail-fast gate: controlled scale-up now uses the
+shared manifest-backed data-readiness comparison loader instead of trusting an
+accepted comparison CSV directly. Any supplied comparison must have the
+expected run type, complete six-artifact bundle, and current source-readiness
+fingerprints. Loose summaries, artifact edits, and upstream drift block the
+plan while preserving the exact verification reason, manifest identity,
+artifact counts, and source-fingerprint counts in the plan, summary, config,
+and downstream manifest. The downstream manifest fingerprints both the
+comparison summary and its manifest. The complete scale-up suite passes (`154
+passed`), focused valid/loose/tampered/CLI coverage passes (`5 passed`), and
+repository collection is healthy at `2492 tests`. Two broader provider scale-up
+fixture tests were also attempted; both stop at the pre-existing nested
+broker-readiness error `roundtrip_config_missing_from_manifest` before this
+comparison gate is involved, so they are not counted as passing. All outputs
+remain non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Ingest and retain an authoritative NSE calendar artifact for the first real

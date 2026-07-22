@@ -185,12 +185,19 @@ def data_readiness_comparison_evidence_record(
     return {
         "requested": evidence.requested,
         "provided": evidence.provided,
+        "manifest_required": evidence.requested,
+        "verified": evidence.passed,
+        "read_error": evidence.read_error,
         "input_dir": str(evidence.root or ""),
         "summary_path": str(evidence.summary_path or ""),
         "accepted": evidence.accepted,
         "manifest_provided": bool(integrity is not None and integrity.exists),
         "manifest_current": evidence.manifest_current,
         "manifest_error": str(integrity.error if integrity is not None else ""),
+        "manifest_run_type": str(integrity.run_type if integrity is not None else ""),
+        "manifest_run_type_matches": bool(
+            integrity is not None and integrity.run_type_matches
+        ),
         "manifest_path": str(manifest_path or ""),
         "manifest_sha256": manifest_sha256,
         "manifest_artifact_count": int(integrity.artifact_count if integrity is not None else 0),

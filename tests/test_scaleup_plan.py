@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from hft_cli import main
+from reports.data_readiness_comparison import write_data_readiness_comparison
 from reports.manifest import (
     file_sha256,
     verify_experiment_manifest,
@@ -1517,6 +1518,27 @@ def data_readiness_comparison_summary(accepted=True):
     return pd.DataFrame(
         [
             {
+                "provided": True,
+                "manifest_required": True,
+                "manifest_provided": True,
+                "manifest_current": True,
+                "verified": accepted,
+                "read_error": "",
+                "reason": (
+                    "accepted"
+                    if accepted
+                    else "data_readiness_comparison_not_accepted"
+                ),
+                "summary_path": "runs/comparison/data_readiness_comparison_summary.csv",
+                "manifest_path": "runs/comparison/manifest.json",
+                "manifest_sha256": "a" * 64,
+                "manifest_error": "",
+                "manifest_run_type": "data_readiness_comparison",
+                "manifest_run_type_matches": True,
+                "manifest_artifact_count": 6,
+                "manifest_artifact_match_count": 6,
+                "manifest_input_fingerprint_count": 2,
+                "manifest_input_fingerprint_match_count": 2,
                 "accepted": accepted,
                 "dataset_count": 2,
                 "ready_datasets": 2 if accepted else 1,
@@ -1528,6 +1550,43 @@ def data_readiness_comparison_summary(accepted=True):
             }
         ]
     )
+
+
+def write_data_readiness_comparison_bundle(root, *, accepted=True):
+    source_root = root.parent / f"{root.name}_readiness_sources"
+    readiness_dirs = []
+    for index, source_hash in enumerate(("a" * 64, "d" * 64), start=1):
+        readiness = source_root / f"day{index}"
+        readiness.mkdir(parents=True, exist_ok=True)
+        ready = accepted or index == 1
+        pd.DataFrame(
+            [
+                {
+                    "ready": ready,
+                    "components": 1,
+                    "required_components": 1,
+                    "provided_components": 1,
+                    "ready_components": 1 if ready else 0,
+                    "failed_checks": 0 if ready else 1,
+                    "vendor_intake_source_file_sha256": source_hash,
+                    "vendor_intake_source_header_sha256": "b" * 64,
+                    "vendor_intake_mapping_draft_sha256": "c" * 64,
+                    "vendor_intake_mapping_coverage": 1.0,
+                    "recommendation": (
+                        "feed_strategy_research"
+                        if ready
+                        else "fix_data_readiness_gaps"
+                    ),
+                }
+            ]
+        ).to_csv(readiness / "data_readiness_summary.csv", index=False)
+        readiness_dirs.append(readiness)
+    write_data_readiness_comparison(
+        readiness_dirs,
+        output_dir=root,
+        labels=["day1", "day2"],
+    )
+    return root
 
 
 def strategy_portfolio_summary(ready=True):
@@ -6303,21 +6362,59 @@ def test_scaleup_plan_accepts_required_data_readiness_comparison():
 
     assert report.ready
     assert report.summary.iloc[0]["data_readiness_comparison_accepted"]
+    assert report.summary.iloc[0]["data_readiness_comparison_verified"]
+    assert report.summary.iloc[0]["data_readiness_comparison_manifest_current"]
     assert report.summary.iloc[0]["data_readiness_comparison_dataset_count"] == 2
     assert report.config["data_readiness_comparison"]["required"]
     assert report.config["data_readiness_comparison"]["accepted"]
+    assert report.config["data_readiness_comparison"]["verified"]
+    assert report.config["data_readiness_comparison"]["manifest_current"]
+    assert report.config["data_readiness_comparison"]["manifest_artifact_count"] == 6
+    assert report.config["data_readiness_comparison"]["manifest_artifact_match_count"] == 6
     assert report.config["data_readiness_comparison"]["ready_rate"] == 1.0
+
+
+def test_scaleup_plan_rejects_required_loose_data_readiness_comparison():
+    comparison = data_readiness_comparison_summary(True).drop(
+        columns=[
+            "manifest_required",
+            "manifest_provided",
+            "manifest_current",
+            "verified",
+            "manifest_error",
+            "manifest_run_type",
+            "manifest_run_type_matches",
+            "manifest_artifact_count",
+            "manifest_artifact_match_count",
+            "manifest_input_fingerprint_count",
+            "manifest_input_fingerprint_match_count",
+        ]
+    )
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        data_readiness_comparison_summary=comparison,
+        thresholds=ScaleUpThresholds(require_data_readiness_comparison=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert {
+        "data_readiness_comparison_manifest_provided",
+        "data_readiness_comparison_manifest_current",
+        "data_readiness_comparison_verified",
+    } <= failed
+    assert report.config["data_readiness_comparison"]["accepted"]
+    assert not report.config["data_readiness_comparison"]["verified"]
 
 
 def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
     evidence, shadow, launch, _ = write_inputs(tmp_path)
     vendor_batch = tmp_path / "vendor_batch"
     comparison = vendor_batch / "comparison"
-    comparison.mkdir(parents=True)
-    data_readiness_comparison_summary(True).to_csv(
-        comparison / "data_readiness_comparison_summary.csv",
-        index=False,
-    )
+    write_data_readiness_comparison_bundle(comparison)
     (vendor_batch / "vendor_market_data_batch_config.json").write_text(
         json.dumps(
             {
@@ -6378,8 +6475,17 @@ def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
 
     config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    vendor = config["data_readiness_comparison"]["vendor_market_data_batch"]
+    comparison_lineage = config["data_readiness_comparison"]
+    vendor = comparison_lineage["vendor_market_data_batch"]
     assert report.ready
+    assert comparison_lineage["verified"]
+    assert comparison_lineage["manifest_current"]
+    assert comparison_lineage["manifest_run_type_matches"]
+    assert comparison_lineage["manifest_artifact_count"] == 6
+    assert comparison_lineage["manifest_artifact_match_count"] == 6
+    assert comparison_lineage["manifest_sha256"] == file_sha256(
+        comparison / "manifest.json"
+    )
     assert vendor["provided"]
     assert vendor["ready"]
     assert vendor["adapter"] == "arrow_money"
@@ -6396,6 +6502,57 @@ def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
     assert path_tail(manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
         "/vendor_batch/vendor_market_data_batch_config.json"
     )
+    assert path_tail(
+        manifest["inputs"]["data_readiness_comparison_manifest"]["path"]
+    ).endswith("/vendor_batch/comparison/manifest.json")
+    assert manifest["extra"]["data_readiness_comparison_verified"]
+    assert manifest["extra"]["data_readiness_comparison_manifest_current"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+
+def test_write_scaleup_plan_blocks_tampered_data_readiness_comparison(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    comparison = write_data_readiness_comparison_bundle(
+        tmp_path / "comparison"
+    )
+    summary_path = comparison / "data_readiness_comparison_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "recommendation"] = "tampered_after_manifest"
+    summary.to_csv(summary_path, index=False)
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        data_readiness_comparison_dir=comparison,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_data_readiness_comparison=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    lineage = report.config["data_readiness_comparison"]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert {
+        "data_readiness_comparison_manifest_current",
+        "data_readiness_comparison_verified",
+    } <= failed
+    assert lineage["accepted"]
+    assert not lineage["manifest_current"]
+    assert not lineage["verified"]
+    assert lineage["manifest_error"] == "artifact_drift"
+    assert lineage["reason"] == (
+        "data_readiness_comparison_manifest_artifact_drift"
+    )
+    assert path_tail(
+        manifest["inputs"]["data_readiness_comparison_manifest"]["path"]
+    ).endswith("/comparison/manifest.json")
+    assert not manifest["extra"]["data_readiness_comparison_verified"]
 
 
 def test_write_scaleup_plan_blocks_loose_broker_readiness_bundle(tmp_path):

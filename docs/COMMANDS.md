@@ -3978,6 +3978,15 @@ manifest.json
 adds `failed_check_count` plus `primary_blocker`, the first failed check as a
 structured record with value, operator, threshold, passed, and reason fields.
 
+Any supplied `--data-readiness-comparison` is treated as decision evidence,
+even when the explicit require flag is omitted. Scale-up requires the expected
+`data_readiness_comparison` manifest run type, all six required comparison
+artifacts, and current fingerprints for every source-readiness input. An
+accepted loose CSV, an edited comparison artifact, or drift in an upstream
+readiness run therefore blocks scale-up. The plan, summary, and config retain
+the verification decision and reason, manifest path/SHA-256/run type, artifact
+match counts, source-fingerprint match counts, and comparison metrics.
+
 For lead-lag, imbalance, parity-box, settlement convergence, or surface
 market-making handoffs, `--launch` may point at the launch-pipeline root. In
 that case scale-up reads the nested launch summary and automatically includes
@@ -4001,9 +4010,10 @@ closed when the comparison-level Arrow.money/iRage wrapper proof is partial,
 unready, or has failed checks.
 `manifest.json` fingerprints the resolved evidence, shadow-comparison, launch,
 launch-pipeline, proof-refresh, metadata, data-readiness, data-readiness
-comparison, exposure, route-readiness, broker-readiness summary CSVs, and
-broker-readiness config JSON sidecars rather than only the input folders, so
-scale-up handoffs can prove the exact records behind each recommendation. If a
+comparison summary and manifest, exposure, route-readiness, broker-readiness
+summary CSVs, and broker-readiness config JSON sidecars rather than only the
+input folders, so scale-up handoffs can prove the exact records behind each
+recommendation and detect later comparison-manifest drift. If a
 strategy portfolio allocation is supplied, scale-up reads
 `strategy_portfolio_summary.csv` and `strategy_portfolio_allocations.csv`,
 requires a ready positive allocation for the scale-up strategy/market when

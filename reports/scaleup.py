@@ -9,6 +9,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from reports.data_readiness_comparison import (
+    data_readiness_comparison_evidence_record,
+    load_data_readiness_comparison_evidence,
+)
 from reports.evidence import (
     LEADLAG_EDGE_LINEAGE_CONTRACT_VERSION,
     LEADLAG_EDGE_LINEAGE_RUN_TYPES,
@@ -561,9 +565,17 @@ def write_scaleup_plan(
     proof_refresh_path = _optional_summary_input(proof_refresh_dir, "proof_refresh_summary.csv")
     instrument_metadata_path = _optional_summary_input(instrument_metadata_dir, "instrument_metadata_summary.csv")
     data_readiness_path = _optional_summary_input(data_readiness_dir, "data_readiness_summary.csv")
-    data_readiness_comparison_path = _optional_summary_input(
-        data_readiness_comparison_dir,
-        "data_readiness_comparison_summary.csv",
+    comparison_evidence = load_data_readiness_comparison_evidence(
+        data_readiness_comparison_dir
+    )
+    comparison_record = data_readiness_comparison_evidence_record(
+        comparison_evidence
+    )
+    data_readiness_comparison_path = (
+        comparison_evidence.summary_path
+        if comparison_evidence.summary_path is not None
+        and comparison_evidence.summary_path.is_file()
+        else None
     )
     strategy_portfolio_path = _optional_summary_input(strategy_portfolio_dir, "strategy_portfolio_summary.csv")
     strategy_portfolio_allocations_path = _optional_summary_input(
@@ -629,8 +641,8 @@ def write_scaleup_plan(
         else None
     )
     data_readiness_comparison = (
-        _read_optional_summary(data_readiness_comparison_path, "data_readiness_comparison_summary.csv")
-        if data_readiness_comparison_path
+        pd.DataFrame([comparison_record])
+        if comparison_evidence.requested
         else None
     )
     strategy_portfolio = (
@@ -694,6 +706,14 @@ def write_scaleup_plan(
         raise ValueError(
             "scale-up output must not overwrite the source broker readiness bundle"
         )
+    if (
+        comparison_evidence.root is not None
+        and out.resolve() == comparison_evidence.root.resolve()
+    ):
+        raise ValueError(
+            "scale-up output must not overwrite the source data-readiness "
+            "comparison bundle"
+        )
     out.mkdir(parents=True, exist_ok=True)
     report.plan.to_csv(out / "scaleup_plan.csv", index=False)
     report.checks.to_csv(out / "scaleup_checks.csv", index=False)
@@ -714,8 +734,16 @@ def write_scaleup_plan(
         inputs["instrument_metadata"] = instrument_metadata_path
     if data_readiness_path is not None:
         inputs["data_readiness"] = data_readiness_path
-    if data_readiness_comparison_path is not None:
-        inputs["data_readiness_comparison"] = data_readiness_comparison_path
+    if comparison_evidence.requested:
+        inputs["data_readiness_comparison"] = (
+            data_readiness_comparison_path
+            or comparison_evidence.root
+            or Path(data_readiness_comparison_dir or "")
+        )
+        if comparison_evidence.manifest_path is not None:
+            inputs["data_readiness_comparison_manifest"] = (
+                comparison_evidence.manifest_path
+            )
     if strategy_portfolio_path is not None:
         inputs["strategy_portfolio"] = strategy_portfolio_path
     if strategy_portfolio_allocations_path is not None:
@@ -763,6 +791,24 @@ def write_scaleup_plan(
         inputs=inputs,
         extra={
             "ready": bool(report.ready),
+            "data_readiness_comparison_verified": bool(
+                report.summary.iloc[0].get(
+                    "data_readiness_comparison_verified",
+                    False,
+                )
+            ),
+            "data_readiness_comparison_manifest_current": bool(
+                report.summary.iloc[0].get(
+                    "data_readiness_comparison_manifest_current",
+                    False,
+                )
+            ),
+            "data_readiness_comparison_manifest_sha256": str(
+                report.summary.iloc[0].get(
+                    "data_readiness_comparison_manifest_sha256",
+                    "",
+                )
+            ),
             "strategy_portfolio_manifest_required": bool(
                 strategy_portfolio_provenance.get(
                     "manifest_required",
@@ -833,6 +879,19 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     strategy_portfolio = rows["strategy_portfolio"]
     route_readiness = rows["route_readiness"]
     broker_readiness = rows["broker_readiness"]
+    comparison_provided = bool(
+        not data_readiness_comparison.empty
+        and _to_bool(data_readiness_comparison.get("provided", True))
+    )
+    comparison_manifest_required = bool(
+        not data_readiness_comparison.empty
+        and _to_bool(
+            data_readiness_comparison.get(
+                "manifest_required",
+                thresholds.require_data_readiness_comparison,
+            )
+        )
+    )
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
     evidence_strategy = _strategy_key(evidence.get("strategy", ""))
@@ -1371,18 +1430,74 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "data readiness review is not ready",
             )
         )
-    if thresholds.require_data_readiness_comparison:
+    if thresholds.require_data_readiness_comparison or comparison_manifest_required:
         checks.append(
             _check(
                 "data_readiness_comparison_available",
-                not data_readiness_comparison.empty,
+                comparison_provided,
                 "is",
                 True,
-                not data_readiness_comparison.empty,
+                comparison_provided,
                 "data readiness comparison is required but no summary was supplied",
             )
         )
     if not data_readiness_comparison.empty:
+        if comparison_manifest_required:
+            comparison_manifest_provided = _to_bool(
+                data_readiness_comparison.get("manifest_provided", False)
+            )
+            comparison_manifest_current = _to_bool(
+                data_readiness_comparison.get("manifest_current", False)
+            )
+            comparison_verified = _to_bool(
+                data_readiness_comparison.get("verified", False)
+            )
+            manifest_error = str(
+                data_readiness_comparison.get("manifest_error", "")
+            ).strip()
+            read_error = str(
+                data_readiness_comparison.get("read_error", "")
+            ).strip()
+            verification_reason = str(
+                data_readiness_comparison.get(
+                    "reason",
+                    "data readiness comparison evidence is not verified",
+                )
+            ).strip()
+            checks.extend(
+                [
+                    _check(
+                        "data_readiness_comparison_manifest_provided",
+                        comparison_manifest_provided,
+                        "is",
+                        True,
+                        comparison_manifest_provided,
+                        "data readiness comparison manifest is required but missing",
+                    ),
+                    _check(
+                        "data_readiness_comparison_manifest_current",
+                        comparison_manifest_current,
+                        "is",
+                        True,
+                        comparison_manifest_current,
+                        "data readiness comparison manifest is not current"
+                        + (f": {manifest_error}" if manifest_error else ""),
+                    ),
+                    _check(
+                        "data_readiness_comparison_verified",
+                        comparison_verified,
+                        "is",
+                        True,
+                        comparison_verified,
+                        "data readiness comparison evidence is not verified"
+                        + (
+                            f": {read_error or verification_reason}"
+                            if read_error or verification_reason
+                            else ""
+                        ),
+                    ),
+                ]
+            )
         data_comparison_accepted = _to_bool(data_readiness_comparison.get("accepted", False))
         checks.append(
             _check(
@@ -2282,6 +2397,106 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     return pd.DataFrame(checks)
 
 
+def _data_readiness_comparison_plan_fields(
+    comparison: pd.Series,
+    thresholds: ScaleUpThresholds,
+) -> dict[str, object]:
+    available = not comparison.empty
+    row = comparison if available else pd.Series(dtype=object)
+    provided = bool(available and _to_bool(row.get("provided", True)))
+    manifest_required = bool(
+        available
+        and _to_bool(
+            row.get(
+                "manifest_required",
+                thresholds.require_data_readiness_comparison,
+            )
+        )
+    )
+    return {
+        "data_readiness_comparison_provided": provided,
+        "data_readiness_comparison_manifest_required": manifest_required,
+        "data_readiness_comparison_manifest_provided": _to_bool(
+            row.get("manifest_provided", False)
+        ),
+        "data_readiness_comparison_manifest_current": _to_bool(
+            row.get("manifest_current", False)
+        ),
+        "data_readiness_comparison_verified": _to_bool(
+            row.get("verified", False)
+        ),
+        "data_readiness_comparison_read_error": str(row.get("read_error", "")),
+        "data_readiness_comparison_reason": str(row.get("reason", "")),
+        "data_readiness_comparison_summary_path": str(
+            row.get("summary_path", "")
+        ),
+        "data_readiness_comparison_manifest_path": str(
+            row.get("manifest_path", "")
+        ),
+        "data_readiness_comparison_manifest_sha256": str(
+            row.get("manifest_sha256", "")
+        ),
+        "data_readiness_comparison_manifest_error": str(
+            row.get("manifest_error", "")
+        ),
+        "data_readiness_comparison_manifest_run_type": str(
+            row.get("manifest_run_type", "")
+        ),
+        "data_readiness_comparison_manifest_run_type_matches": _to_bool(
+            row.get("manifest_run_type_matches", False)
+        ),
+        "data_readiness_comparison_manifest_artifact_count": int(
+            _number(
+                row,
+                "manifest_artifact_count",
+                fallback=0.0,
+            )
+        ),
+        "data_readiness_comparison_manifest_artifact_match_count": int(
+            _number(
+                row,
+                "manifest_artifact_match_count",
+                fallback=0.0,
+            )
+        ),
+        "data_readiness_comparison_manifest_input_fingerprint_count": int(
+            _number(
+                row,
+                "manifest_input_fingerprint_count",
+                fallback=0.0,
+            )
+        ),
+        "data_readiness_comparison_manifest_input_fingerprint_match_count": int(
+            _number(
+                row,
+                "manifest_input_fingerprint_match_count",
+                fallback=0.0,
+            )
+        ),
+        "data_readiness_comparison_accepted": _to_bool(
+            row.get("accepted", False)
+        ),
+        "data_readiness_comparison_dataset_count": int(
+            _number(row, "dataset_count", fallback=0.0)
+        ),
+        "data_readiness_comparison_ready_rate": _number(
+            row,
+            "ready_rate",
+            fallback=np.nan,
+        ),
+        "data_readiness_comparison_failed_checks": int(
+            _number(
+                row,
+                "total_failed_checks",
+                fallback=_number(row, "failed_checks", fallback=0.0),
+            )
+        ),
+        "data_readiness_comparison_recommendation": str(
+            row.get("recommendation", "")
+        ),
+    }
+
+
 def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool) -> pd.DataFrame:
     evidence = rows["evidence"]
     launch = rows["launch"]
@@ -2643,36 +2858,10 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "data_readiness_recommendation": str(data_readiness.get("recommendation", ""))
                 if not data_readiness.empty
                 else "",
-                "data_readiness_comparison_provided": not data_readiness_comparison.empty,
-                "data_readiness_comparison_accepted": _to_bool(data_readiness_comparison.get("accepted", False))
-                if not data_readiness_comparison.empty
-                else False,
-                "data_readiness_comparison_dataset_count": int(
-                    _number(data_readiness_comparison, "dataset_count", fallback=0.0)
-                )
-                if not data_readiness_comparison.empty
-                else 0,
-                "data_readiness_comparison_ready_rate": _number(
+                **_data_readiness_comparison_plan_fields(
                     data_readiness_comparison,
-                    "ready_rate",
-                    fallback=np.nan,
-                )
-                if not data_readiness_comparison.empty
-                else np.nan,
-                "data_readiness_comparison_failed_checks": int(
-                    _number(
-                        data_readiness_comparison,
-                        "total_failed_checks",
-                        fallback=_number(data_readiness_comparison, "failed_checks", fallback=0.0),
-                    )
-                )
-                if not data_readiness_comparison.empty
-                else 0,
-                "data_readiness_comparison_recommendation": str(
-                    data_readiness_comparison.get("recommendation", "")
-                )
-                if not data_readiness_comparison.empty
-                else "",
+                    thresholds,
+                ),
                 "route_readiness_required": _route_readiness_required(thresholds),
                 "route_readiness_provided": not route_readiness.empty,
                 "route_readiness_ready": _to_bool(route_readiness.get("ready", False))
@@ -3200,6 +3389,43 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
     )
 
 
+def _data_readiness_comparison_lineage(plan_row: pd.Series) -> dict[str, object]:
+    prefix = "data_readiness_comparison_"
+    result: dict[str, object] = {}
+    for field in (
+        "provided",
+        "manifest_required",
+        "manifest_provided",
+        "manifest_current",
+        "verified",
+        "manifest_run_type_matches",
+        "accepted",
+    ):
+        result[field] = _to_bool(plan_row[f"{prefix}{field}"])
+    for field in (
+        "manifest_artifact_count",
+        "manifest_artifact_match_count",
+        "manifest_input_fingerprint_count",
+        "manifest_input_fingerprint_match_count",
+        "dataset_count",
+        "failed_checks",
+    ):
+        result[field] = int(plan_row[f"{prefix}{field}"])
+    for field in (
+        "read_error",
+        "reason",
+        "summary_path",
+        "manifest_path",
+        "manifest_sha256",
+        "manifest_error",
+        "manifest_run_type",
+        "recommendation",
+    ):
+        result[field] = str(plan_row[f"{prefix}{field}"])
+    result["ready_rate"] = _jsonable(plan_row[f"{prefix}ready_rate"])
+    return result
+
+
 def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     ready = bool(plan_row["ready"])
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -3458,15 +3684,12 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "instrument_metadata_passed": _to_bool(plan_row["instrument_metadata_passed"]),
                 "instrument_parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
                 "data_readiness_ready": _to_bool(plan_row["data_readiness_ready"]),
-                "data_readiness_comparison_accepted": _to_bool(
-                    plan_row["data_readiness_comparison_accepted"]
-                ),
-                "data_readiness_comparison_dataset_count": int(
-                    plan_row["data_readiness_comparison_dataset_count"]
-                ),
-                "data_readiness_comparison_ready_rate": _jsonable(
-                    plan_row["data_readiness_comparison_ready_rate"]
-                ),
+                **{
+                    f"data_readiness_comparison_{field}": value
+                    for field, value in _data_readiness_comparison_lineage(
+                        plan_row
+                    ).items()
+                },
                 "route_readiness_required": _to_bool(plan_row["route_readiness_required"]),
                 "route_readiness_provided": _to_bool(plan_row["route_readiness_provided"]),
                 "route_readiness_ready": _to_bool(plan_row["route_readiness_ready"]),
@@ -4062,12 +4285,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
         },
         "data_readiness_comparison": {
             "required": bool(thresholds.require_data_readiness_comparison),
-            "provided": _to_bool(plan_row["data_readiness_comparison_provided"]),
-            "accepted": _to_bool(plan_row["data_readiness_comparison_accepted"]),
-            "dataset_count": int(plan_row["data_readiness_comparison_dataset_count"]),
-            "ready_rate": _jsonable(plan_row["data_readiness_comparison_ready_rate"]),
-            "failed_checks": int(plan_row["data_readiness_comparison_failed_checks"]),
-            "recommendation": str(plan_row["data_readiness_comparison_recommendation"]),
+            **_data_readiness_comparison_lineage(plan_row),
         },
         "route_readiness": {
             "required": _to_bool(plan_row["route_readiness_required"]),
