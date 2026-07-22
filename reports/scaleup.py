@@ -460,6 +460,7 @@ def evaluate_scaleup_plan(
         broker_readiness_summary=broker_readiness_summary,
         thresholds=thresholds,
         strategy_portfolio_provenance=None,
+        broker_readiness_lineage=None,
     )
 
 
@@ -479,6 +480,7 @@ def _evaluate_scaleup_plan(
     broker_readiness_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
     strategy_portfolio_provenance: dict[str, Any] | None = None,
+    broker_readiness_lineage: dict[str, Any] | None = None,
 ) -> ScaleUpPlanReport:
     thresholds = thresholds or ScaleUpThresholds()
     _validate_thresholds(thresholds)
@@ -498,6 +500,12 @@ def _evaluate_scaleup_plan(
     )
     route_readiness = route_readiness_summary if route_readiness_summary is not None else pd.DataFrame()
     broker_readiness = broker_readiness_summary if broker_readiness_summary is not None else pd.DataFrame()
+    if broker_readiness_lineage is not None and not broker_readiness.empty:
+        broker_readiness = broker_readiness.copy()
+        for field, value in _broker_readiness_lineage_fields(
+            broker_readiness_lineage
+        ).items():
+            broker_readiness[field] = value
     strategy_portfolio_state = _strategy_portfolio_state(
         strategy_portfolio,
         strategy_portfolio_allocations,
@@ -597,6 +605,12 @@ def write_scaleup_plan(
         resolved_broker_readiness_dir,
         "broker_readiness_config.json",
     )
+    broker_readiness_lineage = None
+    if broker_readiness_path is not None:
+        broker_readiness_lineage = _load_broker_readiness_lineage(
+            Path(broker_readiness_path).parent
+            / "broker_readiness_config.json"
+        )
     broker_readiness = (
         _read_optional_summary(broker_readiness_path, "broker_readiness_summary.csv")
         if broker_readiness_path
@@ -655,6 +669,7 @@ def write_scaleup_plan(
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
         strategy_portfolio_provenance=strategy_portfolio_provenance,
+        broker_readiness_lineage=broker_readiness_lineage,
     )
     if vendor_market_data_batch_config_path is not None:
         _apply_vendor_market_data_batch_config(
@@ -670,6 +685,14 @@ def write_scaleup_plan(
         raise ValueError(
             "scale-up output must not overwrite the source strategy "
             "portfolio bundle"
+        )
+    if (
+        broker_readiness_lineage is not None
+        and out.resolve()
+        == Path(str(broker_readiness_lineage["manifest_path"])).parent.resolve()
+    ):
+        raise ValueError(
+            "scale-up output must not overwrite the source broker readiness bundle"
         )
     out.mkdir(parents=True, exist_ok=True)
     report.plan.to_csv(out / "scaleup_plan.csv", index=False)
@@ -727,6 +750,12 @@ def write_scaleup_plan(
         inputs["broker_readiness"] = broker_readiness_path
     if broker_readiness_config_path is not None:
         inputs["broker_readiness_config"] = broker_readiness_config_path
+    if broker_readiness_lineage is not None:
+        inputs.update(
+            _broker_readiness_lineage_manifest_inputs(
+                broker_readiness_lineage
+            )
+        )
     write_experiment_manifest(
         out,
         run_type="scaleup_plan",
@@ -780,6 +809,11 @@ def write_scaleup_plan(
                     "research_family_manifest_sha256",
                     "",
                 )
+            ),
+            **(
+                _broker_readiness_lineage_fields(broker_readiness_lineage)
+                if broker_readiness_lineage is not None
+                else {}
             ),
             "authorizes_submission": False,
         },
@@ -1652,6 +1686,10 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "broker readiness review is not ready",
             )
         )
+        if _to_bool(
+            broker_readiness.get("broker_readiness_lineage_required", False)
+        ):
+            checks.extend(_broker_readiness_lineage_checks(broker_readiness))
     broker_route_readiness_active = _broker_route_readiness_active(broker_readiness)
     if broker_route_readiness_active:
         broker_route_readiness_required = _to_bool(broker_readiness.get("route_readiness_required", False))
@@ -2782,6 +2820,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_readiness_recommendation": str(broker_readiness.get("recommendation", ""))
                 if not broker_readiness.empty
                 else "",
+                **_broker_readiness_lineage_report_fields(broker_readiness),
                 "broker_route_readiness_required": _to_bool(
                     broker_readiness.get("route_readiness_required", False)
                 )
@@ -3498,6 +3537,7 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
                 "broker_schema_review_mode": str(plan_row["broker_schema_review_mode"]),
+                **_broker_readiness_lineage_report_fields(plan_row),
                 "broker_route_readiness_required": _to_bool(plan_row["broker_route_readiness_required"]),
                 "broker_route_readiness_provided": _to_bool(plan_row["broker_route_readiness_provided"]),
                 "broker_route_readiness_ready": _to_bool(plan_row["broker_route_readiness_ready"]),
@@ -4100,6 +4140,12 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
             "schema_review_mode": str(plan_row["broker_schema_review_mode"]),
             "recommendation": str(plan_row["broker_readiness_recommendation"]),
+            "lineage": {
+                field.removeprefix("broker_readiness_"): value
+                for field, value in _broker_readiness_lineage_report_fields(
+                    plan_row
+                ).items()
+            },
             "route_readiness": {
                 "required": _to_bool(plan_row["broker_route_readiness_required"]),
                 "provided": _to_bool(plan_row["broker_route_readiness_provided"]),
@@ -4325,6 +4371,175 @@ def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
         or thresholds.require_dispatch_roundtrip
         or thresholds.target_mode == "live_dryrun"
     )
+
+
+def _broker_readiness_lineage_checks(
+    broker_readiness: pd.Series,
+) -> list[dict[str, object]]:
+    specs = (
+        (
+            "provided",
+            _to_bool(
+                broker_readiness.get(
+                    "broker_readiness_lineage_provided",
+                    False,
+                )
+            ),
+            "broker readiness artifacts are missing",
+        ),
+        (
+            "manifest_current",
+            _to_bool(
+                broker_readiness.get(
+                    "broker_readiness_manifest_current",
+                    False,
+                )
+            ),
+            "broker readiness manifest is stale or invalid",
+        ),
+        (
+            "contract_consistent",
+            _to_bool(
+                broker_readiness.get(
+                    "broker_readiness_lineage_contract_consistent",
+                    False,
+                )
+            ),
+            "broker readiness artifacts disagree on their retained contract",
+        ),
+        (
+            "roundtrip_lineage_gate_passed",
+            _to_bool(
+                broker_readiness.get(
+                    "broker_readiness_roundtrip_lineage_gate_passed",
+                    False,
+                )
+            ),
+            "broker readiness terminal round-trip lineage is not current",
+        ),
+        (
+            "roundtrip_matches_current",
+            _to_bool(
+                broker_readiness.get(
+                    "broker_readiness_roundtrip_matches_current",
+                    False,
+                )
+            ),
+            "broker readiness does not match its current terminal round-trip source",
+        ),
+        (
+            "gate_passed",
+            _to_bool(
+                broker_readiness.get(
+                    "broker_readiness_lineage_gate_passed",
+                    False,
+                )
+            ),
+            "broker readiness recursive lineage gate failed",
+        ),
+    )
+    return [
+        _check(
+            f"broker_readiness_lineage_{name}",
+            value,
+            "is",
+            True,
+            value,
+            reason,
+        )
+        for name, value, reason in specs
+    ]
+
+
+def _broker_readiness_lineage_report_fields(
+    source: pd.Series,
+) -> dict[str, object]:
+    return {
+        "broker_readiness_lineage_required": _to_bool(
+            source.get("broker_readiness_lineage_required", False)
+        ),
+        "broker_readiness_lineage_provided": _to_bool(
+            source.get("broker_readiness_lineage_provided", False)
+        ),
+        "broker_readiness_manifest_current": _to_bool(
+            source.get("broker_readiness_manifest_current", False)
+        ),
+        "broker_readiness_manifest_run_type": _text(
+            source.get("broker_readiness_manifest_run_type", "")
+        ),
+        "broker_readiness_manifest_path": _text(
+            source.get("broker_readiness_manifest_path", "")
+        ),
+        "broker_readiness_manifest_sha256": _text(
+            source.get("broker_readiness_manifest_sha256", "")
+        ),
+        "broker_readiness_manifest_error": _text(
+            source.get("broker_readiness_manifest_error", "")
+        ),
+        "broker_readiness_lineage_contract_consistent": _to_bool(
+            source.get(
+                "broker_readiness_lineage_contract_consistent",
+                False,
+            )
+        ),
+        "broker_readiness_lineage_contract_error": _text(
+            source.get("broker_readiness_lineage_contract_error", "")
+        ),
+        "broker_readiness_roundtrip_lineage_required": _to_bool(
+            source.get(
+                "broker_readiness_roundtrip_lineage_required",
+                False,
+            )
+        ),
+        "broker_readiness_roundtrip_lineage_gate_passed": _to_bool(
+            source.get(
+                "broker_readiness_roundtrip_lineage_gate_passed",
+                False,
+            )
+        ),
+        "broker_readiness_roundtrip_matches_current": _to_bool(
+            source.get(
+                "broker_readiness_roundtrip_matches_current",
+                False,
+            )
+        ),
+        "broker_readiness_lineage_gate_passed": _to_bool(
+            source.get("broker_readiness_lineage_gate_passed", False)
+        ),
+        "broker_readiness_lineage_dependency_count": int(
+            _number(
+                source,
+                "broker_readiness_lineage_dependency_count",
+                fallback=0.0,
+            )
+        ),
+    }
+
+
+def _load_broker_readiness_lineage(
+    config_path: str | Path,
+) -> dict[str, Any]:
+    from reports.operational_lineage import load_broker_readiness_lineage
+
+    return load_broker_readiness_lineage(config_path)
+
+
+def _broker_readiness_lineage_fields(
+    lineage: dict[str, Any],
+) -> dict[str, Any]:
+    from reports.operational_lineage import broker_readiness_lineage_fields
+
+    return broker_readiness_lineage_fields(lineage)
+
+
+def _broker_readiness_lineage_manifest_inputs(
+    lineage: dict[str, Any],
+) -> dict[str, Any]:
+    from reports.operational_lineage import (
+        broker_readiness_lineage_manifest_inputs,
+    )
+
+    return broker_readiness_lineage_manifest_inputs(lineage)
 
 
 def _route_readiness_required(thresholds: ScaleUpThresholds) -> bool:
@@ -9771,6 +9986,8 @@ def _with_broker_vendor_market_data_batch_config(
     index = out.index[0]
     if batch_config is not None:
         for column, value in _broker_vendor_market_data_batch_flat_fields(batch_config).items():
+            if column in out.columns:
+                out[column] = out[column].astype("object")
             out.loc[index, column] = value
     if vendor_readiness_config is not None:
         for column, value in _broker_vendor_data_readiness_flat_fields(vendor_readiness_config).items():

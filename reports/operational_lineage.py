@@ -83,6 +83,14 @@ BROKER_DISPATCH_ROUNDTRIP_REQUIRED_ARTIFACTS = (
     "broker_dispatch_roundtrip_config.json",
     "broker_dispatch_roundtrip_runbook.md",
 )
+BROKER_READINESS_REQUIRED_ARTIFACTS = (
+    "broker_readiness_items.csv",
+    "broker_readiness_checks.csv",
+    "broker_readiness_summary.csv",
+    "broker_readiness_action_queue.csv",
+    "broker_readiness_config.json",
+    "broker_readiness_runbook.md",
+)
 ROUTE_ENABLE_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     "leadlag_edge_lineage_required",
     *LEADLAG_LINEAGE_FIELDS,
@@ -109,6 +117,30 @@ BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
 BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     *BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     "leadlag_ack_contract_consistent",
+)
+BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
+    "broker_dispatch_roundtrip_lineage_required",
+    "broker_dispatch_roundtrip_lineage_provided",
+    "broker_dispatch_roundtrip_manifest_current",
+    "broker_dispatch_roundtrip_manifest_run_type",
+    "broker_dispatch_roundtrip_manifest_path",
+    "broker_dispatch_roundtrip_manifest_sha256",
+    "broker_dispatch_roundtrip_manifest_error",
+    "broker_dispatch_roundtrip_lineage_contract_consistent",
+    "broker_dispatch_roundtrip_lineage_contract_error",
+    "broker_dispatch_roundtrip_non_authorizing",
+    "broker_dispatch_roundtrip_ack_lineage_gate_passed",
+    "broker_dispatch_roundtrip_ack_matches_current",
+    "broker_dispatch_roundtrip_expected_ack_matches_current",
+    "broker_dispatch_roundtrip_lineage_gate_passed",
+    "broker_dispatch_roundtrip_lineage_dependency_count",
+)
+BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS = (
+    *BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS,
+    *(
+        f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
+        for field in BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
+    ),
 )
 
 
@@ -1596,6 +1628,335 @@ def broker_dispatch_roundtrip_lineage_manifest_inputs(
     if dependencies:
         inputs["broker_dispatch_roundtrip_dependencies"] = dependencies
     return inputs
+
+
+def empty_broker_readiness_lineage(
+    *,
+    required: bool = False,
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "required": required,
+        "provided": False,
+        "manifest_current": not required,
+        "manifest_run_type": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "manifest_missing" if required else "",
+        "contract_consistent": not required,
+        "contract_error": "",
+        "roundtrip_lineage_required": False,
+        "roundtrip_lineage_gate_passed": not required,
+        "roundtrip_matches_current": not required,
+        "gate_passed": not required,
+        "dependency_count": 0,
+        "dependency_paths": [],
+        "artifact_paths": [],
+    }
+    state.update(
+        {
+            field: _field_default(field)
+            for field in BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS
+        }
+    )
+    return state
+
+
+def load_broker_readiness_lineage(
+    broker_readiness_config_path: str | Path,
+) -> dict[str, Any]:
+    config_path = Path(broker_readiness_config_path).resolve()
+    root = config_path.parent
+    items_path = root / "broker_readiness_items.csv"
+    checks_path = root / "broker_readiness_checks.csv"
+    summary_path = root / "broker_readiness_summary.csv"
+    manifest_path = root / "manifest.json"
+    state = empty_broker_readiness_lineage(required=True)
+    state.update(
+        {
+            "provided": summary_path.is_file(),
+            "manifest_path": str(manifest_path),
+            "artifact_paths": [
+                str(root / name)
+                for name in BROKER_READINESS_REQUIRED_ARTIFACTS
+                if (root / name).is_file()
+            ],
+        }
+    )
+
+    items = _read_csv(items_path)
+    checks = _read_csv(checks_path)
+    summary = _read_csv(summary_path)
+    config = _read_json(config_path)
+    manifest = _read_json(manifest_path)
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    state.update(
+        {
+            field: _normalize(row.get(field), field)
+            for field in BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS
+        }
+    )
+
+    if manifest_path.is_file():
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="broker_readiness",
+            required_artifacts=BROKER_READINESS_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        dependencies = manifest_dependency_paths(manifest_path)
+        state.update(
+            {
+                "manifest_current": bool(integrity.passed),
+                "manifest_run_type": integrity.run_type,
+                "manifest_sha256": file_sha256(manifest_path),
+                "manifest_error": integrity.error,
+                "dependency_paths": [str(path) for path in dependencies],
+                "dependency_count": len(dependencies),
+            }
+        )
+
+    manifest_inputs = _mapping(manifest.get("inputs"))
+    dispatch_config = _mapping(config.get("dispatch_roundtrip"))
+    thresholds_config = _mapping(config.get("thresholds"))
+    dispatch_items = (
+        items.loc[items["component"].map(_text) == "dispatch_roundtrip"]
+        if "component" in items.columns
+        else pd.DataFrame()
+    )
+    dispatch_item_requires_roundtrip = bool(
+        not dispatch_items.empty
+        and any(
+            field in dispatch_items.columns
+            and dispatch_items[field].map(_bool).any()
+            for field in ("required", "provided", "ready")
+        )
+    )
+    roundtrip_required = bool(
+        _bool(row.get("broker_dispatch_roundtrip_lineage_required", False))
+        or _bool(row.get("dispatch_roundtrip_provided", False))
+        or _bool(dispatch_config.get("provided", False))
+        or _bool(thresholds_config.get("require_dispatch_roundtrip", False))
+        or dispatch_item_requires_roundtrip
+        or any(
+            name in manifest_inputs
+            for name in (
+                "dispatch_roundtrip",
+                "dispatch_roundtrip_config",
+                "dispatch_roundtrip_manifest",
+                "broker_dispatch_roundtrip_manifest",
+            )
+        )
+    )
+    roundtrip_config_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "dispatch_roundtrip_config",
+    )
+    if roundtrip_config_path is None:
+        roundtrip_manifest_path = _manifest_input_path(
+            manifest,
+            manifest_path,
+            "broker_dispatch_roundtrip_manifest",
+        )
+        if roundtrip_manifest_path is not None:
+            roundtrip_config_path = (
+                roundtrip_manifest_path.parent
+                / "broker_dispatch_roundtrip_config.json"
+            ).resolve()
+    current_roundtrip = empty_broker_dispatch_roundtrip_lineage(
+        required=roundtrip_required
+    )
+    if roundtrip_config_path is not None:
+        current_roundtrip = load_broker_dispatch_roundtrip_lineage(
+            roundtrip_config_path
+        )
+    current_roundtrip_fields = broker_dispatch_roundtrip_lineage_fields(
+        current_roundtrip
+    )
+    errors = _broker_readiness_contract_errors(
+        items=items,
+        checks=checks,
+        summary=summary,
+        config=config,
+        manifest=manifest,
+        current_roundtrip_fields=current_roundtrip_fields,
+        roundtrip_required=roundtrip_required,
+        roundtrip_config_path=roundtrip_config_path,
+    )
+    roundtrip_lineage_gate_passed = bool(
+        not roundtrip_required or current_roundtrip.get("gate_passed", False)
+    )
+    roundtrip_matches_current = bool(
+        not roundtrip_required
+        or (
+            current_roundtrip.get("gate_passed", False)
+            and not any(error.startswith("roundtrip_") for error in errors)
+        )
+    )
+    state["contract_consistent"] = not errors
+    state["contract_error"] = ";".join(sorted(set(errors)))
+    state["roundtrip_lineage_required"] = roundtrip_required
+    state["roundtrip_lineage_gate_passed"] = roundtrip_lineage_gate_passed
+    state["roundtrip_matches_current"] = roundtrip_matches_current
+    state["gate_passed"] = bool(
+        state["provided"]
+        and state["manifest_current"]
+        and state["contract_consistent"]
+        and roundtrip_lineage_gate_passed
+        and roundtrip_matches_current
+    )
+    return state
+
+
+def broker_readiness_lineage_fields(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "broker_readiness_lineage_required": _bool(
+            lineage.get("required", False)
+        ),
+        "broker_readiness_lineage_provided": _bool(
+            lineage.get("provided", False)
+        ),
+        "broker_readiness_manifest_current": _bool(
+            lineage.get("manifest_current", False)
+        ),
+        "broker_readiness_manifest_run_type": _text(
+            lineage.get("manifest_run_type", "")
+        ),
+        "broker_readiness_manifest_path": _text(
+            lineage.get("manifest_path", "")
+        ),
+        "broker_readiness_manifest_sha256": _text(
+            lineage.get("manifest_sha256", "")
+        ),
+        "broker_readiness_manifest_error": _text(
+            lineage.get("manifest_error", "")
+        ),
+        "broker_readiness_lineage_contract_consistent": _bool(
+            lineage.get("contract_consistent", False)
+        ),
+        "broker_readiness_lineage_contract_error": _text(
+            lineage.get("contract_error", "")
+        ),
+        "broker_readiness_roundtrip_lineage_required": _bool(
+            lineage.get("roundtrip_lineage_required", False)
+        ),
+        "broker_readiness_roundtrip_lineage_gate_passed": _bool(
+            lineage.get("roundtrip_lineage_gate_passed", False)
+        ),
+        "broker_readiness_roundtrip_matches_current": _bool(
+            lineage.get("roundtrip_matches_current", False)
+        ),
+        "broker_readiness_lineage_gate_passed": _bool(
+            lineage.get("gate_passed", False)
+        ),
+        "broker_readiness_lineage_dependency_count": int(
+            lineage.get("dependency_count", 0)
+        ),
+    }
+
+
+def broker_readiness_lineage_manifest_inputs(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
+    manifest_path = _existing_path(lineage.get("manifest_path"))
+    if manifest_path is not None:
+        inputs["broker_readiness_manifest"] = manifest_path
+    artifacts = _existing_paths(lineage.get("artifact_paths"))
+    if artifacts:
+        inputs["broker_readiness_artifacts"] = artifacts
+    dependencies = _existing_paths(lineage.get("dependency_paths"))
+    if dependencies:
+        inputs["broker_readiness_dependencies"] = dependencies
+    return inputs
+
+
+def _broker_readiness_contract_errors(
+    *,
+    items: pd.DataFrame,
+    checks: pd.DataFrame,
+    summary: pd.DataFrame,
+    config: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    current_roundtrip_fields: Mapping[str, Any],
+    roundtrip_required: bool,
+    roundtrip_config_path: Path | None,
+) -> list[str]:
+    errors: list[str] = []
+    if len(summary) != 1:
+        errors.append("summary_row_count")
+    if items.empty:
+        errors.append("items_missing")
+    elif "component" not in items.columns:
+        errors.append("items_component_missing")
+    if checks.empty or "passed" not in checks.columns:
+        errors.append("checks_missing_or_invalid")
+    if not config:
+        errors.append("config_missing_or_invalid")
+    if not manifest:
+        errors.append("manifest_missing_or_invalid")
+    if errors:
+        return errors
+
+    row = summary.iloc[0]
+    extra = _mapping(manifest.get("extra"))
+    for field in ("ready", "adapter", "failed_checks"):
+        if field not in row.index:
+            errors.append(f"summary_{field}_missing")
+    for field in ("ready", "adapter", "component_counts"):
+        if field not in config:
+            errors.append(f"config_{field}_missing")
+    if "ready" not in extra:
+        errors.append("manifest_ready_missing")
+    ready = _bool(row.get("ready", False))
+    if _bool(config.get("ready", False)) != ready:
+        errors.append("config_ready_mismatch")
+    if _bool(extra.get("ready", False)) != ready:
+        errors.append("manifest_ready_mismatch")
+    if not _same_text(config.get("adapter"), row.get("adapter")):
+        errors.append("config_adapter_mismatch")
+    failed_checks = int((~checks["passed"].map(_bool)).sum())
+    if _integer(row.get("failed_checks", -1), fallback=-1) != failed_checks:
+        errors.append("summary_failed_checks_mismatch")
+    component_counts = _mapping(config.get("component_counts"))
+    if _integer(component_counts.get("failed_checks", -1), fallback=-1) != failed_checks:
+        errors.append("config_failed_checks_mismatch")
+
+    if not roundtrip_required:
+        return errors
+    if roundtrip_config_path is None or not roundtrip_config_path.is_file():
+        errors.append("roundtrip_config_missing_from_manifest")
+        return errors
+
+    dispatch_items = items.loc[
+        items["component"].map(_text) == "dispatch_roundtrip"
+    ]
+    if len(dispatch_items) != 1:
+        errors.append("roundtrip_item_row_count")
+        return errors
+    dispatch_item = dispatch_items.iloc[0]
+    config_lineage = _mapping(
+        _mapping(config.get("dispatch_roundtrip")).get("lineage")
+    )
+    for field in BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS:
+        config_field = field.removeprefix("broker_dispatch_roundtrip_")
+        sources = {
+            "summary": (field in row.index, row.get(field)),
+            "items": (field in dispatch_item.index, dispatch_item.get(field)),
+            "config": (
+                config_field in config_lineage,
+                config_lineage.get(config_field),
+            ),
+            "manifest": (field in extra, extra.get(field)),
+        }
+        for source, (present, value) in sources.items():
+            if not present:
+                errors.append(f"roundtrip_{field}_missing:{source}")
+            elif not _same(value, current_roundtrip_fields.get(field), field):
+                errors.append(f"roundtrip_{field}_mismatch:{source}")
+    return errors
 
 
 def _broker_dispatch_roundtrip_strategy_portfolio_state(

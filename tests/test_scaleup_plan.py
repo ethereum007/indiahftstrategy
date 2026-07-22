@@ -1694,6 +1694,106 @@ def write_inputs(
     return evidence, shadow, launch, exposure
 
 
+def write_broker_readiness_bundle(
+    root,
+    summary,
+    *,
+    config_overrides=None,
+):
+    root.mkdir(parents=True, exist_ok=True)
+    row = summary.iloc[0]
+    summary.to_csv(root / "broker_readiness_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "component": "resume_gate",
+                "required": True,
+                "provided": True,
+                "ready": bool(row["ready"]),
+            }
+        ]
+    ).to_csv(root / "broker_readiness_items.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "check": "resume_gate_ready",
+                "passed": bool(row["ready"]),
+                "value": bool(row["ready"]),
+                "operator": "is",
+                "threshold": True,
+                "reason": "",
+            }
+        ]
+    ).to_csv(root / "broker_readiness_checks.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "ready" if bool(row["ready"]) else "blocked",
+                "check": "resume_gate_ready",
+                "next_gate": "review-broker-readiness",
+            }
+        ]
+    ).to_csv(root / "broker_readiness_action_queue.csv", index=False)
+    config = {
+        "ready": bool(row["ready"]),
+        "adapter": str(row["adapter"]),
+        "component_counts": {
+            "failed_checks": int(row["failed_checks"]),
+        },
+    }
+    if config_overrides:
+        config.update(config_overrides)
+    (root / "broker_readiness_config.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (root / "broker_readiness_runbook.md").write_text(
+        "# Broker readiness\n\nReview-only evidence bundle.\n",
+        encoding="utf-8",
+    )
+    source = root.parent / "broker_readiness_source.csv"
+    pd.DataFrame([{"source": "fixture", "ready": bool(row["ready"])}]).to_csv(
+        source,
+        index=False,
+    )
+    write_experiment_manifest(
+        root,
+        run_type="broker_readiness",
+        inputs={"broker_readiness_source": source},
+        extra={"ready": bool(row["ready"])},
+    )
+    return root
+
+
+def write_verified_broker_readiness_bundle(root, output_dir):
+    from adapters.broker_readiness import (
+        BrokerReadinessThresholds,
+        write_broker_readiness_report,
+    )
+    from tests.test_broker_readiness import write_broker_readiness_input_dirs
+
+    schema, export, upload, roundtrip = write_broker_readiness_input_dirs(
+        root,
+        "arrow_money",
+        verified_roundtrip=True,
+    )
+    report = write_broker_readiness_report(
+        output_dir=output_dir,
+        schema_audit_dir=schema,
+        order_export_dir=export,
+        upload_pack_dir=upload,
+        dispatch_roundtrip_dir=roundtrip,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+    assert report.ready
+    return output_dir
+
+
 def write_strategy_portfolio(root, *, ready=True, allocation_notional=1200.0):
     portfolio = root / "strategy_portfolio"
     portfolio.mkdir(parents=True, exist_ok=True)
@@ -1903,9 +2003,11 @@ def write_settlement_pipeline(root, *, launch_ready=True, broker_ready=True):
     launch = pipeline / "03_launch"
     broker = pipeline / "06_broker_readiness"
     launch.mkdir(parents=True, exist_ok=True)
-    broker.mkdir(parents=True, exist_ok=True)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
-    broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    write_broker_readiness_bundle(
+        broker,
+        broker_readiness_summary(broker_ready),
+    )
     return pipeline
 
 
@@ -1921,7 +2023,6 @@ def write_surface_launch_pipeline(
     launch = pipeline / "02_launch"
     broker = pipeline / "05_broker_readiness"
     launch.mkdir(parents=True, exist_ok=True)
-    broker.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
             {
@@ -1944,7 +2045,10 @@ def write_surface_launch_pipeline(
         ]
     ).to_csv(pipeline / "surface_mm_launch_pipeline_summary.csv", index=False)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
-    broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    write_broker_readiness_bundle(
+        broker,
+        broker_readiness_summary(broker_ready),
+    )
     return pipeline
 
 
@@ -1989,18 +2093,12 @@ def write_strategy_launch_pipeline(
     ).to_csv(pipeline / summary_file, index=False)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
     if include_broker_dir:
-        broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
-        (broker / "broker_readiness_config.json").write_text(
-            json.dumps(
-                {
-                    "ready": broker_ready,
-                    "adapter": "arrow_money",
-                    "dispatch_roundtrip": {"ready": broker_ready},
-                },
-                indent=2,
-            )
-            + "\n",
-            encoding="utf-8",
+        write_broker_readiness_bundle(
+            broker,
+            broker_readiness_summary(broker_ready),
+            config_overrides={
+                "dispatch_roundtrip": {"ready": broker_ready},
+            },
         )
     return pipeline
 
@@ -6300,16 +6398,99 @@ def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
     )
 
 
-def test_write_scaleup_plan_hydrates_resume_route_readiness_from_broker_config(tmp_path):
+def test_write_scaleup_plan_blocks_loose_broker_readiness_bundle(tmp_path):
     evidence, shadow, launch, _ = write_inputs(tmp_path)
     broker = launch / "06_broker_readiness"
     broker.mkdir(parents=True)
-    broker_readiness_summary(
+    readiness = broker_readiness_summary(True)
+    readiness.to_csv(broker / "broker_readiness_summary.csv", index=False)
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "component_counts": {"failed_checks": 0},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(require_broker_readiness=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    lineage = report.config["broker_readiness"]["lineage"]
+    assert not report.ready
+    assert {
+        "broker_readiness_lineage_manifest_current",
+        "broker_readiness_lineage_contract_consistent",
+        "broker_readiness_lineage_gate_passed",
+    } <= failed
+    assert lineage["lineage_required"]
+    assert not lineage["manifest_current"]
+    assert not lineage["lineage_gate_passed"]
+
+
+def test_write_scaleup_plan_seals_broker_readiness_lineage(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    broker = write_broker_readiness_bundle(
+        launch / "06_broker_readiness",
+        broker_readiness_summary(True),
+    )
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_broker_readiness=True),
+    )
+
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    lineage = report.config["broker_readiness"]["lineage"]
+    assert report.ready
+    assert lineage["lineage_required"]
+    assert lineage["lineage_provided"]
+    assert lineage["manifest_current"]
+    assert lineage["lineage_contract_consistent"]
+    assert lineage["lineage_gate_passed"]
+    assert lineage["lineage_dependency_count"] == 1
+    assert len(manifest["inputs"]["broker_readiness_artifacts"]) == 6
+    assert len(manifest["inputs"]["broker_readiness_dependencies"]) == 1
+    assert manifest["extra"]["broker_readiness_lineage_gate_passed"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    source = broker.parent / "broker_readiness_source.csv"
+    source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_write_scaleup_plan_hydrates_resume_route_readiness_from_broker_config(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    broker = launch / "06_broker_readiness"
+    readiness_summary = broker_readiness_summary(
         True,
         resume_gate_provided=True,
         resume_gate_ready=True,
         resume_proof_refresh_ready=True,
-    ).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    )
     route_proof = {
         "provided": True,
         "ready": True,
@@ -6324,21 +6505,18 @@ def test_write_scaleup_plan_hydrates_resume_route_readiness_from_broker_config(t
         "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
         "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
     }
-    (broker / "broker_readiness_config.json").write_text(
-        json.dumps(
-            {
-                "broker_readiness": {
-                    "ready": True,
-                    "resume_gate": {
-                        "broker_route_readiness": route_proof,
-                        "incident_broker_route_readiness": route_proof,
-                    },
+    write_broker_readiness_bundle(
+        broker,
+        readiness_summary,
+        config_overrides={
+            "broker_readiness": {
+                "ready": True,
+                "resume_gate": {
+                    "broker_route_readiness": route_proof,
+                    "incident_broker_route_readiness": route_proof,
                 },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+            }
+        },
     )
     out_dir = tmp_path / "scaleup"
 
@@ -7270,23 +7448,25 @@ def test_cli_scaleup_plan_hydrates_launch_pipeline_broker_vendor_data_config(tmp
     evidence, shadow, _, _ = write_inputs(tmp_path)
     pipeline = write_strategy_launch_pipeline(tmp_path)
     broker = pipeline / "06_broker_readiness"
-    broker_readiness_summary(
-        True,
-        dispatch_roundtrip_provided=True,
-        dispatch_roundtrip_ready=True,
-        dispatch_roundtrip_target_mode="shadow",
-    ).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    write_verified_broker_readiness_bundle(
+        tmp_path / "verified_broker_sources",
+        broker,
+    )
+    verified_config = json.loads(
+        (broker / "broker_readiness_config.json").read_text(encoding="utf-8")
+    )
     target_batch = target_application_vendor_market_data_batch_config()
     lineage_sha256 = target_application_lineage_sha256(target_batch["datasets"])
     (broker / "broker_readiness_config.json").write_text(
         json.dumps(
             {
+                **verified_config,
                 "ready": True,
                 "adapter": "arrow_money",
                 "dispatch_roundtrip": {
+                    **verified_config["dispatch_roundtrip"],
                     "provided": True,
                     "ready": True,
-                    "target_mode": "shadow",
                     "strategy": "lead_lag_taker",
                     "market": "india_nse_index_derivatives",
                     "broker_dispatch_roundtrip_vendor_market_data_batch": (
@@ -7348,6 +7528,9 @@ def test_cli_scaleup_plan_hydrates_launch_pipeline_broker_vendor_data_config(tmp
         + "\n",
         encoding="utf-8",
     )
+    from tests.test_broker_dispatch_send import _refresh_manifest
+
+    _refresh_manifest(broker / "manifest.json")
     out_dir = tmp_path / "scaleup"
 
     code = main(
@@ -7368,11 +7551,20 @@ def test_cli_scaleup_plan_hydrates_launch_pipeline_broker_vendor_data_config(tmp
     )
 
     summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
     config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     vendor = config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
-    assert code == 0
-    assert bool(summary.loc[0, "ready"])
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "broker_readiness_lineage_gate_passed"])
+    assert bool(summary.loc[0, "broker_readiness_roundtrip_lineage_gate_passed"])
+    assert bool(summary.loc[0, "broker_readiness_roundtrip_matches_current"])
+    assert {
+        "broker_dispatch_roundtrip_target_mode_matches",
+        "broker_route_dispatch_roundtrip_target_mode_matches",
+    } <= failed
     assert bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
     assert bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
     assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
@@ -7687,21 +7879,23 @@ def test_cli_scaleup_plan_blocks_failed_broker_vendor_data_readiness_sidecar(tmp
     evidence, shadow, _, _ = write_inputs(tmp_path)
     pipeline = write_strategy_launch_pipeline(tmp_path)
     broker = pipeline / "06_broker_readiness"
-    broker_readiness_summary(
-        True,
-        dispatch_roundtrip_provided=True,
-        dispatch_roundtrip_ready=True,
-        dispatch_roundtrip_target_mode="shadow",
-    ).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    write_verified_broker_readiness_bundle(
+        tmp_path / "verified_broker_sources",
+        broker,
+    )
+    verified_config = json.loads(
+        (broker / "broker_readiness_config.json").read_text(encoding="utf-8")
+    )
     (broker / "broker_readiness_config.json").write_text(
         json.dumps(
             {
+                **verified_config,
                 "ready": True,
                 "adapter": "arrow_money",
                 "dispatch_roundtrip": {
+                    **verified_config["dispatch_roundtrip"],
                     "provided": True,
                     "ready": True,
-                    "target_mode": "shadow",
                     "strategy": "lead_lag_taker",
                     "market": "india_nse_index_derivatives",
                     "broker_vendor_data_readiness": {
@@ -7719,6 +7913,9 @@ def test_cli_scaleup_plan_blocks_failed_broker_vendor_data_readiness_sidecar(tmp
         + "\n",
         encoding="utf-8",
     )
+    from tests.test_broker_dispatch_send import _refresh_manifest
+
+    _refresh_manifest(broker / "manifest.json")
     out_dir = tmp_path / "scaleup"
 
     code = main(

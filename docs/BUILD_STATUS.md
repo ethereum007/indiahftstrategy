@@ -1813,6 +1813,17 @@
   broker-readiness strategy/market mismatches, carries vendor market-data batch
   config provenance from onboarding comparisons through cutover authorization,
   and can consume these launch pipeline roots directly.
+- File-backed controlled scale-up now recursively verifies the complete
+  broker-readiness bundle before trusting its summary or config. The shared
+  lineage loader checks the readiness manifest and six required artifacts,
+  reconciles ready/adapter/failed-check state across summary, checks, config,
+  and manifest, reopens the manifest-bound terminal broker round trip, and
+  requires every retained terminal and canonical lead-lag field to match that
+  current source. Scale-up reports expose the manifest, contract, terminal
+  match, final lineage gate, and dependency count; output manifests fingerprint
+  the readiness manifest, artifacts, and all transitive dependencies. Loose
+  summary/config pairs and freshly re-manifested detached terminal identities
+  fail closed, while direct in-memory scale-up evaluation remains compatible.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with

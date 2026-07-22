@@ -15,6 +15,7 @@ from reports.broker_dispatch_roundtrip import (
     BrokerDispatchRoundTripThresholds,
     write_broker_dispatch_roundtrip,
 )
+from reports.operational_lineage import load_broker_readiness_lineage
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
@@ -5789,6 +5790,14 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "broker_readiness_action_queue.csv" in artifact_paths
     assert "broker_readiness_runbook.md" in artifact_paths
+    lineage = load_broker_readiness_lineage(
+        out_dir / "broker_readiness_config.json"
+    )
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"], lineage["contract_error"]
+    assert lineage["roundtrip_lineage_gate_passed"]
+    assert lineage["roundtrip_matches_current"]
+    assert lineage["gate_passed"]
 
 
 def test_broker_readiness_blocks_remanifested_terminal_roundtrip_tamper(
