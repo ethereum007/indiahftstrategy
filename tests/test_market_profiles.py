@@ -32,6 +32,31 @@ def test_india_and_us_market_profiles_filter_regular_sessions():
     assert list(session_mask(us_ts, market="us_equities_regular")) == [False, True, True, False]
 
 
+def test_india_and_us_market_profiles_reject_weekends_inside_session_hours():
+    india_ts = pd.Series(
+        [
+            ns("2026-06-12 10:00:00", "Asia/Kolkata"),
+            ns("2026-06-13 10:00:00", "Asia/Kolkata"),
+            ns("2026-06-14 10:00:00", "Asia/Kolkata"),
+            ns("2026-06-15 10:00:00", "Asia/Kolkata"),
+        ]
+    )
+    us_ts = pd.Series(
+        [
+            ns("2026-06-12 10:00:00", "America/New_York"),
+            ns("2026-06-13 10:00:00", "America/New_York"),
+            ns("2026-06-15 10:00:00", "America/New_York"),
+        ]
+    )
+
+    assert list(trading_session_mask(india_ts)) == [True, False, False, True]
+    assert list(session_mask(us_ts, market="us_equities_regular")) == [
+        True,
+        False,
+        True,
+    ]
+
+
 def test_normalize_ticks_can_use_us_market_session():
     raw = pd.DataFrame(
         [
@@ -57,6 +82,40 @@ def test_normalize_ticks_can_use_us_market_session():
     assert len(normalized.data) == 1
     assert normalized.quarantine.dropped_out_of_session_rows == 1
     assert normalized.data["regime"].tolist() == ["baseline_market_structure"]
+
+
+def test_normalize_ticks_separates_weekend_and_intraday_quarantine():
+    raw = pd.DataFrame(
+        [
+            {
+                "ts": ns("2026-06-12 09:29:59", "America/New_York"),
+                "bid": 100.0,
+                "ask": 100.01,
+                "bid_qty": 100,
+                "ask_qty": 100,
+            },
+            {
+                "ts": ns("2026-06-12 10:00:00", "America/New_York"),
+                "bid": 100.0,
+                "ask": 100.01,
+                "bid_qty": 100,
+                "ask_qty": 100,
+            },
+            {
+                "ts": ns("2026-06-13 10:00:00", "America/New_York"),
+                "bid": 100.0,
+                "ask": 100.01,
+                "bid_qty": 100,
+                "ask_qty": 100,
+            },
+        ]
+    )
+
+    normalized = normalize_ticks(raw, market="us_equities_regular")
+
+    assert len(normalized.data) == 1
+    assert normalized.quarantine.dropped_non_trading_day_rows == 1
+    assert normalized.quarantine.dropped_out_of_session_rows == 1
 
 
 def test_market_profile_lookup_and_generic_cost_model():

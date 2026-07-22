@@ -6,6 +6,10 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 
+REGULAR_TRADING_WEEKDAYS = (0, 1, 2, 3, 4)
+WEEKDAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
 def _parse_hhmmss(value: str) -> int:
     parts = value.split(":")
     if len(parts) != 3:
@@ -22,20 +26,50 @@ class SessionSpec:
     timezone: str
     open_seconds: int
     close_seconds: int
+    trading_weekdays: tuple[int, ...] = REGULAR_TRADING_WEEKDAYS
 
     @classmethod
-    def from_hhmmss(cls, name: str, timezone: str, open_time: str, close_time: str) -> "SessionSpec":
+    def from_hhmmss(
+        cls,
+        name: str,
+        timezone: str,
+        open_time: str,
+        close_time: str,
+        trading_weekdays: tuple[int, ...] = REGULAR_TRADING_WEEKDAYS,
+    ) -> "SessionSpec":
+        weekdays = tuple(int(day) for day in trading_weekdays)
+        if not weekdays or len(set(weekdays)) != len(weekdays):
+            raise ValueError("trading_weekdays must contain unique weekday numbers")
+        if any(day < 0 or day > 6 for day in weekdays):
+            raise ValueError("trading weekdays must be between 0 and 6")
         return cls(
             name=name,
             timezone=timezone,
             open_seconds=_parse_hhmmss(open_time),
             close_seconds=_parse_hhmmss(close_time),
+            trading_weekdays=weekdays,
         )
 
-    def mask(self, ts_ns: pd.Series) -> pd.Series:
-        dt = pd.to_datetime(ts_ns, unit="ns", utc=True).dt.tz_convert(ZoneInfo(self.timezone))
+    def local_datetimes(self, ts_ns: pd.Series) -> pd.Series:
+        return pd.to_datetime(ts_ns, unit="ns", utc=True).dt.tz_convert(
+            ZoneInfo(self.timezone)
+        )
+
+    def time_mask(self, ts_ns: pd.Series) -> pd.Series:
+        dt = self.local_datetimes(ts_ns)
         seconds = dt.dt.hour * 3600 + dt.dt.minute * 60 + dt.dt.second
         return (seconds >= self.open_seconds) & (seconds <= self.close_seconds)
+
+    def trading_day_mask(self, ts_ns: pd.Series) -> pd.Series:
+        dt = self.local_datetimes(ts_ns)
+        return dt.dt.dayofweek.isin(self.trading_weekdays)
+
+    def mask(self, ts_ns: pd.Series) -> pd.Series:
+        return self.time_mask(ts_ns) & self.trading_day_mask(ts_ns)
+
+    @property
+    def trading_weekday_labels(self) -> tuple[str, ...]:
+        return tuple(WEEKDAY_LABELS[day] for day in self.trading_weekdays)
 
 
 @dataclass(frozen=True)
@@ -110,3 +144,19 @@ def get_market_profile(name: str) -> MarketProfile:
 
 def session_mask(ts_ns: pd.Series, *, market: str = INDIA_NSE_INDEX_DERIVATIVES.name) -> pd.Series:
     return get_market_profile(market).session.mask(ts_ns)
+
+
+def session_time_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+) -> pd.Series:
+    return get_market_profile(market).session.time_mask(ts_ns)
+
+
+def trading_day_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+) -> pd.Series:
+    return get_market_profile(market).session.trading_day_mask(ts_ns)

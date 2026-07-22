@@ -8,7 +8,13 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
-from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES, get_market_profile, session_mask
+from markets.profiles import (
+    INDIA_NSE_INDEX_DERIVATIVES,
+    get_market_profile,
+    session_mask,
+    session_time_mask,
+    trading_day_mask as market_trading_day_mask,
+)
 
 
 ENGINE_COLUMNS = ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
@@ -24,6 +30,7 @@ class QuarantineReport:
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
+    dropped_non_trading_day_rows: int = 0
     dropped_out_of_session_rows: int = 0
 
     @property
@@ -97,11 +104,14 @@ def normalize_ticks(
     out = out.loc[monotonic_mask].copy()
     out = out.sort_values("ts", kind="mergesort").reset_index(drop=True)
 
+    non_trading_day_count = 0
     session_count = 0
     if filter_session and not out.empty:
-        session = trading_session_mask(out["ts"], market=market)
-        session_count = int((~session).sum())
-        out = out.loc[session].copy()
+        trading_days = trading_day_mask(out["ts"], market=market)
+        session_times = trading_session_time_mask(out["ts"], market=market)
+        non_trading_day_count = int((~trading_days).sum())
+        session_count = int((trading_days & ~session_times).sum())
+        out = out.loc[trading_days & session_times].copy()
 
     if add_regime:
         out["regime"] = tag_regime(out["ts"], market=market)
@@ -118,6 +128,7 @@ def normalize_ticks(
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,
+        dropped_non_trading_day_rows=non_trading_day_count,
         dropped_out_of_session_rows=session_count,
     )
     return NormalizedTicks(out, report)
@@ -184,6 +195,22 @@ def trading_session_mask(
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
 ) -> pd.Series:
     return session_mask(ts_ns, market=market)
+
+
+def trading_session_time_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+) -> pd.Series:
+    return session_time_mask(ts_ns, market=market)
+
+
+def trading_day_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+) -> pd.Series:
+    return market_trading_day_mask(ts_ns, market=market)
 
 
 def tag_regime(

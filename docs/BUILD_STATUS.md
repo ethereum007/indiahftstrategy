@@ -6439,6 +6439,20 @@ passed`), and the shared terminal-to-broker-readiness lineage verifier passes
 healthy at `2462 tests`; the full repository suite was not rerun for this
 slice.
 
+Latest regular-session trading-day gate: India and US market profiles now bind
+their regular sessions to explicit Monday-Friday weekday sets instead of
+accepting any timestamp whose wall clock falls between open and close. Tick and
+option-chain normalizers quarantine weekend rows separately from valid-day
+intraday session violations, and those counters survive existing generic
+quarantine serialization. Market-profile reports expose the exact weekday set
+and label the policy `weekday_only_no_holiday_calendar`, avoiding a false claim
+that exchange holidays are already modeled. The complete profile/tick/chain
+normalization, market-source, live-session, portability, and profile-report
+compatibility set passes (`40 passed`). Repository collection is healthy at
+`2466 tests`. A full repository run produced no failure output but did not
+complete within the 10-minute runner limit, so it is not counted as a pass for
+this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

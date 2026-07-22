@@ -185,6 +185,35 @@ def test_provider_market_data_live_session_plan_blocks_missing_runtime_env_when_
     assert report.action_queue.loc[0, "next_gate"] == "provider_credentials_runtime"
 
 
+def test_provider_market_data_live_session_uses_market_profile_weekdays(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    config = ProviderMarketDataLiveSessionConfig(
+        trade_date="2026-06-27",
+        windows=("open=09:15-09:30",),
+    )
+
+    blocked = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session_blocked",
+        config=config,
+    )
+    allowed = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session_allowed",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date=config.trade_date,
+            windows=config.windows,
+            allow_weekend=True,
+        ),
+    )
+
+    weekday_check = blocked.checks.set_index("check").loc["trade_date_weekday"]
+    assert not blocked.ready
+    assert not bool(weekday_check["passed"])
+    assert weekday_check["threshold"] == "Mon|Tue|Wed|Thu|Fri"
+    assert allowed.ready
+
+
 def test_provider_market_data_live_session_blocks_missing_env_template_proof(tmp_path):
     client_packet = _write_client_packet(tmp_path)
     payload = json.loads(client_packet.read_text(encoding="utf-8"))

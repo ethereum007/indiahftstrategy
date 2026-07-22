@@ -67,6 +67,19 @@ def test_option_chain_normalizer_maps_vendor_columns_and_filters_session():
     assert normalized.quarantine.dropped_out_of_session_rows == 1
 
 
+def test_option_chain_normalizer_separates_weekend_and_intraday_quarantine():
+    rows = chain_rows()
+    weekend = rows.iloc[[0]].copy()
+    weekend["time"] = ns_ist("2026-06-13 10:00:00")
+    rows = pd.concat([rows, weekend], ignore_index=True)
+
+    normalized = normalize_option_chain(rows, column_map=chain_map())
+
+    assert len(normalized.data) == 1
+    assert normalized.quarantine.dropped_non_trading_day_rows == 1
+    assert normalized.quarantine.dropped_out_of_session_rows == 1
+
+
 def test_parity_box_runner_writes_outputs(tmp_path):
     chain = pd.DataFrame(
         [

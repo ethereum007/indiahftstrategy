@@ -71,6 +71,9 @@ def _profile_row(profile: MarketProfile) -> dict[str, object]:
         "timezone": profile.session.timezone,
         "open_time": _hhmmss(profile.session.open_seconds),
         "close_time": _hhmmss(profile.session.close_seconds),
+        "trading_day_policy": "weekday_only_no_holiday_calendar",
+        "trading_weekdays": "|".join(profile.session.trading_weekday_labels),
+        "trading_weekday_count": len(profile.session.trading_weekdays),
         "default_tick": float(profile.default_tick),
         "default_lot_size": int(profile.default_lot_size),
         "notes": profile.notes,
@@ -128,6 +131,13 @@ def _summary(profiles: pd.DataFrame, costs: pd.DataFrame, config: MarketProfileR
                 "markets": int(len(profiles)),
                 "countries": int(profiles["country"].nunique()) if not profiles.empty else 0,
                 "currencies": int(profiles["currency"].nunique()) if not profiles.empty else 0,
+                "weekday_only_markets": int(
+                    profiles["trading_day_policy"]
+                    .eq("weekday_only_no_holiday_calendar")
+                    .sum()
+                )
+                if not profiles.empty
+                else 0,
                 "cost_examples": int(len(costs)),
                 "explicit_fee_model": bool(config.price is not None),
             }

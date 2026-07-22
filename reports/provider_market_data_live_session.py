@@ -233,6 +233,8 @@ def _checks(
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
     provider_profile = _mapping(packet.get("provider_profile"))
     source_session = _mapping(packet.get("session"))
+    trading_weekday = trade_day.weekday() in profile.session.trading_weekdays
+    trading_weekdays = "|".join(profile.session.trading_weekday_labels)
     return [
         _check("client_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "provider client packet is required"),
         _check("client_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "provider client packet JSON could not be read"),
@@ -250,7 +252,7 @@ def _checks(
         _check("source_session_contract_carried", _session_contract_text(source_session), "has", "timezone/open/close", _source_session_carried(source_session), "provider client packet must carry source session timezone and open/close metadata"),
         _check("source_session_matches_market_profile", _session_contract_text(source_session), "==", _profile_session_text(profile), _source_session_matches_profile(source_session, profile), "source session metadata must match the selected market profile"),
         _check("source_live_fetch_contract_metadata_matches_packet", _live_contract_metadata_text(live_fetch_contract), "==", "client packet source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract), "live fetch contract exchange/session metadata must match the provider client packet"),
-        _check("trade_date_weekday", trade_day.isoformat(), "weekday", "Mon-Fri", trade_day.weekday() < 5 or config.allow_weekend, "trade date is a weekend; pass allow_weekend only for test captures"),
+        _check("trade_date_weekday", trade_day.isoformat(), "weekday", trading_weekdays, trading_weekday or config.allow_weekend, "trade date is outside the market profile's regular weekdays; pass allow_weekend only for test captures"),
         _check("market_session_known", profile.name, "known", True, bool(profile.name), "market profile must be known"),
         _check("windows_present", len(windows), ">=", 1, len(windows) >= 1, "at least one capture window is required"),
         _check("windows_within_session", ";".join(window_errors), "is", "", not window_errors, "capture windows must be valid and inside the market session"),

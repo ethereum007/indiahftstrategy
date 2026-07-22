@@ -20,7 +20,11 @@ def test_market_profile_report_lists_india_and_us_sessions():
     assert us_equities["timezone"] == "America/New_York"
     assert us_equities["open_time"] == "09:30:00"
     assert us_equities["close_time"] == "16:00:00"
+    assert us_equities["trading_day_policy"] == "weekday_only_no_holiday_calendar"
+    assert us_equities["trading_weekdays"] == "Mon|Tue|Wed|Thu|Fri"
+    assert int(us_equities["trading_weekday_count"]) == 5
     assert report.summary.iloc[0]["markets"] == 3
+    assert report.summary.iloc[0]["weekday_only_markets"] == 3
 
 
 def test_market_profile_report_calculates_explicit_generic_cost_examples():

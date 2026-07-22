@@ -7,7 +7,13 @@ from typing import Mapping, Optional
 import numpy as np
 import pandas as pd
 
-from data.loaders import _apply_column_map, _to_ns, tag_regime, trading_session_mask
+from data.loaders import (
+    _apply_column_map,
+    _to_ns,
+    tag_regime,
+    trading_day_mask,
+    trading_session_time_mask,
+)
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -36,6 +42,7 @@ class ChainQuarantineReport:
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_negative_depth_rows: int = 0
+    dropped_non_trading_day_rows: int = 0
     dropped_out_of_session_rows: int = 0
 
     @property
@@ -109,11 +116,14 @@ def normalize_option_chain(
     negative_depth_count = int((~depth_mask).sum())
     out = out.loc[depth_mask].copy()
 
+    non_trading_day_count = 0
     session_count = 0
     if filter_session and not out.empty:
-        session_mask = trading_session_mask(out["ts"], market=market)
-        session_count = int((~session_mask).sum())
-        out = out.loc[session_mask].copy()
+        trading_days = trading_day_mask(out["ts"], market=market)
+        session_times = trading_session_time_mask(out["ts"], market=market)
+        non_trading_day_count = int((~trading_days).sum())
+        session_count = int((trading_days & ~session_times).sum())
+        out = out.loc[trading_days & session_times].copy()
 
     if add_regime:
         out["regime"] = tag_regime(out["ts"], market=market)
@@ -129,6 +139,7 @@ def normalize_option_chain(
         dropped_nonpositive_quote_rows=nonpositive_quote_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_negative_depth_rows=negative_depth_count,
+        dropped_non_trading_day_rows=non_trading_day_count,
         dropped_out_of_session_rows=session_count,
     )
     return NormalizedOptionChain(out, report)
