@@ -11,6 +11,7 @@ from adapters.broker import get_adapter
 from adapters.schema_audit import SCHEMA_KIND_ATTRS
 from data.chains import normalize_option_chain
 from data.loaders import _to_ns, normalize_ticks
+from markets.calendars import market_calendar_summary, resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 
@@ -39,6 +40,8 @@ QUARANTINE_SUMMARY_FIELDS = (
     "dropped_nonmonotonic_rows",
     "dropped_negative_depth_rows",
     "dropped_non_trading_day_rows",
+    "dropped_calendar_closed_rows",
+    "dropped_calendar_out_of_range_rows",
     "dropped_out_of_session_rows",
 )
 
@@ -52,6 +55,7 @@ class MappedDataConfig:
     timestamp_tz: str | None = None
     filter_session: bool = True
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
+    market_calendar_path: str | None = None
     require_all_mapped: bool = True
 
 
@@ -159,11 +163,17 @@ def write_mapped_data_normalization(
         _runbook_markdown(report.summary.iloc[0], action_queue),
         encoding="utf-8",
     )
+    manifest_inputs: dict[str, Any] = {
+        "input": input_file,
+        "mapping": mapping_file,
+    }
+    if config.market_calendar_path:
+        manifest_inputs["market_calendar"] = Path(config.market_calendar_path)
     write_experiment_manifest(
         out,
         run_type="mapped_data_normalization",
         parameters={"config": asdict(config)},
-        inputs={"input": input_file, "mapping": mapping_file},
+        inputs=manifest_inputs,
     )
     return MappedDataReport(report.data, report.checks, report.summary, action_queue, out)
 
@@ -281,6 +291,7 @@ def _normalize_kind(
             timestamp_tz=config.timestamp_tz,
             filter_session=config.filter_session,
             market=config.market,
+            market_calendar=config.market_calendar_path,
         )
         return normalized.data, _quarantine_values(normalized.quarantine)
     if canonical_kind == "chain":
@@ -290,6 +301,7 @@ def _normalize_kind(
             timestamp_tz=config.timestamp_tz,
             filter_session=config.filter_session,
             market=config.market,
+            market_calendar=config.market_calendar_path,
         )
         return normalized.data, _quarantine_values(normalized.quarantine)
     if canonical_kind == "orders":
@@ -346,6 +358,10 @@ def _summary(
     failed = int(len(failed_rows)) if not checks.empty else 0
     mapped_columns = int(checks["source_present"].astype(bool).sum()) if not checks.empty else 0
     defaulted_columns = int(checks["default_present"].astype(bool).sum()) if not checks.empty else 0
+    calendar = resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.market,
+    )
     return pd.DataFrame(
         [
             {
@@ -370,6 +386,7 @@ def _summary(
                 else "",
                 "primary_blocker_reason": _check_reason(primary_blocker),
                 "output_file": config.output_filename,
+                **market_calendar_summary(calendar),
                 **quarantine,
             }
         ]
@@ -578,6 +595,30 @@ def _config(
         "inputs": {
             "input": str(input_file),
             "mapping": str(mapping_file),
+            "market_calendar": config.market_calendar_path or "",
+        },
+        "market_calendar": {
+            "provided": _to_bool(
+                summary_row.get("market_calendar_provided", False),
+                default=False,
+            ),
+            "policy": _text(summary_row.get("market_calendar_policy")),
+            "id": _text(summary_row.get("market_calendar_id")),
+            "path": _text(summary_row.get("market_calendar_path")),
+            "sha256": _text(summary_row.get("market_calendar_sha256")),
+            "valid_from": _text(summary_row.get("market_calendar_valid_from")),
+            "valid_to": _text(summary_row.get("market_calendar_valid_to")),
+            "publisher": _text(summary_row.get("market_calendar_publisher")),
+            "source_url": _text(summary_row.get("market_calendar_source_url")),
+            "published_date": _text(
+                summary_row.get("market_calendar_published_date")
+            ),
+            "closed_dates": _int(
+                summary_row.get("market_calendar_closed_dates")
+            ),
+            "special_open_dates": _int(
+                summary_row.get("market_calendar_special_open_dates")
+            ),
         },
         "normalization": {
             "input_rows": _int(summary_row.get("input_rows")),
@@ -631,10 +672,15 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Ready: {ready_label}",
         f"- Adapter: {_text(summary_row.get('adapter'))}",
         f"- Kind: {_text(summary_row.get('kind'))}",
+        f"- Market calendar: {_text(summary_row.get('market_calendar_id')) or 'not provided'}",
+        f"- Calendar policy: {_text(summary_row.get('market_calendar_policy'))}",
+        f"- Calendar SHA-256: {_text(summary_row.get('market_calendar_sha256'))}",
         f"- Input rows: {_int(summary_row.get('input_rows'))}",
         f"- Output rows: {_int(summary_row.get('output_rows'))}",
         f"- Quarantined rows: {_int(summary_row.get('quarantined_rows'))}",
         f"- Non-trading-day rows: {_int(summary_row.get('dropped_non_trading_day_rows'))}",
+        f"- Calendar-closed rows: {_int(summary_row.get('dropped_calendar_closed_rows'))}",
+        f"- Calendar out-of-range rows: {_int(summary_row.get('dropped_calendar_out_of_range_rows'))}",
         f"- Intraday out-of-session rows: {_int(summary_row.get('dropped_out_of_session_rows'))}",
         f"- Failed mappings: {_int(summary_row.get('failed_mappings'))}",
         f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
@@ -769,6 +815,7 @@ def _schema_kind(kind: str) -> tuple[str, str]:
 def _validate_config(config: MappedDataConfig) -> None:
     get_adapter(config.adapter)
     _schema_kind(config.kind)
+    resolve_market_calendar(config.market_calendar_path, market=config.market)
     output_name = Path(config.output_filename)
     if not config.output_filename or output_name.name != config.output_filename:
         raise ValueError("output_filename must be a file name without directories")

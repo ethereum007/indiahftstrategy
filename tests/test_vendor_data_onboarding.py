@@ -22,6 +22,7 @@ from tests.test_vendor_mapping_application import (
     _opaque_ticks,
     _target_intake,
 )
+from tests.test_market_calendar import _calendar_path
 
 
 def vendor_ticks(day: str) -> pd.DataFrame:
@@ -271,6 +272,42 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
         ]
     )
     assert ready_code == 0
+
+
+def test_vendor_pipeline_binds_market_calendar_evidence(tmp_path):
+    raw_path = tmp_path / "arrow_ticks.csv"
+    out_dir = tmp_path / "calendar_pipeline"
+    calendar_path = _calendar_path(tmp_path)
+    vendor_ticks("2026-06-09").to_csv(raw_path, index=False)
+
+    report = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=out_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=2,
+            market_calendar_path=str(calendar_path),
+        ),
+    )
+    summary = report.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert report.ready
+    assert summary["market_calendar_id"] == "nse-fo-test-2026-06"
+    assert summary["market_calendar_sha256"] == file_sha256(calendar_path)
+    assert manifest["inputs"]["market_calendar"]["sha256"] == file_sha256(
+        calendar_path
+    )
+    assert config["market_calendar"]["provided"] is True
+    assert config["market_calendar"]["sha256"] == file_sha256(calendar_path)
 
 
 def test_vendor_market_data_pipeline_gates_filtered_session_quarantine(tmp_path):

@@ -5,12 +5,14 @@ import pandas as pd
 from hft_cli import main
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
+from reports.manifest import file_sha256
 from reports.provider_market_data_client import write_provider_market_data_client_plan
 from reports.provider_market_data_fetcher import write_provider_market_data_fetcher_plan
 from reports.provider_market_data_live_session import (
     ProviderMarketDataLiveSessionConfig,
     write_provider_market_data_live_session_plan,
 )
+from tests.test_market_calendar import _calendar_path
 
 
 def _write_client_packet(tmp_path, *, transport="websocket"):
@@ -212,6 +214,76 @@ def test_provider_market_data_live_session_uses_market_profile_weekdays(tmp_path
     assert not bool(weekday_check["passed"])
     assert weekday_check["threshold"] == "Mon|Tue|Wed|Thu|Fri"
     assert allowed.ready
+
+
+def test_provider_live_session_uses_special_calendar_hours(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    calendar_path = _calendar_path(tmp_path)
+    out_dir = tmp_path / "special_live_session"
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        out_dir,
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-13",
+            windows=("special=18:00-18:30",),
+            market_calendar_path=str(calendar_path),
+        ),
+    )
+    summary = report.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert report.ready
+    assert summary["session_open_local"] == "18:00"
+    assert summary["session_close_local"] == "19:00"
+    assert summary["calendar_day_status"] == "open"
+    assert summary["market_calendar_sha256"] == file_sha256(calendar_path)
+    assert report.packet["market_calendar"]["trade_date_trading"] is True
+    assert "--market-calendar" in summary["post_capture_batch_command"]
+    assert manifest["inputs"]["market_calendar"]["sha256"] == file_sha256(
+        calendar_path
+    )
+
+
+def test_provider_live_session_fails_closed_on_calendar_holiday_and_gap(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    calendar_path = _calendar_path(tmp_path)
+
+    holiday = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "holiday_live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-10",
+            windows=("open=09:15-09:30",),
+            market_calendar_path=str(calendar_path),
+        ),
+    )
+    coverage_gap = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "gap_live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-16",
+            windows=("open=09:15-09:30",),
+            market_calendar_path=str(calendar_path),
+        ),
+    )
+
+    holiday_failed = set(
+        holiday.checks.loc[~holiday.checks["passed"].astype(bool), "check"]
+    )
+    gap_failed = set(
+        coverage_gap.checks.loc[
+            ~coverage_gap.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not holiday.ready
+    assert holiday_failed == {"trade_date_calendar_open"}
+    assert not coverage_gap.ready
+    assert {
+        "trade_date_calendar_covered",
+        "trade_date_calendar_open",
+    } <= gap_failed
 
 
 def test_provider_market_data_live_session_blocks_missing_env_template_proof(tmp_path):

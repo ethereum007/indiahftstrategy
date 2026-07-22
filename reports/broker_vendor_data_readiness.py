@@ -8,6 +8,7 @@ import pandas as pd
 
 from adapters.broker_readiness import BrokerReadinessReport, BrokerReadinessThresholds, write_broker_readiness_report
 from adapters.vendor_mapping_application import RECEIPT_FILE as MAPPING_APPLICATION_RECEIPT_FILE
+from markets.calendars import market_calendar_summary, resolve_market_calendar
 from reports.data_readiness import DataReadinessThresholds
 from reports.data_readiness_comparison import DataReadinessComparisonThresholds
 from reports.manifest import MANIFEST_NAME, write_experiment_manifest
@@ -42,6 +43,7 @@ class BrokerVendorDataReadinessConfig:
     timestamp_tz: str | None = None
     filter_session: bool = True
     market: str = "india_nse_index_derivatives"
+    market_calendar_path: str | None = None
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
@@ -114,6 +116,7 @@ def write_broker_vendor_data_readiness_pipeline(
         timestamp_tz=config.timestamp_tz,
         filter_session=config.filter_session,
         market=config.market,
+        market_calendar_path=config.market_calendar_path,
         tick_size=config.tick_size,
         require_all_mapped=config.require_all_mapped,
         min_rows=config.min_rows,
@@ -242,6 +245,11 @@ def write_broker_vendor_data_readiness_pipeline(
             "runtime_session": runtime_session_dir,
             "resume_gate": resume_dir,
             "dispatch_roundtrip": dispatch_roundtrip_dir,
+            "market_calendar": (
+                Path(config.market_calendar_path)
+                if config.market_calendar_path
+                else None
+            ),
             "vendor_market_data_batch": vendor_batch_dir,
             "vendor_market_data_batch_manifest": vendor_batch_dir / MANIFEST_NAME,
             "vendor_market_data_batch_config": (
@@ -326,6 +334,10 @@ def _summary(
     schema_reviewed = _bool(broker_row.get("schema_reviewed", False))
     placeholder_schema_active = _is_placeholder_schema(schema_status)
     placeholder_schema_allowed = placeholder_schema_active and not bool(broker_thresholds.require_reviewed_schema)
+    calendar = resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.market,
+    )
     return pd.DataFrame(
         [
             {
@@ -333,6 +345,7 @@ def _summary(
                 "adapter": config.adapter,
                 "kind": config.kind,
                 "market": config.market,
+                **market_calendar_summary(calendar),
                 "adapter_schema_status": schema_status,
                 "schema_review_required": bool(broker_thresholds.require_reviewed_schema),
                 "schema_reviewed": schema_reviewed,
@@ -349,6 +362,12 @@ def _summary(
                 "dataset_count": _int(vendor_row.get("dataset_count", 0)),
                 "ready_datasets": _int(vendor_row.get("ready_datasets", 0)),
                 "failed_datasets": _int(vendor_row.get("failed_datasets", 0)),
+                "dropped_calendar_closed_rows": _int(
+                    vendor_row.get("dropped_calendar_closed_rows", 0)
+                ),
+                "dropped_calendar_out_of_range_rows": _int(
+                    vendor_row.get("dropped_calendar_out_of_range_rows", 0)
+                ),
                 "unique_source_files": _int(vendor_row.get("unique_source_files", 0)),
                 "unique_header_fingerprints": _int(vendor_row.get("unique_header_fingerprints", 0)),
                 "source_file_fingerprint_coverage": _float(
@@ -989,6 +1008,9 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Adapter: {str(row.get('adapter', ''))}",
         f"- Kind: {str(row.get('kind', ''))}",
         f"- Market: {str(row.get('market', ''))}",
+        f"- Market calendar: {str(row.get('market_calendar_id', '')) or 'not provided'}",
+        f"- Calendar coverage: {str(row.get('market_calendar_valid_from', '')) or 'n/a'} to {str(row.get('market_calendar_valid_to', '')) or 'n/a'}",
+        f"- Calendar SHA-256: {str(row.get('market_calendar_sha256', ''))}",
         f"- Adapter schema status: {str(row.get('adapter_schema_status', ''))}",
         f"- Schema review mode: {str(row.get('schema_review_mode', ''))}",
         f"- Placeholder schema active: {_yes_no(_bool(row.get('placeholder_schema_active', False)))}",
@@ -998,6 +1020,8 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Failed checks: {_int(row.get('failed_checks', 0))}",
         f"- Dataset count: {_int(row.get('dataset_count', 0))}",
         f"- Ready datasets: {_int(row.get('ready_datasets', 0))}",
+        f"- Calendar-closed rows: {_int(row.get('dropped_calendar_closed_rows', 0))}",
+        f"- Calendar out-of-range rows: {_int(row.get('dropped_calendar_out_of_range_rows', 0))}",
         f"- Mapping source mode: {str(row.get('mapping_source_mode', ''))}",
         f"- Mapping applications: {_int(row.get('mapping_application_count', 0))}",
         f"- Unique mapping applications: {_int(row.get('unique_mapping_applications', 0))}",
@@ -1092,6 +1116,26 @@ def _config(
         "adapter": config.adapter,
         "kind": config.kind,
         "market": config.market,
+        "market_calendar": {
+            "provided": _bool(row.get("market_calendar_provided", False)),
+            "policy": str(row.get("market_calendar_policy", "")),
+            "id": str(row.get("market_calendar_id", "")),
+            "path": str(row.get("market_calendar_path", "")),
+            "sha256": str(row.get("market_calendar_sha256", "")),
+            "valid_from": str(row.get("market_calendar_valid_from", "")),
+            "valid_to": str(row.get("market_calendar_valid_to", "")),
+            "publisher": str(row.get("market_calendar_publisher", "")),
+            "source_url": str(row.get("market_calendar_source_url", "")),
+            "published_date": str(
+                row.get("market_calendar_published_date", "")
+            ),
+            "closed_dates": _int(
+                row.get("market_calendar_closed_dates", 0)
+            ),
+            "special_open_dates": _int(
+                row.get("market_calendar_special_open_dates", 0)
+            ),
+        },
         "adapter_schema_status": str(row.get("adapter_schema_status", "")),
         "schema_review_required": _bool(row.get("schema_review_required", False)),
         "schema_reviewed": _bool(row.get("schema_reviewed", False)),
@@ -1104,6 +1148,12 @@ def _config(
             "dataset_count": _int(row.get("dataset_count", 0)),
             "ready_datasets": _int(row.get("ready_datasets", 0)),
             "failed_datasets": _int(row.get("failed_datasets", 0)),
+            "dropped_calendar_closed_rows": _int(
+                row.get("dropped_calendar_closed_rows", 0)
+            ),
+            "dropped_calendar_out_of_range_rows": _int(
+                row.get("dropped_calendar_out_of_range_rows", 0)
+            ),
             "unique_source_files": _int(row.get("unique_source_files", 0)),
             "unique_header_fingerprints": _int(row.get("unique_header_fingerprints", 0)),
             "source_file_fingerprint_coverage": _float(row.get("source_file_fingerprint_coverage", 0.0)),

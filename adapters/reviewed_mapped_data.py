@@ -20,6 +20,7 @@ from adapters.vendor_mapping_review import (
     RECEIPT_FILE as MAPPING_REVIEW_RECEIPT_FILE,
     verify_vendor_mapping_review,
 )
+from markets.calendars import resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import (
     MANIFEST_NAME,
@@ -65,6 +66,7 @@ class ReviewedMappedDataConfig:
     timestamp_tz: str | None = None
     filter_session: bool = True
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
+    market_calendar_path: str | None = None
     require_all_mapped: bool = True
 
 
@@ -188,17 +190,20 @@ def write_reviewed_mapped_data_normalization(
         raise RuntimeError(
             "mapping review, vendor source, or reviewed mapping changed during normalization"
         )
+    manifest_inputs = {
+        "mapping_review": review_root,
+        "mapping_review_manifest": review_root / MANIFEST_NAME,
+        "mapping_review_receipt": review_root / MAPPING_REVIEW_RECEIPT_FILE,
+        "vendor_source": source_path,
+        "reviewed_mapping": mapping_path,
+    }
+    if config.market_calendar_path:
+        manifest_inputs["market_calendar"] = Path(config.market_calendar_path)
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
         parameters={"config": asdict(config)},
-        inputs={
-            "mapping_review": review_root,
-            "mapping_review_manifest": review_root / MANIFEST_NAME,
-            "mapping_review_receipt": review_root / MAPPING_REVIEW_RECEIPT_FILE,
-            "vendor_source": source_path,
-            "reviewed_mapping": mapping_path,
-        },
+        inputs=manifest_inputs,
         extra=_manifest_extra(report),
     )
     return ReviewedMappedDataReport(
@@ -384,6 +389,7 @@ def _assemble_report(
         timestamp_tz=config.timestamp_tz,
         filter_session=config.filter_session,
         market=config.market,
+        market_calendar_path=config.market_calendar_path,
         require_all_mapped=config.require_all_mapped,
     )
     normalized = normalize_mapped_data(raw, mapping, config=normalization_config)
@@ -963,6 +969,11 @@ def _config_from_manifest(
         ),
         filter_session=_strict_bool(payload["filter_session"], "filter_session"),
         market=str(payload["market"]),
+        market_calendar_path=(
+            None
+            if payload["market_calendar_path"] is None
+            else str(payload["market_calendar_path"])
+        ),
         require_all_mapped=_strict_bool(
             payload["require_all_mapped"],
             "require_all_mapped",
@@ -988,6 +999,7 @@ def _validate_config(config: ReviewedMappedDataConfig) -> None:
         raise ValueError("timestamp_unit is required")
     if not config.market:
         raise ValueError("market is required")
+    resolve_market_calendar(config.market_calendar_path, market=config.market)
 
 
 def _manifest_input_contract_current(

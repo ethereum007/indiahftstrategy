@@ -10,10 +10,13 @@ import pandas as pd
 from data.loaders import (
     _apply_column_map,
     _to_ns,
+    calendar_closed_mask,
+    calendar_out_of_range_mask,
     tag_regime,
     trading_day_mask,
     trading_session_time_mask,
 )
+from markets.calendars import MarketCalendar, resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -43,6 +46,8 @@ class ChainQuarantineReport:
     dropped_crossed_quote_rows: int = 0
     dropped_negative_depth_rows: int = 0
     dropped_non_trading_day_rows: int = 0
+    dropped_calendar_closed_rows: int = 0
+    dropped_calendar_out_of_range_rows: int = 0
     dropped_out_of_session_rows: int = 0
 
     @property
@@ -64,6 +69,7 @@ def load_option_chain_csv(
     timestamp_tz: str | None = None,
     filter_session: bool = True,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
     add_regime: bool = True,
 ) -> NormalizedOptionChain:
     raw = pd.read_csv(path)
@@ -74,6 +80,7 @@ def load_option_chain_csv(
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
         market=market,
+        market_calendar=market_calendar,
         add_regime=add_regime,
     )
 
@@ -86,8 +93,10 @@ def normalize_option_chain(
     timestamp_tz: str | None = None,
     filter_session: bool = True,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
     add_regime: bool = True,
 ) -> NormalizedOptionChain:
+    calendar = resolve_market_calendar(market_calendar, market=market)
     source = _apply_column_map(df, column_map)
     _require_columns(source, REQUIRED_CHAIN_COLUMNS)
     out = source.copy()
@@ -117,10 +126,34 @@ def normalize_option_chain(
     out = out.loc[depth_mask].copy()
 
     non_trading_day_count = 0
+    calendar_closed_count = 0
+    calendar_out_of_range_count = 0
     session_count = 0
     if filter_session and not out.empty:
-        trading_days = trading_day_mask(out["ts"], market=market)
-        session_times = trading_session_time_mask(out["ts"], market=market)
+        trading_days = trading_day_mask(
+            out["ts"],
+            market=market,
+            market_calendar=calendar,
+        )
+        session_times = trading_session_time_mask(
+            out["ts"],
+            market=market,
+            market_calendar=calendar,
+        )
+        calendar_closed_count = int(
+            calendar_closed_mask(
+                out["ts"],
+                market=market,
+                market_calendar=calendar,
+            ).sum()
+        )
+        calendar_out_of_range_count = int(
+            calendar_out_of_range_mask(
+                out["ts"],
+                market=market,
+                market_calendar=calendar,
+            ).sum()
+        )
         non_trading_day_count = int((~trading_days).sum())
         session_count = int((trading_days & ~session_times).sum())
         out = out.loc[trading_days & session_times].copy()
@@ -140,6 +173,8 @@ def normalize_option_chain(
         dropped_crossed_quote_rows=crossed_count,
         dropped_negative_depth_rows=negative_depth_count,
         dropped_non_trading_day_rows=non_trading_day_count,
+        dropped_calendar_closed_rows=calendar_closed_count,
+        dropped_calendar_out_of_range_rows=calendar_out_of_range_count,
         dropped_out_of_session_rows=session_count,
     )
     return NormalizedOptionChain(out, report)

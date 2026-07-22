@@ -27,6 +27,7 @@ from adapters.vendor_mapping_application import (
     approved_vendor_mapping_application_inputs,
 )
 from data.diagnostics import DiagnosticResult, chain_diagnostics, tick_diagnostics, write_diagnostics
+from markets.calendars import market_calendar_summary, resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.data_readiness import DataReadinessReport, DataReadinessThresholds, write_data_readiness_report
 from reports.data_readiness_comparison import (
@@ -48,6 +49,7 @@ class VendorMarketDataPipelineConfig:
     timestamp_tz: str | None = None
     filter_session: bool = True
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
+    market_calendar_path: str | None = None
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
@@ -163,6 +165,7 @@ def write_vendor_market_data_pipeline(
                 timestamp_tz=config.timestamp_tz,
                 filter_session=config.filter_session,
                 market=config.market,
+                market_calendar_path=config.market_calendar_path,
                 require_all_mapped=config.require_all_mapped,
             ),
         )
@@ -178,6 +181,7 @@ def write_vendor_market_data_pipeline(
                 timestamp_tz=config.timestamp_tz,
                 filter_session=config.filter_session,
                 market=config.market,
+                market_calendar_path=config.market_calendar_path,
                 require_all_mapped=config.require_all_mapped,
             ),
         )
@@ -196,6 +200,7 @@ def write_vendor_market_data_pipeline(
                 timestamp_tz=config.timestamp_tz,
                 filter_session=config.filter_session,
                 market=config.market,
+                market_calendar_path=config.market_calendar_path,
                 require_all_mapped=config.require_all_mapped,
             ),
         )
@@ -273,6 +278,8 @@ def write_vendor_market_data_pipeline(
         "input": source_file,
         "mapping": mapping_file,
     }
+    if config.market_calendar_path:
+        inputs["market_calendar"] = Path(config.market_calendar_path)
     if approved_review is not None:
         inputs.update(
             {
@@ -447,9 +454,32 @@ def write_vendor_market_data_batch_pipeline(
                 "ready": bool(report.ready),
                 "normalized_rows": int(_number(row, "normalized_rows", fallback=0.0)),
                 "failed_components": int(_number(row, "failed_components", fallback=1.0)),
+                "dropped_calendar_closed_rows": int(
+                    _number(row, "dropped_calendar_closed_rows", fallback=0.0)
+                ),
+                "dropped_calendar_out_of_range_rows": int(
+                    _number(
+                        row,
+                        "dropped_calendar_out_of_range_rows",
+                        fallback=0.0,
+                    )
+                ),
                 "source_file_sha256": _text(row, "source_file_sha256"),
                 "source_header_sha256": _text(row, "source_header_sha256"),
                 "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
+                "market_calendar_id": _text(row, "market_calendar_id"),
+                "market_calendar_sha256": _text(
+                    row,
+                    "market_calendar_sha256",
+                ),
+                "market_calendar_valid_from": _text(
+                    row,
+                    "market_calendar_valid_from",
+                ),
+                "market_calendar_valid_to": _text(
+                    row,
+                    "market_calendar_valid_to",
+                ),
                 "mapping_source": _text(row, "mapping_source"),
                 "mapping_application_path": _text(row, "mapping_application_path"),
                 "mapping_application_id": _text(row, "mapping_application_id"),
@@ -521,6 +551,8 @@ def write_vendor_market_data_batch_pipeline(
         encoding="utf-8",
     )
     inputs: dict[str, Any] = {"inputs": paths}
+    if config.market_calendar_path:
+        inputs["market_calendar"] = Path(config.market_calendar_path)
     if mapping_path is not None:
         inputs["mapping"] = mapping_path
     if approved_applications:
@@ -580,9 +612,25 @@ def write_vendor_market_data_batch_pipeline(
 
 def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarketDataPipelineConfig) -> DiagnosticResult:
     if config.kind == "ticks":
-        return write_diagnostics(tick_diagnostics(data, tick_size=config.tick_size, market=config.market), output_dir)
+        return write_diagnostics(
+            tick_diagnostics(
+                data,
+                tick_size=config.tick_size,
+                market=config.market,
+                market_calendar=config.market_calendar_path,
+            ),
+            output_dir,
+        )
     if config.kind == "chain":
-        return write_diagnostics(chain_diagnostics(data, tick_size=config.tick_size, market=config.market), output_dir)
+        return write_diagnostics(
+            chain_diagnostics(
+                data,
+                tick_size=config.tick_size,
+                market=config.market,
+                market_calendar=config.market_calendar_path,
+            ),
+            output_dir,
+        )
     raise ValueError("vendor market-data pipeline kind must be ticks or chain")
 
 
@@ -680,6 +728,10 @@ def _summary(
     mapped_row = _first(mapped.summary)
     diagnostic_row = _diagnostic_overall(diagnostics)
     next_gate = _primary_next_gate(action_queue)
+    calendar = resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.market,
+    )
     return pd.DataFrame(
         [
             {
@@ -687,6 +739,7 @@ def _summary(
                 "adapter": config.adapter,
                 "kind": config.kind,
                 "market": config.market,
+                **market_calendar_summary(calendar),
                 "input_path": str(source_file),
                 "mapping_path": str(mapping_file),
                 "mapping_source": mapping_source,
@@ -752,6 +805,34 @@ def _summary(
                 "mapping_coverage": _number(intake_row, "mapping_coverage", fallback=0.0),
                 "input_rows": int(_number(mapped_row, "input_rows", fallback=0.0)),
                 "normalized_rows": int(_number(mapped_row, "output_rows", fallback=0.0)),
+                "dropped_non_trading_day_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_non_trading_day_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "dropped_calendar_closed_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_calendar_closed_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "dropped_calendar_out_of_range_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_calendar_out_of_range_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "dropped_out_of_session_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_out_of_session_rows",
+                        fallback=0.0,
+                    )
+                ),
                 "diagnostic_rows": int(_number(diagnostic_row, "rows", fallback=0.0)),
                 "failed_components": failed,
                 "data_readiness_ready": bool(readiness.ready),
@@ -879,6 +960,11 @@ def _pipeline_runbook_markdown(
         f"- Adapter: {_value_text(summary_row.get('adapter'))}",
         f"- Kind: {_value_text(summary_row.get('kind'))}",
         f"- Market: {_value_text(summary_row.get('market'))}",
+        f"- Market calendar: {_value_text(summary_row.get('market_calendar_id')) or 'not provided'}",
+        f"- Calendar coverage: {_value_text(summary_row.get('market_calendar_valid_from')) or 'n/a'} to {_value_text(summary_row.get('market_calendar_valid_to')) or 'n/a'}",
+        f"- Calendar SHA-256: {_value_text(summary_row.get('market_calendar_sha256'))}",
+        f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
+        f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
         f"- Failed components: {int(_number_from_value(summary_row.get('failed_components', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -910,6 +996,9 @@ def _batch_runbook_markdown(
         f"- Adapter: {_value_text(summary_row.get('adapter'))}",
         f"- Kind: {_value_text(summary_row.get('kind'))}",
         f"- Market: {_value_text(summary_row.get('market'))}",
+        f"- Market calendar: {_value_text(summary_row.get('market_calendar_id')) or 'not provided'}",
+        f"- Calendar coverage: {_value_text(summary_row.get('market_calendar_valid_from')) or 'n/a'} to {_value_text(summary_row.get('market_calendar_valid_to')) or 'n/a'}",
+        f"- Calendar SHA-256: {_value_text(summary_row.get('market_calendar_sha256'))}",
         f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
         f"- Dataset count: {int(_number_from_value(summary_row.get('dataset_count', 0)))}",
         f"- Ready datasets: {int(_number_from_value(summary_row.get('ready_datasets', 0)))}",
@@ -917,6 +1006,8 @@ def _batch_runbook_markdown(
         f"- Mapping source mode: {_value_text(summary_row.get('mapping_source_mode'))}",
         f"- Mapping applications: {int(_number_from_value(summary_row.get('mapping_application_count', 0)))}",
         f"- Target-application coverage: {_number_from_value(summary_row.get('target_application_coverage', 0.0)):.3f}",
+        f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
+        f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
         f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
         f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
@@ -1027,6 +1118,10 @@ def _batch_summary(
     ready_datasets = int(datasets["ready"].astype(bool).sum()) if dataset_count else 0
     failed_datasets = dataset_count - ready_datasets
     accepted = bool(comparison.accepted)
+    calendar = resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.market,
+    )
     return pd.DataFrame(
         [
             {
@@ -1034,10 +1129,26 @@ def _batch_summary(
                 "adapter": config.adapter,
                 "kind": config.kind,
                 "market": config.market,
+                **market_calendar_summary(calendar),
                 "dataset_count": dataset_count,
                 "ready_datasets": ready_datasets,
                 "failed_datasets": failed_datasets,
                 "ready_rate": float(ready_datasets / dataset_count) if dataset_count else 0.0,
+                "dropped_calendar_closed_rows": int(
+                    pd.to_numeric(
+                        datasets.get("dropped_calendar_closed_rows", pd.Series(dtype=float)),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "dropped_calendar_out_of_range_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "dropped_calendar_out_of_range_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "unique_source_files": _unique_count(datasets, "source_file_sha256"),
                 "source_file_fingerprint_coverage": _number(
                     comparison_row,
@@ -1096,6 +1207,7 @@ def _pipeline_config(
         "adapter": _text(row, "adapter"),
         "kind": _text(row, "kind"),
         "market": config.market,
+        "market_calendar": _market_calendar_config(row),
         "source": {
             "path": _text(row, "input_path"),
             "file_sha256": _text(row, "source_file_sha256"),
@@ -1136,6 +1248,22 @@ def _pipeline_config(
             "output_file": _text(row, "normalized_output_file"),
             "input_rows": int(_number(row, "input_rows", fallback=0.0)),
             "rows": int(_number(row, "normalized_rows", fallback=0.0)),
+            "dropped_non_trading_day_rows": int(
+                _number(row, "dropped_non_trading_day_rows", fallback=0.0)
+            ),
+            "dropped_calendar_closed_rows": int(
+                _number(row, "dropped_calendar_closed_rows", fallback=0.0)
+            ),
+            "dropped_calendar_out_of_range_rows": int(
+                _number(
+                    row,
+                    "dropped_calendar_out_of_range_rows",
+                    fallback=0.0,
+                )
+            ),
+            "dropped_out_of_session_rows": int(
+                _number(row, "dropped_out_of_session_rows", fallback=0.0)
+            ),
             "timestamp_unit": config.timestamp_unit,
             "timestamp_tz": config.timestamp_tz,
             "filter_session": bool(config.filter_session),
@@ -1186,9 +1314,27 @@ def _batch_config(
             "data_readiness_dir": str(item.get("data_readiness_dir", "")),
             "normalized_rows": int(_number_from_value(item.get("normalized_rows", 0))),
             "failed_components": int(_number_from_value(item.get("failed_components", 0))),
+            "dropped_calendar_closed_rows": int(
+                _number_from_value(item.get("dropped_calendar_closed_rows", 0))
+            ),
+            "dropped_calendar_out_of_range_rows": int(
+                _number_from_value(
+                    item.get("dropped_calendar_out_of_range_rows", 0)
+                )
+            ),
             "source_file_sha256": str(item.get("source_file_sha256", "")),
             "source_header_sha256": str(item.get("source_header_sha256", "")),
             "mapping_draft_sha256": str(item.get("mapping_draft_sha256", "")),
+            "market_calendar_id": str(item.get("market_calendar_id", "")),
+            "market_calendar_sha256": str(
+                item.get("market_calendar_sha256", "")
+            ),
+            "market_calendar_valid_from": str(
+                item.get("market_calendar_valid_from", "")
+            ),
+            "market_calendar_valid_to": str(
+                item.get("market_calendar_valid_to", "")
+            ),
             "mapping_source": str(item.get("mapping_source", "")),
             "mapping_application_path": str(
                 item.get("mapping_application_path", "")
@@ -1216,9 +1362,16 @@ def _batch_config(
         "adapter": config.adapter,
         "kind": config.kind,
         "market": config.market,
+        "market_calendar": _market_calendar_config(row),
         "dataset_count": int(_number(row, "dataset_count", fallback=0.0)),
         "ready_datasets": int(_number(row, "ready_datasets", fallback=0.0)),
         "failed_datasets": int(_number(row, "failed_datasets", fallback=0.0)),
+        "dropped_calendar_closed_rows": int(
+            _number(row, "dropped_calendar_closed_rows", fallback=0.0)
+        ),
+        "dropped_calendar_out_of_range_rows": int(
+            _number(row, "dropped_calendar_out_of_range_rows", fallback=0.0)
+        ),
         "ready_rate": _number(row, "ready_rate", fallback=0.0),
         "unique_source_files": int(_number(row, "unique_source_files", fallback=0.0)),
         "source_file_fingerprint_coverage": _number(row, "source_file_fingerprint_coverage", fallback=0.0),
@@ -1263,6 +1416,27 @@ def _first_action_record(frame: pd.DataFrame) -> dict[str, object]:
     if frame.empty:
         return {}
     return _jsonable_record(frame.iloc[0].to_dict())
+
+
+def _market_calendar_config(row: pd.Series) -> dict[str, object]:
+    return {
+        "provided": _truthy(row.get("market_calendar_provided", False)),
+        "policy": _text(row, "market_calendar_policy"),
+        "id": _text(row, "market_calendar_id"),
+        "path": _text(row, "market_calendar_path"),
+        "sha256": _text(row, "market_calendar_sha256"),
+        "valid_from": _text(row, "market_calendar_valid_from"),
+        "valid_to": _text(row, "market_calendar_valid_to"),
+        "publisher": _text(row, "market_calendar_publisher"),
+        "source_url": _text(row, "market_calendar_source_url"),
+        "published_date": _text(row, "market_calendar_published_date"),
+        "closed_dates": int(
+            _number(row, "market_calendar_closed_dates", fallback=0.0)
+        ),
+        "special_open_dates": int(
+            _number(row, "market_calendar_special_open_dates", fallback=0.0)
+        ),
+    }
 
 
 def _action_records(frame: pd.DataFrame) -> list[dict[str, object]]:
@@ -1402,6 +1576,7 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         raise ValueError("min_mapping_coverage must be between 0 and 1")
     if config.min_rows <= 0:
         raise ValueError("min_rows must be positive")
+    resolve_market_calendar(config.market_calendar_path, market=config.market)
     for name in (
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",

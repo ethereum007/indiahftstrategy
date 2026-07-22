@@ -11,6 +11,12 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from markets.calendars import (
+    CalendarDayDecision,
+    MarketCalendar,
+    market_calendar_summary,
+    resolve_market_calendar,
+)
 from markets.profiles import get_market_profile
 from reports.manifest import write_experiment_manifest
 
@@ -32,6 +38,7 @@ class ProviderMarketDataLiveSessionConfig:
     max_median_spread_ticks: float | None = None
     require_env_present: bool = False
     allow_weekend: bool = False
+    market_calendar_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,8 @@ def write_provider_market_data_live_session_plan(
     )
     packet_path = Path(client_packet_path)
     inputs = {"client_packet": packet_path} if packet_path.exists() else {}
+    if config.market_calendar_path:
+        inputs["market_calendar"] = Path(config.market_calendar_path)
     credential_env_template = _credential_env_template_from_packet(report.packet)
     if credential_env_template["path"]:
         credential_env_template_path = Path(credential_env_template["path"])
@@ -120,13 +129,58 @@ def evaluate_provider_market_data_live_session_plan(
     packet, packet_error = _read_packet(packet_path)
     market = _text(packet.get("market"), "india_nse_index_derivatives")
     profile = get_market_profile(market)
+    calendar = resolve_market_calendar(config.market_calendar_path, market=market)
     trade_day = _parse_trade_date(config.trade_date)
-    windows, window_errors = _windows(config, packet, profile, trade_day)
+    calendar_day = _calendar_day(calendar, profile, trade_day)
+    session_open_seconds = (
+        calendar_day.open_seconds
+        if calendar_day is not None
+        else profile.session.open_seconds
+    )
+    session_close_seconds = (
+        calendar_day.close_seconds
+        if calendar_day is not None
+        else profile.session.close_seconds
+    )
+    windows, window_errors = _windows(
+        config,
+        packet,
+        profile,
+        trade_day,
+        session_open_seconds=session_open_seconds,
+        session_close_seconds=session_close_seconds,
+    )
     env_vars = _string_list(_mapping(packet.get("authentication")).get("env_vars"))
     env_presence = {name: name in os.environ for name in env_vars}
-    checks = pd.DataFrame(_checks(packet_path, packet, packet_error, profile, trade_day, windows, window_errors, env_presence, config))
+    checks = pd.DataFrame(
+        _checks(
+            packet_path,
+            packet,
+            packet_error,
+            profile,
+            calendar,
+            calendar_day,
+            trade_day,
+            windows,
+            window_errors,
+            env_presence,
+            config,
+        )
+    )
     ready = bool(not checks.empty and checks["passed"].astype(bool).all())
-    summary = _summary(packet_path, packet, profile, trade_day, windows, checks, env_presence, config, ready)
+    summary = _summary(
+        packet_path,
+        packet,
+        profile,
+        calendar,
+        calendar_day,
+        trade_day,
+        windows,
+        checks,
+        env_presence,
+        config,
+        ready,
+    )
     action_queue = _action_queue(summary.iloc[0], checks)
     summary = _summary_with_actions(summary, action_queue)
     session_packet = _session_packet(packet_path, packet, profile, windows, summary.iloc[0], env_presence, config)
@@ -148,11 +202,29 @@ def _read_packet(path: Path) -> tuple[dict[str, Any], str]:
     return payload, ""
 
 
+def _calendar_day(
+    calendar: MarketCalendar | None,
+    profile,
+    trade_day: date,
+) -> CalendarDayDecision | None:
+    if calendar is None:
+        return None
+    return calendar.decision(
+        trade_day,
+        trading_weekdays=profile.session.trading_weekdays,
+        default_open_seconds=profile.session.open_seconds,
+        default_close_seconds=profile.session.close_seconds,
+    )
+
+
 def _windows(
     config: ProviderMarketDataLiveSessionConfig,
     packet: dict[str, Any],
     profile,
     trade_day: date,
+    *,
+    session_open_seconds: int,
+    session_close_seconds: int,
 ) -> tuple[pd.DataFrame, list[str]]:
     rows: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -170,7 +242,10 @@ def _windows(
             errors.append(f"nonpositive_window:{label}")
         start_seconds = start_time.hour * 3600 + start_time.minute * 60
         end_seconds = end_time.hour * 3600 + end_time.minute * 60
-        within_session = start_seconds >= profile.session.open_seconds and end_seconds <= profile.session.close_seconds
+        within_session = (
+            start_seconds >= session_open_seconds
+            and end_seconds <= session_close_seconds
+        )
         if not within_session:
             errors.append(f"outside_market_session:{label}")
         capture_path = capture_dir / f"{provider}_{_safe_label(label)}_{trade_day.strftime('%Y_%m_%d')}.csv"
@@ -220,6 +295,8 @@ def _checks(
     packet: dict[str, Any],
     packet_error: str,
     profile,
+    calendar: MarketCalendar | None,
+    calendar_day: CalendarDayDecision | None,
     trade_day: date,
     windows: pd.DataFrame,
     window_errors: list[str],
@@ -235,7 +312,12 @@ def _checks(
     source_session = _mapping(packet.get("session"))
     trading_weekday = trade_day.weekday() in profile.session.trading_weekdays
     trading_weekdays = "|".join(profile.session.trading_weekday_labels)
-    return [
+    profile_day_allowed = bool(
+        trading_weekday
+        or config.allow_weekend
+        or (calendar_day is not None and calendar_day.trading_day)
+    )
+    checks = [
         _check("client_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "provider client packet is required"),
         _check("client_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "provider client packet JSON could not be read"),
         _check("client_packet_ready", bool(packet.get("ready")), "is", True, bool(packet.get("ready")), "provider client packet must be ready"),
@@ -252,17 +334,41 @@ def _checks(
         _check("source_session_contract_carried", _session_contract_text(source_session), "has", "timezone/open/close", _source_session_carried(source_session), "provider client packet must carry source session timezone and open/close metadata"),
         _check("source_session_matches_market_profile", _session_contract_text(source_session), "==", _profile_session_text(profile), _source_session_matches_profile(source_session, profile), "source session metadata must match the selected market profile"),
         _check("source_live_fetch_contract_metadata_matches_packet", _live_contract_metadata_text(live_fetch_contract), "==", "client packet source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract), "live fetch contract exchange/session metadata must match the provider client packet"),
-        _check("trade_date_weekday", trade_day.isoformat(), "weekday", trading_weekdays, trading_weekday or config.allow_weekend, "trade date is outside the market profile's regular weekdays; pass allow_weekend only for test captures"),
+        _check("trade_date_weekday", trade_day.isoformat(), "weekday", trading_weekdays, profile_day_allowed, "trade date is outside the market profile's regular weekdays and is not an explicit calendar session; pass allow_weekend only for test captures without a market calendar"),
         _check("market_session_known", profile.name, "known", True, bool(profile.name), "market profile must be known"),
         _check("windows_present", len(windows), ">=", 1, len(windows) >= 1, "at least one capture window is required"),
         _check("windows_within_session", ";".join(window_errors), "is", "", not window_errors, "capture windows must be valid and inside the market session"),
     ]
+    if calendar is not None and calendar_day is not None:
+        checks.extend(
+            [
+                _check(
+                    "trade_date_calendar_covered",
+                    trade_day.isoformat(),
+                    "within",
+                    f"{calendar.valid_from.isoformat()}..{calendar.valid_to.isoformat()}",
+                    calendar_day.covered,
+                    "trade date is outside the supplied market calendar coverage",
+                ),
+                _check(
+                    "trade_date_calendar_open",
+                    calendar_day.explicit_status,
+                    "is",
+                    "open_or_default_trading_day",
+                    calendar_day.covered and calendar_day.trading_day,
+                    "supplied market calendar does not authorize a session on the trade date",
+                ),
+            ]
+        )
+    return checks
 
 
 def _summary(
     packet_path: Path,
     packet: dict[str, Any],
     profile,
+    calendar: MarketCalendar | None,
+    calendar_day: CalendarDayDecision | None,
     trade_day: date,
     windows: pd.DataFrame,
     checks: pd.DataFrame,
@@ -279,6 +385,16 @@ def _summary(
     source_session = _mapping(packet.get("session"))
     capture_command_count = _nonempty_count(windows, "capture_command_template")
     capture_command_missing_count = max(int(len(windows)) - capture_command_count, 0)
+    session_open_seconds = (
+        calendar_day.open_seconds
+        if calendar_day is not None
+        else profile.session.open_seconds
+    )
+    session_close_seconds = (
+        calendar_day.close_seconds
+        if calendar_day is not None
+        else profile.session.close_seconds
+    )
     return pd.DataFrame(
         [
             {
@@ -292,8 +408,25 @@ def _summary(
                 "kind": _text(packet.get("kind")),
                 "trade_date": trade_day.isoformat(),
                 "timezone": profile.session.timezone,
-                "session_open_local": _seconds_to_hhmm(profile.session.open_seconds),
-                "session_close_local": _seconds_to_hhmm(profile.session.close_seconds),
+                "session_open_local": _seconds_to_hhmm(session_open_seconds),
+                "session_close_local": _seconds_to_hhmm(session_close_seconds),
+                "calendar_day_covered": bool(
+                    calendar_day.covered if calendar_day is not None else True
+                ),
+                "calendar_day_trading": bool(
+                    calendar_day.trading_day
+                    if calendar_day is not None
+                    else trade_day.weekday() in profile.session.trading_weekdays
+                ),
+                "calendar_day_status": (
+                    calendar_day.explicit_status
+                    if calendar_day is not None
+                    else "weekday_only_no_holiday_calendar"
+                ),
+                "calendar_day_label": (
+                    calendar_day.label if calendar_day is not None else ""
+                ),
+                **market_calendar_summary(calendar),
                 "source_session_timezone": _text(source_session.get("timezone")),
                 "source_session_open_local": _text(source_session.get("open_local")),
                 "source_session_close_local": _text(source_session.get("close_local")),
@@ -401,6 +534,7 @@ def _session_packet(
             "open_local": str(summary["session_open_local"]),
             "close_local": str(summary["session_close_local"]),
         },
+        "market_calendar": _market_calendar_contract(summary),
         "kind": _text(packet.get("kind")),
         "endpoint": _text(packet.get("endpoint")),
         "request": _mapping(packet.get("request")),
@@ -453,8 +587,13 @@ def _config(
             "timezone": str(summary["timezone"]),
             "session_open_local": str(summary["session_open_local"]),
             "session_close_local": str(summary["session_close_local"]),
+            "calendar_day_covered": bool(summary["calendar_day_covered"]),
+            "calendar_day_trading": bool(summary["calendar_day_trading"]),
+            "calendar_day_status": str(summary["calendar_day_status"]),
+            "calendar_day_label": str(summary["calendar_day_label"]),
             "window_count": int(summary["window_count"]),
         },
+        "market_calendar": _market_calendar_contract(summary),
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "provider_profile": _mapping(packet.get("provider_profile")),
@@ -475,6 +614,32 @@ def _config(
         "primary_action_status": "" if next_action is None else str(next_action["queue_status"]),
         "primary_action": {} if next_action is None else next_action,
         "post_capture_batch_command": str(summary["post_capture_batch_command"]),
+    }
+
+
+def _market_calendar_contract(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "provided": bool(summary.get("market_calendar_provided", False)),
+        "policy": str(summary.get("market_calendar_policy", "")),
+        "id": str(summary.get("market_calendar_id", "")),
+        "path": str(summary.get("market_calendar_path", "")),
+        "sha256": str(summary.get("market_calendar_sha256", "")),
+        "valid_from": str(summary.get("market_calendar_valid_from", "")),
+        "valid_to": str(summary.get("market_calendar_valid_to", "")),
+        "publisher": str(summary.get("market_calendar_publisher", "")),
+        "source_url": str(summary.get("market_calendar_source_url", "")),
+        "published_date": str(
+            summary.get("market_calendar_published_date", "")
+        ),
+        "closed_dates": int(summary.get("market_calendar_closed_dates", 0)),
+        "special_open_dates": int(
+            summary.get("market_calendar_special_open_dates", 0)
+        ),
+        "trade_date": str(summary.get("trade_date", "")),
+        "trade_date_covered": bool(summary.get("calendar_day_covered", False)),
+        "trade_date_trading": bool(summary.get("calendar_day_trading", False)),
+        "trade_date_status": str(summary.get("calendar_day_status", "")),
+        "trade_date_label": str(summary.get("calendar_day_label", "")),
     }
 
 
@@ -559,6 +724,8 @@ def _batch_command(
         parts.extend(["--max-p99-gap-ns", str(config.max_p99_gap_ns)])
     if config.max_median_spread_ticks is not None:
         parts.extend(["--max-median-spread-ticks", str(config.max_median_spread_ticks)])
+    if config.market_calendar_path:
+        parts.extend(["--market-calendar", config.market_calendar_path])
     parts.extend(
         [
             "--min-datasets",
@@ -752,6 +919,10 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Trade date: {summary['trade_date']}",
+        f"- Market calendar: {summary['market_calendar_id'] or 'not provided'}",
+        f"- Calendar day status: {summary['calendar_day_status']}",
+        f"- Calendar coverage: {summary['market_calendar_valid_from'] or 'n/a'} to {summary['market_calendar_valid_to'] or 'n/a'}",
+        f"- Calendar SHA-256: {summary['market_calendar_sha256']}",
         f"- Session: {summary['session_open_local']} - {summary['session_close_local']} {summary['timezone']}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",

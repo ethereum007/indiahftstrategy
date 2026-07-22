@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from markets.calendars import market_calendar_summary, resolve_market_calendar
 from reports.data_readiness_comparison import (
     DataReadinessComparisonReport,
     DataReadinessComparisonThresholds,
@@ -27,6 +28,7 @@ class ProviderMarketDataBatchConfig:
     max_null_required_cells: int = 0
     require_monotonic_ts: bool = True
     expected_market: str = "india_nse_index_derivatives"
+    market_calendar_path: str | None = None
     expected_kind: str = "ticks"
     sample_rows: int = 1000
     tick_size: float | None = None
@@ -166,6 +168,8 @@ def write_provider_market_data_batch_pipeline(
         "client_packet": packet,
         "captures": captures,
     }
+    if config.market_calendar_path:
+        inputs["market_calendar"] = Path(config.market_calendar_path)
     if dataset_manifest_paths:
         inputs["dataset_manifests"] = dataset_manifest_paths
     comparison_manifest = out / "comparison" / "manifest.json"
@@ -208,6 +212,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_null_required_cells=config.max_null_required_cells,
         require_monotonic_ts=config.require_monotonic_ts,
         expected_market=config.expected_market,
+        market_calendar_path=config.market_calendar_path,
         expected_kind=config.expected_kind,
         sample_rows=config.sample_rows,
         tick_size=config.tick_size,
@@ -371,6 +376,10 @@ def _summary(
     )
     next_gate = _primary_next_gate(action_queue)
     ready = bool(dataset_count > 0 and failed_datasets == 0 and comparison_accepted and blocked_actions == 0)
+    calendar = resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.expected_market,
+    )
     return pd.DataFrame(
         [
             {
@@ -378,6 +387,7 @@ def _summary(
                 "adapter": "normalized",
                 "kind": config.expected_kind,
                 "market": config.expected_market,
+                **market_calendar_summary(calendar),
                 "dataset_count": dataset_count,
                 "ready_datasets": ready_datasets,
                 "failed_datasets": failed_datasets,
@@ -422,6 +432,15 @@ def _config(
         "schema_version": 1,
         "ready": bool(row["ready"]),
         "parameters": asdict(config),
+        "market_calendar": {
+            "provided": bool(row.get("market_calendar_provided", False)),
+            "policy": _text(row, "market_calendar_policy"),
+            "id": _text(row, "market_calendar_id"),
+            "path": _text(row, "market_calendar_path"),
+            "sha256": _text(row, "market_calendar_sha256"),
+            "valid_from": _text(row, "market_calendar_valid_from"),
+            "valid_to": _text(row, "market_calendar_valid_to"),
+        },
         "comparison": {
             "accepted": bool(row["comparison_accepted"]),
             "thresholds": asdict(thresholds),
@@ -454,6 +473,8 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, action_queue: 
         "",
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Market: {summary['market']}",
+        f"- Market calendar: {summary['market_calendar_id'] or 'not provided'}",
+        f"- Calendar SHA-256: {summary['market_calendar_sha256']}",
         f"- Kind: {summary['kind']}",
         f"- Dataset count: {int(_number(summary, 'dataset_count', fallback=0.0))}",
         f"- Ready datasets: {int(_number(summary, 'ready_datasets', fallback=0.0))}",
@@ -568,6 +589,10 @@ def _safe_label(label: str, idx: int) -> str:
 
 
 def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
+    resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.expected_market,
+    )
     if config.min_capture_rows <= 0:
         raise ValueError("min_capture_rows must be positive")
     if config.pipeline_min_rows <= 0:

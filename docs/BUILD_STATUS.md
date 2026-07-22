@@ -6480,10 +6480,28 @@ compatibility passes (`7 passed`). Repository collection remains healthy at
 broker artifacts remain non-authorizing, and the full repository suite was not
 rerun for this fixture-only slice.
 
+Latest exchange-calendar evidence gate: market sessions can now consume a
+strict, versioned JSON calendar bound to a market, timezone, coverage range,
+publisher, source URL, publication date, and SHA-256 fingerprint. Explicit
+closures, special opens, ordinary weekends, intraday window violations, and
+dates outside supplied coverage remain distinct; coverage gaps fail closed.
+Tick and option-chain normalization, diagnostics, mapped/reviewed/applied
+mapping evidence, vendor single/batch pipelines, broker-vendor readiness, and
+provider live/pipeline/batch handoffs all retain calendar identity and
+reason-specific quarantine counts. The live planner uses special-session hours
+and passes the exact calendar into its generated post-capture command, while
+all artifacts remain non-authorizing. No speculative NSE holiday dates are
+embedded: authoritative calendar data must be supplied as an input. The broad
+calendar, loader, diagnostics, mapping-lineage, vendor/provider, and broker
+regression set passes (`92 passed`), and repository collection is healthy at
+`2480 tests`. The full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
-1. Add data adapters for the first real vendor export once files are available.
-2. Replace placeholder Arrow.money/iRage column maps once real export schemas
+1. Ingest and retain an authoritative NSE calendar artifact for the first real
+   research period.
+2. Add data adapters for the first real vendor export once files are available.
+3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-3. Replace the built-in upload review templates with broker-signed
+4. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.

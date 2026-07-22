@@ -8,6 +8,7 @@ from reports.broker_vendor_data_readiness import (
     BrokerVendorDataReadinessConfig,
     write_broker_vendor_data_readiness_pipeline,
 )
+from reports.manifest import file_sha256
 from tests.broker_vendor_data_helpers import assert_broker_vendor_data_proof_forwarded
 from tests.test_broker_dispatch_send import _refresh_manifest as refresh_dispatch_manifest
 from tests.test_broker_readiness import (
@@ -123,10 +124,36 @@ def write_inputs(root, adapter):
     }
 
 
+def write_market_calendar(root):
+    path = root / "market_calendar.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "calendar_id": "nse-fo-broker-proof-2026-06",
+                "market": "india_nse_index_derivatives",
+                "timezone": "Asia/Kolkata",
+                "valid_from": "2026-06-01",
+                "valid_to": "2026-06-30",
+                "provenance": {
+                    "publisher": "test-fixture",
+                    "source_url": "https://example.test/nse-calendar",
+                    "published_date": "2026-05-31",
+                },
+                "sessions": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
     for adapter in ("arrow_money", "irage"):
         root = tmp_path / adapter
         paths = write_inputs(root, adapter)
+        calendar_path = write_market_calendar(root)
         out_dir = root / "proof"
 
         report = write_broker_vendor_data_readiness_pipeline(
@@ -144,6 +171,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
                 timestamp_unit="datetime",
                 tick_size=0.05,
                 min_rows=2,
+                market_calendar_path=str(calendar_path),
             ),
         )
 
@@ -199,6 +227,8 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert summary["mapping_sources"] == "vendor_intake_draft"
         assert bool(summary["comparison_accepted"])
         assert int(summary["failed_checks"]) == 0
+        assert summary["market_calendar_id"] == "nse-fo-broker-proof-2026-06"
+        assert summary["market_calendar_sha256"] == file_sha256(calendar_path)
         assert int(summary["failed_check_count"]) == 0
         assert summary["failed_check_names"] == ""
         assert summary["first_failed_reason"] == ""
@@ -231,6 +261,8 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["placeholder_schema_active"]
         assert config["placeholder_schema_allowed"]
         assert config["placeholder_schema_warning"] == "placeholder adapter schema allowed for dry-run review only"
+        assert config["market_calendar"]["provided"]
+        assert config["market_calendar"]["sha256"] == file_sha256(calendar_path)
         assert config["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
@@ -285,6 +317,9 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert manifest["run_type"] == "broker_vendor_data_readiness_pipeline"
         assert "vendor_market_data_batch" in manifest["inputs"]
         assert "broker_readiness" in manifest["inputs"]
+        assert manifest["inputs"]["market_calendar"]["sha256"] == file_sha256(
+            calendar_path
+        )
         artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
         assert "broker_vendor_data_readiness_action_queue.csv" in artifact_paths
         assert "broker_vendor_data_readiness_runbook.md" in artifact_paths

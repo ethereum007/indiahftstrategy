@@ -6,7 +6,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data.loaders import trading_day_mask, trading_session_time_mask
+from data.loaders import (
+    calendar_closed_mask,
+    calendar_out_of_range_mask,
+    trading_day_mask,
+    trading_session_time_mask,
+)
+from markets.calendars import MarketCalendar, resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -38,6 +44,7 @@ def tick_diagnostics(
     *,
     tick_size: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
     _require(ticks, TICK_REQUIRED, "ticks")
     frame = ticks.copy()
@@ -49,9 +56,10 @@ def tick_diagnostics(
     else:
         frame["spread_ticks"] = np.nan
     gaps = frame["ts"].sort_values().diff().dropna()
-    non_trading_days, out_of_session = _session_issue_masks(
+    non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
+        market_calendar=market_calendar,
     )
     summary = pd.DataFrame(
         [
@@ -64,6 +72,8 @@ def tick_diagnostics(
                 "nonpositive_quote_rows": int(((frame["bid"] <= 0) | (frame["ask"] <= 0)).sum()),
                 "nonpositive_depth_rows": int(((frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0)).sum()),
                 "non_trading_day_rows": int(non_trading_days.sum()),
+                "calendar_closed_rows": int(calendar_closed.sum()),
+                "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
                 "out_of_session_rows": int(out_of_session.sum()),
                 "median_gap_ns": float(gaps.median()) if len(gaps) else 0.0,
                 "p99_gap_ns": float(gaps.quantile(0.99)) if len(gaps) else 0.0,
@@ -78,6 +88,8 @@ def tick_diagnostics(
         issues=_tick_issues(
             frame,
             non_trading_days=non_trading_days,
+            calendar_closed=calendar_closed,
+            calendar_out_of_range=calendar_out_of_range,
             out_of_session=out_of_session,
         ),
     )
@@ -88,6 +100,7 @@ def chain_diagnostics(
     *,
     tick_size: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
     frame = chain.copy()
@@ -99,9 +112,10 @@ def chain_diagnostics(
     else:
         frame["call_spread_ticks"] = np.nan
         frame["put_spread_ticks"] = np.nan
-    non_trading_days, out_of_session = _session_issue_masks(
+    non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
+        market_calendar=market_calendar,
     )
     by_expiry = (
         frame.groupby("expiry", dropna=False)
@@ -143,6 +157,8 @@ def chain_diagnostics(
                     ).sum()
                 ),
                 "non_trading_day_rows": int(non_trading_days.sum()),
+                "calendar_closed_rows": int(calendar_closed.sum()),
+                "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
                 "out_of_session_rows": int(out_of_session.sum()),
             }
         ]
@@ -153,6 +169,8 @@ def chain_diagnostics(
         issues=_chain_issues(
             frame,
             non_trading_days=non_trading_days,
+            calendar_closed=calendar_closed,
+            calendar_out_of_range=calendar_out_of_range,
             out_of_session=out_of_session,
         ),
     )
@@ -170,6 +188,8 @@ def _tick_issues(
     frame: pd.DataFrame,
     *,
     non_trading_days: pd.Series,
+    calendar_closed: pd.Series,
+    calendar_out_of_range: pd.Series,
     out_of_session: pd.Series,
 ) -> pd.DataFrame:
     rows = []
@@ -178,7 +198,11 @@ def _tick_issues(
         "crossed_quote": frame["ask"] < frame["bid"],
         "nonpositive_quote": (frame["bid"] <= 0) | (frame["ask"] <= 0),
         "nonpositive_depth": (frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0),
-        "non_trading_day": non_trading_days,
+        "calendar_closed": calendar_closed,
+        "calendar_out_of_range": calendar_out_of_range,
+        "non_trading_day": non_trading_days
+        & ~calendar_closed
+        & ~calendar_out_of_range,
         "out_of_session": out_of_session,
     }
     for issue, mask in checks.items():
@@ -191,6 +215,8 @@ def _chain_issues(
     frame: pd.DataFrame,
     *,
     non_trading_days: pd.Series,
+    calendar_closed: pd.Series,
+    calendar_out_of_range: pd.Series,
     out_of_session: pd.Series,
 ) -> pd.DataFrame:
     rows = []
@@ -204,7 +230,11 @@ def _chain_issues(
         | (frame["call_ask_qty"] <= 0)
         | (frame["put_bid_qty"] <= 0)
         | (frame["put_ask_qty"] <= 0),
-        "non_trading_day": non_trading_days,
+        "calendar_closed": calendar_closed,
+        "calendar_out_of_range": calendar_out_of_range,
+        "non_trading_day": non_trading_days
+        & ~calendar_closed
+        & ~calendar_out_of_range,
         "out_of_session": out_of_session,
     }
     for issue, mask in checks.items():
@@ -225,10 +255,35 @@ def _session_issue_masks(
     ts_ns: pd.Series,
     *,
     market: str,
-) -> tuple[pd.Series, pd.Series]:
-    trading_days = trading_day_mask(ts_ns, market=market)
-    session_times = trading_session_time_mask(ts_ns, market=market)
-    return ~trading_days, trading_days & ~session_times
+    market_calendar: MarketCalendar | str | Path | None = None,
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    calendar = resolve_market_calendar(market_calendar, market=market)
+    trading_days = trading_day_mask(
+        ts_ns,
+        market=market,
+        market_calendar=calendar,
+    )
+    session_times = trading_session_time_mask(
+        ts_ns,
+        market=market,
+        market_calendar=calendar,
+    )
+    calendar_closed = calendar_closed_mask(
+        ts_ns,
+        market=market,
+        market_calendar=calendar,
+    )
+    calendar_out_of_range = calendar_out_of_range_mask(
+        ts_ns,
+        market=market,
+        market_calendar=calendar,
+    )
+    return (
+        ~trading_days,
+        calendar_closed,
+        calendar_out_of_range,
+        trading_days & ~session_times,
+    )
 
 
 def _require(df: pd.DataFrame, columns: list[str], name: str):

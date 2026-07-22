@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from markets.calendars import market_calendar_summary, resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.provider_market_data_capture import (
@@ -28,6 +29,7 @@ class ProviderMarketDataPipelineConfig:
     max_null_required_cells: int = 0
     require_monotonic_ts: bool = True
     expected_market: str = INDIA_NSE_INDEX_DERIVATIVES.name
+    market_calendar_path: str | None = None
     expected_kind: str = "ticks"
     sample_rows: int = 1000
     tick_size: float | None = None
@@ -68,6 +70,10 @@ def write_provider_market_data_pipeline(
     config: ProviderMarketDataPipelineConfig | None = None,
 ) -> ProviderMarketDataPipelineReport:
     config = config or ProviderMarketDataPipelineConfig()
+    resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.expected_market,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -103,6 +109,7 @@ def write_provider_market_data_pipeline(
                 timestamp_tz=config.timestamp_tz,
                 filter_session=True,
                 market=str(capture_summary["market"]),
+                market_calendar_path=config.market_calendar_path,
                 tick_size=config.tick_size,
                 require_all_mapped=True,
                 min_rows=config.pipeline_min_rows,
@@ -118,7 +125,15 @@ def write_provider_market_data_pipeline(
 
     components = _components(capture, vendor)
     action_queue = _action_queue(capture, vendor)
-    summary = _summary(client_packet_path, capture_path, components, capture, vendor, action_queue)
+    summary = _summary(
+        client_packet_path,
+        capture_path,
+        components,
+        capture,
+        vendor,
+        action_queue,
+        config,
+    )
     pipeline_config = _config(summary.iloc[0], components, action_queue, capture, vendor, config)
 
     components.to_csv(out / "provider_market_data_pipeline_components.csv", index=False)
@@ -139,6 +154,8 @@ def write_provider_market_data_pipeline(
     }
     if vendor is not None:
         inputs["vendor_pipeline_manifest"] = vendor_dir / "manifest.json"
+    if config.market_calendar_path:
+        inputs["market_calendar"] = Path(config.market_calendar_path)
     write_experiment_manifest(
         out,
         run_type="provider_market_data_pipeline",
@@ -185,6 +202,7 @@ def _summary(
     capture: ProviderMarketDataCaptureReport,
     vendor: VendorMarketDataPipelineReport | None,
     action_queue: pd.DataFrame,
+    config: ProviderMarketDataPipelineConfig,
 ) -> pd.DataFrame:
     capture_summary = capture.summary.iloc[0]
     vendor_ready = bool(vendor.ready) if vendor is not None else False
@@ -194,6 +212,10 @@ def _summary(
     )
     ready = bool(capture.ready and vendor_ready and blocked_actions == 0)
     next_action = action_queue.iloc[0] if not action_queue.empty else None
+    calendar = resolve_market_calendar(
+        config.market_calendar_path,
+        market=config.expected_market,
+    )
     return pd.DataFrame(
         [
             {
@@ -203,6 +225,7 @@ def _summary(
                 "provider": str(capture_summary["provider"]),
                 "adapter": "normalized",
                 "market": str(capture_summary["market"]),
+                **market_calendar_summary(calendar),
                 "kind": str(capture_summary["kind"]),
                 "capture_ready": bool(capture.ready),
                 "vendor_pipeline_ready": vendor_ready,
@@ -355,6 +378,8 @@ def _runbook_markdown(summary: pd.Series, components: pd.DataFrame, action_queue
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
+        f"- Market calendar: {summary['market_calendar_id'] or 'not provided'}",
+        f"- Calendar SHA-256: {summary['market_calendar_sha256']}",
         f"- Kind: {summary['kind']}",
         "",
         "## Components",

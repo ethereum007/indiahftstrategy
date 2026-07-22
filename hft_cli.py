@@ -125,6 +125,7 @@ from reports.leadlag_replay_walkforward import (
     LeadLagReplayWalkForwardThresholds,
     write_leadlag_replay_walkforward,
 )
+from reports.market_calendar import write_market_calendar_report
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
@@ -400,6 +401,17 @@ def _add_generic_cost_args(parser: argparse.ArgumentParser, *, default: float | 
     parser.add_argument("--generic-per-unit-fee", type=float, default=default)
     parser.add_argument("--generic-per-contract-fee", type=float, default=default)
     parser.add_argument("--generic-per-order-fee", type=float, default=default)
+
+
+def _add_market_calendar_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--market-calendar",
+        default=None,
+        help=(
+            "Versioned exchange-calendar JSON; supplied coverage is enforced "
+            "fail-closed and fingerprinted into evidence."
+        ),
+    )
 
 
 def _add_scaleup_threshold_args(parser: argparse.ArgumentParser) -> None:
@@ -1294,6 +1306,7 @@ def main(argv: list[str] | None = None) -> int:
     mapped_data.add_argument("--timestamp-unit", default="ns")
     mapped_data.add_argument("--timestamp-tz", default=None)
     mapped_data.add_argument("--market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(mapped_data)
     mapped_data.add_argument("--no-filter-session", action="store_true")
     mapped_data.add_argument("--allow-missing-required", action="store_true")
     mapped_data.add_argument("--fail-on-breach", action="store_true")
@@ -1312,6 +1325,7 @@ def main(argv: list[str] | None = None) -> int:
         "--market",
         default="india_nse_index_derivatives",
     )
+    _add_market_calendar_arg(reviewed_mapped_data)
     reviewed_mapped_data.add_argument("--no-filter-session", action="store_true")
     reviewed_mapped_data.add_argument(
         "--allow-missing-required",
@@ -1348,6 +1362,7 @@ def main(argv: list[str] | None = None) -> int:
         "--market",
         default="india_nse_index_derivatives",
     )
+    _add_market_calendar_arg(applied_mapped_data)
     applied_mapped_data.add_argument("--no-filter-session", action="store_true")
     applied_mapped_data.add_argument(
         "--allow-missing-required",
@@ -1457,6 +1472,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_session.add_argument("--max-median-spread-ticks", type=float, default=None)
     provider_market_data_live_session.add_argument("--require-env-present", action="store_true")
     provider_market_data_live_session.add_argument("--allow-weekend", action="store_true")
+    _add_market_calendar_arg(provider_market_data_live_session)
     provider_market_data_live_session.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_session.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_session.add_argument("--fail-on-actions", action="store_true")
@@ -2983,6 +2999,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--max-null-required-cells", type=int, default=0)
     provider_market_data_pipeline.add_argument("--no-require-monotonic-ts", action="store_true")
     provider_market_data_pipeline.add_argument("--expected-market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(provider_market_data_pipeline)
     provider_market_data_pipeline.add_argument("--expected-kind", default="ticks")
     provider_market_data_pipeline.add_argument("--sample-rows", type=int, default=1000)
     provider_market_data_pipeline.add_argument("--tick-size", type=float, default=None)
@@ -3013,6 +3030,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--max-null-required-cells", type=int, default=0)
     provider_market_data_batch.add_argument("--no-require-monotonic-ts", action="store_true")
     provider_market_data_batch.add_argument("--expected-market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(provider_market_data_batch)
     provider_market_data_batch.add_argument("--expected-kind", default="ticks")
     provider_market_data_batch.add_argument("--sample-rows", type=int, default=1000)
     provider_market_data_batch.add_argument("--tick-size", type=float, default=None)
@@ -3063,6 +3081,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--timestamp-unit", default="ns")
     vendor_market_data.add_argument("--timestamp-tz", default=None)
     vendor_market_data.add_argument("--market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(vendor_market_data)
     vendor_market_data.add_argument("--no-filter-session", action="store_true")
     vendor_market_data.add_argument("--tick-size", type=float, default=None)
     vendor_market_data.add_argument("--allow-missing-required", action="store_true")
@@ -3103,6 +3122,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--timestamp-unit", default="ns")
     vendor_market_data_batch.add_argument("--timestamp-tz", default=None)
     vendor_market_data_batch.add_argument("--market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(vendor_market_data_batch)
     vendor_market_data_batch.add_argument("--no-filter-session", action="store_true")
     vendor_market_data_batch.add_argument("--tick-size", type=float, default=None)
     vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
@@ -3149,6 +3169,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--timestamp-unit", default="ns")
     broker_vendor_data_readiness.add_argument("--timestamp-tz", default=None)
     broker_vendor_data_readiness.add_argument("--market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(broker_vendor_data_readiness)
     broker_vendor_data_readiness.add_argument("--no-filter-session", action="store_true")
     broker_vendor_data_readiness.add_argument("--tick-size", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--allow-missing-required", action="store_true")
@@ -3198,6 +3219,7 @@ def main(argv: list[str] | None = None) -> int:
     diag_ticks.add_argument("--out", required=True)
     diag_ticks.add_argument("--tick-size", type=float, default=None)
     diag_ticks.add_argument("--market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(diag_ticks)
     diag_ticks.add_argument("--no-filter-session", action="store_true")
 
     diag_chain = sub.add_parser("diagnose-chain", help="Run data-quality diagnostics for option-chain snapshots.")
@@ -3205,6 +3227,7 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--out", required=True)
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
+    _add_market_calendar_arg(diag_chain)
     diag_chain.add_argument("--no-filter-session", action="store_true")
 
     data_readiness = sub.add_parser("review-data-readiness", help="Gate vendor/normalized market data before research runs.")
@@ -3293,6 +3316,14 @@ def main(argv: list[str] | None = None) -> int:
     market_profile.add_argument("--per-unit-fee", type=float, default=0.0)
     market_profile.add_argument("--per-contract-fee", type=float, default=0.0)
     market_profile.add_argument("--per-order-fee", type=float, default=0.0)
+
+    market_calendar = sub.add_parser(
+        "market-calendar-report",
+        help="Validate and fingerprint a versioned exchange calendar.",
+    )
+    market_calendar.add_argument("--calendar", required=True)
+    market_calendar.add_argument("--out", required=True)
+    market_calendar.add_argument("--market", default=None)
 
     portability = sub.add_parser(
         "market-portability-report",
@@ -5661,6 +5692,7 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_tz=args.timestamp_tz,
                 filter_session=not args.no_filter_session,
                 market=args.market,
+                market_calendar_path=args.market_calendar,
                 require_all_mapped=not args.allow_missing_required,
             ),
         )
@@ -5687,6 +5719,7 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_tz=args.timestamp_tz,
                 filter_session=not args.no_filter_session,
                 market=args.market,
+                market_calendar_path=args.market_calendar,
                 require_all_mapped=not args.allow_missing_required,
             ),
         )
@@ -5740,6 +5773,7 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_tz=args.timestamp_tz,
                 filter_session=not args.no_filter_session,
                 market=args.market,
+                market_calendar_path=args.market_calendar,
                 require_all_mapped=not args.allow_missing_required,
             ),
         )
@@ -5915,6 +5949,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_median_spread_ticks=args.max_median_spread_ticks,
                 require_env_present=args.require_env_present,
                 allow_weekend=args.allow_weekend,
+                market_calendar_path=args.market_calendar or "",
             ),
         )
         print(result.summary.to_string(index=False))
@@ -7441,6 +7476,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_required_cells=args.max_null_required_cells,
                 require_monotonic_ts=not args.no_require_monotonic_ts,
                 expected_market=args.expected_market,
+                market_calendar_path=args.market_calendar,
                 expected_kind=args.expected_kind,
                 sample_rows=args.sample_rows,
                 tick_size=args.tick_size,
@@ -7481,6 +7517,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_required_cells=args.max_null_required_cells,
                 require_monotonic_ts=not args.no_require_monotonic_ts,
                 expected_market=args.expected_market,
+                market_calendar_path=args.market_calendar,
                 expected_kind=args.expected_kind,
                 sample_rows=args.sample_rows,
                 tick_size=args.tick_size,
@@ -7533,6 +7570,7 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_tz=args.timestamp_tz,
                 filter_session=not args.no_filter_session,
                 market=args.market,
+                market_calendar_path=args.market_calendar,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7576,6 +7614,7 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_tz=args.timestamp_tz,
                 filter_session=not args.no_filter_session,
                 market=args.market,
+                market_calendar_path=args.market_calendar,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7644,6 +7683,7 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_tz=args.timestamp_tz,
                 filter_session=not args.no_filter_session,
                 market=args.market,
+                market_calendar_path=args.market_calendar,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7703,13 +7743,39 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0
     if args.command == "diagnose-ticks":
-        ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session, market=args.market).data
-        result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size, market=args.market), args.out)
+        ticks = load_tick_csv(
+            args.ticks,
+            filter_session=not args.no_filter_session,
+            market=args.market,
+            market_calendar=args.market_calendar,
+        ).data
+        result = write_diagnostics(
+            tick_diagnostics(
+                ticks,
+                tick_size=args.tick_size,
+                market=args.market,
+                market_calendar=args.market_calendar,
+            ),
+            args.out,
+        )
         print(result.summary.to_string(index=False))
         return 0
     if args.command == "diagnose-chain":
-        chain = load_option_chain_csv(args.chain, filter_session=not args.no_filter_session, market=args.market).data
-        result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size, market=args.market), args.out)
+        chain = load_option_chain_csv(
+            args.chain,
+            filter_session=not args.no_filter_session,
+            market=args.market,
+            market_calendar=args.market_calendar,
+        ).data
+        result = write_diagnostics(
+            chain_diagnostics(
+                chain,
+                tick_size=args.tick_size,
+                market=args.market,
+                market_calendar=args.market_calendar,
+            ),
+            args.out,
+        )
         print(result.summary.to_string(index=False))
         return 0
     if args.command == "review-data-readiness":
@@ -7823,6 +7889,14 @@ def main(argv: list[str] | None = None) -> int:
                 per_contract_fee=args.per_contract_fee,
                 per_order_fee=args.per_order_fee,
             ),
+        )
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "market-calendar-report":
+        result = write_market_calendar_report(
+            args.calendar,
+            args.out,
+            expected_market=args.market,
         )
         print(result.summary.to_string(index=False))
         return 0

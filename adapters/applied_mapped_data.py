@@ -19,6 +19,7 @@ from adapters.vendor_mapping_application import (
     RECEIPT_FILE as MAPPING_APPLICATION_RECEIPT_FILE,
     approved_vendor_mapping_application_inputs,
 )
+from markets.calendars import resolve_market_calendar
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import (
     MANIFEST_NAME,
@@ -64,6 +65,7 @@ class AppliedMappedDataConfig:
     timestamp_tz: str | None = None
     filter_session: bool = True
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
+    market_calendar_path: str | None = None
     require_all_mapped: bool = True
 
 
@@ -157,19 +159,22 @@ def write_applied_mapped_data_normalization(
         raise RuntimeError(
             "mapping application, target source, or applied mapping changed during normalization"
         )
+    manifest_inputs = {
+        "mapping_application": application_root,
+        "mapping_application_manifest": application_root / MANIFEST_NAME,
+        "mapping_application_receipt": (
+            application_root / MAPPING_APPLICATION_RECEIPT_FILE
+        ),
+        "target_source": source_path,
+        "applied_mapping": mapping_path,
+    }
+    if config.market_calendar_path:
+        manifest_inputs["market_calendar"] = Path(config.market_calendar_path)
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
         parameters={"config": asdict(config)},
-        inputs={
-            "mapping_application": application_root,
-            "mapping_application_manifest": application_root / MANIFEST_NAME,
-            "mapping_application_receipt": (
-                application_root / MAPPING_APPLICATION_RECEIPT_FILE
-            ),
-            "target_source": source_path,
-            "applied_mapping": mapping_path,
-        },
+        inputs=manifest_inputs,
         extra=_manifest_extra(report),
     )
     return AppliedMappedDataReport(
@@ -405,6 +410,7 @@ def _assemble_report(
         timestamp_tz=config.timestamp_tz,
         filter_session=config.filter_session,
         market=config.market,
+        market_calendar_path=config.market_calendar_path,
         require_all_mapped=config.require_all_mapped,
     )
     normalized = normalize_mapped_data(raw, mapping, config=normalization_config)
@@ -1000,6 +1006,11 @@ def _config_from_manifest(manifest: Mapping[str, Any]) -> AppliedMappedDataConfi
         ),
         filter_session=_strict_bool(payload["filter_session"], "filter_session"),
         market=str(payload["market"]),
+        market_calendar_path=(
+            None
+            if payload["market_calendar_path"] is None
+            else str(payload["market_calendar_path"])
+        ),
         require_all_mapped=_strict_bool(
             payload["require_all_mapped"],
             "require_all_mapped",
@@ -1025,6 +1036,7 @@ def _validate_config(config: AppliedMappedDataConfig) -> None:
         raise ValueError("timestamp_unit is required")
     if not config.market:
         raise ValueError("market is required")
+    resolve_market_calendar(config.market_calendar_path, market=config.market)
 
 
 def _manifest_input_contract_current(

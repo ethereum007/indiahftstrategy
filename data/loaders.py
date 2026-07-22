@@ -8,8 +8,11 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
+from markets.calendars import MarketCalendar, resolve_market_calendar
 from markets.profiles import (
     INDIA_NSE_INDEX_DERIVATIVES,
+    calendar_closed_mask as market_calendar_closed_mask,
+    calendar_out_of_range_mask as market_calendar_out_of_range_mask,
     get_market_profile,
     session_mask,
     session_time_mask,
@@ -31,6 +34,8 @@ class QuarantineReport:
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
     dropped_non_trading_day_rows: int = 0
+    dropped_calendar_closed_rows: int = 0
+    dropped_calendar_out_of_range_rows: int = 0
     dropped_out_of_session_rows: int = 0
 
     @property
@@ -52,6 +57,7 @@ def load_tick_csv(
     timestamp_tz: str | None = None,
     filter_session: bool = True,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
     add_regime: bool = True,
 ) -> NormalizedTicks:
     raw = pd.read_csv(path)
@@ -62,6 +68,7 @@ def load_tick_csv(
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
         market=market,
+        market_calendar=market_calendar,
         add_regime=add_regime,
     )
 
@@ -74,6 +81,7 @@ def normalize_ticks(
     timestamp_tz: str | None = None,
     filter_session: bool = True,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
     add_regime: bool = True,
 ) -> NormalizedTicks:
     """Normalize vendor ticks into the engine schema.
@@ -82,6 +90,7 @@ def normalize_ticks(
     {"ts": "exchange_time", "bid": "best_bid"}.
     """
 
+    calendar = resolve_market_calendar(market_calendar, market=market)
     source = _apply_column_map(df, column_map)
     _require_columns(source, REQUIRED_COLUMNS)
     out = source.copy()
@@ -105,10 +114,34 @@ def normalize_ticks(
     out = out.sort_values("ts", kind="mergesort").reset_index(drop=True)
 
     non_trading_day_count = 0
+    calendar_closed_count = 0
+    calendar_out_of_range_count = 0
     session_count = 0
     if filter_session and not out.empty:
-        trading_days = trading_day_mask(out["ts"], market=market)
-        session_times = trading_session_time_mask(out["ts"], market=market)
+        trading_days = trading_day_mask(
+            out["ts"],
+            market=market,
+            market_calendar=calendar,
+        )
+        session_times = trading_session_time_mask(
+            out["ts"],
+            market=market,
+            market_calendar=calendar,
+        )
+        calendar_closed_count = int(
+            calendar_closed_mask(
+                out["ts"],
+                market=market,
+                market_calendar=calendar,
+            ).sum()
+        )
+        calendar_out_of_range_count = int(
+            calendar_out_of_range_mask(
+                out["ts"],
+                market=market,
+                market_calendar=calendar,
+            ).sum()
+        )
         non_trading_day_count = int((~trading_days).sum())
         session_count = int((trading_days & ~session_times).sum())
         out = out.loc[trading_days & session_times].copy()
@@ -129,6 +162,8 @@ def normalize_ticks(
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,
         dropped_non_trading_day_rows=non_trading_day_count,
+        dropped_calendar_closed_rows=calendar_closed_count,
+        dropped_calendar_out_of_range_rows=calendar_out_of_range_count,
         dropped_out_of_session_rows=session_count,
     )
     return NormalizedTicks(out, report)
@@ -193,24 +228,65 @@ def trading_session_mask(
     ts_ns: pd.Series,
     *,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
 ) -> pd.Series:
-    return session_mask(ts_ns, market=market)
+    return session_mask(
+        ts_ns,
+        market=market,
+        market_calendar=market_calendar,
+    )
 
 
 def trading_session_time_mask(
     ts_ns: pd.Series,
     *,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
 ) -> pd.Series:
-    return session_time_mask(ts_ns, market=market)
+    return session_time_mask(
+        ts_ns,
+        market=market,
+        market_calendar=market_calendar,
+    )
 
 
 def trading_day_mask(
     ts_ns: pd.Series,
     *,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
 ) -> pd.Series:
-    return market_trading_day_mask(ts_ns, market=market)
+    return market_trading_day_mask(
+        ts_ns,
+        market=market,
+        market_calendar=market_calendar,
+    )
+
+
+def calendar_closed_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
+) -> pd.Series:
+    return market_calendar_closed_mask(
+        ts_ns,
+        market=market,
+        market_calendar=market_calendar,
+    )
+
+
+def calendar_out_of_range_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    market_calendar: MarketCalendar | str | Path | None = None,
+) -> pd.Series:
+    return market_calendar_out_of_range_mask(
+        ts_ns,
+        market=market,
+        market_calendar=market_calendar,
+    )
 
 
 def tag_regime(
