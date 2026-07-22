@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from markets.calendars import MARKET_CALENDAR_POLICY
 from reports.manifest import write_experiment_manifest
 
 
 SUMMARY_FILES = {
+    "market_calendar": "market_calendar_summary.csv",
     "vendor_intake": "vendor_intake_summary.csv",
     "schema_audit": "adapter_schema_summary.csv",
     "mapped_data": "mapped_data_summary.csv",
@@ -25,6 +28,7 @@ SUMMARY_FILES = {
 
 @dataclass(frozen=True)
 class DataReadinessThresholds:
+    require_market_calendar: bool = False
     require_vendor_intake: bool = False
     require_schema_audit: bool = False
     require_mapped_data: bool = False
@@ -70,6 +74,7 @@ class DataReadinessReport:
 
 def evaluate_data_readiness(
     *,
+    market_calendar_summary: pd.DataFrame | None = None,
     vendor_intake_summary: pd.DataFrame | None = None,
     schema_audit_summary: pd.DataFrame | None = None,
     mapped_data_summary: pd.DataFrame | None = None,
@@ -84,6 +89,7 @@ def evaluate_data_readiness(
     _validate_thresholds(thresholds)
     portability_config = _optional_config(market_portability_config)
     summaries = {
+        "market_calendar": _optional_frame(market_calendar_summary),
         "vendor_intake": _optional_frame(vendor_intake_summary),
         "schema_audit": _optional_frame(schema_audit_summary),
         "mapped_data": _optional_frame(mapped_data_summary),
@@ -103,6 +109,7 @@ def evaluate_data_readiness(
 def write_data_readiness_report(
     *,
     output_dir: str | Path,
+    market_calendar_dir: str | Path | None = None,
     vendor_intake_dir: str | Path | None = None,
     schema_audit_dir: str | Path | None = None,
     mapped_data_dir: str | Path | None = None,
@@ -116,6 +123,10 @@ def write_data_readiness_report(
     thresholds = thresholds or DataReadinessThresholds()
     _validate_thresholds(thresholds)
     report = evaluate_data_readiness(
+        market_calendar_summary=_read_optional_summary(
+            market_calendar_dir,
+            "market_calendar",
+        ),
         vendor_intake_summary=_read_optional_summary(vendor_intake_dir, "vendor_intake"),
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         mapped_data_summary=_read_optional_summary(mapped_data_dir, "mapped_data"),
@@ -151,6 +162,7 @@ def write_data_readiness_report(
         run_type="data_readiness",
         parameters={"thresholds": asdict(thresholds)},
         inputs={
+            "market_calendar": market_calendar_dir,
             "vendor_intake": vendor_intake_dir,
             "schema_audit": schema_audit_dir,
             "mapped_data": mapped_data_dir,
@@ -197,6 +209,7 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "failed_checks": int(failed_checks),
         "source_file": SUMMARY_FILES[component],
         "adapter": _identity(row.get("adapter", "")),
+        "market": _identity(row.get("market", "")),
         "kind": _text(row, "best_kind", fallback=_text(row, "kind")),
         "kind_selection": _text(row, "kind_selection"),
         "selected_kind_ambiguous": _to_bool(row.get("selected_kind_ambiguous", False)),
@@ -206,6 +219,17 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "source_header_sha256": _text(row, "source_header_sha256"),
         "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
         "mapping_coverage": _number(row, "mapping_coverage"),
+        "market_calendar_provided": _to_bool(
+            row.get("market_calendar_provided", False)
+        ),
+        "market_calendar_policy": _text(row, "market_calendar_policy"),
+        "market_calendar_id": _text(row, "market_calendar_id"),
+        "market_calendar_sha256": _text(row, "market_calendar_sha256"),
+        "market_calendar_valid_from": _text(
+            row,
+            "market_calendar_valid_from",
+        ),
+        "market_calendar_valid_to": _text(row, "market_calendar_valid_to"),
         "review_bound": _to_bool(row.get("review_bound", False)),
         "mapping_review_verified": _to_bool(row.get("mapping_review_verified", False)),
         "mapping_review_approved": _to_bool(row.get("mapping_review_approved", False)),
@@ -296,6 +320,7 @@ def _checks(
         checks.extend(_tick_checks(summaries["tick_diagnostics"], thresholds))
     if not summaries["chain_diagnostics"].empty:
         checks.extend(_chain_checks(summaries["chain_diagnostics"], thresholds))
+    checks.extend(_market_calendar_checks(summaries, thresholds))
     if not summaries["market_profile"].empty and thresholds.require_explicit_fee_model:
         row = summaries["market_profile"].iloc[0]
         explicit_fee = _to_bool(row.get("explicit_fee_model", False))
@@ -370,6 +395,195 @@ def _checks(
             )
         )
     return pd.DataFrame(checks)
+
+
+def _market_calendar_checks(
+    summaries: dict[str, pd.DataFrame],
+    thresholds: DataReadinessThresholds,
+) -> list[dict[str, Any]]:
+    calendar_frame = summaries["market_calendar"]
+    reference = (
+        _overall_row(calendar_frame)
+        if not calendar_frame.empty
+        else pd.Series(dtype=object)
+    )
+    reference_available = not reference.empty
+    binding_required = bool(thresholds.require_market_calendar or reference_available)
+    checks: list[dict[str, Any]] = []
+
+    if reference_available:
+        calendar_id = _text(reference, "market_calendar_id")
+        calendar_sha256 = _text(reference, "market_calendar_sha256")
+        valid_from = _text(reference, "market_calendar_valid_from")
+        valid_to = _text(reference, "market_calendar_valid_to")
+        policy = _text(reference, "market_calendar_policy")
+        market = _identity(reference.get("market", ""))
+        expected_market = _identity(thresholds.expected_market)
+        checks.extend(
+            [
+                _check(
+                    "market_calendar_provenance_bound",
+                    _to_bool(reference.get("market_calendar_provided", False)),
+                    "is",
+                    True,
+                    _to_bool(reference.get("market_calendar_provided", False)),
+                    "market-calendar report does not retain source provenance",
+                ),
+                _check(
+                    "market_calendar_policy",
+                    policy,
+                    "==",
+                    MARKET_CALENDAR_POLICY,
+                    policy == MARKET_CALENDAR_POLICY,
+                    "market-calendar report does not use the versioned exchange-calendar policy",
+                ),
+                _check(
+                    "market_calendar_id_present",
+                    calendar_id,
+                    "nonempty",
+                    True,
+                    bool(calendar_id),
+                    "market-calendar report does not retain a calendar identity",
+                ),
+                _check(
+                    "market_calendar_sha256_present",
+                    calendar_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(calendar_sha256),
+                    "market-calendar report does not retain a valid source fingerprint",
+                ),
+                _check(
+                    "market_calendar_coverage_valid",
+                    f"{valid_from}|{valid_to}",
+                    "ordered",
+                    "YYYY-MM-DD coverage",
+                    _valid_date_coverage(valid_from, valid_to),
+                    "market-calendar report coverage is missing or invalid",
+                ),
+            ]
+        )
+        if expected_market:
+            checks.append(
+                _check(
+                    "market_calendar_market_matches",
+                    market,
+                    "==",
+                    expected_market,
+                    bool(market and market == expected_market),
+                    "market-calendar report market does not match the expected market",
+                )
+            )
+
+    for component in ("mapped_data", "tick_diagnostics", "chain_diagnostics"):
+        frame = summaries[component]
+        if frame.empty:
+            continue
+        row = _overall_row(frame)
+        provided = _to_bool(row.get("market_calendar_provided", False))
+        if binding_required:
+            checks.append(
+                _check(
+                    f"{component}_market_calendar_provided",
+                    provided,
+                    "is",
+                    True,
+                    provided,
+                    f"{component} is not bound to the validated market calendar",
+                )
+            )
+        if not provided:
+            continue
+        component_policy = _text(row, "market_calendar_policy")
+        component_id = _text(row, "market_calendar_id")
+        component_sha256 = _text(row, "market_calendar_sha256")
+        component_valid_from = _text(row, "market_calendar_valid_from")
+        component_valid_to = _text(row, "market_calendar_valid_to")
+        checks.extend(
+            [
+                _check(
+                    f"{component}_market_calendar_policy",
+                    component_policy,
+                    "==",
+                    MARKET_CALENDAR_POLICY,
+                    component_policy == MARKET_CALENDAR_POLICY,
+                    f"{component} does not use the versioned exchange-calendar policy",
+                ),
+                _check(
+                    f"{component}_market_calendar_sha256_present",
+                    component_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(component_sha256),
+                    f"{component} does not retain a valid market-calendar fingerprint",
+                ),
+                _check(
+                    f"{component}_market_calendar_coverage_valid",
+                    f"{component_valid_from}|{component_valid_to}",
+                    "ordered",
+                    "YYYY-MM-DD coverage",
+                    _valid_date_coverage(component_valid_from, component_valid_to),
+                    f"{component} market-calendar coverage is missing or invalid",
+                ),
+            ]
+        )
+        if reference_available:
+            checks.extend(
+                [
+                    _check(
+                        f"{component}_market_calendar_id_matches",
+                        component_id,
+                        "==",
+                        _text(reference, "market_calendar_id"),
+                        bool(
+                            component_id
+                            and component_id
+                            == _text(reference, "market_calendar_id")
+                        ),
+                        f"{component} uses a different market-calendar identity",
+                    ),
+                    _check(
+                        f"{component}_market_calendar_sha256_matches",
+                        component_sha256,
+                        "==",
+                        _text(reference, "market_calendar_sha256"),
+                        bool(
+                            _is_sha256(component_sha256)
+                            and component_sha256
+                            == _text(reference, "market_calendar_sha256")
+                        ),
+                        f"{component} uses a different market-calendar source",
+                    ),
+                    _check(
+                        f"{component}_market_calendar_coverage_matches",
+                        f"{component_valid_from}|{component_valid_to}",
+                        "==",
+                        "|".join(
+                            [
+                                _text(reference, "market_calendar_valid_from"),
+                                _text(reference, "market_calendar_valid_to"),
+                            ]
+                        ),
+                        bool(
+                            component_valid_from
+                            == _text(reference, "market_calendar_valid_from")
+                            and component_valid_to
+                            == _text(reference, "market_calendar_valid_to")
+                        ),
+                        f"{component} uses different market-calendar coverage",
+                    ),
+                ]
+            )
+    return checks
+
+
+def _valid_date_coverage(valid_from: str, valid_to: str) -> bool:
+    try:
+        start = date.fromisoformat(valid_from)
+        end = date.fromisoformat(valid_to)
+    except (TypeError, ValueError):
+        return False
+    return start.isoformat() == valid_from and end.isoformat() == valid_to and end >= start
 
 
 def _reviewed_mapping_checks(
@@ -951,6 +1165,7 @@ def _summary(
                 "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
                 "primary_blocker_reason": _check_reason(primary_blocker),
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
+                "require_market_calendar": bool(thresholds.require_market_calendar),
                 "require_reviewed_mapping_normalization": bool(
                     thresholds.require_reviewed_mapping_normalization
                 ),
@@ -960,6 +1175,35 @@ def _summary(
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
                 "expected_adapter": _identity(thresholds.expected_adapter),
+                "market_calendar_id": _component_text(
+                    items,
+                    "market_calendar",
+                    "market_calendar_id",
+                ),
+                "market_calendar_sha256": _component_text(
+                    items,
+                    "market_calendar",
+                    "market_calendar_sha256",
+                ),
+                "market_calendar_valid_from": _component_text(
+                    items,
+                    "market_calendar",
+                    "market_calendar_valid_from",
+                ),
+                "market_calendar_valid_to": _component_text(
+                    items,
+                    "market_calendar",
+                    "market_calendar_valid_to",
+                ),
+                "market_calendar_market": _component_text(
+                    items,
+                    "market_calendar",
+                    "market",
+                ),
+                "market_calendar_binding_components": _calendar_binding_components(
+                    items
+                ),
+                "market_calendar_binding_count": _calendar_binding_count(items),
                 "data_adapters": _joined_component_values(items, "adapter"),
                 "data_adapter_count": _component_value_count(items, "adapter"),
                 "expected_vendor_data_kind": _vendor_data_kind(thresholds.expected_vendor_data_kind),
@@ -1089,6 +1333,24 @@ def _config(
         "expected_market": _value_text(summary_row.get("expected_market")),
         "expected_adapter": _value_text(summary_row.get("expected_adapter")),
         "expected_vendor_data_kind": _value_text(summary_row.get("expected_vendor_data_kind")),
+        "market_calendar": {
+            "required": _to_bool(summary_row.get("require_market_calendar", False)),
+            "market": _value_text(summary_row.get("market_calendar_market")),
+            "id": _value_text(summary_row.get("market_calendar_id")),
+            "sha256": _value_text(summary_row.get("market_calendar_sha256")),
+            "valid_from": _value_text(
+                summary_row.get("market_calendar_valid_from")
+            ),
+            "valid_to": _value_text(summary_row.get("market_calendar_valid_to")),
+            "binding_components": _value_text(
+                summary_row.get("market_calendar_binding_components")
+            ).split(";")
+            if _value_text(summary_row.get("market_calendar_binding_components"))
+            else [],
+            "binding_count": int(
+                _value_number(summary_row.get("market_calendar_binding_count"))
+            ),
+        },
         "data_adapters": _value_text(summary_row.get("data_adapters")),
         "data_kinds": _value_text(summary_row.get("data_kinds")),
         "failed_check_count": int(_value_number(summary_row.get("failed_check_count", len(failed_checks)))),
@@ -1254,6 +1516,7 @@ def _action_component(check_name: str) -> str:
     if check_name == "explicit_fee_model":
         return "market_profile"
     known_components = [
+        "market_calendar",
         "vendor_intake",
         "schema_audit",
         "mapped_data",
@@ -1284,6 +1547,7 @@ def _next_gate_for_check(check_name: str, component: str) -> str:
         return "normalize-reviewed-mapped-data"
     return {
         "vendor_intake": "intake-vendor-csv",
+        "market_calendar": "market-calendar-report",
         "schema_audit": "audit-adapter-schema",
         "mapped_data": "normalize-mapped-data",
         "tick_diagnostics": "diagnose-ticks",
@@ -1357,6 +1621,9 @@ def _runbook_markdown(
         f"- Failed checks: {int(_value_number(summary_row.get('failed_checks')))}",
         f"- Ready components: {int(_value_number(summary_row.get('ready_components')))}",
         f"- Required components: {int(_value_number(summary_row.get('required_components')))}",
+        f"- Market calendar: {_code(summary_row.get('market_calendar_id'))}",
+        f"- Calendar SHA-256: {_code(summary_row.get('market_calendar_sha256'))}",
+        f"- Calendar-bound components: {_value_text(summary_row.get('market_calendar_binding_components'))}",
         f"- Blocked actions: {int(_value_number(summary_row.get('blocked_action_count')))}",
         f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
         f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
@@ -1461,6 +1728,7 @@ def _yes_no(value: bool) -> str:
 def _component_required(component: str, thresholds: DataReadinessThresholds) -> bool:
     return bool(
         {
+            "market_calendar": thresholds.require_market_calendar,
             "vendor_intake": thresholds.require_vendor_intake,
             "schema_audit": thresholds.require_schema_audit,
             "mapped_data": (
@@ -1479,6 +1747,8 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
 
 def _component_ready(component: str, frame: pd.DataFrame) -> bool:
     row = _overall_row(frame)
+    if component == "market_calendar":
+        return _to_bool(row.get("ready", False))
     if component == "vendor_intake":
         return _to_bool(row.get("ready", False))
     if component == "schema_audit":
@@ -1562,6 +1832,24 @@ def _joined_component_values(items: pd.DataFrame, column: str) -> str:
     values = items[column].dropna().astype(str).str.strip()
     values = values.loc[values != ""]
     return ";".join(sorted(set(values)))
+
+
+def _calendar_binding_components(items: pd.DataFrame) -> str:
+    if items.empty or "market_calendar_provided" not in items.columns:
+        return ""
+    bound = items.loc[
+        items["component"].isin(
+            ["mapped_data", "tick_diagnostics", "chain_diagnostics"]
+        )
+        & items["market_calendar_provided"].map(_to_bool),
+        "component",
+    ]
+    return ";".join(sorted(bound.astype(str).tolist()))
+
+
+def _calendar_binding_count(items: pd.DataFrame) -> int:
+    components = _calendar_binding_components(items)
+    return len(components.split(";")) if components else 0
 
 
 def _component_value_count(items: pd.DataFrame, column: str) -> int:

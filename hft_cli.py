@@ -3232,6 +3232,7 @@ def main(argv: list[str] | None = None) -> int:
 
     data_readiness = sub.add_parser("review-data-readiness", help="Gate vendor/normalized market data before research runs.")
     data_readiness.add_argument("--out", required=True)
+    data_readiness.add_argument("--market-calendar-report", default=None)
     data_readiness.add_argument("--vendor-intake", default=None)
     data_readiness.add_argument("--schema-audit", default=None)
     data_readiness.add_argument("--mapped-data", default=None)
@@ -3241,6 +3242,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--market-portability", default=None)
     data_readiness.add_argument("--instrument-metadata", default=None)
     data_readiness.add_argument("--require-vendor-intake", action="store_true")
+    data_readiness.add_argument("--require-market-calendar", action="store_true")
     data_readiness.add_argument("--require-schema-audit", action="store_true")
     data_readiness.add_argument("--require-mapped-data", action="store_true")
     data_readiness.add_argument(
@@ -3292,6 +3294,11 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness_compare.add_argument("--min-unique-source-files", type=int, default=None)
     data_readiness_compare.add_argument("--min-source-file-fingerprint-coverage", type=float, default=None)
     data_readiness_compare.add_argument("--min-mapping-coverage", type=float, default=None)
+    data_readiness_compare.add_argument("--require-market-calendar", action="store_true")
+    data_readiness_compare.add_argument(
+        "--require-consistent-market-calendar",
+        action="store_true",
+    )
     data_readiness_compare.add_argument("--fail-on-breach", action="store_true")
     data_readiness_compare.add_argument("--fail-on-blocked-actions", action="store_true")
     data_readiness_compare.add_argument("--fail-on-actions", action="store_true")
@@ -7640,6 +7647,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.min_source_file_fingerprint_coverage is not None
                 else 1.0,
                 min_mapping_coverage=args.min_mapping_coverage,
+                require_market_calendar=bool(args.market_calendar),
+                require_consistent_market_calendar=bool(args.market_calendar),
             ),
         )
         print(result.summary.to_string(index=False))
@@ -7709,6 +7718,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.min_source_file_fingerprint_coverage is not None
                 else 1.0,
                 min_mapping_coverage=args.min_mapping_coverage,
+                require_market_calendar=bool(args.market_calendar),
+                require_consistent_market_calendar=bool(args.market_calendar),
             ),
             broker_thresholds=BrokerReadinessThresholds(
                 adapter=args.adapter,
@@ -7781,6 +7792,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "review-data-readiness":
         result = write_data_readiness_report(
             output_dir=args.out,
+            market_calendar_dir=args.market_calendar_report,
             vendor_intake_dir=args.vendor_intake,
             schema_audit_dir=args.schema_audit,
             mapped_data_dir=args.mapped_data,
@@ -7790,6 +7802,7 @@ def main(argv: list[str] | None = None) -> int:
             market_portability_dir=args.market_portability,
             instrument_metadata_dir=args.instrument_metadata,
             thresholds=DataReadinessThresholds(
+                require_market_calendar=args.require_market_calendar,
                 require_vendor_intake=args.require_vendor_intake,
                 require_schema_audit=args.require_schema_audit,
                 require_mapped_data=args.require_mapped_data,
@@ -7850,6 +7863,10 @@ def main(argv: list[str] | None = None) -> int:
                 min_unique_source_files=args.min_unique_source_files,
                 min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage,
                 min_mapping_coverage=args.min_mapping_coverage,
+                require_market_calendar=args.require_market_calendar,
+                require_consistent_market_calendar=(
+                    args.require_consistent_market_calendar
+                ),
             ),
         )
         print(result.summary.to_string(index=False))

@@ -12,7 +12,11 @@ from data.loaders import (
     trading_day_mask,
     trading_session_time_mask,
 )
-from markets.calendars import MarketCalendar, resolve_market_calendar
+from markets.calendars import (
+    MarketCalendar,
+    market_calendar_summary,
+    resolve_market_calendar,
+)
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -47,6 +51,7 @@ def tick_diagnostics(
     market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
     _require(ticks, TICK_REQUIRED, "ticks")
+    calendar = resolve_market_calendar(market_calendar, market=market)
     frame = ticks.copy()
     frame["spread"] = frame["ask"] - frame["bid"]
     frame["mid"] = 0.5 * (frame["bid"] + frame["ask"])
@@ -59,11 +64,13 @@ def tick_diagnostics(
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
-        market_calendar=market_calendar,
+        market_calendar=calendar,
     )
     summary = pd.DataFrame(
         [
             {
+                "market": market,
+                **market_calendar_summary(calendar),
                 "rows": int(len(frame)),
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
@@ -103,6 +110,7 @@ def chain_diagnostics(
     market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
+    calendar = resolve_market_calendar(market_calendar, market=market)
     frame = chain.copy()
     frame["call_spread"] = frame["call_ask"] - frame["call_bid"]
     frame["put_spread"] = frame["put_ask"] - frame["put_bid"]
@@ -115,7 +123,7 @@ def chain_diagnostics(
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
-        market_calendar=market_calendar,
+        market_calendar=calendar,
     )
     by_expiry = (
         frame.groupby("expiry", dropna=False)
@@ -134,6 +142,8 @@ def chain_diagnostics(
     overall = pd.DataFrame(
         [
             {
+                "market": market,
+                **market_calendar_summary(calendar),
                 "rows": int(len(frame)),
                 "expiries": int(frame["expiry"].nunique()),
                 "strikes": int(frame["strike"].nunique()),

@@ -46,6 +46,10 @@ def write_readiness_dir(
     header_hash="",
     mapping_hash="",
     mapping_coverage=1.0,
+    calendar_id="",
+    calendar_hash="",
+    calendar_valid_from="",
+    calendar_valid_to="",
 ):
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
@@ -61,6 +65,10 @@ def write_readiness_dir(
                 "vendor_intake_source_header_sha256": header_hash,
                 "vendor_intake_mapping_draft_sha256": mapping_hash,
                 "vendor_intake_mapping_coverage": mapping_coverage,
+                "market_calendar_id": calendar_id,
+                "market_calendar_sha256": calendar_hash,
+                "market_calendar_valid_from": calendar_valid_from,
+                "market_calendar_valid_to": calendar_valid_to,
                 "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
             }
         ]
@@ -78,6 +86,101 @@ def test_compare_data_readiness_accepts_multiple_clean_datasets():
     assert row["dataset_count"] == 2
     assert row["ready_rate"] == 1.0
     assert row["recommendation"] == "feed_walkforward_research"
+
+
+def test_compare_data_readiness_requires_one_calendar_source():
+    runs = readiness_runs()
+    runs["market_calendar_id"] = "nse-fo-test-2026-06"
+    runs["market_calendar_sha256"] = "e" * 64
+    runs["market_calendar_valid_from"] = "2026-06-01"
+    runs["market_calendar_valid_to"] = "2026-06-30"
+
+    accepted = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            require_market_calendar=True,
+            require_consistent_market_calendar=True,
+        ),
+    )
+    assert accepted.accepted
+    assert accepted.summary.loc[0, "market_calendar_coverage"] == 1.0
+    assert accepted.summary.loc[0, "unique_market_calendar_fingerprints"] == 1
+
+    runs.loc[1, "market_calendar_sha256"] = "f" * 64
+    rejected = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            require_market_calendar=True,
+            require_consistent_market_calendar=True,
+        ),
+    )
+    failed = set(rejected.checks.loc[~rejected.checks["passed"], "check"])
+    assert not rejected.accepted
+    assert "unique_market_calendar_fingerprints" in failed
+    assert rejected.action_queue is not None
+    action = rejected.action_queue.set_index("check").loc[
+        "unique_market_calendar_fingerprints"
+    ]
+    assert action["next_gate"] == "market-calendar-report"
+
+
+def test_compare_data_readiness_rejects_partial_calendar_coverage():
+    runs = readiness_runs()
+    runs.loc[0, "market_calendar_id"] = "nse-fo-test-2026-06"
+    runs.loc[0, "market_calendar_sha256"] = "e" * 64
+    runs.loc[0, "market_calendar_valid_from"] = "2026-06-01"
+    runs.loc[0, "market_calendar_valid_to"] = "2026-06-30"
+
+    report = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            require_market_calendar=True,
+        ),
+    )
+
+    assert not report.accepted
+    assert report.summary.loc[0, "market_calendar_coverage"] == 0.5
+    assert "market_calendar_coverage" in set(
+        report.checks.loc[~report.checks["passed"], "check"]
+    )
+
+
+def test_cli_comparison_requires_consistent_calendar(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    calendar_kwargs = {
+        "calendar_id": "nse-fo-test-2026-06",
+        "calendar_hash": "e" * 64,
+        "calendar_valid_from": "2026-06-01",
+        "calendar_valid_to": "2026-06-30",
+    }
+    write_readiness_dir(day1, **calendar_kwargs)
+    write_readiness_dir(day2, **calendar_kwargs)
+
+    code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(out_dir),
+            "--min-datasets",
+            "2",
+            "--require-market-calendar",
+            "--require-consistent-market-calendar",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 0
+    summary = pd.read_csv(out_dir / "data_readiness_comparison_summary.csv")
+    assert summary.loc[0, "market_calendar_coverage"] == 1.0
+    assert summary.loc[0, "unique_market_calendar_fingerprints"] == 1
 
 
 def test_compare_data_readiness_can_require_unique_vendor_sources():

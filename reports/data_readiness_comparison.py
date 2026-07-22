@@ -19,6 +19,8 @@ class DataReadinessComparisonThresholds:
     min_unique_source_files: int | None = None
     min_source_file_fingerprint_coverage: float | None = None
     min_mapping_coverage: float | None = None
+    require_market_calendar: bool = False
+    require_consistent_market_calendar: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,15 @@ def compare_data_readiness(
     _coalesce_column(runs, "source_header_sha256", "vendor_intake_source_header_sha256", default="")
     _coalesce_column(runs, "mapping_draft_sha256", "vendor_intake_mapping_draft_sha256", default="")
     _coalesce_column(runs, "mapping_coverage", "vendor_intake_mapping_coverage", default=np.nan)
-    for column in ("source_file_sha256", "source_header_sha256", "mapping_draft_sha256"):
+    for column in (
+        "source_file_sha256",
+        "source_header_sha256",
+        "mapping_draft_sha256",
+        "market_calendar_id",
+        "market_calendar_sha256",
+        "market_calendar_valid_from",
+        "market_calendar_valid_to",
+    ):
         if column not in runs.columns:
             runs[column] = ""
         runs[column] = runs[column].fillna("").astype(str).str.strip()
@@ -162,6 +172,19 @@ def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] 
                     "vendor_intake_mapping_coverage",
                     fallback=_number(row, "mapping_coverage"),
                 ),
+                "market_calendar_id": _text(row, "market_calendar_id"),
+                "market_calendar_sha256": _text(
+                    row,
+                    "market_calendar_sha256",
+                ),
+                "market_calendar_valid_from": _text(
+                    row,
+                    "market_calendar_valid_from",
+                ),
+                "market_calendar_valid_to": _text(
+                    row,
+                    "market_calendar_valid_to",
+                ),
                 "recommendation": str(row.get("recommendation", "")),
             }
         )
@@ -185,6 +208,23 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "unique_header_fingerprints": _unique_text_count(runs, "source_header_sha256"),
                 "unique_mapping_drafts": _unique_text_count(runs, "mapping_draft_sha256"),
                 "min_mapping_coverage": _min_number(runs, "mapping_coverage"),
+                "market_calendar_coverage": _market_calendar_coverage(runs),
+                "unique_market_calendar_ids": _unique_text_count(
+                    runs,
+                    "market_calendar_id",
+                ),
+                "unique_market_calendar_fingerprints": _unique_text_count(
+                    runs,
+                    "market_calendar_sha256",
+                ),
+                "market_calendar_ids": _joined_text_values(
+                    runs,
+                    "market_calendar_id",
+                ),
+                "market_calendar_fingerprints": _joined_text_values(
+                    runs,
+                    "market_calendar_sha256",
+                ),
                 "median_ready_components": float(pd.to_numeric(runs["ready_components"], errors="coerce").median(skipna=True))
                 if dataset_count
                 else np.nan,
@@ -237,6 +277,32 @@ def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd
                 thresholds.min_mapping_coverage,
             )
         )
+    if thresholds.require_market_calendar or thresholds.require_consistent_market_calendar:
+        checks.append(
+            _threshold_check(
+                "market_calendar_coverage",
+                row["market_calendar_coverage"],
+                ">=",
+                1.0,
+            )
+        )
+    if thresholds.require_consistent_market_calendar:
+        checks.extend(
+            [
+                _threshold_check(
+                    "unique_market_calendar_ids",
+                    row["unique_market_calendar_ids"],
+                    "<=",
+                    1,
+                ),
+                _threshold_check(
+                    "unique_market_calendar_fingerprints",
+                    row["unique_market_calendar_fingerprints"],
+                    "<=",
+                    1,
+                ),
+            ]
+        )
     return pd.DataFrame(checks)
 
 
@@ -264,6 +330,23 @@ def _config(
         "dataset_count": int(_value_number(summary_row.get("dataset_count"))),
         "ready_datasets": int(_value_number(summary_row.get("ready_datasets"))),
         "failed_datasets": int(_value_number(summary_row.get("failed_datasets"))),
+        "market_calendar": {
+            "required": bool(thresholds.require_market_calendar),
+            "consistent_required": bool(
+                thresholds.require_consistent_market_calendar
+            ),
+            "coverage": float(
+                _value_number(summary_row.get("market_calendar_coverage"))
+            ),
+            "ids": _value_text(summary_row.get("market_calendar_ids")).split(";")
+            if _value_text(summary_row.get("market_calendar_ids"))
+            else [],
+            "fingerprints": _value_text(
+                summary_row.get("market_calendar_fingerprints")
+            ).split(";")
+            if _value_text(summary_row.get("market_calendar_fingerprints"))
+            else [],
+        },
         "failed_checks": failed_checks,
         "datasets": _records(dataset_runs),
         "ready_action_count": int(len(ready_actions)),
@@ -367,6 +450,12 @@ def _next_gate_for_check(check_name: str) -> str:
         "min_mapping_coverage",
     }:
         return "pipeline-vendor-market-data-batch"
+    if check_name in {
+        "market_calendar_coverage",
+        "unique_market_calendar_ids",
+        "unique_market_calendar_fingerprints",
+    }:
+        return "market-calendar-report"
     if check_name in {"ready_datasets", "ready_rate", "total_failed_checks"}:
         return "review-data-readiness"
     return "compare-data-readiness"
@@ -393,6 +482,13 @@ def _action_recommendation(check_name: str) -> str:
         return "rerun_batch_with_source_file_fingerprints"
     if check_name == "min_mapping_coverage":
         return "improve_vendor_mapping_coverage"
+    if check_name == "market_calendar_coverage":
+        return "bind_every_dataset_to_a_validated_market_calendar"
+    if check_name in {
+        "unique_market_calendar_ids",
+        "unique_market_calendar_fingerprints",
+    }:
+        return "rerun_with_one_market_calendar_source"
     return "review_data_readiness_comparison_gap"
 
 
@@ -411,6 +507,9 @@ def _runbook_markdown(
         f"- Dataset count: {int(_value_number(summary_row.get('dataset_count')))}",
         f"- Ready datasets: {int(_value_number(summary_row.get('ready_datasets')))}",
         f"- Failed datasets: {int(_value_number(summary_row.get('failed_datasets')))}",
+        f"- Market-calendar coverage: {_format_number(summary_row.get('market_calendar_coverage'))}",
+        f"- Market-calendar IDs: {_value_text(summary_row.get('market_calendar_ids'))}",
+        f"- Market-calendar fingerprints: {_value_text(summary_row.get('market_calendar_fingerprints'))}",
         f"- Blocked actions: {int(_value_number(summary_row.get('blocked_action_count')))}",
         f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
         f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
@@ -453,13 +552,24 @@ def _dataset_table(dataset_runs: pd.DataFrame) -> str:
     if dataset_runs.empty:
         return "_None_"
     return _markdown_table(
-        ["Dataset", "Ready", "Failed checks", "Source hash", "Mapping coverage", "Recommendation"],
+        [
+            "Dataset",
+            "Ready",
+            "Failed checks",
+            "Source hash",
+            "Calendar ID",
+            "Calendar hash",
+            "Mapping coverage",
+            "Recommendation",
+        ],
         [
             [
                 _value_text(row.get("dataset")),
                 "yes" if _to_bool(row.get("ready")) else "no",
                 str(int(_value_number(row.get("failed_checks")))),
                 _value_text(row.get("source_file_sha256")),
+                _value_text(row.get("market_calendar_id")),
+                _value_text(row.get("market_calendar_sha256")),
                 _format_number(row.get("mapping_coverage")),
                 _value_text(row.get("recommendation")),
             ]
@@ -631,11 +741,35 @@ def _unique_text_count(frame: pd.DataFrame, column: str) -> int:
     return int(values.nunique())
 
 
+def _joined_text_values(frame: pd.DataFrame, column: str) -> str:
+    if frame.empty or column not in frame.columns:
+        return ""
+    values = frame[column].dropna().astype(str).str.strip()
+    values = values.loc[values != ""]
+    return ";".join(sorted(set(values)))
+
+
 def _text_coverage(frame: pd.DataFrame, column: str) -> float:
     if frame.empty or column not in frame.columns:
         return 0.0
     values = frame[column].fillna("").astype(str).str.strip()
     return float((values != "").sum() / len(values)) if len(values) else 0.0
+
+
+def _market_calendar_coverage(frame: pd.DataFrame) -> float:
+    columns = (
+        "market_calendar_id",
+        "market_calendar_sha256",
+        "market_calendar_valid_from",
+        "market_calendar_valid_to",
+    )
+    if frame.empty or any(column not in frame.columns for column in columns):
+        return 0.0
+    present = pd.Series(True, index=frame.index, dtype=bool)
+    for column in columns:
+        values = frame[column].fillna("").astype(str).str.strip()
+        present &= values != ""
+    return float(present.sum() / len(frame)) if len(frame) else 0.0
 
 
 def _min_number(frame: pd.DataFrame, column: str) -> float:

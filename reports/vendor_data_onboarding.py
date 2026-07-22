@@ -36,6 +36,7 @@ from reports.data_readiness_comparison import (
     write_data_readiness_comparison,
 )
 from reports.manifest import MANIFEST_NAME, write_experiment_manifest
+from reports.market_calendar import write_market_calendar_report
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,14 @@ def write_vendor_market_data_pipeline(
     mapped_dir = out / "02_normalized"
     diagnostics_dir = out / "03_diagnostics"
     readiness_dir = out / "04_data_readiness"
+    calendar_dir = out / "00_market_calendar"
+
+    if config.market_calendar_path:
+        write_market_calendar_report(
+            config.market_calendar_path,
+            calendar_dir,
+            expected_market=config.market,
+        )
 
     intake = write_vendor_csv_intake_report(
         source_file,
@@ -206,6 +215,8 @@ def write_vendor_market_data_pipeline(
         )
     diagnostics = _write_diagnostics(mapped.data, diagnostics_dir, config)
     thresholds = readiness_thresholds or _readiness_thresholds(config)
+    if config.market_calendar_path:
+        thresholds = replace(thresholds, require_market_calendar=True)
     if approved_application is not None:
         thresholds = replace(
             thresholds,
@@ -222,6 +233,7 @@ def write_vendor_market_data_pipeline(
         )
     readiness = write_data_readiness_report(
         output_dir=readiness_dir,
+        market_calendar_dir=calendar_dir if config.market_calendar_path else None,
         vendor_intake_dir=intake_dir,
         mapped_data_dir=mapped_dir,
         tick_diagnostics_dir=diagnostics_dir if config.kind == "ticks" else None,
@@ -507,7 +519,15 @@ def write_vendor_market_data_batch_pipeline(
         min_unique_source_files=len(paths),
         min_source_file_fingerprint_coverage=1.0,
         min_mapping_coverage=config.min_mapping_coverage,
+        require_market_calendar=bool(config.market_calendar_path),
+        require_consistent_market_calendar=bool(config.market_calendar_path),
     )
+    if config.market_calendar_path:
+        thresholds = replace(
+            thresholds,
+            require_market_calendar=True,
+            require_consistent_market_calendar=True,
+        )
     comparison = write_data_readiness_comparison(
         readiness_dirs,
         output_dir=out / "comparison",
@@ -636,6 +656,7 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
 
 def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadinessThresholds:
     return DataReadinessThresholds(
+        require_market_calendar=bool(config.market_calendar_path),
         require_vendor_intake=True,
         require_mapped_data=True,
         require_tick_diagnostics=config.kind == "ticks",

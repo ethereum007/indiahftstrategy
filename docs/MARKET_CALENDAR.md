@@ -54,6 +54,12 @@ are rejected.
 - Ordinary weekends and intraday session violations remain separate reasons.
 - The calendar path and SHA-256 are retained in manifests, summaries, configs,
   and runbooks.
+- Tick and chain diagnostic summaries retain the same calendar ID, coverage,
+  and SHA-256 used to classify their timestamps.
+- A data-readiness run can require a validated calendar report and fails if
+  mapped data or diagnostics use a different ID, fingerprint, or coverage.
+- A multi-dataset comparison can require complete calendar evidence and one
+  consistent calendar source across every daily readiness run.
 - Calendar reports and all downstream artifacts remain non-authorizing.
 
 Validate and fingerprint a calendar before use:
@@ -68,3 +74,29 @@ python -m hft_cli market-calendar-report `
 Pass the same file to normalization, diagnostics, vendor/provider batch, broker
 readiness, or live-session commands with `--market-calendar`. The live-session
 planner carries that argument into its generated post-capture batch command.
+Vendor and provider pipelines that receive this argument automatically write a
+`00_market_calendar` report and make it mandatory in nested data readiness.
+
+For a direct readiness assembly, bind the validated report explicitly:
+
+```powershell
+python -m hft_cli review-data-readiness `
+  --market-calendar-report runs/market_calendar `
+  --mapped-data runs/normalized `
+  --tick-diagnostics runs/diagnostics `
+  --require-market-calendar `
+  --out runs/data_readiness `
+  --fail-on-breach
+```
+
+For multi-day or walk-forward evidence, require both complete coverage and a
+single source fingerprint:
+
+```powershell
+python -m hft_cli compare-data-readiness `
+  --readiness runs/day_1/readiness runs/day_2/readiness `
+  --require-market-calendar `
+  --require-consistent-market-calendar `
+  --out runs/calendar_bound_comparison `
+  --fail-on-breach
+```

@@ -299,6 +299,14 @@ def test_vendor_pipeline_binds_market_calendar_evidence(tmp_path):
             encoding="utf-8"
         )
     )
+    readiness_summary = pd.read_csv(
+        out_dir / "04_data_readiness" / "data_readiness_summary.csv"
+    ).iloc[0]
+    readiness_config = json.loads(
+        (out_dir / "04_data_readiness" / "data_readiness_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
     assert report.ready
     assert summary["market_calendar_id"] == "nse-fo-test-2026-06"
@@ -308,6 +316,16 @@ def test_vendor_pipeline_binds_market_calendar_evidence(tmp_path):
     )
     assert config["market_calendar"]["provided"] is True
     assert config["market_calendar"]["sha256"] == file_sha256(calendar_path)
+    assert (out_dir / "00_market_calendar" / "manifest.json").exists()
+    assert bool(readiness_summary["require_market_calendar"])
+    assert readiness_summary["market_calendar_id"] == "nse-fo-test-2026-06"
+    assert readiness_summary["market_calendar_sha256"] == file_sha256(
+        calendar_path
+    )
+    assert readiness_config["market_calendar"]["binding_components"] == [
+        "mapped_data",
+        "tick_diagnostics",
+    ]
 
 
 def test_vendor_market_data_pipeline_gates_filtered_session_quarantine(tmp_path):

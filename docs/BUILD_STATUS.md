@@ -6496,6 +6496,22 @@ calendar, loader, diagnostics, mapping-lineage, vendor/provider, and broker
 regression set passes (`92 passed`), and repository collection is healthy at
 `2480 tests`. The full repository suite was not rerun for this slice.
 
+Latest calendar-bound data-readiness gate: a supplied exchange calendar is
+now materialized as a validated `00_market_calendar` pipeline component and
+becomes mandatory in nested vendor/provider readiness. Tick and option-chain
+diagnostics retain the exact calendar ID, policy, coverage range, and SHA-256;
+single-dataset readiness independently requires those values to match mapped
+data and the validated calendar report. Multi-dataset comparison can require
+complete calendar evidence and one consistent ID/source fingerprint across
+every day, routing missing or mixed evidence back to `market-calendar-report`.
+Direct CLI assembly exposes `--market-calendar-report`,
+`--require-market-calendar`, and
+`--require-consistent-market-calendar`. The calendar/readiness, mapping,
+vendor/provider, live-session, and broker-vendor regression set passes (`152
+passed`), and repository collection is healthy at `2487 tests`. All outputs
+remain non-authorizing; the full repository suite was not rerun for this
+slice.
+
 ## Next Build Targets
 
 1. Ingest and retain an authoritative NSE calendar artifact for the first real

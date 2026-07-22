@@ -155,12 +155,150 @@ def instrument_metadata_summary(passed=True):
     )
 
 
+def market_calendar_summary(**overrides):
+    row = {
+        "ready": True,
+        "market": "india_nse_index_derivatives",
+        "market_calendar_provided": True,
+        "market_calendar_policy": "versioned_exchange_calendar_v1",
+        "market_calendar_id": "nse-fo-test-2026-06",
+        "market_calendar_sha256": "e" * 64,
+        "market_calendar_valid_from": "2026-06-01",
+        "market_calendar_valid_to": "2026-06-30",
+        "failed_checks": 0,
+    }
+    row.update(overrides)
+    return pd.DataFrame([row])
+
+
+def calendar_bound(frame, **overrides):
+    result = frame.copy()
+    values = market_calendar_summary(**overrides).iloc[0]
+    for column in (
+        "market",
+        "market_calendar_provided",
+        "market_calendar_policy",
+        "market_calendar_id",
+        "market_calendar_sha256",
+        "market_calendar_valid_from",
+        "market_calendar_valid_to",
+    ):
+        result[column] = values[column]
+    return result
+
+
 def test_data_readiness_accepts_clean_tick_diagnostics():
     report = evaluate_data_readiness(tick_diagnostic_summary=tick_summary())
 
     assert report.ready
     assert report.summary.iloc[0]["recommendation"] == "feed_strategy_research"
     assert set(report.checks["passed"]) == {True}
+
+
+def test_data_readiness_requires_and_binds_market_calendar_evidence():
+    report = evaluate_data_readiness(
+        market_calendar_summary=market_calendar_summary(),
+        mapped_data_summary=calendar_bound(mapped_data_summary()),
+        tick_diagnostic_summary=calendar_bound(tick_summary()),
+        thresholds=DataReadinessThresholds(
+            require_market_calendar=True,
+            require_mapped_data=True,
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert summary["market_calendar_id"] == "nse-fo-test-2026-06"
+    assert summary["market_calendar_sha256"] == "e" * 64
+    assert summary["market_calendar_binding_components"] == (
+        "mapped_data;tick_diagnostics"
+    )
+    assert int(summary["market_calendar_binding_count"]) == 2
+    assert set(report.checks["passed"]) == {True}
+
+
+def test_data_readiness_rejects_calendar_fingerprint_drift():
+    report = evaluate_data_readiness(
+        market_calendar_summary=market_calendar_summary(),
+        mapped_data_summary=calendar_bound(mapped_data_summary()),
+        tick_diagnostic_summary=calendar_bound(
+            tick_summary(),
+            market_calendar_sha256="f" * 64,
+        ),
+        thresholds=DataReadinessThresholds(
+            require_market_calendar=True,
+            require_mapped_data=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert "tick_diagnostics_market_calendar_sha256_matches" in failed
+    assert report.action_queue is not None
+    action = report.action_queue.set_index("check").loc[
+        "tick_diagnostics_market_calendar_sha256_matches"
+    ]
+    assert action["next_gate"] == "diagnose-ticks"
+
+
+def test_data_readiness_routes_missing_calendar_to_calendar_report():
+    report = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(require_market_calendar=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert "market_calendar_provided" in failed
+    assert "tick_diagnostics_market_calendar_provided" in failed
+    assert report.summary.loc[0, "next_gate"] == "market-calendar-report"
+
+
+def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
+    calendar_dir = tmp_path / "calendar"
+    mapped_dir = tmp_path / "mapped"
+    diagnostics_dir = tmp_path / "diagnostics"
+    out_dir = tmp_path / "readiness"
+    calendar_dir.mkdir()
+    mapped_dir.mkdir()
+    diagnostics_dir.mkdir()
+    market_calendar_summary().to_csv(
+        calendar_dir / "market_calendar_summary.csv",
+        index=False,
+    )
+    calendar_bound(mapped_data_summary()).to_csv(
+        mapped_dir / "mapped_data_summary.csv",
+        index=False,
+    )
+    calendar_bound(tick_summary()).to_csv(
+        diagnostics_dir / "diagnostic_summary.csv",
+        index=False,
+    )
+
+    code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(out_dir),
+            "--market-calendar-report",
+            str(calendar_dir),
+            "--mapped-data",
+            str(mapped_dir),
+            "--tick-diagnostics",
+            str(diagnostics_dir),
+            "--require-market-calendar",
+            "--require-mapped-data",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 0
+    config = json.loads(
+        (out_dir / "data_readiness_config.json").read_text(encoding="utf-8")
+    )
+    assert config["market_calendar"]["required"] is True
+    assert config["market_calendar"]["binding_count"] == 2
 
 
 def test_data_readiness_fails_on_bad_tick_diagnostics():

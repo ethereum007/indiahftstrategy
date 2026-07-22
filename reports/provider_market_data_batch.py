@@ -240,6 +240,8 @@ def _comparison_thresholds(config: ProviderMarketDataBatchConfig, capture_count:
         else capture_count,
         min_source_file_fingerprint_coverage=config.min_source_file_fingerprint_coverage,
         min_mapping_coverage=config.min_mapping_coverage,
+        require_market_calendar=bool(config.market_calendar_path),
+        require_consistent_market_calendar=bool(config.market_calendar_path),
     )
 
 

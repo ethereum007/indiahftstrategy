@@ -141,6 +141,9 @@ def test_calendar_aware_diagnostics_use_distinct_issue_labels(tmp_path):
     ].iloc[0]
 
     for summary in (tick_summary, chain_summary):
+        assert bool(summary["market_calendar_provided"])
+        assert summary["market_calendar_id"] == "nse-fo-test-2026-06"
+        assert summary["market_calendar_sha256"] == file_sha256(calendar_path)
         assert int(summary["non_trading_day_rows"]) == 3
         assert int(summary["calendar_closed_rows"]) == 1
         assert int(summary["calendar_out_of_range_rows"]) == 1

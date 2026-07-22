@@ -9128,6 +9128,7 @@ walk-forwards, or replay pipelines:
 
 ```powershell
 python -m hft_cli review-data-readiness `
+  --market-calendar-report runs\market_calendar\nse_fo_2026 `
   --vendor-intake mappings\arrow_ticks_intake `
   --schema-audit runs\schema_audit\arrow_ticks `
   --mapped-data runs\data\arrow_ticks_reviewed `
@@ -9138,6 +9139,7 @@ python -m hft_cli review-data-readiness `
   --instrument-metadata runs\risk\leadlag_shadow_instruments `
   --out runs\data_readiness\india_nse_2026_06_10 `
   --require-vendor-intake `
+  --require-market-calendar `
   --require-schema-audit `
   --require-mapped-data `
   --require-reviewed-mapping-normalization `
@@ -9202,6 +9204,13 @@ Use `--fail-on-blocked-actions` to stop when blocked data-readiness actions
 remain, or `--fail-on-actions` when any queued data-readiness handoff should
 stop automation for operator review.
 
+When `--market-calendar-report` is supplied, mapped-data and diagnostic
+summaries must retain the same versioned calendar ID, coverage range, and
+SHA-256. `--require-market-calendar` also fails closed when the report is
+missing. Vendor and provider pipelines supplied with `--market-calendar`
+create this report automatically in `00_market_calendar` and force the nested
+readiness requirement.
+
 Compare multiple data-readiness runs before walk-forward research:
 
 ```powershell
@@ -9212,6 +9221,8 @@ python -m hft_cli compare-data-readiness `
   --out runs\data_readiness\india_nse_comparison `
   --min-datasets 2 `
   --min-ready-rate 1 `
+  --require-market-calendar `
+  --require-consistent-market-calendar `
   --fail-on-breach `
   --fail-on-blocked-actions
 ```
@@ -9238,6 +9249,10 @@ mirrors dataset rows, failed-check names, action counts, and
 `data_readiness_comparison_runbook.md` mirrors the blocked actions, dataset
 rows, and failed checks for operator review, and these sidecars are
 manifest-tracked for catalog promotion.
+`--require-market-calendar` requires every readiness run to retain a calendar
+ID, SHA-256, and coverage bounds. `--require-consistent-market-calendar` also
+requires one ID and one source fingerprint across the compared runs; calendar
+gaps route to `market-calendar-report`.
 Use `--fail-on-blocked-actions` to stop on blocked multi-day data-proof
 actions, or `--fail-on-actions` when any queued comparison action should pause
 the scheduler.
