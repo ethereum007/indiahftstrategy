@@ -9,6 +9,16 @@ from reports.broker_vendor_data_readiness import (
     write_broker_vendor_data_readiness_pipeline,
 )
 from tests.broker_vendor_data_helpers import assert_broker_vendor_data_proof_forwarded
+from tests.test_broker_dispatch_send import _refresh_manifest as refresh_dispatch_manifest
+from tests.test_broker_readiness import (
+    add_roundtrip_complete_final_target_application_lineage,
+    roundtrip_final_target_application_lineage_comparison,
+    target_application_lineage_comparison,
+    write_broker_readiness_input_dirs,
+)
+from tests.test_leadlag_launch_pipeline import (
+    write_promotion as write_leadlag_promotion,
+)
 from tests.test_vendor_data_onboarding import target_mapping_application_batch
 
 
@@ -33,49 +43,6 @@ def vendor_ticks(day: str, *, base: float = 100.0):
                 "last_px": base + 0.10,
                 "last_size": 75,
             },
-        ]
-    )
-
-
-def schema_summary(adapter):
-    return pd.DataFrame(
-        [
-            {
-                "adapter": adapter,
-                "kind": "orders",
-                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
-                "missing_required_columns": 0,
-                "all_required_present": True,
-            }
-        ]
-    )
-
-
-def order_export_summary(adapter):
-    return pd.DataFrame(
-        [
-            {
-                "ready": True,
-                "adapter": adapter,
-                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
-                "orders": 2,
-                "failed_checks": 0,
-            }
-        ]
-    )
-
-
-def upload_summary(adapter):
-    return pd.DataFrame(
-        [
-            {
-                "ready": True,
-                "adapter": adapter,
-                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
-                "orders": 2,
-                "failed_checks": 0,
-                "recommendation": "dry_run_or_paper_review",
-            }
         ]
     )
 
@@ -130,154 +97,22 @@ def resume_summary(adapter):
     )
 
 
-def dispatch_roundtrip_summary(adapter):
-    return pd.DataFrame(
-        [
-            {
-                "passed": True,
-                "adapter": adapter,
-                "target_mode": "live_dryrun",
-                "strategy": "lead_lag_taker",
-                "market": "india_nse_index_derivatives",
-                "scenario_key": "trigger_ticks=2",
-                "batch_id": "BDP-1",
-                "requests": 2,
-                "send_requests": 2,
-                "acked_orders": 2,
-                "missing_request_acks": 0,
-                "rejected_orders": 0,
-                "unmatched_acks": 0,
-                "failed_checks": 0,
-                "route_dispatch_roundtrip_provided": True,
-                "route_dispatch_roundtrip_ready": True,
-                "route_dispatch_roundtrip_target_mode": "live_dryrun",
-                "route_dispatch_roundtrip_strategy": "lead_lag_taker",
-                "route_dispatch_roundtrip_market": "india_nse_index_derivatives",
-                "route_dispatch_roundtrip_scenario_key": "trigger_ticks=2",
-                "route_dispatch_roundtrip_batch_id": "BDP-0",
-                "route_dispatch_roundtrip_requests": 2,
-                "route_dispatch_roundtrip_acked_orders": 2,
-                "route_dispatch_roundtrip_missing_request_acks": 0,
-                "route_dispatch_roundtrip_rejected_orders": 0,
-                "route_dispatch_roundtrip_unmatched_acks": 0,
-                "recommendation": "ready_for_broker_readiness_review",
-            }
-        ]
-    )
-
-
-def dispatch_roundtrip_config():
-    return {
-        "route_readiness": {
-            "required": True,
-            "provided": True,
-            "ready": True,
-            "strategy": "lead_lag_taker",
-            "market": "india_nse_index_derivatives",
-            "route_ready_pairs": 1,
-            "gap_pairs": 0,
-            "recommendation": "eligible_for_live_dryrun_route_review",
-            "ops_launch_controls_present": True,
-            "ops_launch_controls_blocked_pairs": 0,
-            "ops_broker_roundtrip_portfolio_breach_pairs": 0,
-            "ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
-            "ops_launch_controls_ready": True,
-            "ops_launch_control_failures": "",
-            "ops_broker_roundtrip_portfolio_safe_runs": 1,
-            "ops_broker_roundtrip_portfolio_breach_runs": 0,
-            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
-            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
-        },
-        "route_broker_route_readiness": {
-            "required": True,
-            "provided": True,
-            "ready": True,
-            "strategy": "lead_lag_taker",
-            "market": "india_nse_index_derivatives",
-            "route_ready_pairs": 1,
-            "gap_pairs": 0,
-            "recommendation": "eligible_for_live_dryrun_route_review",
-            "ops_launch_controls_ready": True,
-            "ops_launch_control_failures": "",
-            "ops_broker_roundtrip_portfolio_safe_runs": 1,
-            "ops_broker_roundtrip_portfolio_breach_runs": 0,
-            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
-            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
-        },
-        "route_enable_dispatch_roundtrip": {"failed_checks": 0},
-    }
-
-
-def leadlag_scenario_key():
-    return (
-        "strategy=lead_lag_taker|market=india_nse_index_derivatives|trigger_ticks=10|"
-        "delta=1|leader_tick=0.05|laggard_tick=0.05"
-    )
-
-
-def write_leadlag_promotion(path):
-    path.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
-            {
-                "ready": True,
-                "candidate_scenario_key": leadlag_scenario_key(),
-                "failed_checks": 0,
-                "recommendation": "paper_or_shadow_candidate",
-            }
-        ]
-    ).to_csv(path / "promotion_summary.csv", index=False)
-    (path / "candidate_config.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "ready": True,
-                "strategy": "lead_lag_taker",
-                "scenario_key": leadlag_scenario_key(),
-                "parameters": {
-                    "market": "india_nse_index_derivatives",
-                    "leader_tick": 0.05,
-                    "laggard_tick": 0.05,
-                    "delta": 1.0,
-                    "trigger_ticks": 10.0,
-                    "qty": 75,
-                    "flat_after_ns": 200_000,
-                    "cooloff_ns": 1000,
-                },
-                "metrics": {
-                    "total_net_pnl": 42.0,
-                    "median_markout_mean": 0.15,
-                },
-                "failed_checks": [],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-
 def write_inputs(root, adapter):
+    root.mkdir(parents=True, exist_ok=True)
     day1 = root / f"{adapter}_ticks_day1.csv"
     day2 = root / f"{adapter}_ticks_day2.csv"
-    schema_dir = root / "schema"
-    export_dir = root / "export"
-    upload_dir = root / "upload"
     resume_dir = root / "resume"
-    roundtrip_dir = root / "roundtrip"
-    for path in (schema_dir, export_dir, upload_dir, resume_dir, roundtrip_dir):
-        path.mkdir(parents=True)
+    schema_dir, export_dir, upload_dir, roundtrip_dir = (
+        write_broker_readiness_input_dirs(
+            root,
+            adapter,
+            verified_roundtrip=True,
+        )
+    )
+    resume_dir.mkdir()
     vendor_ticks("2026-06-10", base=100.0).to_csv(day1, index=False)
     vendor_ticks("2026-06-11", base=100.5).to_csv(day2, index=False)
-    schema_summary(adapter).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
-    order_export_summary(adapter).to_csv(export_dir / "broker_order_summary.csv", index=False)
-    upload_summary(adapter).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
     resume_summary(adapter).to_csv(resume_dir / "resume_summary.csv", index=False)
-    dispatch_roundtrip_summary(adapter).to_csv(roundtrip_dir / "broker_dispatch_roundtrip_summary.csv", index=False)
-    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
-        json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
-        encoding="utf-8",
-    )
     return {
         "input": [day1, day2],
         "schema": schema_dir,
@@ -608,29 +443,32 @@ def test_broker_vendor_data_readiness_preserves_target_application_batch(
     final_vendor_config["application_lineage_consistent"] = True
     final_lineage_sha256 = str(summary["vendor_application_lineage_sha256"])
     final_vendor_config["application_lineage_sha256"] = final_lineage_sha256
-    final_roundtrip_config = dispatch_roundtrip_config()
+    roundtrip_config_path = (
+        evidence["roundtrip"] / "broker_dispatch_roundtrip_config.json"
+    )
+    final_roundtrip_config = json.loads(
+        roundtrip_config_path.read_text(encoding="utf-8")
+    )
     final_roundtrip_config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
     ] = final_vendor_config
     final_roundtrip_config[
         "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
-    ] = {
-        "required": True,
-        "matches": True,
-        "current_application_lineage_sha256": final_lineage_sha256,
-        "broker_application_lineage_sha256": final_lineage_sha256,
-        "scaleup_carried_application_lineage_sha256": final_lineage_sha256,
-        "cutover_carried_application_lineage_sha256": final_lineage_sha256,
-        "route_carried_application_lineage_sha256": final_lineage_sha256,
-        "dispatch_carried_application_lineage_sha256": final_lineage_sha256,
-        "send_carried_application_lineage_sha256": final_lineage_sha256,
-        "ack_carried_application_lineage_sha256": final_lineage_sha256,
-        "roundtrip_carried_application_lineage_sha256": final_lineage_sha256,
-    }
-    (evidence["roundtrip"] / "broker_dispatch_roundtrip_config.json").write_text(
+    ] = target_application_lineage_comparison(final_vendor_config)
+    final_roundtrip_config[
+        "roundtrip_final_broker_dispatch_roundtrip_vendor_market_data_batch_lineage_comparison"
+    ] = roundtrip_final_target_application_lineage_comparison(
+        final_vendor_config
+    )
+    add_roundtrip_complete_final_target_application_lineage(
+        final_roundtrip_config,
+        final_vendor_config,
+    )
+    roundtrip_config_path.write_text(
         json.dumps(final_roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
     )
+    refresh_dispatch_manifest(evidence["roundtrip"] / "manifest.json")
 
     cli_out = tmp_path / "broker_vendor_target_cli"
     cli_args = [

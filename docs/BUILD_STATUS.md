@@ -6465,18 +6465,25 @@ through vendor, provider single/batch, broker-vendor, and direct readiness CLI
 paths. The unique normalization, diagnostics, readiness, reviewed/applied
 receipt, market-profile, loader, chain, and provider compatibility set passes
 (`86 passed`), and repository collection is healthy at `2470 tests`. The
-broker-vendor suite currently has four legacy fixture failures (`3 passed`, `4
-failed`): its hand-written terminal round-trip artifacts lack the current
-manifest and recursive lineage contracts required by the already-published
-broker verifier. No production broker verifier was weakened or changed in this
-slice, and the full repository suite was not rerun.
+full repository suite was not rerun.
+
+Latest broker-vendor proof-fixture hardening: broker-vendor integration tests
+now build their terminal evidence through the current dispatch, send,
+acknowledgement, and round-trip writers instead of hand-writing a loose summary
+and config. Intentional target-application upgrades regenerate every final and
+extended lineage comparison through the terminal view and refresh the manifest,
+while the launch handoff uses a manifest-backed promotion proof. The complete
+broker-vendor suite passes (`7 passed`), and focused remanifest, loose-proof
+rejection, terminal-tamper rejection, readiness output, and round-trip artifact
+compatibility passes (`7 passed`). Repository collection remains healthy at
+`2470 tests`. No production verifier was weakened or changed, all generated
+broker artifacts remain non-authorizing, and the full repository suite was not
+rerun for this fixture-only slice.
 
 ## Next Build Targets
 
-1. Replace legacy broker-vendor terminal round-trip test fixtures with current
-   manifest-backed generated evidence.
-2. Add data adapters for the first real vendor export once files are available.
-3. Replace placeholder Arrow.money/iRage column maps once real export schemas
+1. Add data adapters for the first real vendor export once files are available.
+2. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-4. Replace the built-in upload review templates with broker-signed
+3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
