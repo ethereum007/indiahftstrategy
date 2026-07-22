@@ -6348,6 +6348,24 @@ complete scale-up plus telemetry/guard boundary passes (`211 passed`).
 Repository collection is healthy at `2435 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest runtime-to-cutover broker-readiness lineage gate: cutover now requires
+the broker-readiness config supplied for review to be the exact source sealed
+by the current scale-up manifest, reopens that bundle through the shared
+recursive verifier, and compares its complete manifest/contract/round-trip
+identity with both the scale-up-carried and runtime-telemetry copies. Separate
+source-match, current-manifest identity, and current-lineage decisions survive
+cutover checks, summary/config, and manifest metadata. A current shadow-cutover
+bundle remains green, while a stale broker bundle hidden behind a freshly
+written runtime manifest and a valid-looking substituted broker directory both
+fail closed. The complete cutover plus route-enable boundary passes (`241
+passed`), runtime-session plus manifest/catalog compatibility passes (`82
+passed`), the complete broker-dispatch suite passes (`125 passed`), and the
+focused send/ack/round-trip recursive proof passes (`8 passed`). Repository
+collection is healthy at `2440 tests`. The complete send suite exceeded the
+424.1-second local timeout without reporting a failure or final result, so it
+is not counted as passing. All outputs remain non-authorizing; the full
+repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.

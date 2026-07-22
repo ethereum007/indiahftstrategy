@@ -157,6 +157,10 @@ def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
         "contract_error": "",
         "non_authorizing": not required,
         "scaleup_matches_current": not required,
+        "broker_readiness_required": False,
+        "broker_readiness_source_matches_scaleup": not required,
+        "current_broker_readiness_manifest_sha256": "",
+        "broker_readiness_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -169,6 +173,7 @@ def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
 def load_runtime_session_lineage(
     runtime_session_summary_path: str | Path,
     scaleup_config_path: str | Path,
+    expected_broker_readiness_config_path: str | Path | None = None,
 ) -> dict[str, Any]:
     summary_path = Path(runtime_session_summary_path).resolve()
     root = summary_path.parent
@@ -260,6 +265,15 @@ def load_runtime_session_lineage(
             and state["scaleup_research_family_manifest_sha256"]
         )
 
+    broker_readiness = _runtime_session_broker_readiness_state(
+        lineage=state,
+        scaleup_config_path=scaleup_config_path,
+        expected_broker_readiness_config_path=(
+            expected_broker_readiness_config_path
+        ),
+    )
+    state.update(broker_readiness)
+
     state["contract_consistent"] = not errors
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
@@ -271,6 +285,8 @@ def load_runtime_session_lineage(
         and non_authorizing
         and scaleup_matches_current
         and lineage_current
+        and state["broker_readiness_source_matches_scaleup"]
+        and state["broker_readiness_matches_current"]
     )
     return state
 
@@ -291,6 +307,18 @@ def runtime_session_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]
         "runtime_lineage_non_authorizing": _bool(lineage.get("non_authorizing", False)),
         "runtime_lineage_scaleup_matches_current": _bool(
             lineage.get("scaleup_matches_current", False)
+        ),
+        "runtime_lineage_broker_readiness_required": _bool(
+            lineage.get("broker_readiness_required", False)
+        ),
+        "runtime_lineage_broker_readiness_source_matches_scaleup": _bool(
+            lineage.get("broker_readiness_source_matches_scaleup", False)
+        ),
+        "runtime_lineage_current_broker_readiness_manifest_sha256": _text(
+            lineage.get("current_broker_readiness_manifest_sha256", "")
+        ),
+        "runtime_lineage_broker_readiness_matches_current": _bool(
+            lineage.get("broker_readiness_matches_current", False)
         ),
         "runtime_lineage_gate_passed": _bool(lineage.get("gate_passed", False)),
         "runtime_lineage_dependency_count": int(lineage.get("dependency_count", 0)),
@@ -318,6 +346,128 @@ def runtime_session_lineage_manifest_inputs(lineage: Mapping[str, Any]) -> dict[
     if dependencies:
         inputs["runtime_session_dependencies"] = dependencies
     return inputs
+
+
+def _runtime_session_broker_readiness_state(
+    *,
+    lineage: Mapping[str, Any],
+    scaleup_config_path: str | Path,
+    expected_broker_readiness_config_path: str | Path | None,
+) -> dict[str, Any]:
+    required = bool(
+        any(
+            _bool(lineage.get(column, False))
+            for column in (
+                "scaleup_broker_readiness_required",
+                "scaleup_broker_readiness_provided",
+                "scaleup_broker_readiness_lineage_required",
+                "scaleup_broker_readiness_lineage_provided",
+            )
+        )
+        or _text(lineage.get("scaleup_broker_readiness_manifest_sha256", ""))
+        or _text(
+            lineage.get(
+                "runtime_telemetry_broker_readiness_manifest_sha256",
+                "",
+            )
+        )
+    )
+    if not required:
+        return {
+            "broker_readiness_required": False,
+            "broker_readiness_source_matches_scaleup": True,
+            "current_broker_readiness_manifest_sha256": "",
+            "broker_readiness_matches_current": True,
+        }
+
+    scaleup_manifest_path = _source_manifest_path(scaleup_config_path)
+    scaleup_manifest = _read_json(scaleup_manifest_path)
+    bound_config_path = _manifest_input_path(
+        scaleup_manifest,
+        scaleup_manifest_path,
+        "broker_readiness_config",
+    )
+    expected_config_path = (
+        Path(expected_broker_readiness_config_path).resolve()
+        if expected_broker_readiness_config_path is not None
+        else None
+    )
+    source_matches_scaleup = bool(
+        bound_config_path is not None
+        and bound_config_path.is_file()
+        and (
+            expected_config_path is None
+            or expected_config_path == bound_config_path
+        )
+    )
+    current_config_path = expected_config_path or bound_config_path
+    current_lineage = empty_broker_readiness_lineage(required=True)
+    if current_config_path is not None and current_config_path.is_file():
+        current_lineage = load_broker_readiness_lineage(current_config_path)
+    current_fields = broker_readiness_lineage_fields(current_lineage)
+    current_manifest_sha256 = _text(
+        current_fields.get("broker_readiness_manifest_sha256", "")
+    )
+    carried_fields_match = all(
+        _same(
+            lineage.get(f"scaleup_{field}"),
+            value,
+            f"scaleup_{field}",
+        )
+        for field, value in current_fields.items()
+    )
+    source_claims_match = bool(
+        _same(
+            lineage.get("scaleup_broker_readiness_source_manifest_current"),
+            current_fields.get("broker_readiness_manifest_current"),
+            "scaleup_broker_readiness_source_manifest_current",
+        )
+        and _same(
+            lineage.get("scaleup_broker_readiness_source_manifest_sha256"),
+            current_manifest_sha256,
+            "scaleup_broker_readiness_source_manifest_sha256",
+        )
+        and _same(
+            lineage.get(
+                "scaleup_broker_readiness_source_provenance_gate_passed"
+            ),
+            current_fields.get("broker_readiness_lineage_gate_passed"),
+            "scaleup_broker_readiness_source_provenance_gate_passed",
+        )
+        and _bool(lineage.get("scaleup_broker_readiness_matches_current"))
+    )
+    telemetry_matches = bool(
+        _same(
+            lineage.get(
+                "runtime_telemetry_broker_readiness_manifest_sha256"
+            ),
+            current_manifest_sha256,
+            "runtime_telemetry_broker_readiness_manifest_sha256",
+        )
+        and _same(
+            lineage.get(
+                "runtime_telemetry_broker_readiness_lineage_gate_passed"
+            ),
+            current_fields.get("broker_readiness_lineage_gate_passed"),
+            "runtime_telemetry_broker_readiness_lineage_gate_passed",
+        )
+        and _bool(
+            lineage.get("runtime_telemetry_broker_readiness_matches_current")
+        )
+    )
+    matches_current = bool(
+        source_matches_scaleup
+        and current_fields.get("broker_readiness_lineage_gate_passed", False)
+        and carried_fields_match
+        and source_claims_match
+        and telemetry_matches
+    )
+    return {
+        "broker_readiness_required": True,
+        "broker_readiness_source_matches_scaleup": source_matches_scaleup,
+        "current_broker_readiness_manifest_sha256": current_manifest_sha256,
+        "broker_readiness_matches_current": matches_current,
+    }
 
 
 def empty_cutover_lineage(*, required: bool = False) -> dict[str, Any]:

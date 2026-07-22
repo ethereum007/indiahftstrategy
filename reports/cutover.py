@@ -447,6 +447,12 @@ def write_cutover_gate_report(
         runtime_lineage = load_runtime_session_lineage(
             runtime_session_summary_path,
             scaleup_config_path,
+            expected_broker_readiness_config_path=(
+                broker_readiness_config_path
+                or broker_readiness_summary_path.with_name(
+                    "broker_readiness_config.json"
+                )
+            ),
         )
     scaleup_config = json.loads(scaleup_config_path.read_text(encoding="utf-8"))
     if broker_readiness_config_path is not None:
@@ -836,6 +842,39 @@ def _checks(
                 ),
             ]
         )
+        if runtime["runtime_lineage_broker_readiness_required"]:
+            checks.extend(
+                [
+                    _check(
+                        "runtime_lineage_broker_readiness_source_matches_scaleup",
+                        runtime[
+                            "runtime_lineage_broker_readiness_source_matches_scaleup"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            runtime[
+                                "runtime_lineage_broker_readiness_source_matches_scaleup"
+                            ]
+                        ),
+                        "cutover broker readiness is not the source bound by scale-up",
+                    ),
+                    _check(
+                        "runtime_lineage_broker_readiness_matches_current",
+                        runtime[
+                            "runtime_lineage_broker_readiness_matches_current"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            runtime[
+                                "runtime_lineage_broker_readiness_matches_current"
+                            ]
+                        ),
+                        "runtime broker-readiness lineage no longer matches the current recursive source",
+                    ),
+                ]
+            )
     route_readiness_required = _route_readiness_required(thresholds)
     route_readiness_active = bool(route_readiness_required or scaleup["route_readiness_provided"])
     if route_readiness_required:
@@ -5370,6 +5409,8 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
+    if check.startswith("runtime_lineage_broker_readiness_"):
+        return "broker_readiness"
     if check.startswith("proof_refresh_"):
         return "proof_refresh"
     if "route_readiness" in check:
