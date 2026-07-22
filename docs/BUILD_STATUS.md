@@ -1824,6 +1824,14 @@
   the readiness manifest, artifacts, and all transitive dependencies. Loose
   summary/config pairs and freshly re-manifested detached terminal identities
   fail closed, while direct in-memory scale-up evaluation remains compatible.
+- Runtime scale-up provenance now reopens the manifest-bound broker-readiness
+  config and reconciles all 14 retained lineage fields across plan, summary,
+  nested config, manifest metadata, and the current source bundle. Telemetry
+  retains both broker-readiness manifest identities, terminal round-trip gate
+  state, and an explicit current-source match; runtime guard compares that copy
+  with the freshly verified scale-up before continuing. A consistently edited
+  scale-up with a freshly regenerated manifest still fails closed when its
+  broker identity no longer matches the current readiness source.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
@@ -6324,6 +6332,21 @@ passes (`146 passed`), the strict provider-wrapper nested-round-trip proof
 passes (`1 passed`), and manifest plus experiment-catalog compatibility passes
 (`69 passed`). Repository collection is healthy at `2430 tests`. All outputs
 remain non-authorizing; the full repository suite was not rerun for this slice.
+
+Latest broker-readiness scale-up-to-runtime lineage gate: the shared runtime
+provenance loader now requires every active broker-readiness claim to carry a
+manifest-bound source and reproduce its complete recursive lineage contract
+through scale-up plan, summary, config, and manifest metadata. Runtime
+telemetry exposes the carried and current broker manifest identities plus
+terminal gate and source-match decisions; runtime guard includes that identity
+in its telemetry-to-current-scale-up comparison. A production-shaped verified
+dispatch round trip reaches a `continue` decision, while an internally
+consistent, freshly re-manifested forged broker hash fails telemetry and halts
+the guard. The production-shaped current/forgery proof passes (`2 passed`), the
+complete runtime telemetry/guard/session boundary passes (`72 passed`), and the
+complete scale-up plus telemetry/guard boundary passes (`211 passed`).
+Repository collection is healthy at `2435 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
 
 ## Next Build Targets
 

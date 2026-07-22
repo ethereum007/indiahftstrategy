@@ -57,6 +57,9 @@ RUNTIME_LINEAGE_COLUMNS = (
     "runtime_telemetry_research_family_registration_id",
     "runtime_telemetry_research_family_manifest_sha256",
     "runtime_telemetry_research_family_matches_current",
+    "runtime_telemetry_broker_readiness_manifest_sha256",
+    "runtime_telemetry_broker_readiness_lineage_gate_passed",
+    "runtime_telemetry_broker_readiness_matches_current",
     "runtime_telemetry_lineage_matches_current",
 )
 
@@ -777,11 +780,23 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         ):
             passed = _to_bool(row.get(name, False))
             checks.append(_check(name, passed, "is", True, passed, reason))
+        broker_readiness_active = bool(
+            _to_bool(row.get("scaleup_broker_readiness_required", False))
+            or _to_bool(row.get("scaleup_broker_readiness_provided", False))
+            or _to_bool(
+                row.get("scaleup_broker_readiness_lineage_required", False)
+            )
+            or _to_bool(
+                row.get("scaleup_broker_readiness_lineage_provided", False)
+            )
+        )
         lineage_required = _to_bool(
             row.get("scaleup_strategy_portfolio_required", False)
         ) or _to_bool(
             row.get("scaleup_strategy_portfolio_provided", False)
-        ) or _to_bool(row.get("scaleup_research_family_bound", False))
+        ) or _to_bool(
+            row.get("scaleup_research_family_bound", False)
+        ) or broker_readiness_active
         lineage_carried = _to_bool(
             row.get("runtime_telemetry_scaleup_provenance_carried", False)
         )
@@ -801,7 +816,7 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 ),
                 (
                     "runtime_telemetry_lineage_matches_current",
-                    "runtime telemetry portfolio, scorecard, or family lineage differs from current scale-up",
+                    "runtime telemetry portfolio, scorecard, family, or broker-readiness lineage differs from current scale-up",
                 ),
             ):
                 passed = _to_bool(row.get(name, False))
@@ -820,6 +835,35 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                     "runtime telemetry lost or changed registered research-family closure proof",
                 )
             )
+        if broker_readiness_active:
+            for name, reason in (
+                (
+                    "scaleup_broker_readiness_manifest_current",
+                    "scale-up broker-readiness manifest is not current",
+                ),
+                (
+                    "scaleup_broker_readiness_lineage_contract_consistent",
+                    "scale-up broker-readiness lineage contract is inconsistent",
+                ),
+                (
+                    "scaleup_broker_readiness_lineage_gate_passed",
+                    "scale-up broker-readiness recursive lineage gate did not pass",
+                ),
+                (
+                    "scaleup_broker_readiness_source_provenance_gate_passed",
+                    "current broker-readiness source provenance gate did not pass",
+                ),
+                (
+                    "scaleup_broker_readiness_matches_current",
+                    "scale-up broker-readiness lineage differs from its current source",
+                ),
+                (
+                    "runtime_telemetry_broker_readiness_matches_current",
+                    "runtime telemetry broker-readiness lineage differs from current scale-up",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(_check(name, passed, "is", True, passed, reason))
     scaleup_portfolio_active = bool(row["scaleup_strategy_portfolio_required"]) or bool(
         row["scaleup_strategy_portfolio_provided"]
     )
@@ -2075,6 +2119,38 @@ def _runtime_lineage_fields(
             == _clean(provenance.get("research_family_manifest_sha256"))
         )
     )
+    broker_readiness_active = bool(
+        _to_bool(provenance.get("broker_readiness_required", False))
+        or _to_bool(provenance.get("broker_readiness_provided", False))
+        or _to_bool(provenance.get("broker_readiness_lineage_required", False))
+        or _to_bool(provenance.get("broker_readiness_lineage_provided", False))
+    )
+    current_broker_readiness_sha = _clean(
+        provenance.get("broker_readiness_manifest_sha256")
+    )
+    telemetry_broker_readiness_sha = _clean(
+        _value(latest, "scaleup_broker_readiness_manifest_sha256", "")
+    )
+    telemetry_broker_readiness_gate = _bool_value(
+        latest,
+        "scaleup_broker_readiness_lineage_gate_passed",
+        fallback=False,
+    )
+    telemetry_broker_readiness_source_match = _bool_value(
+        latest,
+        "scaleup_broker_readiness_matches_current",
+        fallback=False,
+    )
+    broker_readiness_matches = bool(
+        not broker_readiness_active
+        or (
+            current_broker_readiness_sha
+            and telemetry_broker_readiness_sha
+            == current_broker_readiness_sha
+            and telemetry_broker_readiness_gate
+            and telemetry_broker_readiness_source_match
+        )
+    )
     telemetry_gate = _bool_value(
         latest,
         "scaleup_provenance_gate_passed",
@@ -2085,6 +2161,7 @@ def _runtime_lineage_fields(
         and portfolio_matches
         and scorecard_matches
         and family_matches
+        and broker_readiness_matches
     )
     return {
         "runtime_telemetry_scaleup_provenance_carried": carried,
@@ -2101,6 +2178,15 @@ def _runtime_lineage_fields(
         "runtime_telemetry_research_family_registration_id": telemetry_registration_id,
         "runtime_telemetry_research_family_manifest_sha256": telemetry_family_sha,
         "runtime_telemetry_research_family_matches_current": family_matches,
+        "runtime_telemetry_broker_readiness_manifest_sha256": (
+            telemetry_broker_readiness_sha
+        ),
+        "runtime_telemetry_broker_readiness_lineage_gate_passed": (
+            telemetry_broker_readiness_gate
+        ),
+        "runtime_telemetry_broker_readiness_matches_current": (
+            broker_readiness_matches
+        ),
         "runtime_telemetry_lineage_matches_current": lineage_matches,
     }
 

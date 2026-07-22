@@ -22,6 +22,38 @@ SCALEUP_REQUIRED_ARTIFACTS = (
     "scaleup_config.json",
 )
 
+BROKER_READINESS_LINEAGE_FIELDS = (
+    ("lineage_required", "broker_readiness_lineage_required"),
+    ("lineage_provided", "broker_readiness_lineage_provided"),
+    ("manifest_current", "broker_readiness_manifest_current"),
+    ("manifest_run_type", "broker_readiness_manifest_run_type"),
+    ("manifest_path", "broker_readiness_manifest_path"),
+    ("manifest_sha256", "broker_readiness_manifest_sha256"),
+    ("manifest_error", "broker_readiness_manifest_error"),
+    (
+        "lineage_contract_consistent",
+        "broker_readiness_lineage_contract_consistent",
+    ),
+    ("lineage_contract_error", "broker_readiness_lineage_contract_error"),
+    (
+        "roundtrip_lineage_required",
+        "broker_readiness_roundtrip_lineage_required",
+    ),
+    (
+        "roundtrip_lineage_gate_passed",
+        "broker_readiness_roundtrip_lineage_gate_passed",
+    ),
+    (
+        "roundtrip_matches_current",
+        "broker_readiness_roundtrip_matches_current",
+    ),
+    ("lineage_gate_passed", "broker_readiness_lineage_gate_passed"),
+    (
+        "lineage_dependency_count",
+        "broker_readiness_lineage_dependency_count",
+    ),
+)
+
 
 def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any]:
     return {
@@ -55,6 +87,26 @@ def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any
         "research_family_id": "",
         "research_family_registration_id": "",
         "research_family_manifest_sha256": "",
+        "broker_readiness_required": False,
+        "broker_readiness_provided": False,
+        "broker_readiness_lineage_required": False,
+        "broker_readiness_lineage_provided": False,
+        "broker_readiness_manifest_current": False,
+        "broker_readiness_manifest_run_type": "",
+        "broker_readiness_manifest_path": "",
+        "broker_readiness_manifest_sha256": "",
+        "broker_readiness_manifest_error": "",
+        "broker_readiness_lineage_contract_consistent": False,
+        "broker_readiness_lineage_contract_error": "",
+        "broker_readiness_roundtrip_lineage_required": False,
+        "broker_readiness_roundtrip_lineage_gate_passed": False,
+        "broker_readiness_roundtrip_matches_current": False,
+        "broker_readiness_lineage_gate_passed": False,
+        "broker_readiness_lineage_dependency_count": 0,
+        "broker_readiness_source_manifest_current": False,
+        "broker_readiness_source_manifest_sha256": "",
+        "broker_readiness_source_provenance_gate_passed": False,
+        "broker_readiness_matches_current": not required,
     }
 
 
@@ -84,6 +136,17 @@ def load_scaleup_runtime_provenance(
     checks = _read_csv(root / "scaleup_checks.csv")
     plan = _read_csv(root / "scaleup_plan.csv")
 
+    broker_readiness_active = _broker_readiness_active(config, manifest)
+    broker_readiness_config_path = _manifest_input_path(
+        manifest,
+        "broker_readiness_config",
+    )
+    current_broker_readiness_fields: dict[str, Any] = {}
+    if broker_readiness_config_path is not None:
+        current_broker_readiness_fields = _broker_readiness_lineage_fields(
+            _load_broker_readiness_lineage(broker_readiness_config_path)
+        )
+
     if manifest_path.is_file():
         integrity = verify_experiment_manifest(
             manifest_path,
@@ -110,10 +173,53 @@ def load_scaleup_runtime_provenance(
         summary=summary,
         checks=checks,
         plan=plan,
+        broker_readiness_active=broker_readiness_active,
+        broker_readiness_config_path=broker_readiness_config_path,
+        current_broker_readiness_fields=current_broker_readiness_fields,
     )
     non_authorizing = _scaleup_non_authorizing(config, manifest, summary, plan)
     source_ready = _bool(config.get("ready", False))
     evidence.update(_lineage(config))
+    broker_readiness_errors = [
+        error
+        for error in errors
+        if error.startswith("scaleup_broker_readiness_")
+    ]
+    evidence.update(
+        {
+            "broker_readiness_source_manifest_current": _bool(
+                current_broker_readiness_fields.get(
+                    "broker_readiness_manifest_current",
+                    False,
+                )
+            ),
+            "broker_readiness_source_manifest_sha256": _text(
+                current_broker_readiness_fields.get(
+                    "broker_readiness_manifest_sha256",
+                    "",
+                )
+            ),
+            "broker_readiness_source_provenance_gate_passed": _bool(
+                current_broker_readiness_fields.get(
+                    "broker_readiness_lineage_gate_passed",
+                    False,
+                )
+            ),
+            "broker_readiness_matches_current": bool(
+                not broker_readiness_active
+                or (
+                    broker_readiness_config_path is not None
+                    and not broker_readiness_errors
+                    and _bool(
+                        current_broker_readiness_fields.get(
+                            "broker_readiness_lineage_gate_passed",
+                            False,
+                        )
+                    )
+                )
+            ),
+        }
+    )
     evidence["contract_consistent"] = not errors
     evidence["contract_error"] = ";".join(sorted(set(errors)))
     evidence["non_authorizing"] = non_authorizing
@@ -166,6 +272,18 @@ def scaleup_runtime_manifest_extra(provenance: Mapping[str, Any]) -> dict[str, A
         ),
         "research_family_manifest_sha256": _text(
             provenance.get("research_family_manifest_sha256", "")
+        ),
+        "broker_readiness_manifest_sha256": _text(
+            provenance.get("broker_readiness_manifest_sha256", "")
+        ),
+        "broker_readiness_source_manifest_sha256": _text(
+            provenance.get("broker_readiness_source_manifest_sha256", "")
+        ),
+        "broker_readiness_lineage_gate_passed": _bool(
+            provenance.get("broker_readiness_lineage_gate_passed", False)
+        ),
+        "broker_readiness_matches_current": _bool(
+            provenance.get("broker_readiness_matches_current", False)
         ),
         "authorizes_submission": False,
     }
@@ -231,6 +349,75 @@ def scaleup_runtime_fields(provenance: Mapping[str, Any]) -> dict[str, Any]:
         "scaleup_research_family_manifest_sha256": _text(
             provenance.get("research_family_manifest_sha256", "")
         ),
+        "scaleup_broker_readiness_required": _bool(
+            provenance.get("broker_readiness_required", False)
+        ),
+        "scaleup_broker_readiness_provided": _bool(
+            provenance.get("broker_readiness_provided", False)
+        ),
+        "scaleup_broker_readiness_lineage_required": _bool(
+            provenance.get("broker_readiness_lineage_required", False)
+        ),
+        "scaleup_broker_readiness_lineage_provided": _bool(
+            provenance.get("broker_readiness_lineage_provided", False)
+        ),
+        "scaleup_broker_readiness_manifest_current": _bool(
+            provenance.get("broker_readiness_manifest_current", False)
+        ),
+        "scaleup_broker_readiness_manifest_run_type": _text(
+            provenance.get("broker_readiness_manifest_run_type", "")
+        ),
+        "scaleup_broker_readiness_manifest_path": _text(
+            provenance.get("broker_readiness_manifest_path", "")
+        ),
+        "scaleup_broker_readiness_manifest_sha256": _text(
+            provenance.get("broker_readiness_manifest_sha256", "")
+        ),
+        "scaleup_broker_readiness_manifest_error": _text(
+            provenance.get("broker_readiness_manifest_error", "")
+        ),
+        "scaleup_broker_readiness_lineage_contract_consistent": _bool(
+            provenance.get(
+                "broker_readiness_lineage_contract_consistent",
+                False,
+            )
+        ),
+        "scaleup_broker_readiness_lineage_contract_error": _text(
+            provenance.get("broker_readiness_lineage_contract_error", "")
+        ),
+        "scaleup_broker_readiness_roundtrip_lineage_required": _bool(
+            provenance.get("broker_readiness_roundtrip_lineage_required", False)
+        ),
+        "scaleup_broker_readiness_roundtrip_lineage_gate_passed": _bool(
+            provenance.get(
+                "broker_readiness_roundtrip_lineage_gate_passed",
+                False,
+            )
+        ),
+        "scaleup_broker_readiness_roundtrip_matches_current": _bool(
+            provenance.get("broker_readiness_roundtrip_matches_current", False)
+        ),
+        "scaleup_broker_readiness_lineage_gate_passed": _bool(
+            provenance.get("broker_readiness_lineage_gate_passed", False)
+        ),
+        "scaleup_broker_readiness_lineage_dependency_count": int(
+            provenance.get("broker_readiness_lineage_dependency_count", 0)
+        ),
+        "scaleup_broker_readiness_source_manifest_current": _bool(
+            provenance.get("broker_readiness_source_manifest_current", False)
+        ),
+        "scaleup_broker_readiness_source_manifest_sha256": _text(
+            provenance.get("broker_readiness_source_manifest_sha256", "")
+        ),
+        "scaleup_broker_readiness_source_provenance_gate_passed": _bool(
+            provenance.get(
+                "broker_readiness_source_provenance_gate_passed",
+                False,
+            )
+        ),
+        "scaleup_broker_readiness_matches_current": _bool(
+            provenance.get("broker_readiness_matches_current", False)
+        ),
     }
 
 
@@ -241,6 +428,9 @@ def _scaleup_contract_errors(
     summary: pd.DataFrame,
     checks: pd.DataFrame,
     plan: pd.DataFrame,
+    broker_readiness_active: bool,
+    broker_readiness_config_path: Path | None,
+    current_broker_readiness_fields: Mapping[str, Any],
 ) -> list[str]:
     errors: list[str] = []
     if not config:
@@ -302,6 +492,74 @@ def _scaleup_contract_errors(
                 portfolio=portfolio,
             )
         )
+    if broker_readiness_active:
+        errors.extend(
+            _broker_readiness_contract_errors(
+                manifest_extra=extra,
+                summary=row,
+                plan=plan_row,
+                broker_readiness=_mapping(config.get("broker_readiness")),
+                broker_readiness_config_path=broker_readiness_config_path,
+                current_fields=current_broker_readiness_fields,
+            )
+        )
+    return errors
+
+
+def _broker_readiness_contract_errors(
+    *,
+    manifest_extra: dict[str, Any],
+    summary: pd.Series,
+    plan: pd.Series,
+    broker_readiness: dict[str, Any],
+    broker_readiness_config_path: Path | None,
+    current_fields: Mapping[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    lineage = _mapping(broker_readiness.get("lineage"))
+    for config_field, report_field in BROKER_READINESS_LINEAGE_FIELDS:
+        if config_field not in lineage:
+            errors.append(
+                f"scaleup_broker_readiness_{config_field}_missing:config"
+            )
+            expected: Any = None
+        else:
+            expected = lineage.get(config_field)
+        for source, row in (("summary", summary), ("plan", plan)):
+            if report_field not in row.index:
+                errors.append(
+                    f"scaleup_broker_readiness_{config_field}_missing:{source}"
+                )
+            elif config_field in lineage and not _same(row.get(report_field), expected):
+                errors.append(
+                    f"scaleup_broker_readiness_{config_field}_{source}_mismatch"
+                )
+        if report_field not in manifest_extra:
+            errors.append(
+                f"scaleup_broker_readiness_{config_field}_missing:manifest"
+            )
+        elif config_field in lineage and not _same(
+            manifest_extra.get(report_field),
+            expected,
+        ):
+            errors.append(
+                f"scaleup_broker_readiness_{config_field}_manifest_mismatch"
+            )
+
+    if broker_readiness_config_path is None:
+        errors.append("scaleup_broker_readiness_source_missing")
+        return errors
+    for config_field, report_field in BROKER_READINESS_LINEAGE_FIELDS:
+        if config_field not in lineage:
+            continue
+        if not _same(lineage.get(config_field), current_fields.get(report_field)):
+            errors.append(
+                f"scaleup_broker_readiness_{config_field}_source_mismatch"
+            )
+    if not _bool(
+        current_fields.get("broker_readiness_lineage_gate_passed", False)
+    ):
+        errors.append("scaleup_broker_readiness_source_provenance_not_current")
     return errors
 
 
@@ -436,6 +694,8 @@ def _lineage(config: dict[str, Any]) -> dict[str, Any]:
     portfolio = _mapping(config.get("strategy_portfolio"))
     scorecard = _mapping(portfolio.get("scorecard_provenance"))
     family = _mapping(portfolio.get("research_family"))
+    broker_readiness = _mapping(config.get("broker_readiness"))
+    broker_lineage = _mapping(broker_readiness.get("lineage"))
     return {
         "strategy_portfolio_required": _bool(portfolio.get("required", False)),
         "strategy_portfolio_provided": _bool(portfolio.get("provided", False)),
@@ -462,7 +722,92 @@ def _lineage(config: dict[str, Any]) -> dict[str, Any]:
         "research_family_id": _text(family.get("family_id", "")),
         "research_family_registration_id": _text(family.get("registration_id", "")),
         "research_family_manifest_sha256": _text(family.get("manifest_sha256", "")),
+        "broker_readiness_required": _bool(
+            broker_readiness.get("required", False)
+        ),
+        "broker_readiness_provided": _bool(
+            broker_readiness.get("provided", False)
+        ),
+        "broker_readiness_lineage_required": _bool(
+            broker_lineage.get("lineage_required", False)
+        ),
+        "broker_readiness_lineage_provided": _bool(
+            broker_lineage.get("lineage_provided", False)
+        ),
+        "broker_readiness_manifest_current": _bool(
+            broker_lineage.get("manifest_current", False)
+        ),
+        "broker_readiness_manifest_run_type": _text(
+            broker_lineage.get("manifest_run_type", "")
+        ),
+        "broker_readiness_manifest_path": _text(
+            broker_lineage.get("manifest_path", "")
+        ),
+        "broker_readiness_manifest_sha256": _text(
+            broker_lineage.get("manifest_sha256", "")
+        ),
+        "broker_readiness_manifest_error": _text(
+            broker_lineage.get("manifest_error", "")
+        ),
+        "broker_readiness_lineage_contract_consistent": _bool(
+            broker_lineage.get("lineage_contract_consistent", False)
+        ),
+        "broker_readiness_lineage_contract_error": _text(
+            broker_lineage.get("lineage_contract_error", "")
+        ),
+        "broker_readiness_roundtrip_lineage_required": _bool(
+            broker_lineage.get("roundtrip_lineage_required", False)
+        ),
+        "broker_readiness_roundtrip_lineage_gate_passed": _bool(
+            broker_lineage.get("roundtrip_lineage_gate_passed", False)
+        ),
+        "broker_readiness_roundtrip_matches_current": _bool(
+            broker_lineage.get("roundtrip_matches_current", False)
+        ),
+        "broker_readiness_lineage_gate_passed": _bool(
+            broker_lineage.get("lineage_gate_passed", False)
+        ),
+        "broker_readiness_lineage_dependency_count": _integer(
+            broker_lineage.get("lineage_dependency_count", 0)
+        ),
     }
+
+
+def _broker_readiness_active(
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+) -> bool:
+    broker_readiness = _mapping(config.get("broker_readiness"))
+    lineage = _mapping(broker_readiness.get("lineage"))
+    inputs = _mapping(manifest.get("inputs"))
+    return bool(
+        _bool(broker_readiness.get("required", False))
+        or _bool(broker_readiness.get("provided", False))
+        or _bool(lineage.get("lineage_required", False))
+        or _bool(lineage.get("lineage_provided", False))
+        or any(
+            name in inputs
+            for name in (
+                "broker_readiness",
+                "broker_readiness_config",
+                "broker_readiness_manifest",
+            )
+        )
+    )
+
+
+def _load_broker_readiness_lineage(config_path: str | Path) -> dict[str, Any]:
+    from reports.operational_lineage import load_broker_readiness_lineage
+
+    return load_broker_readiness_lineage(config_path)
+
+
+def _broker_readiness_lineage_fields(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    from reports.operational_lineage import broker_readiness_lineage_fields
+
+    return broker_readiness_lineage_fields(lineage)
 
 
 def _manifest_input_path(manifest: dict[str, Any], name: str) -> Path | None:

@@ -71,6 +71,26 @@ SCALEUP_PROVENANCE_COLUMNS = [
     "scaleup_research_family_id",
     "scaleup_research_family_registration_id",
     "scaleup_research_family_manifest_sha256",
+    "scaleup_broker_readiness_required",
+    "scaleup_broker_readiness_provided",
+    "scaleup_broker_readiness_lineage_required",
+    "scaleup_broker_readiness_lineage_provided",
+    "scaleup_broker_readiness_manifest_current",
+    "scaleup_broker_readiness_manifest_run_type",
+    "scaleup_broker_readiness_manifest_path",
+    "scaleup_broker_readiness_manifest_sha256",
+    "scaleup_broker_readiness_manifest_error",
+    "scaleup_broker_readiness_lineage_contract_consistent",
+    "scaleup_broker_readiness_lineage_contract_error",
+    "scaleup_broker_readiness_roundtrip_lineage_required",
+    "scaleup_broker_readiness_roundtrip_lineage_gate_passed",
+    "scaleup_broker_readiness_roundtrip_matches_current",
+    "scaleup_broker_readiness_lineage_gate_passed",
+    "scaleup_broker_readiness_lineage_dependency_count",
+    "scaleup_broker_readiness_source_manifest_current",
+    "scaleup_broker_readiness_source_manifest_sha256",
+    "scaleup_broker_readiness_source_provenance_gate_passed",
+    "scaleup_broker_readiness_matches_current",
 ]
 
 
@@ -599,6 +619,41 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                     ),
                 ]
             )
+        broker_readiness_active = bool(
+            _to_bool(row.get("scaleup_broker_readiness_required", False))
+            or _to_bool(row.get("scaleup_broker_readiness_provided", False))
+            or _to_bool(
+                row.get("scaleup_broker_readiness_lineage_required", False)
+            )
+            or _to_bool(
+                row.get("scaleup_broker_readiness_lineage_provided", False)
+            )
+        )
+        if broker_readiness_active:
+            for name, reason in (
+                (
+                    "scaleup_broker_readiness_manifest_current",
+                    "scale-up broker-readiness manifest is not current",
+                ),
+                (
+                    "scaleup_broker_readiness_lineage_contract_consistent",
+                    "scale-up broker-readiness lineage contract is inconsistent",
+                ),
+                (
+                    "scaleup_broker_readiness_lineage_gate_passed",
+                    "scale-up broker-readiness recursive lineage gate did not pass",
+                ),
+                (
+                    "scaleup_broker_readiness_source_provenance_gate_passed",
+                    "current broker-readiness source provenance gate did not pass",
+                ),
+                (
+                    "scaleup_broker_readiness_matches_current",
+                    "scale-up broker-readiness lineage differs from its current source",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(_check(name, passed, "is", True, passed, reason))
     for column in GUARD_COLUMNS:
         value = row[column]
         present = not pd.isna(value) and (not isinstance(value, str) or bool(value.strip()))

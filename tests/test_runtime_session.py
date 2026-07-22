@@ -186,6 +186,70 @@ def leadlag_scaleup_config():
     return config
 
 
+def write_broker_readiness_lineage(root):
+    from reports.operational_lineage import (
+        broker_readiness_lineage_fields,
+        broker_readiness_lineage_manifest_inputs,
+        load_broker_readiness_lineage,
+    )
+
+    root.mkdir()
+    pd.DataFrame(
+        [{"ready": True, "adapter": "arrow_money", "failed_checks": 0}]
+    ).to_csv(root / "broker_readiness_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "component": "resume_gate",
+                "required": True,
+                "provided": True,
+                "ready": True,
+            }
+        ]
+    ).to_csv(root / "broker_readiness_items.csv", index=False)
+    pd.DataFrame(
+        [{"check": "resume_gate_ready", "passed": True, "reason": ""}]
+    ).to_csv(root / "broker_readiness_checks.csv", index=False)
+    pd.DataFrame(columns=["priority"]).to_csv(
+        root / "broker_readiness_action_queue.csv",
+        index=False,
+    )
+    (root / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "component_counts": {"failed_checks": 0},
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "broker_readiness_runbook.md").write_text(
+        "# Broker Readiness Fixture\n",
+        encoding="utf-8",
+    )
+    source = root.parent / f"{root.name}_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        root,
+        run_type="broker_readiness",
+        inputs={"source": source},
+        extra={"ready": True},
+    )
+    lineage = load_broker_readiness_lineage(
+        root / "broker_readiness_config.json"
+    )
+    assert lineage["gate_passed"]
+    fields = broker_readiness_lineage_fields(lineage)
+    return fields, {
+        "broker_readiness_config": root / "broker_readiness_config.json",
+        **broker_readiness_lineage_manifest_inputs(lineage),
+    }
+
+
 def write_scaleup_dir(path, config=None):
     path.mkdir()
     payload = json.loads(json.dumps(config or scaleup_config()))
@@ -193,6 +257,20 @@ def write_scaleup_dir(path, config=None):
     payload["failed_check_count"] = 0
     portfolio = payload.get("strategy_portfolio", {}) or {}
     portfolio_inputs = {}
+    broker_readiness = payload.get("broker_readiness", {}) or {}
+    broker_readiness_fields = {}
+    broker_readiness_inputs = {}
+    if broker_readiness.get("required") or broker_readiness.get("provided"):
+        broker_readiness_fields, broker_readiness_inputs = (
+            write_broker_readiness_lineage(
+                path.parent / f"{path.name}_broker_readiness"
+            )
+        )
+        broker_readiness["lineage"] = {
+            field.removeprefix("broker_readiness_"): value
+            for field, value in broker_readiness_fields.items()
+        }
+        payload["broker_readiness"] = broker_readiness
     leadlag = {}
     if portfolio.get("required") or portfolio.get("provided"):
         leadlag = {
@@ -353,6 +431,7 @@ def write_scaleup_dir(path, config=None):
             "pre_portfolio_max_notional_per_session",
             limits["max_notional_per_session"],
         ),
+        **broker_readiness_fields,
     }
     if portfolio:
         row.update(
@@ -404,12 +483,17 @@ def write_scaleup_dir(path, config=None):
             f"strategy_portfolio_{key}": value
             for key, value in leadlag.items()
         },
+        **broker_readiness_fields,
         "authorizes_submission": False,
     }
     write_experiment_manifest(
         path,
         run_type="scaleup_plan",
-        inputs={"source": source, **portfolio_inputs},
+        inputs={
+            "source": source,
+            **portfolio_inputs,
+            **broker_readiness_inputs,
+        },
         extra=manifest_extra,
     )
 
