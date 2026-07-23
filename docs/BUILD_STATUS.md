@@ -6697,6 +6697,23 @@ replay walk-forward regressions pass (`82 passed`). Manifest regressions pass
 outputs remain non-authorizing; the full repository suite was not rerun for
 this focused evidence-integrity slice.
 
+Latest proof-refresh semantic input gate: filesystem-backed
+`review-proof-refresh` now verifies every supplied baseline/latest
+`proof_report` before its reported pass state can become effective refresh
+evidence. The refresh summary, config, and runbook retain reported versus
+effective pass state, manifest/input/replay/artifact/authority verification,
+match counts, and the exact verifier error. Freshly re-manifested proof-summary
+tampering and an outer proof-manifest reseal over stale replay-source lineage
+fail closed through `baseline_proof_verified` or `latest_proof_verified`.
+Refresh manifests bind each proof directory, proof manifest, and recursively
+flattened replay dependency set, so later source drift also invalidates a
+previously retained refresh report. Proof-refresh regressions pass (`9
+passed`), proof/catalog integration passes (`82 passed`), and downstream
+strategy-evidence, scale-up, and manifest regressions pass (`222 passed`).
+Repository collection is healthy at `2522 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this focused
+evidence-integrity slice.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

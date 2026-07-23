@@ -741,7 +741,6 @@ def test_experiment_catalog_promotes_proof_refresh_action_queue(tmp_path):
     refresh_dir = tmp_path / "proof_refresh"
     catalog_dir = tmp_path / "catalog"
     drift_dir.mkdir()
-    baseline_dir.mkdir()
     pd.DataFrame(
         [
             {
@@ -751,17 +750,16 @@ def test_experiment_catalog_promotes_proof_refresh_action_queue(tmp_path):
             }
         ]
     ).to_csv(drift_dir / "fill_model_drift_summary.csv", index=False)
-    pd.DataFrame(
-        [
-            {
-                "all_passed": True,
-                "strategy": "leadlag",
-                "strategy_count": 1,
-                "market": "india_nse_index_derivatives",
-                "market_count": 1,
-            }
-        ]
-    ).to_csv(baseline_dir / "proof_summary.csv", index=False)
+    write_run(
+        baseline_dir,
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={
+            "all_passed": True,
+            "strategy": "leadlag",
+            "market": "india_nse_index_derivatives",
+        },
+    )
     write_proof_refresh_report(
         drift_path=drift_dir,
         baseline_proof_path=baseline_dir,

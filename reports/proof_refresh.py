@@ -7,7 +7,12 @@ from typing import Any
 
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    MANIFEST_NAME,
+    manifest_dependency_paths,
+    write_experiment_manifest,
+)
+from reports.proof import ProofReportVerification, verify_proof_report
 
 
 @dataclass(frozen=True)
@@ -38,12 +43,49 @@ def evaluate_proof_refresh(
     latest_proof_summary: pd.DataFrame | None = None,
     calibrated_replay_summary: pd.DataFrame | None = None,
     thresholds: ProofRefreshThresholds | None = None,
+    baseline_proof_verification: ProofReportVerification | None = None,
+    latest_proof_verification: ProofReportVerification | None = None,
 ) -> ProofRefreshReport:
     thresholds = thresholds or ProofRefreshThresholds()
     drift_passed = _frame_bool(drift_summary, "passed")
-    baseline_passed = _frame_bool(baseline_proof_summary, "all_passed")
+    baseline_reported_passed = _frame_bool(
+        baseline_proof_summary,
+        "all_passed",
+    )
+    baseline_verification_enforced = baseline_proof_verification is not None
+    baseline_verified = bool(
+        baseline_proof_verification is not None
+        and baseline_proof_verification.verified
+    )
+    baseline_passed = bool(
+        baseline_reported_passed
+        and (
+            baseline_verified
+            if baseline_verification_enforced
+            else True
+        )
+    )
     latest_available = latest_proof_summary is not None and not latest_proof_summary.empty
-    latest_passed = _frame_bool(latest_proof_summary, "all_passed") if latest_available else False
+    latest_reported_passed = (
+        _frame_bool(latest_proof_summary, "all_passed")
+        if latest_available
+        else False
+    )
+    latest_verification_enforced = bool(
+        latest_available and latest_proof_verification is not None
+    )
+    latest_verified = bool(
+        latest_proof_verification is not None
+        and latest_proof_verification.verified
+    )
+    latest_passed = bool(
+        latest_reported_passed
+        and (
+            latest_verified
+            if latest_verification_enforced
+            else True
+        )
+    )
     calibrated_available = calibrated_replay_summary is not None and not calibrated_replay_summary.empty
     calibrated_ready = _frame_bool(calibrated_replay_summary, "ready") if calibrated_available else False
     calibrated_strategy = _frame_str(calibrated_replay_summary, "strategy") if calibrated_available else ""
@@ -58,9 +100,13 @@ def evaluate_proof_refresh(
 
     checks = _checks(
         drift_passed=drift_passed,
-        baseline_passed=baseline_passed,
+        baseline_reported_passed=baseline_reported_passed,
+        baseline_verification_enforced=baseline_verification_enforced,
+        baseline_verified=baseline_verified,
         latest_available=latest_available,
-        latest_passed=latest_passed,
+        latest_reported_passed=latest_reported_passed,
+        latest_verification_enforced=latest_verification_enforced,
+        latest_verified=latest_verified,
         calibrated_available=calibrated_available,
         calibrated_ready=calibrated_ready,
         calibrated_strategy=calibrated_strategy,
@@ -91,8 +137,10 @@ def evaluate_proof_refresh(
                 "drift_passed": drift_passed,
                 "fresh_proof_required": not drift_passed,
                 "proof_source": proof_source,
+                "baseline_proof_reported_passed": baseline_reported_passed,
                 "baseline_proof_passed": baseline_passed,
                 "latest_proof_available": latest_available,
+                "latest_proof_reported_passed": latest_reported_passed,
                 "latest_proof_passed": latest_passed,
                 "calibrated_replay_required": (not drift_passed)
                 and thresholds.require_calibrated_replay_when_drift_fails,
@@ -113,6 +161,17 @@ def evaluate_proof_refresh(
                 "mixed_identity": mixed_identity,
                 "failed_checks": failed_checks,
                 "recommendation": recommendation,
+                "non_authorizing": True,
+                "authorizes_routing": False,
+                "authorizes_submission": False,
+                **_proof_verification_summary_fields(
+                    "baseline_proof",
+                    baseline_proof_verification,
+                ),
+                **_proof_verification_summary_fields(
+                    "latest_proof",
+                    latest_proof_verification,
+                ),
             }
         ]
     )
@@ -142,12 +201,20 @@ def write_proof_refresh_report(
     baseline_file = _summary_path(baseline_proof_path, "proof_summary.csv")
     latest_file = _optional_summary_path(latest_proof_path, "proof_summary.csv")
     calibrated_file = _optional_summary_path(calibrated_replay_path, "calibrated_replay_summary.csv")
+    baseline_verification = verify_proof_report(baseline_file.parent)
+    latest_verification = (
+        verify_proof_report(latest_file.parent)
+        if latest_file is not None
+        else None
+    )
     report = evaluate_proof_refresh(
         drift_summary=_read_summary(drift_file),
         baseline_proof_summary=_read_summary(baseline_file),
         latest_proof_summary=_read_summary(latest_file) if latest_file is not None else None,
         calibrated_replay_summary=_read_summary(calibrated_file) if calibrated_file is not None else None,
         thresholds=thresholds,
+        baseline_proof_verification=baseline_verification,
+        latest_proof_verification=latest_verification,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -174,12 +241,17 @@ def write_proof_refresh_report(
         out,
         run_type="proof_refresh_gate",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={
-            "fill_model_drift": drift_file,
-            "baseline_proof": baseline_file,
-            "latest_proof": latest_file,
-            "calibrated_replay": calibrated_file,
-        },
+        inputs=_proof_refresh_manifest_inputs(
+            drift_file=drift_file,
+            baseline_proof_dir=baseline_file.parent,
+            latest_proof_dir=(
+                latest_file.parent
+                if latest_file is not None
+                else None
+            ),
+            calibrated_file=calibrated_file,
+        ),
+        extra=_proof_refresh_manifest_extra(report),
     )
     return ProofRefreshReport(
         report.decision,
@@ -191,48 +263,211 @@ def write_proof_refresh_report(
     )
 
 
+def _proof_verification_summary_fields(
+    prefix: str,
+    verification: ProofReportVerification | None,
+) -> dict[str, object]:
+    available = verification is not None
+    return {
+        f"{prefix}_verification_enforced": available,
+        f"{prefix}_semantically_verified": bool(
+            available and verification.verified
+        ),
+        f"{prefix}_verification_passed": bool(
+            available and verification.passed
+        ),
+        f"{prefix}_manifest_current": bool(
+            available and verification.manifest_current
+        ),
+        f"{prefix}_inputs_current": bool(
+            available and verification.inputs_current
+        ),
+        f"{prefix}_replay_manifests_current": bool(
+            available and verification.replay_manifests_current
+        ),
+        f"{prefix}_artifacts_consistent": bool(
+            available and verification.artifacts_consistent
+        ),
+        f"{prefix}_non_authorizing": bool(
+            available and verification.non_authorizing
+        ),
+        f"{prefix}_manifest_artifact_count": (
+            verification.manifest_artifact_count
+            if available
+            else 0
+        ),
+        f"{prefix}_manifest_artifact_match_count": (
+            verification.manifest_artifact_match_count
+            if available
+            else 0
+        ),
+        f"{prefix}_manifest_input_fingerprint_count": (
+            verification.manifest_input_fingerprint_count
+            if available
+            else 0
+        ),
+        f"{prefix}_manifest_input_fingerprint_match_count": (
+            verification.manifest_input_fingerprint_match_count
+            if available
+            else 0
+        ),
+        f"{prefix}_replay_manifest_count": (
+            verification.replay_manifest_count
+            if available
+            else 0
+        ),
+        f"{prefix}_replay_manifest_current_count": (
+            verification.replay_manifest_current_count
+            if available
+            else 0
+        ),
+        f"{prefix}_verification_error": (
+            verification.error
+            if available
+            else ""
+        ),
+    }
+
+
+def _proof_refresh_manifest_inputs(
+    *,
+    drift_file: Path,
+    baseline_proof_dir: Path,
+    latest_proof_dir: Path | None,
+    calibrated_file: Path | None,
+) -> dict[str, object]:
+    inputs: dict[str, object] = {
+        "fill_model_drift": drift_file.resolve(),
+        **_proof_bundle_manifest_inputs(
+            "baseline_proof",
+            baseline_proof_dir,
+        ),
+    }
+    if latest_proof_dir is not None:
+        inputs.update(
+            _proof_bundle_manifest_inputs(
+                "latest_proof",
+                latest_proof_dir,
+            )
+        )
+    if calibrated_file is not None:
+        inputs["calibrated_replay"] = calibrated_file.resolve()
+    return inputs
+
+
+def _proof_bundle_manifest_inputs(
+    prefix: str,
+    proof_dir: Path,
+) -> dict[str, object]:
+    root = proof_dir.resolve()
+    manifest_path = root / MANIFEST_NAME
+    inputs: dict[str, object] = {prefix: root}
+    if not manifest_path.is_file():
+        return inputs
+    inputs[f"{prefix}_manifest"] = manifest_path
+    dependencies = manifest_dependency_paths(manifest_path)
+    if dependencies:
+        inputs[f"{prefix}_dependencies"] = dependencies
+    return inputs
+
+
+def _proof_refresh_manifest_extra(
+    report: ProofRefreshReport,
+) -> dict[str, object]:
+    row = (
+        report.summary.iloc[0]
+        if not report.summary.empty
+        else pd.Series(dtype=object)
+    )
+    return {
+        "ready": report.ready,
+        "proof_source": _value_text(row.get("proof_source")),
+        "baseline_proof_verified": _value_bool(
+            row.get("baseline_proof_semantically_verified")
+        ),
+        "latest_proof_available": _value_bool(
+            row.get("latest_proof_available")
+        ),
+        "latest_proof_verified": _value_bool(
+            row.get("latest_proof_semantically_verified")
+        ),
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+
+
 def _checks(
     *,
     drift_passed: bool,
-    baseline_passed: bool,
+    baseline_reported_passed: bool,
+    baseline_verification_enforced: bool,
+    baseline_verified: bool,
     latest_available: bool,
-    latest_passed: bool,
+    latest_reported_passed: bool,
+    latest_verification_enforced: bool,
+    latest_verified: bool,
     calibrated_available: bool,
     calibrated_ready: bool,
     calibrated_strategy: str,
     identities: pd.DataFrame,
     thresholds: ProofRefreshThresholds,
 ) -> pd.DataFrame:
+    checks = []
+    if baseline_verification_enforced:
+        checks.append(
+            _check(
+                "baseline_proof_verified",
+                baseline_verified,
+                "is",
+                True,
+                baseline_verified,
+                "baseline proof bundle failed semantic verification",
+            )
+        )
+    if latest_available and latest_verification_enforced:
+        checks.append(
+            _check(
+                "latest_proof_verified",
+                latest_verified,
+                "is",
+                True,
+                latest_verified,
+                "latest proof bundle failed semantic verification",
+            )
+        )
     if drift_passed:
-        checks = [
+        checks.append(
             _check(
                 "reusable_proof_passed",
-                baseline_passed or latest_passed,
+                baseline_reported_passed or latest_reported_passed,
                 "is",
                 True,
-                baseline_passed or latest_passed,
+                baseline_reported_passed or latest_reported_passed,
                 "neither baseline nor latest proof passed under reusable fill-model assumptions",
             )
-        ]
+        )
     else:
-        checks = [
-            _check(
-                "latest_proof_available",
-                latest_available,
-                "is",
-                True,
-                latest_available,
-                "fill-model drift failed, so a fresh/latest proof report is required",
-            ),
-            _check(
-                "latest_proof_passed",
-                latest_passed,
-                "is",
-                True,
-                latest_passed,
-                "latest proof report did not pass",
-            ),
-        ]
+        checks.extend(
+            [
+                _check(
+                    "latest_proof_available",
+                    latest_available,
+                    "is",
+                    True,
+                    latest_available,
+                    "fill-model drift failed, so a fresh/latest proof report is required",
+                ),
+                _check(
+                    "latest_proof_passed",
+                    latest_reported_passed,
+                    "is",
+                    True,
+                    latest_reported_passed,
+                    "latest proof report did not pass",
+                ),
+            ]
+        )
         if thresholds.require_calibrated_replay_when_drift_fails:
             checks.extend(
                 [
@@ -412,6 +647,65 @@ def _action_row(
     }
 
 
+def _proof_verification_config(
+    summary_row: pd.Series,
+    prefix: str,
+) -> dict[str, object]:
+    return {
+        "enforced": _value_bool(
+            summary_row.get(f"{prefix}_verification_enforced")
+        ),
+        "verified": _value_bool(
+            summary_row.get(f"{prefix}_semantically_verified")
+        ),
+        "passed": _value_bool(
+            summary_row.get(f"{prefix}_verification_passed")
+        ),
+        "manifest_current": _value_bool(
+            summary_row.get(f"{prefix}_manifest_current")
+        ),
+        "inputs_current": _value_bool(
+            summary_row.get(f"{prefix}_inputs_current")
+        ),
+        "replay_manifests_current": _value_bool(
+            summary_row.get(f"{prefix}_replay_manifests_current")
+        ),
+        "artifacts_consistent": _value_bool(
+            summary_row.get(f"{prefix}_artifacts_consistent")
+        ),
+        "non_authorizing": _value_bool(
+            summary_row.get(f"{prefix}_non_authorizing")
+        ),
+        "manifest_artifact_count": _value_int(
+            summary_row.get(f"{prefix}_manifest_artifact_count")
+        ),
+        "manifest_artifact_match_count": _value_int(
+            summary_row.get(f"{prefix}_manifest_artifact_match_count")
+        ),
+        "manifest_input_fingerprint_count": _value_int(
+            summary_row.get(
+                f"{prefix}_manifest_input_fingerprint_count"
+            )
+        ),
+        "manifest_input_fingerprint_match_count": _value_int(
+            summary_row.get(
+                f"{prefix}_manifest_input_fingerprint_match_count"
+            )
+        ),
+        "replay_manifest_count": _value_int(
+            summary_row.get(f"{prefix}_replay_manifest_count")
+        ),
+        "replay_manifest_current_count": _value_int(
+            summary_row.get(
+                f"{prefix}_replay_manifest_current_count"
+            )
+        ),
+        "error": _value_text(
+            summary_row.get(f"{prefix}_verification_error")
+        ),
+    }
+
+
 def _config(
     decision_row: pd.Series,
     summary_row: pd.Series,
@@ -419,8 +713,19 @@ def _config(
     action_queue: pd.DataFrame,
 ) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "ready": _value_bool(summary_row.get("ready")),
+        "authority": {
+            "non_authorizing": _value_bool(
+                summary_row.get("non_authorizing")
+            ),
+            "authorizes_routing": _value_bool(
+                summary_row.get("authorizes_routing")
+            ),
+            "authorizes_submission": _value_bool(
+                summary_row.get("authorizes_submission")
+            ),
+        },
         "decision": {
             "action": _value_text(decision_row.get("action")),
             "proof_source": _value_text(decision_row.get("proof_source")),
@@ -443,9 +748,23 @@ def _config(
             "drift_passed": _value_bool(summary_row.get("drift_passed")),
             "fresh_proof_required": _value_bool(summary_row.get("fresh_proof_required")),
             "proof_source": _value_text(summary_row.get("proof_source")),
+            "baseline_proof_reported_passed": _value_bool(
+                summary_row.get("baseline_proof_reported_passed")
+            ),
             "baseline_proof_passed": _value_bool(summary_row.get("baseline_proof_passed")),
+            "baseline_proof_verification": _proof_verification_config(
+                summary_row,
+                "baseline_proof",
+            ),
             "latest_proof_available": _value_bool(summary_row.get("latest_proof_available")),
+            "latest_proof_reported_passed": _value_bool(
+                summary_row.get("latest_proof_reported_passed")
+            ),
             "latest_proof_passed": _value_bool(summary_row.get("latest_proof_passed")),
+            "latest_proof_verification": _proof_verification_config(
+                summary_row,
+                "latest_proof",
+            ),
             "calibrated_replay_required": _value_bool(summary_row.get("calibrated_replay_required")),
             "calibrated_replay_available": _value_bool(summary_row.get("calibrated_replay_available")),
             "calibrated_replay_ready": _value_bool(summary_row.get("calibrated_replay_ready")),
@@ -485,8 +804,13 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Drift passed: {_value_text(summary_row.get('drift_passed'))}",
         f"- Fresh proof required: {_value_text(summary_row.get('fresh_proof_required'))}",
         f"- Proof source: {_value_text(summary_row.get('proof_source'))}",
+        f"- Baseline proof reported passed: {_value_text(summary_row.get('baseline_proof_reported_passed'))}",
+        f"- Baseline proof semantically verified: {_value_text(summary_row.get('baseline_proof_semantically_verified'))}",
+        f"- Baseline proof effective passed: {_value_text(summary_row.get('baseline_proof_passed'))}",
         f"- Latest proof available: {_value_text(summary_row.get('latest_proof_available'))}",
-        f"- Latest proof passed: {_value_text(summary_row.get('latest_proof_passed'))}",
+        f"- Latest proof reported passed: {_value_text(summary_row.get('latest_proof_reported_passed'))}",
+        f"- Latest proof semantically verified: {_value_text(summary_row.get('latest_proof_semantically_verified'))}",
+        f"- Latest proof effective passed: {_value_text(summary_row.get('latest_proof_passed'))}",
         f"- Calibrated replay required: {_value_text(summary_row.get('calibrated_replay_required'))}",
         f"- Calibrated replay ready: {_value_text(summary_row.get('calibrated_replay_ready'))}",
         f"- Strategy: {_value_text(summary_row.get('strategy'))}",
@@ -541,7 +865,13 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
-    if check in {"reusable_proof_passed", "latest_proof_available", "latest_proof_passed"}:
+    if check in {
+        "baseline_proof_verified",
+        "latest_proof_verified",
+        "reusable_proof_passed",
+        "latest_proof_available",
+        "latest_proof_passed",
+    }:
         return "proof_evidence"
     if check in {
         "calibrated_replay_available",
@@ -557,6 +887,10 @@ def _component(check: str) -> str:
 
 
 def _action_recommendation(check: str) -> str:
+    if check == "baseline_proof_verified":
+        return "regenerate_and_verify_baseline_proof"
+    if check == "latest_proof_verified":
+        return "regenerate_and_verify_latest_proof"
     if check == "reusable_proof_passed":
         return "repair_or_rerun_reusable_proof_before_promotion"
     if check in {"latest_proof_available", "latest_proof_passed"}:

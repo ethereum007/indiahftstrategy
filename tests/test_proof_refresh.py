@@ -3,7 +3,13 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.manifest import (
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
+from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
 def write_summary(path, filename, row):
@@ -26,22 +32,40 @@ def write_drift(path, *, passed):
 
 
 def write_proof(path, *, passed, strategy="leadlag", market="india_nse_index_derivatives"):
-    write_summary(
-        path,
-        "proof_summary.csv",
-        {
-            "run_count": 1,
-            "passed_runs": 1 if passed else 0,
-            "failed_runs": 0 if passed else 1,
-            "all_passed": passed,
-            "strategy": strategy,
-            "strategy_count": 1 if strategy else 0,
-            "market": market,
-            "market_count": 1 if market else 0,
-            "total_net_pnl": 10.0 if passed else -1.0,
-            "total_fills": 10,
-        },
+    replay = path.parent / f"_{path.name}_replay"
+    replay.mkdir(parents=True, exist_ok=True)
+    source = path.parent / f"_{path.name}_source.csv"
+    source.write_text("ts,bid,ask\n1,100,101\n", encoding="utf-8")
+    pd.DataFrame(
+        [
+            {
+                "strategy": strategy,
+                "market": market,
+                "net_pnl": 10.0 if passed else -1.0,
+                "total_costs": 0.0,
+                "fills": 10,
+                "orders_sent": 10,
+                "order_to_trade_ratio": 1.0,
+                "otr_breached": False,
+                "turnover": 1000.0,
+                "maker_share": 1.0,
+            }
+        ]
+    ).to_csv(replay / "summary.csv", index=False)
+    write_experiment_manifest(
+        replay,
+        run_type="proof_refresh_unit_replay",
+        inputs={"source": source},
     )
+    write_proof_report(
+        [replay],
+        output_dir=path,
+        thresholds=ProofThresholds(
+            min_net_pnl=0.0,
+            min_fills=1,
+        ),
+    )
+    return source
 
 
 def write_calibrated_replay(path, *, ready, strategy="leadlag"):
@@ -62,7 +86,7 @@ def test_proof_refresh_reuses_baseline_when_drift_passes(tmp_path):
     baseline = tmp_path / "baseline_proof"
     out_dir = tmp_path / "refresh"
     write_drift(drift, passed=True)
-    write_proof(baseline, passed=True)
+    baseline_source = write_proof(baseline, passed=True)
 
     report = write_proof_refresh_report(
         drift_path=drift,
@@ -88,14 +112,63 @@ def test_proof_refresh_reuses_baseline_when_drift_passes(tmp_path):
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert queue.empty
     assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert bool(report.summary.iloc[0]["baseline_proof_reported_passed"])
+    assert bool(report.summary.iloc[0]["baseline_proof_semantically_verified"])
+    assert bool(report.summary.iloc[0]["baseline_proof_passed"])
+    assert not bool(report.summary.iloc[0]["authorizes_routing"])
+    assert not bool(report.summary.iloc[0]["authorizes_submission"])
     assert config["ready"] is True
+    assert config["schema_version"] == 2
+    assert config["authority"] == {
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+    assert config["proof"]["baseline_proof_verification"]["verified"] is True
+    assert config["proof"]["baseline_proof_verification"]["passed"] is True
     assert config["action_queue_count"] == 0
     assert config["primary_action"] == {}
     assert "# Proof Refresh Runbook" in runbook
+    assert "Baseline proof semantically verified: True" in runbook
     assert "No proof-refresh actions." in runbook
     assert "proof_refresh_action_queue.csv" in artifact_paths
     assert "proof_refresh_config.json" in artifact_paths
     assert "proof_refresh_runbook.md" in artifact_paths
+    assert {
+        "fill_model_drift",
+        "baseline_proof",
+        "baseline_proof_manifest",
+        "baseline_proof_dependencies",
+    } <= set(manifest["inputs"])
+    assert manifest["inputs"]["baseline_proof"]["kind"] == "directory"
+    assert manifest["inputs"]["baseline_proof_manifest"]["kind"] == "file"
+    assert manifest["extra"] == {
+        "ready": True,
+        "proof_source": "baseline",
+        "baseline_proof_verified": True,
+        "latest_proof_available": False,
+        "latest_proof_verified": False,
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="proof_refresh_gate",
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
+    baseline_source.write_text(
+        "ts,bid,ask\n1,100,101\n2,101,102\n",
+        encoding="utf-8",
+    )
+    stale = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="proof_refresh_gate",
+        require_input_fingerprints=True,
+    )
+    assert not stale.passed
+    assert stale.error == "input_drift"
 
 
 def test_proof_refresh_requires_latest_when_drift_fails(tmp_path):
@@ -211,6 +284,94 @@ def test_proof_refresh_blocks_wrong_expected_market(tmp_path):
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "expected_market" in failed
     assert report.summary.iloc[0]["expected_market"] == "india_nse_index_derivatives"
+
+
+def test_proof_refresh_rejects_resealed_tampered_baseline_proof(tmp_path):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=True)
+    write_proof(baseline, passed=True)
+    summary_path = baseline / "proof_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "total_net_pnl"] = 999999.0
+    summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(baseline)
+
+    report = write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        output_dir=out_dir,
+    )
+
+    row = report.summary.iloc[0]
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert bool(row["baseline_proof_reported_passed"])
+    assert not bool(row["baseline_proof_semantically_verified"])
+    assert not bool(row["baseline_proof_passed"])
+    assert bool(row["baseline_proof_manifest_current"])
+    assert not bool(row["baseline_proof_artifacts_consistent"])
+    assert row["baseline_proof_verification_error"] == (
+        "artifacts do not reconstruct from replay inputs"
+    )
+    assert failed == {"baseline_proof_verified"}
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "recommendation"] == (
+        "regenerate_and_verify_baseline_proof"
+    )
+
+
+def test_proof_refresh_rejects_latest_proof_with_stale_replay_manifest(
+    tmp_path,
+):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    latest = tmp_path / "latest_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=False)
+    write_proof(baseline, passed=True)
+    latest_source = write_proof(latest, passed=True)
+    latest_source.write_text(
+        "ts,bid,ask\n1,100,101\n2,101,102\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(latest)
+
+    report = write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        latest_proof_path=latest,
+        output_dir=out_dir,
+    )
+
+    row = report.summary.iloc[0]
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert bool(row["latest_proof_reported_passed"])
+    assert not bool(row["latest_proof_semantically_verified"])
+    assert not bool(row["latest_proof_passed"])
+    assert bool(row["latest_proof_manifest_current"])
+    assert bool(row["latest_proof_inputs_current"])
+    assert not bool(row["latest_proof_replay_manifests_current"])
+    assert row["latest_proof_verification_error"] == (
+        "replay manifests are missing, stale, or unfingerprinted"
+    )
+    assert failed == {"latest_proof_verified"}
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "recommendation"] == (
+        "regenerate_and_verify_latest_proof"
+    )
 
 
 def test_cli_proof_refresh_fails_on_unready_calibrated_replay(tmp_path):

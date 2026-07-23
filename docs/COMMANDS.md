@@ -6897,19 +6897,31 @@ proof_refresh_runbook.md
 manifest.json
 ```
 
-The gate records strategy/market identity from baseline proof, latest proof,
-and calibrated replay summaries. Mixed available strategy or market identities
-fail closed, and `--strategy`/`--market` enforce the expected target when those
-identities are present. `proof_refresh_summary.csv` also carries
-`failed_check_count`, `failed_check_names`, `first_failed_reason`,
-`primary_blocker_*`, `action_queue_count`, `blocked_action_count`, `next_gate`,
+The filesystem-backed gate semantically verifies every supplied baseline and
+latest proof bundle before treating its reported `all_passed` value as
+effective evidence. Verification reconstructs the proof from replay inputs,
+requires current source-fingerprinted replay manifests, exact proof artifacts,
+current inputs, and explicit non-routing/non-submission authority. A freshly
+re-sealed but altered proof, or an outer proof manifest re-sealed over stale
+replay lineage, fails `baseline_proof_verified` or `latest_proof_verified`.
+
+The gate records reported versus effective proof pass state, detailed
+verification status/error, and strategy/market identity from baseline proof,
+latest proof, and calibrated replay summaries. Mixed available strategy or
+market identities fail closed, and `--strategy`/`--market` enforce the expected
+target when those identities are present. Its manifest binds each proof
+directory, proof manifest, and recursively flattened replay dependency set, so
+later replay-source drift invalidates retained refresh evidence.
+`proof_refresh_summary.csv` also carries `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
+`action_queue_count`, `blocked_action_count`, `next_gate`,
 `next_gate_help_command`, and `primary_action_status`. The
 `proof_refresh_action_queue.csv`, `proof_refresh_config.json`, and
-`proof_refresh_runbook.md` sidecars mirror missing proof, failed proof,
-calibrated replay, and identity blockers back to `review-proof-refresh`. Use
-`--fail-on-blocked-actions` to fail only when blocked proof-refresh actions
-exist, or `--fail-on-actions` when any proof-refresh action should stop
-automation.
+`proof_refresh_runbook.md` sidecars mirror invalid or missing proof, failed
+proof, calibrated replay, and identity blockers back to
+`review-proof-refresh`. Use `--fail-on-blocked-actions` to fail only when
+blocked proof-refresh actions exist, or `--fail-on-actions` when any
+proof-refresh action should stop automation.
 
 ## Adapter Schema Audit
 
