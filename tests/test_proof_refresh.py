@@ -8,7 +8,11 @@ from reports.manifest import (
     write_experiment_manifest,
 )
 from reports.proof import ProofThresholds, write_proof_report
-from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
+from reports.proof_refresh import (
+    ProofRefreshThresholds,
+    verify_proof_refresh_report,
+    write_proof_refresh_report,
+)
 from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
@@ -152,6 +156,27 @@ def test_proof_refresh_reuses_baseline_when_drift_passes(tmp_path):
         "authorizes_routing": False,
         "authorizes_submission": False,
     }
+    verification = verify_proof_refresh_report(out_dir)
+    assert verification.verified
+    assert verification.ready
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert verification.baseline_proof_verified
+    assert not verification.latest_proof_provided
+    assert not verification.latest_proof_verified
+    assert (
+        main(
+            [
+                "verify-proof-refresh-report",
+                "--report",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
     integrity = verify_experiment_manifest(
         out_dir / "manifest.json",
         expected_run_type="proof_refresh_gate",
@@ -196,6 +221,11 @@ def test_proof_refresh_requires_latest_when_drift_fails(tmp_path):
     assert report.action_queue is not None
     assert set(report.action_queue["check"]) == {"latest_proof_available", "latest_proof_passed"}
     assert set(report.action_queue["component"]) == {"proof_evidence"}
+    verification = verify_proof_refresh_report(out_dir)
+    assert verification.verified
+    assert not verification.ready
+    assert verification.baseline_proof_verified
+    assert not verification.latest_proof_provided
 
 
 def test_proof_refresh_accepts_latest_calibrated_proof_when_drift_fails(tmp_path):
@@ -224,6 +254,12 @@ def test_proof_refresh_accepts_latest_calibrated_proof_when_drift_fails(tmp_path
     assert report.ready
     assert report.summary.iloc[0]["proof_source"] == "latest"
     assert report.summary.iloc[0]["recommendation"] == "use_latest_calibrated_proof"
+    verification = verify_proof_refresh_report(out_dir)
+    assert verification.verified
+    assert verification.ready
+    assert verification.baseline_proof_verified
+    assert verification.latest_proof_provided
+    assert verification.latest_proof_verified
 
 
 def test_proof_refresh_blocks_mixed_strategy_and_market_identities(tmp_path):
@@ -371,6 +407,111 @@ def test_proof_refresh_rejects_latest_proof_with_stale_replay_manifest(
     assert report.action_queue is not None
     assert report.action_queue.loc[0, "recommendation"] == (
         "regenerate_and_verify_latest_proof"
+    )
+
+
+def test_verify_proof_refresh_rejects_resealed_ready_tampering(
+    tmp_path,
+):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=False)
+    write_proof(baseline, passed=True)
+    write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        output_dir=out_dir,
+    )
+    summary_path = out_dir / "proof_refresh_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "ready"] = True
+    summary.loc[0, "proof_source"] = "latest"
+    summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(out_dir)
+
+    verification = verify_proof_refresh_report(out_dir)
+
+    assert not verification.verified
+    assert not verification.ready
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert not verification.artifacts_consistent
+    assert verification.error == (
+        "artifacts do not reconstruct from inputs"
+    )
+    assert (
+        main(
+            [
+                "verify-proof-refresh-report",
+                "--report",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+
+def test_verify_proof_refresh_rejects_resealed_extra_sidecar(
+    tmp_path,
+):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=True)
+    write_proof(baseline, passed=True)
+    write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        output_dir=out_dir,
+    )
+    pd.DataFrame(
+        [{"instrument_id": "NIFTY", "side": "BUY"}]
+    ).to_csv(out_dir / "orders.csv", index=False)
+    reseal_experiment_manifest(out_dir)
+
+    verification = verify_proof_refresh_report(out_dir)
+
+    assert not verification.verified
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert not verification.artifacts_consistent
+    assert verification.manifest_artifact_count == 7
+    assert verification.error == (
+        "artifacts do not reconstruct from inputs"
+    )
+
+
+def test_verify_proof_refresh_rejects_outer_reseal_after_source_drift(
+    tmp_path,
+):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=True)
+    source = write_proof(baseline, passed=True)
+    write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        output_dir=out_dir,
+    )
+    source.write_text(
+        "ts,bid,ask\n1,100,101\n2,101,102\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(out_dir)
+
+    verification = verify_proof_refresh_report(out_dir)
+
+    assert not verification.verified
+    assert not verification.ready
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert not verification.baseline_proof_verified
+    assert not verification.artifacts_consistent
+    assert verification.error == (
+        "artifacts do not reconstruct from inputs"
     )
 
 

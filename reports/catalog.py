@@ -41,6 +41,10 @@ from reports.proof import (
     PROOF_REPORT_RUN_TYPE,
     verify_proof_report,
 )
+from reports.proof_refresh import (
+    PROOF_REFRESH_RUN_TYPE,
+    verify_proof_refresh_report,
+)
 from reports.provider_market_data_imbalance_broker_active_lineage import (
     verified_provider_broker_active_lineage_records,
 )
@@ -400,6 +404,10 @@ def _catalog_row(
         run_dir,
         str(manifest.get("run_type", "")),
     )
+    proof_refresh_verification = _proof_refresh_verification_fields(
+        run_dir,
+        str(manifest.get("run_type", "")),
+    )
     strategy_evidence_verification = _strategy_evidence_verification_fields(
         run_dir,
         str(manifest.get("run_type", "")),
@@ -493,6 +501,16 @@ def _catalog_row(
         ]
     ):
         status_column = "proof_report_verification"
+        status = False
+    if (
+        proof_refresh_verification[
+            "proof_refresh_verification_required"
+        ]
+        and not proof_refresh_verification[
+            "proof_refresh_verification_verified"
+        ]
+    ):
+        status_column = "proof_refresh_verification"
         status = False
     if (
         strategy_evidence_verification[
@@ -663,6 +681,7 @@ def _catalog_row(
         "parameters_json": json.dumps(manifest.get("parameters", {}), sort_keys=True),
         "inputs_json": json.dumps(inputs, sort_keys=True),
         **proof_report_verification,
+        **proof_refresh_verification,
         **strategy_evidence_verification,
         **provider_release_review_verification,
         **provider_release_decision_verification,
@@ -741,6 +760,60 @@ def _proof_report_verification_fields(
                 verification.replay_manifest_current_count
             ),
             "proof_report_verification_error": verification.error,
+        }
+    )
+    return fields
+
+
+def _proof_refresh_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == PROOF_REFRESH_RUN_TYPE
+    fields = {
+        "proof_refresh_verification_required": required,
+        "proof_refresh_verification_verified": False,
+        "proof_refresh_verification_ready": False,
+        "proof_refresh_verification_manifest_current": False,
+        "proof_refresh_verification_inputs_current": False,
+        "proof_refresh_verification_artifacts_consistent": False,
+        "proof_refresh_verification_non_authorizing": False,
+        "proof_refresh_verification_baseline_proof_verified": False,
+        "proof_refresh_verification_latest_proof_provided": False,
+        "proof_refresh_verification_latest_proof_verified": False,
+        "proof_refresh_verification_error": "",
+    }
+    if not required:
+        return fields
+    verification = verify_proof_refresh_report(run_dir)
+    fields.update(
+        {
+            "proof_refresh_verification_verified": (
+                verification.verified
+            ),
+            "proof_refresh_verification_ready": verification.ready,
+            "proof_refresh_verification_manifest_current": (
+                verification.manifest_current
+            ),
+            "proof_refresh_verification_inputs_current": (
+                verification.inputs_current
+            ),
+            "proof_refresh_verification_artifacts_consistent": (
+                verification.artifacts_consistent
+            ),
+            "proof_refresh_verification_non_authorizing": (
+                verification.non_authorizing
+            ),
+            "proof_refresh_verification_baseline_proof_verified": (
+                verification.baseline_proof_verified
+            ),
+            "proof_refresh_verification_latest_proof_provided": (
+                verification.latest_proof_provided
+            ),
+            "proof_refresh_verification_latest_proof_verified": (
+                verification.latest_proof_verified
+            ),
+            "proof_refresh_verification_error": verification.error,
         }
     )
     return fields

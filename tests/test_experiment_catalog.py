@@ -27,6 +27,69 @@ from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
 def write_run(path, *, run_type, summary_name, summary_row):
+    if run_type == "proof_refresh_gate":
+        fixture_root = (
+            path.parent.parent
+            / f"_{path.parent.name}_{path.name}_catalog_inputs"
+        )
+        drift = fixture_root / "drift"
+        baseline = fixture_root / "baseline_proof"
+        latest = fixture_root / "latest_proof"
+        drift.mkdir(parents=True, exist_ok=True)
+        ready = bool(summary_row.get("ready", True))
+        proof_source = str(
+            summary_row.get("proof_source", "latest")
+        )
+        drift_passed = ready and proof_source == "baseline"
+        pd.DataFrame(
+            [
+                {
+                    "passed": drift_passed,
+                    "failed_checks": 0 if drift_passed else 1,
+                    "recommendation": (
+                        "reuse_existing_proof_assumptions"
+                        if drift_passed
+                        else "rerun_calibrated_proof_before_promotion"
+                    ),
+                }
+            ]
+        ).to_csv(
+            drift / "fill_model_drift_summary.csv",
+            index=False,
+        )
+        proof_row = {
+            "all_passed": True,
+            "strategy": summary_row.get(
+                "strategy",
+                "leadlag",
+            ),
+            "market": summary_row.get(
+                "market",
+                "india_nse_index_derivatives",
+            ),
+        }
+        write_run(
+            baseline,
+            run_type="proof_report",
+            summary_name="proof_summary.csv",
+            summary_row=proof_row,
+        )
+        latest_path = None
+        if ready and not drift_passed:
+            write_run(
+                latest,
+                run_type="proof_report",
+                summary_name="proof_summary.csv",
+                summary_row=proof_row,
+            )
+            latest_path = latest
+        write_proof_refresh_report(
+            drift_path=drift,
+            baseline_proof_path=baseline,
+            latest_proof_path=latest_path,
+            output_dir=path,
+        )
+        return
     if run_type == "proof_report":
         replay = (
             path.parent.parent
@@ -255,6 +318,49 @@ def test_catalog_rejects_resealed_proof_semantic_tampering(tmp_path):
     )
     assert row["proof_report_verification_error"] == (
         "artifacts do not reconstruct from replay inputs"
+    )
+
+
+def test_catalog_rejects_resealed_proof_refresh_semantic_tampering(
+    tmp_path,
+):
+    root = tmp_path / "runs"
+    refresh = root / "proof_refresh"
+    write_run(
+        refresh,
+        run_type="proof_refresh_gate",
+        summary_name="proof_refresh_summary.csv",
+        summary_row={
+            "ready": True,
+            "proof_source": "latest",
+        },
+    )
+    summary_path = refresh / "proof_refresh_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "proof_source"] = "baseline"
+    summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(refresh)
+
+    report = catalog_experiment_runs([root])
+    row = report.catalog.iloc[0]
+
+    assert bool(row["summary_ready"])
+    assert row["summary_proof_source"] == "baseline"
+    assert not bool(row["summary_status"])
+    assert row["summary_status_column"] == (
+        "proof_refresh_verification"
+    )
+    assert bool(row["proof_refresh_verification_required"])
+    assert not bool(row["proof_refresh_verification_verified"])
+    assert bool(
+        row["proof_refresh_verification_manifest_current"]
+    )
+    assert bool(row["proof_refresh_verification_inputs_current"])
+    assert not bool(
+        row["proof_refresh_verification_artifacts_consistent"]
+    )
+    assert row["proof_refresh_verification_error"] == (
+        "artifacts do not reconstruct from inputs"
     )
 
 
@@ -953,6 +1059,18 @@ def test_catalog_experiment_runs_recognizes_proof_refresh_status(tmp_path):
     assert row["summary_file"] == "proof_refresh_summary.csv"
     assert row["summary_status_column"] == "ready"
     assert row["summary_proof_source"] == "latest"
+    assert bool(row["proof_refresh_verification_required"])
+    assert bool(row["proof_refresh_verification_verified"])
+    assert bool(row["proof_refresh_verification_ready"])
+    assert bool(
+        row["proof_refresh_verification_baseline_proof_verified"]
+    )
+    assert bool(
+        row["proof_refresh_verification_latest_proof_provided"]
+    )
+    assert bool(
+        row["proof_refresh_verification_latest_proof_verified"]
+    )
 
 
 def test_catalog_experiment_runs_recognizes_strategy_scorecard_status(tmp_path):

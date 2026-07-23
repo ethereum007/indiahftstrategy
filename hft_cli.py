@@ -152,7 +152,11 @@ from reports.proof import (
     verify_proof_report,
     write_proof_report,
 )
-from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
+from reports.proof_refresh import (
+    ProofRefreshThresholds,
+    verify_proof_refresh_report,
+    write_proof_refresh_report,
+)
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.robust_selection_pipeline import write_robust_selection_pipeline
 from reports.research_family import (
@@ -1299,6 +1303,19 @@ def main(argv: list[str] | None = None) -> int:
     proof_refresh.add_argument("--fail-on-breach", action="store_true")
     proof_refresh.add_argument("--fail-on-blocked-actions", action="store_true")
     proof_refresh.add_argument("--fail-on-actions", action="store_true")
+
+    proof_refresh_verify = sub.add_parser(
+        "verify-proof-refresh-report",
+        help=(
+            "Reconstruct a proof-refresh report from its manifest-bound "
+            "drift and proof evidence."
+        ),
+    )
+    proof_refresh_verify.add_argument("--report", required=True)
+    proof_refresh_verify.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
 
     schema_audit = sub.add_parser("audit-adapter-schema", help="Audit a vendor sample CSV against an adapter schema.")
     schema_audit.add_argument("--sample", required=True)
@@ -5743,6 +5760,49 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "verify-proof-refresh-report":
+        result = verify_proof_refresh_report(args.report)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "inputs_current": result.inputs_current,
+                    "artifacts_consistent": (
+                        result.artifacts_consistent
+                    ),
+                    "non_authorizing": result.non_authorizing,
+                    "baseline_proof_verified": (
+                        result.baseline_proof_verified
+                    ),
+                    "latest_proof_provided": (
+                        result.latest_proof_provided
+                    ),
+                    "latest_proof_verified": (
+                        result.latest_proof_verified
+                    ),
+                    "report": str(result.output_dir),
+                    "manifest_path": str(result.manifest_path),
+                    "manifest_artifact_count": (
+                        result.manifest_artifact_count
+                    ),
+                    "manifest_artifact_match_count": (
+                        result.manifest_artifact_match_count
+                    ),
+                    "manifest_input_fingerprint_count": (
+                        result.manifest_input_fingerprint_count
+                    ),
+                    "manifest_input_fingerprint_match_count": (
+                        result.manifest_input_fingerprint_match_count
+                    ),
+                    "error": result.error,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.verified else 0
     if args.command == "audit-adapter-schema":
         result = write_adapter_schema_audit(
             args.sample,

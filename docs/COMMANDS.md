@@ -6897,6 +6897,22 @@ proof_refresh_runbook.md
 manifest.json
 ```
 
+Verify a retained refresh bundle independently:
+
+```powershell
+python -m hft_cli verify-proof-refresh-report `
+  --report runs\proof_refresh\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Verification reconstructs all six refresh artifacts from the
+manifest-bound drift summary, baseline/latest proof directories, optional
+calibrated replay, and exact threshold contract. It also requires exact
+artifact membership, current recursively flattened inputs, and explicit
+non-routing/non-submission authority. A faithfully blocked refresh report is
+semantically valid (`verified=true`, `ready=false`); `--fail-on-breach` fails
+only when reconstruction or integrity verification fails.
+
 The filesystem-backed gate semantically verifies every supplied baseline and
 latest proof bundle before treating its reported `all_passed` value as
 effective evidence. Verification reconstructs the proof from replay inputs,

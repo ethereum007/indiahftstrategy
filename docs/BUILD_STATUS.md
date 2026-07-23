@@ -6714,6 +6714,25 @@ Repository collection is healthy at `2522 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this focused
 evidence-integrity slice.
 
+Latest proof-refresh report semantic integrity gate: retained
+`proof_refresh_gate` bundles can now be reconstructed with
+`verify-proof-refresh-report` from manifest-bound fill-model drift,
+baseline/latest proof directories, optional calibrated replay, and the exact
+threshold contract. Verification requires deterministic equality for all four
+CSV artifacts plus config and runbook, exactly that six-artifact set, current
+recursively flattened inputs, canonical manifest parameters/metadata, and
+explicit non-routing/non-submission authority. Valid blocked refresh reports
+remain semantically verified without being marked ready. Freshly
+re-manifested readiness/proof-source edits, unexpected order sidecars, and an
+outer refresh-manifest reseal after replay-source drift remain invalid.
+`catalog-runs` retains reported refresh values for audit but forces effective
+status false on semantic failure before strategy-evidence review. The
+proof-refresh suite passes (`12 passed`), combined proof/catalog regressions
+pass (`86 passed`), and strategy-evidence plus manifest regressions pass (`68
+passed`). Repository collection is healthy at `2526 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this focused
+evidence-integrity slice.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the
