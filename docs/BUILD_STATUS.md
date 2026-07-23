@@ -6544,6 +6544,21 @@ broker-readiness error `roundtrip_config_missing_from_manifest` before this
 comparison gate is involved, so they are not counted as passing. All outputs
 remain non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest broker-readiness optional-evidence activation repair: newly written
+broker-readiness manifests now omit absent optional component inputs instead
+of serializing them as JSON null. The shared lineage verifier also activates
+terminal dispatch round-trip lineage only from an explicit readiness
+requirement, supplied evidence state, or a concrete manifest fingerprint/path,
+so legacy null entries cannot manufacture
+`roundtrip_config_missing_from_manifest`. A real fingerprinted round-trip input
+still activates the strict gate and fails closed without its bound config. The
+complete broker-readiness suite passes (`130 passed`), the complete scale-up
+suite passes (`154 passed`), focused broker-readiness lineage passes (`5
+passed`), scale-up runtime provenance passes (`2 passed`), and the two
+previously blocked provider scale-up workflows now pass (`2 passed`).
+Repository collection is healthy at `2494 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Ingest and retain an authoritative NSE calendar artifact for the first real

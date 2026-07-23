@@ -1997,9 +1997,17 @@ def load_broker_readiness_lineage(
             }
         )
 
-    manifest_inputs = _mapping(manifest.get("inputs"))
     dispatch_config = _mapping(config.get("dispatch_roundtrip"))
     thresholds_config = _mapping(config.get("thresholds"))
+    roundtrip_manifest_inputs = {
+        name: _manifest_input_path(manifest, manifest_path, name)
+        for name in (
+            "dispatch_roundtrip",
+            "dispatch_roundtrip_config",
+            "dispatch_roundtrip_manifest",
+            "broker_dispatch_roundtrip_manifest",
+        )
+    }
     dispatch_items = (
         items.loc[items["component"].map(_text) == "dispatch_roundtrip"]
         if "component" in items.columns
@@ -2019,32 +2027,25 @@ def load_broker_readiness_lineage(
         or _bool(dispatch_config.get("provided", False))
         or _bool(thresholds_config.get("require_dispatch_roundtrip", False))
         or dispatch_item_requires_roundtrip
-        or any(
-            name in manifest_inputs
-            for name in (
-                "dispatch_roundtrip",
-                "dispatch_roundtrip_config",
-                "dispatch_roundtrip_manifest",
-                "broker_dispatch_roundtrip_manifest",
-            )
-        )
+        or any(path is not None for path in roundtrip_manifest_inputs.values())
     )
-    roundtrip_config_path = _manifest_input_path(
-        manifest,
-        manifest_path,
-        "dispatch_roundtrip_config",
-    )
+    roundtrip_config_path = roundtrip_manifest_inputs[
+        "dispatch_roundtrip_config"
+    ]
     if roundtrip_config_path is None:
-        roundtrip_manifest_path = _manifest_input_path(
-            manifest,
-            manifest_path,
+        for manifest_input in (
             "broker_dispatch_roundtrip_manifest",
-        )
-        if roundtrip_manifest_path is not None:
-            roundtrip_config_path = (
-                roundtrip_manifest_path.parent
-                / "broker_dispatch_roundtrip_config.json"
-            ).resolve()
+            "dispatch_roundtrip_manifest",
+        ):
+            roundtrip_manifest_path = roundtrip_manifest_inputs[
+                manifest_input
+            ]
+            if roundtrip_manifest_path is not None:
+                roundtrip_config_path = (
+                    roundtrip_manifest_path.parent
+                    / "broker_dispatch_roundtrip_config.json"
+                ).resolve()
+                break
     current_roundtrip = empty_broker_dispatch_roundtrip_lineage(
         required=roundtrip_required
     )

@@ -558,16 +558,50 @@ def write_broker_readiness_report(
         SCHEMA_REVIEW_CHECKLIST_FILE,
     )
     input_paths = {
-        "schema_audit": _manifest_summary_input(schema_audit_dir, "schema_audit"),
-        "order_export": _manifest_summary_input(order_export_dir, "order_export"),
-        "mapping_draft": _manifest_summary_input(mapping_draft_dir, "mapping_draft"),
-        "mapped_orders": _manifest_summary_input(mapped_orders_dir, "mapped_orders"),
-        "upload_pack": _manifest_summary_input(upload_pack_dir, "upload_pack"),
-        "halt_export": _manifest_summary_input(halt_export_dir, "halt_export"),
-        "reconciliation": _manifest_summary_input(reconciliation_dir, "reconciliation"),
-        "runtime_session": _manifest_summary_input(runtime_session_dir, "runtime_session"),
-        "resume_gate": _manifest_summary_input(resume_dir, "resume_gate"),
-        "dispatch_roundtrip": _manifest_summary_input(dispatch_roundtrip_dir, "dispatch_roundtrip"),
+        name: path
+        for name, path in {
+            "schema_audit": _manifest_summary_input(
+                schema_audit_dir,
+                "schema_audit",
+            ),
+            "order_export": _manifest_summary_input(
+                order_export_dir,
+                "order_export",
+            ),
+            "mapping_draft": _manifest_summary_input(
+                mapping_draft_dir,
+                "mapping_draft",
+            ),
+            "mapped_orders": _manifest_summary_input(
+                mapped_orders_dir,
+                "mapped_orders",
+            ),
+            "upload_pack": _manifest_summary_input(
+                upload_pack_dir,
+                "upload_pack",
+            ),
+            "halt_export": _manifest_summary_input(
+                halt_export_dir,
+                "halt_export",
+            ),
+            "reconciliation": _manifest_summary_input(
+                reconciliation_dir,
+                "reconciliation",
+            ),
+            "runtime_session": _manifest_summary_input(
+                runtime_session_dir,
+                "runtime_session",
+            ),
+            "resume_gate": _manifest_summary_input(
+                resume_dir,
+                "resume_gate",
+            ),
+            "dispatch_roundtrip": _manifest_summary_input(
+                dispatch_roundtrip_dir,
+                "dispatch_roundtrip",
+            ),
+        }.items()
+        if path is not None
     }
     if dispatch_roundtrip_config_path is not None:
         input_paths["dispatch_roundtrip_config"] = dispatch_roundtrip_config_path

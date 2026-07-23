@@ -111,6 +111,122 @@ def _write_readiness_bundle(root, roundtrip_config, roundtrip_state):
     )
 
 
+def _write_optional_roundtrip_readiness_bundle(root, roundtrip_input):
+    root.mkdir(parents=True, exist_ok=True)
+    order_export = root.parent / "broker_order_summary.csv"
+    order_export.write_text("adapter,ready\narrow_money,true\n", encoding="utf-8")
+    pd.DataFrame(
+        [{"ready": True, "adapter": "arrow_money", "failed_checks": 0}]
+    ).to_csv(root / "broker_readiness_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "component": "order_export",
+                "required": True,
+                "provided": True,
+                "ready": True,
+            },
+            {
+                "component": "dispatch_roundtrip",
+                "required": False,
+                "provided": False,
+                "ready": False,
+            },
+        ]
+    ).to_csv(root / "broker_readiness_items.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "check": "order_export_ready",
+                "passed": True,
+                "value": True,
+                "operator": "is",
+                "threshold": True,
+                "reason": "",
+            }
+        ]
+    ).to_csv(root / "broker_readiness_checks.csv", index=False)
+    pd.DataFrame(
+        columns=[
+            "priority",
+            "queue_status",
+            "check",
+            "next_gate",
+        ]
+    ).to_csv(root / "broker_readiness_action_queue.csv", index=False)
+    config = {
+        "ready": True,
+        "adapter": "arrow_money",
+        "component_counts": {"failed_checks": 0},
+        "thresholds": {"require_dispatch_roundtrip": False},
+        "dispatch_roundtrip": {"provided": False},
+    }
+    config_path = root / "broker_readiness_config.json"
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (root / "broker_readiness_runbook.md").write_text(
+        "# Broker readiness\n\nReview-only evidence bundle.\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        root,
+        run_type="broker_readiness",
+        inputs={
+            "order_export": order_export,
+            "dispatch_roundtrip": roundtrip_input,
+        },
+        extra={"ready": True},
+    )
+    return config_path
+
+
+def test_broker_readiness_lineage_ignores_null_optional_roundtrip_input(
+    tmp_path,
+):
+    config_path = _write_optional_roundtrip_readiness_bundle(
+        tmp_path / "readiness",
+        None,
+    )
+
+    accepted = load_broker_readiness_lineage(config_path)
+
+    assert accepted["manifest_current"]
+    assert not accepted["roundtrip_lineage_required"]
+    assert accepted["roundtrip_lineage_gate_passed"]
+    assert accepted["roundtrip_matches_current"]
+    assert accepted["contract_consistent"], accepted["contract_error"]
+    assert accepted["gate_passed"]
+
+
+def test_broker_readiness_lineage_requires_fingerprinted_roundtrip_input(
+    tmp_path,
+):
+    roundtrip_summary = tmp_path / "broker_dispatch_roundtrip_summary.csv"
+    roundtrip_summary.write_text(
+        "adapter,ready\narrow_money,true\n",
+        encoding="utf-8",
+    )
+    config_path = _write_optional_roundtrip_readiness_bundle(
+        tmp_path / "readiness",
+        roundtrip_summary,
+    )
+
+    rejected = load_broker_readiness_lineage(config_path)
+
+    assert rejected["manifest_current"]
+    assert rejected["roundtrip_lineage_required"]
+    assert not rejected["roundtrip_lineage_gate_passed"]
+    assert not rejected["roundtrip_matches_current"]
+    assert not rejected["contract_consistent"]
+    assert not rejected["gate_passed"]
+    assert (
+        "roundtrip_config_missing_from_manifest"
+        in rejected["contract_error"]
+    )
+
+
 def test_broker_readiness_lineage_reopens_current_roundtrip_after_remanifest(
     tmp_path,
     monkeypatch,

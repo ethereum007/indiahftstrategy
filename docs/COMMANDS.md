@@ -3548,6 +3548,11 @@ broker readiness resolves nested `04_export`/`05_upload_pack` or surface-MM
 `03_export`/`04_upload_pack` summaries and fingerprints the resolved files in
 the manifest, including the broker dispatch round-trip config and manifest when
 supplied.
+The manifest records only optional components that were actually supplied.
+For backward compatibility, a legacy JSON-null optional input does not activate
+terminal round-trip lineage, while an explicit requirement, supplied
+round-trip state, or concrete fingerprinted round-trip path still activates
+the strict fail-closed config and lineage checks.
 When `--runtime-session` is supplied, broker readiness requires the runtime
 guard to be continuing. `--require-runtime-session` makes that evidence
 mandatory before paper/shadow routing. Runtime-session target mode, strategy,

@@ -6552,6 +6552,8 @@ def test_cli_broker_readiness_reads_launch_pipeline_export_and_upload_roots(tmp_
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert code == 0
         assert bool(summary.loc[0, "ready"])
+        assert "dispatch_roundtrip" not in manifest["inputs"]
+        assert all(value is not None for value in manifest["inputs"].values())
         assert path_tail(manifest["inputs"]["order_export"]["path"]).endswith(
             f"/{family}_launch_pipeline/{export_folder}/broker_order_summary.csv"
         )
