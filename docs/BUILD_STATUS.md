@@ -6602,6 +6602,23 @@ exchange/vendor parsing assumptions are embedded; an operator must still
 obtain and normalize the first authoritative calendar source. The full
 repository suite was not rerun for this slice.
 
+Latest market-calendar semantic integrity gate: retained calendar reports can
+now be reconstructed with `verify-market-calendar-report` for both direct JSON
+inputs and operator-normalized session compilations. The verifier requires the
+current manifest-bound source, complete artifact set, exact parameter/input/
+metadata contracts, deterministic report CSVs and runbook, explicit
+non-authorizing state, and, for compiled calendars, a byte-identical regenerated
+canonical JSON. Freshly re-manifested artifact tampering remains invalid.
+Directory-backed data readiness invokes this verifier automatically, emits
+explicit manifest/source/artifact/authority checks, and directly fingerprints
+the calendar report directory, its manifest, and its external source in the
+readiness manifest. Calendar verification passes (`17 passed`), the complete
+data-readiness suite passes (`30 passed`), vendor/provider wrapper regressions
+pass (`34 passed`), and readiness-comparison plus manifest regressions pass
+(`18 passed`). Repository collection is healthy at `2508 tests`. All outputs
+remain non-authorizing; the full repository suite was not rerun for this
+slice.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

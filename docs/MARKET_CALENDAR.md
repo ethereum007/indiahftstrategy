@@ -92,6 +92,32 @@ The output includes `market_calendar.json`, report CSVs, a runbook, and a
 manifest. No exchange dates are bundled by the platform, and the resulting
 evidence remains non-authorizing.
 
+## Verify Retained Evidence
+
+Reconstruct a retained report from its manifest-bound source before using it
+downstream:
+
+```powershell
+python -m hft_cli verify-market-calendar-report `
+  --report runs\market_calendar\nse_fo_2026 `
+  --fail-on-breach
+```
+
+The verifier supports both `market-calendar-report` outputs and calendars
+compiled by `build-market-calendar`. It requires a current source fingerprint,
+the complete manifest-tracked artifact set, exact manifest parameters and
+metadata, deterministic report CSVs and runbook, and the explicit
+non-authorizing claim. For a compiled calendar it also regenerates the
+canonical JSON from the retained session CSV and compares it byte for byte.
+Editing an artifact and writing a fresh manifest does not make the report
+semantically valid.
+
+`review-data-readiness` invokes this verifier automatically whenever
+`--market-calendar-report` is supplied. Its own manifest separately
+fingerprints the calendar report directory, report manifest, and external
+calendar source, so later source, manifest, or artifact drift invalidates the
+readiness lineage.
+
 ## Evidence Rules
 
 - A supplied calendar must match the selected market and timezone.
@@ -105,6 +131,8 @@ evidence remains non-authorizing.
   and SHA-256 used to classify their timestamps.
 - A data-readiness run can require a validated calendar report and fails if
   mapped data or diagnostics use a different ID, fingerprint, or coverage.
+- A directory-backed data-readiness run fails closed unless the retained
+  calendar report reconstructs from its current manifest-bound source.
 - A multi-dataset comparison can require complete calendar evidence and one
   consistent calendar source across every daily readiness run.
 - Calendar reports and all downstream artifacts remain non-authorizing.

@@ -10,6 +10,10 @@ import numpy as np
 import pandas as pd
 
 from markets.calendars import MARKET_CALENDAR_POLICY
+from reports.market_calendar import (
+    MarketCalendarReportVerification,
+    verify_market_calendar_report,
+)
 from reports.manifest import write_experiment_manifest
 
 
@@ -122,11 +126,21 @@ def write_data_readiness_report(
 ) -> DataReadinessReport:
     thresholds = thresholds or DataReadinessThresholds()
     _validate_thresholds(thresholds)
+    calendar_summary = _read_optional_summary(
+        market_calendar_dir,
+        "market_calendar",
+    )
+    calendar_verification = (
+        verify_market_calendar_report(market_calendar_dir)
+        if market_calendar_dir is not None
+        else None
+    )
+    calendar_summary = _with_market_calendar_verification(
+        calendar_summary,
+        calendar_verification,
+    )
     report = evaluate_data_readiness(
-        market_calendar_summary=_read_optional_summary(
-            market_calendar_dir,
-            "market_calendar",
-        ),
+        market_calendar_summary=calendar_summary,
         vendor_intake_summary=_read_optional_summary(vendor_intake_dir, "vendor_intake"),
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         mapped_data_summary=_read_optional_summary(mapped_data_dir, "mapped_data"),
@@ -157,21 +171,29 @@ def write_data_readiness_report(
         _runbook_markdown(report.summary.iloc[0], report.items, report.checks, action_queue),
         encoding="utf-8",
     )
+    inputs: dict[str, Any] = {
+        "market_calendar": market_calendar_dir,
+        "vendor_intake": vendor_intake_dir,
+        "schema_audit": schema_audit_dir,
+        "mapped_data": mapped_data_dir,
+        "tick_diagnostics": tick_diagnostics_dir,
+        "chain_diagnostics": chain_diagnostics_dir,
+        "market_profile": market_profile_dir,
+        "market_portability": market_portability_dir,
+        "instrument_metadata": instrument_metadata_dir,
+    }
+    if calendar_verification is not None:
+        inputs["market_calendar_manifest"] = (
+            calendar_verification.manifest_path
+        )
+        inputs["market_calendar_source"] = (
+            calendar_verification.source_path
+        )
     write_experiment_manifest(
         out,
         run_type="data_readiness",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={
-            "market_calendar": market_calendar_dir,
-            "vendor_intake": vendor_intake_dir,
-            "schema_audit": schema_audit_dir,
-            "mapped_data": mapped_data_dir,
-            "tick_diagnostics": tick_diagnostics_dir,
-            "chain_diagnostics": chain_diagnostics_dir,
-            "market_profile": market_profile_dir,
-            "market_portability": market_portability_dir,
-            "instrument_metadata": instrument_metadata_dir,
-        },
+        inputs=inputs,
     )
     return DataReadinessReport(report.items, report.checks, report.summary, out, action_queue)
 
@@ -230,6 +252,25 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
             "market_calendar_valid_from",
         ),
         "market_calendar_valid_to": _text(row, "market_calendar_valid_to"),
+        "market_calendar_report_verified": _to_bool(
+            row.get("market_calendar_report_verified", False)
+        ),
+        "market_calendar_report_manifest_current": _to_bool(
+            row.get("market_calendar_report_manifest_current", False)
+        ),
+        "market_calendar_report_source_current": _to_bool(
+            row.get("market_calendar_report_source_current", False)
+        ),
+        "market_calendar_report_artifacts_consistent": _to_bool(
+            row.get("market_calendar_report_artifacts_consistent", False)
+        ),
+        "market_calendar_report_non_authorizing": _to_bool(
+            row.get("market_calendar_report_non_authorizing", False)
+        ),
+        "market_calendar_report_verification_error": _text(
+            row,
+            "market_calendar_report_verification_error",
+        ),
         "review_bound": _to_bool(row.get("review_bound", False)),
         "mapping_review_verified": _to_bool(row.get("mapping_review_verified", False)),
         "mapping_review_approved": _to_bool(row.get("mapping_review_approved", False)),
@@ -419,6 +460,45 @@ def _market_calendar_checks(
         policy = _text(reference, "market_calendar_policy")
         market = _identity(reference.get("market", ""))
         expected_market = _identity(thresholds.expected_market)
+        if "market_calendar_report_verified" in reference.index:
+            verification_error = _text(
+                reference,
+                "market_calendar_report_verification_error",
+            )
+            verification_reasons = {
+                "verified": (
+                    "market-calendar report failed semantic verification"
+                    + (
+                        f": {verification_error}"
+                        if verification_error
+                        else ""
+                    )
+                ),
+                "manifest_current": (
+                    "market-calendar report manifest is missing, stale, or invalid"
+                ),
+                "source_current": (
+                    "market-calendar source fingerprint is stale"
+                ),
+                "artifacts_consistent": (
+                    "market-calendar report artifacts do not reconstruct "
+                    "from their source"
+                ),
+                "non_authorizing": "market-calendar report widens authority",
+            }
+            for suffix, reason in verification_reasons.items():
+                field = f"market_calendar_report_{suffix}"
+                value = _to_bool(reference.get(field, False))
+                checks.append(
+                    _check(
+                        field,
+                        value,
+                        "is",
+                        True,
+                        value,
+                        reason,
+                    )
+                )
         checks.extend(
             [
                 _check(
@@ -1200,6 +1280,36 @@ def _summary(
                     "market_calendar",
                     "market",
                 ),
+                "market_calendar_report_verified": _component_bool(
+                    items,
+                    "market_calendar",
+                    "market_calendar_report_verified",
+                ),
+                "market_calendar_report_manifest_current": _component_bool(
+                    items,
+                    "market_calendar",
+                    "market_calendar_report_manifest_current",
+                ),
+                "market_calendar_report_source_current": _component_bool(
+                    items,
+                    "market_calendar",
+                    "market_calendar_report_source_current",
+                ),
+                "market_calendar_report_artifacts_consistent": _component_bool(
+                    items,
+                    "market_calendar",
+                    "market_calendar_report_artifacts_consistent",
+                ),
+                "market_calendar_report_non_authorizing": _component_bool(
+                    items,
+                    "market_calendar",
+                    "market_calendar_report_non_authorizing",
+                ),
+                "market_calendar_report_verification_error": _component_text(
+                    items,
+                    "market_calendar",
+                    "market_calendar_report_verification_error",
+                ),
                 "market_calendar_binding_components": _calendar_binding_components(
                     items
                 ),
@@ -1335,6 +1445,38 @@ def _config(
         "expected_vendor_data_kind": _value_text(summary_row.get("expected_vendor_data_kind")),
         "market_calendar": {
             "required": _to_bool(summary_row.get("require_market_calendar", False)),
+            "report_verified": _to_bool(
+                summary_row.get("market_calendar_report_verified", False)
+            ),
+            "report_manifest_current": _to_bool(
+                summary_row.get(
+                    "market_calendar_report_manifest_current",
+                    False,
+                )
+            ),
+            "report_source_current": _to_bool(
+                summary_row.get(
+                    "market_calendar_report_source_current",
+                    False,
+                )
+            ),
+            "report_artifacts_consistent": _to_bool(
+                summary_row.get(
+                    "market_calendar_report_artifacts_consistent",
+                    False,
+                )
+            ),
+            "report_non_authorizing": _to_bool(
+                summary_row.get(
+                    "market_calendar_report_non_authorizing",
+                    False,
+                )
+            ),
+            "report_verification_error": _value_text(
+                summary_row.get(
+                    "market_calendar_report_verification_error",
+                )
+            ),
             "market": _value_text(summary_row.get("market_calendar_market")),
             "id": _value_text(summary_row.get("market_calendar_id")),
             "sha256": _value_text(summary_row.get("market_calendar_sha256")),
@@ -1623,6 +1765,8 @@ def _runbook_markdown(
         f"- Required components: {int(_value_number(summary_row.get('required_components')))}",
         f"- Market calendar: {_code(summary_row.get('market_calendar_id'))}",
         f"- Calendar SHA-256: {_code(summary_row.get('market_calendar_sha256'))}",
+        f"- Calendar report verified: {_yes_no(_to_bool(summary_row.get('market_calendar_report_verified', False)))}",
+        f"- Calendar report error: {_code(summary_row.get('market_calendar_report_verification_error'))}",
         f"- Calendar-bound components: {_value_text(summary_row.get('market_calendar_binding_components'))}",
         f"- Blocked actions: {int(_value_number(summary_row.get('blocked_action_count')))}",
         f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
@@ -1748,7 +1892,15 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
 def _component_ready(component: str, frame: pd.DataFrame) -> bool:
     row = _overall_row(frame)
     if component == "market_calendar":
-        return _to_bool(row.get("ready", False))
+        report_verified = (
+            _to_bool(row.get("market_calendar_report_verified", False))
+            if "market_calendar_report_verified" in row.index
+            else True
+        )
+        return bool(
+            _to_bool(row.get("ready", False))
+            and report_verified
+        )
     if component == "vendor_intake":
         return _to_bool(row.get("ready", False))
     if component == "schema_audit":
@@ -1905,6 +2057,32 @@ def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFr
     frame = pd.read_csv(candidate)
     if frame.empty:
         raise ValueError(f"{component} summary is empty: {candidate}")
+    return frame
+
+
+def _with_market_calendar_verification(
+    summary: pd.DataFrame | None,
+    verification: MarketCalendarReportVerification | None,
+) -> pd.DataFrame | None:
+    if summary is None or verification is None:
+        return summary
+    frame = summary.copy()
+    frame["market_calendar_report_verified"] = verification.verified
+    frame["market_calendar_report_manifest_current"] = (
+        verification.manifest_current
+    )
+    frame["market_calendar_report_source_current"] = (
+        verification.source_current
+    )
+    frame["market_calendar_report_artifacts_consistent"] = (
+        verification.artifacts_consistent
+    )
+    frame["market_calendar_report_non_authorizing"] = (
+        verification.non_authorizing
+    )
+    frame["market_calendar_report_verification_error"] = verification.error
+    if not verification.verified:
+        frame["ready"] = False
     return frame
 
 

@@ -13,6 +13,7 @@ from reports.market_portability import (
     build_market_portability_report,
     write_market_portability_report,
 )
+from reports.market_calendar import write_market_calendar_report
 
 
 def tick_summary(**overrides):
@@ -171,9 +172,49 @@ def market_calendar_summary(**overrides):
     return pd.DataFrame([row])
 
 
+def market_calendar_path(tmp_path):
+    path = tmp_path / "nse_calendar.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "calendar_id": "nse-fo-test-2026-06",
+                "market": "india_nse_index_derivatives",
+                "timezone": "Asia/Kolkata",
+                "valid_from": "2026-06-01",
+                "valid_to": "2026-06-30",
+                "provenance": {
+                    "publisher": "test-exchange",
+                    "source_url": "https://example.test/calendar",
+                    "published_date": "2026-05-01",
+                },
+                "sessions": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def calendar_bound(frame, **overrides):
     result = frame.copy()
     values = market_calendar_summary(**overrides).iloc[0]
+    for column in (
+        "market",
+        "market_calendar_provided",
+        "market_calendar_policy",
+        "market_calendar_id",
+        "market_calendar_sha256",
+        "market_calendar_valid_from",
+        "market_calendar_valid_to",
+    ):
+        result[column] = values[column]
+    return result
+
+
+def calendar_report_bound(frame, calendar):
+    result = frame.copy()
+    values = calendar.iloc[0]
     for column in (
         "market",
         "market_calendar_provided",
@@ -260,18 +301,19 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
     mapped_dir = tmp_path / "mapped"
     diagnostics_dir = tmp_path / "diagnostics"
     out_dir = tmp_path / "readiness"
-    calendar_dir.mkdir()
     mapped_dir.mkdir()
     diagnostics_dir.mkdir()
-    market_calendar_summary().to_csv(
-        calendar_dir / "market_calendar_summary.csv",
-        index=False,
+    write_market_calendar_report(
+        market_calendar_path(tmp_path),
+        calendar_dir,
+        expected_market="india_nse_index_derivatives",
     )
-    calendar_bound(mapped_data_summary()).to_csv(
+    calendar = pd.read_csv(calendar_dir / "market_calendar_summary.csv")
+    calendar_report_bound(mapped_data_summary(), calendar).to_csv(
         mapped_dir / "mapped_data_summary.csv",
         index=False,
     )
-    calendar_bound(tick_summary()).to_csv(
+    calendar_report_bound(tick_summary(), calendar).to_csv(
         diagnostics_dir / "diagnostic_summary.csv",
         index=False,
     )
@@ -299,6 +341,40 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
     )
     assert config["market_calendar"]["required"] is True
     assert config["market_calendar"]["binding_count"] == 2
+    assert config["market_calendar"]["report_verified"] is True
+
+
+def test_data_readiness_rejects_loose_market_calendar_summary(tmp_path):
+    calendar_dir = tmp_path / "loose_calendar"
+    calendar_dir.mkdir()
+    market_calendar_summary().to_csv(
+        calendar_dir / "market_calendar_summary.csv",
+        index=False,
+    )
+
+    report = write_data_readiness_report(
+        output_dir=tmp_path / "readiness",
+        market_calendar_dir=calendar_dir,
+        thresholds=DataReadinessThresholds(
+            require_market_calendar=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "market_calendar_report_verified" in failed
+    assert "market_calendar_report_manifest_current" in failed
+    assert (
+        report.summary.loc[0, "market_calendar_report_verification_error"]
+        == "manifest_missing"
+    )
+    assert report.summary.loc[0, "next_gate"] == "market-calendar-report"
 
 
 def test_data_readiness_fails_on_bad_tick_diagnostics():

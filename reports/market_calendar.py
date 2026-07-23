@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any, Mapping
 
 import pandas as pd
 
@@ -15,9 +17,26 @@ from markets.calendars import (
     resolve_market_calendar,
 )
 from markets.profiles import get_market_profile
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    MANIFEST_NAME,
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
+MARKET_CALENDAR_REPORT_RUN_TYPE = "market_calendar_report"
+MARKET_CALENDAR_FILE = "market_calendar.json"
+MARKET_CALENDAR_SESSIONS_FILE = "market_calendar_sessions.csv"
+MARKET_CALENDAR_CHECKS_FILE = "market_calendar_checks.csv"
+MARKET_CALENDAR_SUMMARY_FILE = "market_calendar_summary.csv"
+MARKET_CALENDAR_RUNBOOK_FILE = "market_calendar_runbook.md"
+MARKET_CALENDAR_REPORT_ARTIFACTS = (
+    MARKET_CALENDAR_SESSIONS_FILE,
+    MARKET_CALENDAR_CHECKS_FILE,
+    MARKET_CALENDAR_SUMMARY_FILE,
+    MARKET_CALENDAR_RUNBOOK_FILE,
+)
 MARKET_CALENDAR_SESSION_SOURCE_SCHEMA = "market_calendar_sessions_csv_v1"
 MARKET_CALENDAR_SESSION_SOURCE_COLUMNS = (
     "date",
@@ -41,6 +60,30 @@ class MarketCalendarReport:
             not self.summary.empty
             and self.summary.iloc[0].get("ready", False)
         )
+
+
+@dataclass(frozen=True)
+class MarketCalendarReportVerification:
+    verified: bool
+    ready: bool
+    manifest_current: bool
+    source_current: bool
+    artifacts_consistent: bool
+    non_authorizing: bool
+    output_dir: Path
+    manifest_path: Path
+    source_path: Path | None = None
+    compiled_from_sessions: bool = False
+    error: str = ""
+
+
+@dataclass(frozen=True)
+class _CompiledCalendarDocument:
+    text: str
+    source_sha256: str
+    source_rows: int
+    market: str
+    timezone: str
 
 
 def build_market_calendar_report(
@@ -80,18 +123,10 @@ def write_market_calendar_report(
     _write_report_artifacts(report, out)
     write_experiment_manifest(
         out,
-        run_type="market_calendar_report",
+        run_type=MARKET_CALENDAR_REPORT_RUN_TYPE,
         parameters={"expected_market": expected_market or ""},
         inputs={"market_calendar": Path(calendar_path)},
-        extra={
-            "ready": report.ready,
-            "market": str(report.summary.iloc[0]["market"]),
-            "calendar_id": str(report.summary.iloc[0]["market_calendar_id"]),
-            "market_calendar_sha256": str(
-                report.summary.iloc[0]["market_calendar_sha256"]
-            ),
-            "non_authorizing": True,
-        },
+        extra=_report_manifest_extra(report),
     )
     return MarketCalendarReport(
         sessions=report.sessions,
@@ -128,6 +163,241 @@ def write_market_calendar_from_sessions(
             "market calendar output must not contain the source sessions file"
         )
 
+    document = _compiled_calendar_document(
+        source,
+        calendar_id=calendar_id,
+        market=market,
+        valid_from=valid_from,
+        valid_to=valid_to,
+        publisher=publisher,
+        source_url=source_url,
+        published_date=published_date,
+    )
+    with TemporaryDirectory(prefix="market-calendar-") as temp_dir:
+        validation_path = Path(temp_dir) / MARKET_CALENDAR_FILE
+        validation_path.write_text(document.text, encoding="utf-8")
+        load_market_calendar(
+            validation_path,
+            expected_market=document.market,
+            expected_timezone=document.timezone,
+        )
+    out.mkdir(parents=True, exist_ok=True)
+    calendar_path = out / MARKET_CALENDAR_FILE
+    calendar_path.write_text(document.text, encoding="utf-8")
+    calendar = load_market_calendar(
+        calendar_path,
+        expected_market=document.market,
+        expected_timezone=document.timezone,
+    )
+    base_report = _build_report(calendar)
+    report = _compiled_report(
+        base_report,
+        source=source,
+        document=document,
+    )
+    _write_report_artifacts(report, out)
+    parameters = _compiled_parameters(
+        calendar_id=calendar_id,
+        market=document.market,
+        timezone=document.timezone,
+        valid_from=valid_from,
+        valid_to=valid_to,
+        publisher=publisher,
+        source_url=source_url,
+        published_date=published_date,
+    )
+    write_experiment_manifest(
+        out,
+        run_type=MARKET_CALENDAR_REPORT_RUN_TYPE,
+        parameters=parameters,
+        inputs={"market_calendar_sessions_source": source},
+        extra=_compiled_manifest_extra(report, document),
+    )
+    return MarketCalendarReport(
+        sessions=report.sessions,
+        checks=report.checks,
+        summary=report.summary,
+        output_dir=out,
+    )
+
+
+def verify_market_calendar_report(
+    report_dir: str | Path,
+) -> MarketCalendarReportVerification:
+    requested = Path(report_dir)
+    root = requested.parent if requested.is_file() else requested
+    root = root.resolve()
+    manifest_path = root / MANIFEST_NAME
+    source_path: Path | None = None
+    source_current = False
+    compiled_from_sessions = False
+    required_artifacts = MARKET_CALENDAR_REPORT_ARTIFACTS
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=MARKET_CALENDAR_REPORT_RUN_TYPE,
+        required_artifacts=required_artifacts,
+        require_input_fingerprints=True,
+    )
+    try:
+        manifest = _read_json_object(
+            manifest_path,
+            "market-calendar report manifest",
+        )
+        parameters = _mapping(manifest.get("parameters"))
+        inputs = _mapping(manifest.get("inputs"))
+        compiled_from_sessions = (
+            parameters.get("compiled_from_sessions") is True
+        )
+        if compiled_from_sessions:
+            required_artifacts = (
+                *MARKET_CALENDAR_REPORT_ARTIFACTS,
+                MARKET_CALENDAR_FILE,
+            )
+            source_path = _manifest_file_input(
+                inputs,
+                "market_calendar_sessions_source",
+            )
+            source_current = _manifest_file_input_current(
+                inputs,
+                "market_calendar_sessions_source",
+                source_path,
+            )
+            expected_parameters = _compiled_parameters_from_manifest(parameters)
+            document = _compiled_calendar_document(
+                source_path,
+                calendar_id=str(expected_parameters["calendar_id"]),
+                market=str(expected_parameters["market"]),
+                valid_from=str(expected_parameters["valid_from"]),
+                valid_to=str(expected_parameters["valid_to"]),
+                publisher=str(expected_parameters["publisher"]),
+                source_url=str(expected_parameters["source_url"]),
+                published_date=str(expected_parameters["published_date"]),
+            )
+            calendar_path = root / MARKET_CALENDAR_FILE
+            if calendar_path.read_text(encoding="utf-8") != document.text:
+                raise ValueError(
+                    "generated market calendar does not match the session source"
+                )
+            calendar = load_market_calendar(
+                calendar_path,
+                expected_market=document.market,
+                expected_timezone=document.timezone,
+            )
+            expected_report = _compiled_report(
+                _build_report(calendar),
+                source=source_path,
+                document=document,
+            )
+            expected_extra = _compiled_manifest_extra(
+                expected_report,
+                document,
+            )
+            expected_input_name = "market_calendar_sessions_source"
+        else:
+            expected_parameters = _report_parameters_from_manifest(parameters)
+            source_path = _manifest_file_input(inputs, "market_calendar")
+            source_current = _manifest_file_input_current(
+                inputs,
+                "market_calendar",
+                source_path,
+            )
+            expected_market = str(expected_parameters["expected_market"])
+            expected_report = build_market_calendar_report(
+                source_path,
+                expected_market=expected_market or None,
+            )
+            expected_extra = _report_manifest_extra(expected_report)
+            expected_input_name = "market_calendar"
+
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type=MARKET_CALENDAR_REPORT_RUN_TYPE,
+            required_artifacts=required_artifacts,
+            require_input_fingerprints=True,
+        )
+        source_current = _manifest_file_input_current(
+            inputs,
+            expected_input_name,
+            source_path,
+        )
+        artifacts_consistent = bool(
+            _report_artifacts_consistent(root, expected_report)
+            and _mapping(manifest.get("parameters")) == expected_parameters
+            and _mapping(manifest.get("extra")) == expected_extra
+            and _manifest_input_contract_current(
+                inputs,
+                expected_input_name,
+                source_path,
+            )
+        )
+        actual_summary = _read_csv_frame(
+            root / MARKET_CALENDAR_SUMMARY_FILE,
+            "market-calendar summary",
+        )
+        non_authorizing = bool(
+            len(actual_summary) == 1
+            and _truthy(actual_summary.iloc[0].get("non_authorizing", False))
+            and _mapping(manifest.get("extra")).get("non_authorizing") is True
+        )
+        ready = bool(expected_report.ready)
+        verified = bool(
+            integrity.passed
+            and source_current
+            and artifacts_consistent
+            and non_authorizing
+        )
+        return MarketCalendarReportVerification(
+            verified=verified,
+            ready=bool(verified and ready),
+            manifest_current=integrity.passed,
+            source_current=source_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            source_path=source_path,
+            compiled_from_sessions=compiled_from_sessions,
+            error=""
+            if verified
+            else (
+                integrity.error
+                or "market-calendar report semantic verification failed"
+            ),
+        )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        return MarketCalendarReportVerification(
+            verified=False,
+            ready=False,
+            manifest_current=integrity.passed,
+            source_current=source_current,
+            artifacts_consistent=False,
+            non_authorizing=False,
+            output_dir=root,
+            manifest_path=manifest_path,
+            source_path=source_path,
+            compiled_from_sessions=compiled_from_sessions,
+            error=integrity.error or str(exc),
+        )
+
+
+def _compiled_calendar_document(
+    source: Path,
+    *,
+    calendar_id: str,
+    market: str,
+    valid_from: str,
+    valid_to: str,
+    publisher: str,
+    source_url: str,
+    published_date: str,
+) -> _CompiledCalendarDocument:
     source_rows = _read_session_source(source)
     source_sha256 = file_sha256(source)
     profile = get_market_profile(market)
@@ -148,69 +418,262 @@ def write_market_calendar_from_sessions(
         },
         "sessions": sorted(source_rows, key=lambda row: row["date"]),
     }
-    calendar_text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-    with TemporaryDirectory(prefix="market-calendar-") as temp_dir:
-        validation_path = Path(temp_dir) / "market_calendar.json"
-        validation_path.write_text(calendar_text, encoding="utf-8")
-        load_market_calendar(
-            validation_path,
-            expected_market=profile.name,
-            expected_timezone=profile.session.timezone,
-        )
-    out.mkdir(parents=True, exist_ok=True)
-    calendar_path = out / "market_calendar.json"
-    calendar_path.write_text(calendar_text, encoding="utf-8")
-    calendar = load_market_calendar(
-        calendar_path,
-        expected_market=profile.name,
-        expected_timezone=profile.session.timezone,
+    return _CompiledCalendarDocument(
+        text=json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        source_sha256=source_sha256,
+        source_rows=len(source_rows),
+        market=profile.name,
+        timezone=profile.session.timezone,
     )
-    base_report = _build_report(calendar)
+
+
+def _compiled_report(
+    base_report: MarketCalendarReport,
+    *,
+    source: Path,
+    document: _CompiledCalendarDocument,
+) -> MarketCalendarReport:
     summary = base_report.summary.assign(
         compiled_from_sessions=True,
         session_source_schema=MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
         session_source_path=str(source),
-        session_source_sha256=source_sha256,
-        session_source_rows=len(source_rows),
+        session_source_sha256=document.source_sha256,
+        session_source_rows=document.source_rows,
     )
-    report = MarketCalendarReport(
+    return MarketCalendarReport(
         sessions=base_report.sessions,
         checks=base_report.checks,
         summary=summary,
     )
-    _write_report_artifacts(report, out)
-    write_experiment_manifest(
-        out,
-        run_type="market_calendar_report",
-        parameters={
-            "compiled_from_sessions": True,
-            "session_source_schema": MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
-            "calendar_id": calendar_id,
-            "market": profile.name,
-            "timezone": profile.session.timezone,
-            "valid_from": valid_from,
-            "valid_to": valid_to,
-            "publisher": publisher,
-            "source_url": source_url,
-            "published_date": published_date,
-        },
-        inputs={"market_calendar_sessions_source": source},
-        extra={
-            "ready": report.ready,
-            "market": profile.name,
-            "calendar_id": calendar.calendar_id,
-            "market_calendar_sha256": calendar.source_sha256,
-            "session_source_sha256": source_sha256,
-            "compiled_from_sessions": True,
-            "non_authorizing": True,
-        },
+
+
+def _compiled_parameters(
+    *,
+    calendar_id: str,
+    market: str,
+    timezone: str,
+    valid_from: str,
+    valid_to: str,
+    publisher: str,
+    source_url: str,
+    published_date: str,
+) -> dict[str, object]:
+    return {
+        "compiled_from_sessions": True,
+        "session_source_schema": MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
+        "calendar_id": calendar_id,
+        "market": market,
+        "timezone": timezone,
+        "valid_from": valid_from,
+        "valid_to": valid_to,
+        "publisher": publisher,
+        "source_url": source_url,
+        "published_date": published_date,
+    }
+
+
+def _compiled_parameters_from_manifest(
+    parameters: Mapping[str, Any],
+) -> dict[str, object]:
+    expected_fields = {
+        "compiled_from_sessions",
+        "session_source_schema",
+        "calendar_id",
+        "market",
+        "timezone",
+        "valid_from",
+        "valid_to",
+        "publisher",
+        "source_url",
+        "published_date",
+    }
+    if set(parameters) != expected_fields:
+        raise ValueError(
+            "compiled market-calendar manifest parameters are incomplete"
+        )
+    if parameters.get("compiled_from_sessions") is not True:
+        raise ValueError(
+            "compiled market-calendar manifest flag must be true"
+        )
+    if (
+        parameters.get("session_source_schema")
+        != MARKET_CALENDAR_SESSION_SOURCE_SCHEMA
+    ):
+        raise ValueError(
+            "compiled market-calendar session source schema is invalid"
+        )
+    expected = _compiled_parameters(
+        calendar_id=str(parameters["calendar_id"]),
+        market=str(parameters["market"]),
+        timezone=str(parameters["timezone"]),
+        valid_from=str(parameters["valid_from"]),
+        valid_to=str(parameters["valid_to"]),
+        publisher=str(parameters["publisher"]),
+        source_url=str(parameters["source_url"]),
+        published_date=str(parameters["published_date"]),
     )
-    return MarketCalendarReport(
-        sessions=report.sessions,
-        checks=report.checks,
-        summary=report.summary,
-        output_dir=out,
+    profile = get_market_profile(str(expected["market"]))
+    if expected["market"] != profile.name:
+        raise ValueError("compiled market-calendar market is not canonical")
+    if expected["timezone"] != profile.session.timezone:
+        raise ValueError(
+            "compiled market-calendar timezone does not match its market profile"
+        )
+    return expected
+
+
+def _report_parameters_from_manifest(
+    parameters: Mapping[str, Any],
+) -> dict[str, object]:
+    if set(parameters) != {"expected_market"}:
+        raise ValueError(
+            "market-calendar report manifest parameters are invalid"
+        )
+    value = parameters.get("expected_market")
+    if not isinstance(value, str):
+        raise ValueError(
+            "market-calendar report expected_market must be text"
+        )
+    return {"expected_market": value}
+
+
+def _report_manifest_extra(
+    report: MarketCalendarReport,
+) -> dict[str, object]:
+    row = report.summary.iloc[0]
+    return {
+        "ready": report.ready,
+        "market": str(row["market"]),
+        "calendar_id": str(row["market_calendar_id"]),
+        "market_calendar_sha256": str(row["market_calendar_sha256"]),
+        "non_authorizing": True,
+    }
+
+
+def _compiled_manifest_extra(
+    report: MarketCalendarReport,
+    document: _CompiledCalendarDocument,
+) -> dict[str, object]:
+    row = report.summary.iloc[0]
+    return {
+        "ready": report.ready,
+        "market": document.market,
+        "calendar_id": str(row["market_calendar_id"]),
+        "market_calendar_sha256": str(row["market_calendar_sha256"]),
+        "session_source_sha256": document.source_sha256,
+        "compiled_from_sessions": True,
+        "non_authorizing": True,
+    }
+
+
+def _report_artifacts_consistent(
+    root: Path,
+    expected: MarketCalendarReport,
+) -> bool:
+    return bool(
+        _csv_frame_matches(
+            root / MARKET_CALENDAR_SESSIONS_FILE,
+            expected.sessions,
+        )
+        and _csv_frame_matches(
+            root / MARKET_CALENDAR_CHECKS_FILE,
+            expected.checks,
+        )
+        and _csv_frame_matches(
+            root / MARKET_CALENDAR_SUMMARY_FILE,
+            expected.summary,
+        )
+        and (root / MARKET_CALENDAR_RUNBOOK_FILE).read_text(
+            encoding="utf-8"
+        )
+        == _runbook(expected.summary.iloc[0], expected.sessions)
     )
+
+
+def _csv_frame_matches(path: Path, expected: pd.DataFrame) -> bool:
+    actual = _read_csv_frame(path, path.name)
+    expected_roundtrip = pd.read_csv(
+        StringIO(expected.to_csv(index=False)),
+        keep_default_na=False,
+    )
+    return bool(
+        list(actual.columns) == list(expected_roundtrip.columns)
+        and actual.to_dict(orient="records")
+        == expected_roundtrip.to_dict(orient="records")
+    )
+
+
+def _read_csv_frame(path: Path, label: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, keep_default_na=False)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return payload
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _manifest_file_input(
+    inputs: Mapping[str, Any],
+    name: str,
+) -> Path:
+    value = _mapping(inputs.get(name))
+    if value.get("kind") != "file" or not value.get("path"):
+        raise ValueError(
+            f"market-calendar manifest lacks the {name} file input"
+        )
+    return Path(str(value["path"])).resolve()
+
+
+def _manifest_file_input_current(
+    inputs: Mapping[str, Any],
+    name: str,
+    source: Path,
+) -> bool:
+    value = _mapping(inputs.get(name))
+    try:
+        return bool(
+            source.is_file()
+            and value.get("kind") == "file"
+            and Path(str(value.get("path", ""))).resolve() == source
+            and int(value.get("size_bytes", -1)) == int(source.stat().st_size)
+            and str(value.get("sha256", "")) == file_sha256(source)
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _manifest_input_contract_current(
+    inputs: Mapping[str, Any],
+    name: str,
+    source: Path,
+) -> bool:
+    return bool(
+        set(inputs) == {name}
+        and _manifest_file_input_current(inputs, name, source)
+    )
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y"}
 
 
 def _read_session_source(path: Path) -> list[dict[str, str]]:
@@ -258,18 +721,18 @@ def _write_report_artifacts(
     output_dir: Path,
 ) -> None:
     report.sessions.to_csv(
-        output_dir / "market_calendar_sessions.csv",
+        output_dir / MARKET_CALENDAR_SESSIONS_FILE,
         index=False,
     )
     report.checks.to_csv(
-        output_dir / "market_calendar_checks.csv",
+        output_dir / MARKET_CALENDAR_CHECKS_FILE,
         index=False,
     )
     report.summary.to_csv(
-        output_dir / "market_calendar_summary.csv",
+        output_dir / MARKET_CALENDAR_SUMMARY_FILE,
         index=False,
     )
-    (output_dir / "market_calendar_runbook.md").write_text(
+    (output_dir / MARKET_CALENDAR_RUNBOOK_FILE).write_text(
         _runbook(report.summary.iloc[0], report.sessions),
         encoding="utf-8",
     )

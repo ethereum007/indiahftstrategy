@@ -13,9 +13,14 @@ from reports.data_readiness import (
     DataReadinessThresholds,
     write_data_readiness_report,
 )
-from reports.manifest import file_sha256, verify_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.market_calendar import (
     MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
+    verify_market_calendar_report,
     write_market_calendar_from_sessions,
     write_market_calendar_report,
 )
@@ -236,6 +241,15 @@ def test_market_calendar_report_binds_source_fingerprint(tmp_path):
         require_input_fingerprints=True,
     )
     assert integrity.passed
+    verification = verify_market_calendar_report(output_dir)
+    assert verification.verified
+    assert verification.ready
+    assert verification.manifest_current
+    assert verification.source_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert not verification.compiled_from_sessions
+    assert verification.source_path == calendar_path.resolve()
 
 
 def test_market_calendar_cli_writes_report(tmp_path):
@@ -257,6 +271,15 @@ def test_market_calendar_cli_writes_report(tmp_path):
     assert code == 0
     summary = pd.read_csv(output_dir / "market_calendar_summary.csv")
     assert summary.loc[0, "market_calendar_id"] == "nse-fo-test-2026-06"
+    verify_code = main(
+        [
+            "verify-market-calendar-report",
+            "--report",
+            str(output_dir),
+            "--fail-on-breach",
+        ]
+    )
+    assert verify_code == 0
 
 
 def test_market_calendar_builder_compiles_and_binds_session_source(tmp_path):
@@ -321,6 +344,10 @@ def test_market_calendar_builder_compiles_and_binds_session_source(tmp_path):
         require_input_fingerprints=True,
     )
     assert integrity.passed
+    verification = verify_market_calendar_report(output)
+    assert verification.verified
+    assert verification.compiled_from_sessions
+    assert verification.source_path == source.resolve()
     loaded = load_market_calendar(calendar_path, expected_market=MARKET)
     assert loaded.calendar_id == "nse-fo-source-test-2026-06"
 
@@ -335,6 +362,31 @@ def test_market_calendar_builder_compiles_and_binds_session_source(tmp_path):
     )
     assert not drifted.passed
     assert drifted.error == "input_drift"
+    verification = verify_market_calendar_report(output)
+    assert not verification.verified
+    assert not verification.source_current
+    assert verification.error == "input_drift"
+
+    readiness = write_data_readiness_report(
+        output_dir=tmp_path / "drifted_readiness",
+        market_calendar_dir=output,
+        thresholds=DataReadinessThresholds(
+            require_market_calendar=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+    failed = set(
+        readiness.checks.loc[
+            ~readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not readiness.ready
+    assert {
+        "market_calendar_report_verified",
+        "market_calendar_report_manifest_current",
+        "market_calendar_report_source_current",
+    } <= failed
 
 
 def test_market_calendar_builder_output_is_data_readiness_compatible(tmp_path):
@@ -365,6 +417,107 @@ def test_market_calendar_builder_output_is_data_readiness_compatible(tmp_path):
     assert readiness.summary.iloc[0]["market_calendar_id"] == (
         "nse-fo-source-test-2026-06"
     )
+    assert bool(
+        readiness.summary.iloc[0]["market_calendar_report_verified"]
+    )
+    manifest = json.loads(
+        (tmp_path / "readiness" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert {
+        "market_calendar",
+        "market_calendar_manifest",
+        "market_calendar_source",
+    } <= set(manifest["inputs"])
+    readiness_integrity = verify_experiment_manifest(
+        tmp_path / "readiness" / "manifest.json",
+        expected_run_type="data_readiness",
+        require_input_fingerprints=True,
+    )
+    assert readiness_integrity.passed
+    source.write_text(
+        source.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted_readiness = verify_experiment_manifest(
+        tmp_path / "readiness" / "manifest.json",
+        expected_run_type="data_readiness",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_readiness.passed
+    assert drifted_readiness.error == "input_drift"
+
+
+def test_market_calendar_verifier_rejects_re_manifested_artifact_tamper(
+    tmp_path,
+):
+    calendar_path = _calendar_path(tmp_path)
+    output = tmp_path / "calendar_report"
+    write_market_calendar_report(
+        calendar_path,
+        output,
+        expected_market=MARKET,
+    )
+    manifest = json.loads(
+        (output / "manifest.json").read_text(encoding="utf-8")
+    )
+    runbook = output / "market_calendar_runbook.md"
+    runbook.write_text(
+        runbook.read_text(encoding="utf-8") + "tampered\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        output,
+        run_type="market_calendar_report",
+        parameters=manifest["parameters"],
+        inputs={"market_calendar": calendar_path},
+        extra=manifest["extra"],
+    )
+    integrity = verify_experiment_manifest(
+        output / "manifest.json",
+        expected_run_type="market_calendar_report",
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
+
+    verification = verify_market_calendar_report(output)
+    assert not verification.verified
+    assert verification.manifest_current
+    assert verification.source_current
+    assert not verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert (
+        verification.error
+        == "market-calendar report semantic verification failed"
+    )
+    assert (
+        main(
+            [
+                "verify-market-calendar-report",
+                "--report",
+                str(output),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+    readiness = write_data_readiness_report(
+        output_dir=tmp_path / "tampered_readiness",
+        market_calendar_dir=output,
+        thresholds=DataReadinessThresholds(
+            require_market_calendar=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+    failed = set(
+        readiness.checks.loc[
+            ~readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not readiness.ready
+    assert "market_calendar_report_verified" in failed
+    assert "market_calendar_report_artifacts_consistent" in failed
 
 
 def test_market_calendar_builder_cli(tmp_path):

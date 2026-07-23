@@ -9167,6 +9167,21 @@ is an artifact. This command expects normalized operator input; it is not an
 exchange-site or vendor-format scraper. See `docs/MARKET_CALENDAR.md` for the
 full contract and provenance rules.
 
+Verify either a compiled calendar or an ordinary `market-calendar-report`
+directory before handoff:
+
+```powershell
+python -m hft_cli verify-market-calendar-report `
+  --report runs\market_calendar\nse_fo_2026 `
+  --fail-on-breach
+```
+
+The command reconstructs report artifacts from the current manifest-bound
+source. Compiled calendars also regenerate `market_calendar.json` from the
+retained session CSV. It returns exit code `2` under `--fail-on-breach` for
+source drift, manifest or artifact drift, semantic inconsistency, or authority
+widening, including artifact tampering followed by a fresh manifest.
+
 ## Data Diagnostics
 
 ```powershell
@@ -9279,10 +9294,13 @@ stop automation for operator review.
 
 When `--market-calendar-report` is supplied, mapped-data and diagnostic
 summaries must retain the same versioned calendar ID, coverage range, and
-SHA-256. `--require-market-calendar` also fails closed when the report is
-missing. Vendor and provider pipelines supplied with `--market-calendar`
-create this report automatically in `00_market_calendar` and force the nested
-readiness requirement.
+SHA-256. The retained report is also semantically reconstructed from its
+current source before readiness is evaluated. `--require-market-calendar`
+fails closed when the report is missing, stale, inconsistent, or
+authority-widening. The readiness manifest separately fingerprints the report
+directory, report manifest, and external calendar source. Vendor and provider
+pipelines supplied with `--market-calendar` create this report automatically
+in `00_market_calendar` and force the nested readiness requirement.
 
 Compare multiple data-readiness runs before walk-forward research:
 

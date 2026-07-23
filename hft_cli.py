@@ -126,6 +126,7 @@ from reports.leadlag_replay_walkforward import (
     write_leadlag_replay_walkforward,
 )
 from reports.market_calendar import (
+    verify_market_calendar_report,
     write_market_calendar_from_sessions,
     write_market_calendar_report,
 )
@@ -3334,6 +3335,16 @@ def main(argv: list[str] | None = None) -> int:
     market_calendar.add_argument("--calendar", required=True)
     market_calendar.add_argument("--out", required=True)
     market_calendar.add_argument("--market", default=None)
+
+    market_calendar_verify = sub.add_parser(
+        "verify-market-calendar-report",
+        help=(
+            "Reconstruct a market-calendar report and verify its retained "
+            "source and artifacts."
+        ),
+    )
+    market_calendar_verify.add_argument("--report", required=True)
+    market_calendar_verify.add_argument("--fail-on-breach", action="store_true")
 
     market_calendar_build = sub.add_parser(
         "build-market-calendar",
@@ -7937,6 +7948,36 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "verify-market-calendar-report":
+        result = verify_market_calendar_report(args.report)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "ready": result.ready,
+                    "manifest_current": result.manifest_current,
+                    "source_current": result.source_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "non_authorizing": result.non_authorizing,
+                    "compiled_from_sessions": result.compiled_from_sessions,
+                    "report_dir": str(result.output_dir),
+                    "manifest_path": str(result.manifest_path),
+                    "source_path": (
+                        ""
+                        if result.source_path is None
+                        else str(result.source_path)
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return (
+            2
+            if args.fail_on_breach
+            and not (result.verified and result.ready)
+            else 0
+        )
     if args.command == "build-market-calendar":
         result = write_market_calendar_from_sessions(
             args.sessions,
