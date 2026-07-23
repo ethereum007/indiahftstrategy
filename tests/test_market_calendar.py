@@ -9,8 +9,16 @@ from data.diagnostics import chain_diagnostics, tick_diagnostics
 from data.loaders import normalize_ticks, trading_session_mask
 from hft_cli import main
 from markets.calendars import load_market_calendar
+from reports.data_readiness import (
+    DataReadinessThresholds,
+    write_data_readiness_report,
+)
 from reports.manifest import file_sha256, verify_experiment_manifest
-from reports.market_calendar import write_market_calendar_report
+from reports.market_calendar import (
+    MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
+    write_market_calendar_from_sessions,
+    write_market_calendar_report,
+)
 
 
 MARKET = "india_nse_index_derivatives"
@@ -55,6 +63,30 @@ def _calendar_path(tmp_path):
         + "\n",
         encoding="utf-8",
     )
+    return path
+
+
+def _session_source_path(tmp_path):
+    path = tmp_path / "nse_sessions.csv"
+    pd.DataFrame(
+        [
+            {
+                "date": "2026-06-13",
+                "status": "open",
+                "open_time": "18:00:00",
+                "close_time": "19:00:00",
+                "label": "special session",
+            },
+            {
+                "date": "2026-06-10",
+                "status": "closed",
+                "open_time": "",
+                "close_time": "",
+                "label": "exchange holiday",
+            },
+        ],
+        columns=["date", "status", "open_time", "close_time", "label"],
+    ).to_csv(path, index=False)
     return path
 
 
@@ -225,6 +257,198 @@ def test_market_calendar_cli_writes_report(tmp_path):
     assert code == 0
     summary = pd.read_csv(output_dir / "market_calendar_summary.csv")
     assert summary.loc[0, "market_calendar_id"] == "nse-fo-test-2026-06"
+
+
+def test_market_calendar_builder_compiles_and_binds_session_source(tmp_path):
+    source = _session_source_path(tmp_path)
+    output = tmp_path / "compiled_calendar"
+
+    report = write_market_calendar_from_sessions(
+        source,
+        output,
+        calendar_id="nse-fo-source-test-2026-06",
+        market=MARKET,
+        valid_from="2026-06-08",
+        valid_to="2026-06-15",
+        publisher="test-exchange",
+        source_url="https://example.test/market-holidays",
+        published_date="2026-06-01",
+    )
+
+    calendar_path = output / "market_calendar.json"
+    payload = json.loads(calendar_path.read_text(encoding="utf-8"))
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert payload["timezone"] == "Asia/Kolkata"
+    assert [row["date"] for row in payload["sessions"]] == [
+        "2026-06-10",
+        "2026-06-13",
+    ]
+    assert (
+        payload["provenance"]["source_file_sha256"]
+        == file_sha256(source)
+    )
+    assert (
+        payload["provenance"]["source_schema"]
+        == MARKET_CALENDAR_SESSION_SOURCE_SCHEMA
+    )
+    assert bool(summary["compiled_from_sessions"])
+    assert (
+        summary["session_source_schema"]
+        == MARKET_CALENDAR_SESSION_SOURCE_SCHEMA
+    )
+    assert int(summary["session_source_rows"]) == 2
+    assert summary["market_calendar_sha256"] == file_sha256(calendar_path)
+    assert (
+        manifest["inputs"]["market_calendar_sessions_source"]["sha256"]
+        == file_sha256(source)
+    )
+    assert manifest["extra"]["non_authorizing"] is True
+    assert {
+        item["path"] for item in manifest["artifacts"]
+    } >= {
+        "market_calendar.json",
+        "market_calendar_sessions.csv",
+        "market_calendar_checks.csv",
+        "market_calendar_summary.csv",
+        "market_calendar_runbook.md",
+    }
+    integrity = verify_experiment_manifest(
+        output / "manifest.json",
+        expected_run_type="market_calendar_report",
+        required_artifacts=("market_calendar.json",),
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
+    loaded = load_market_calendar(calendar_path, expected_market=MARKET)
+    assert loaded.calendar_id == "nse-fo-source-test-2026-06"
+
+    source.write_text(
+        source.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted = verify_experiment_manifest(
+        output / "manifest.json",
+        expected_run_type="market_calendar_report",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_market_calendar_builder_output_is_data_readiness_compatible(tmp_path):
+    source = _session_source_path(tmp_path)
+    calendar_output = tmp_path / "compiled_calendar"
+    write_market_calendar_from_sessions(
+        source,
+        calendar_output,
+        calendar_id="nse-fo-source-test-2026-06",
+        market=MARKET,
+        valid_from="2026-06-08",
+        valid_to="2026-06-15",
+        publisher="test-exchange",
+        source_url="https://example.test/market-holidays",
+        published_date="2026-06-01",
+    )
+
+    readiness = write_data_readiness_report(
+        output_dir=tmp_path / "readiness",
+        market_calendar_dir=calendar_output,
+        thresholds=DataReadinessThresholds(
+            require_market_calendar=True,
+            require_tick_diagnostics=False,
+        ),
+    )
+
+    assert readiness.ready
+    assert readiness.summary.iloc[0]["market_calendar_id"] == (
+        "nse-fo-source-test-2026-06"
+    )
+
+
+def test_market_calendar_builder_cli(tmp_path):
+    source = _session_source_path(tmp_path)
+    output = tmp_path / "compiled_calendar"
+
+    code = main(
+        [
+            "build-market-calendar",
+            "--sessions",
+            str(source),
+            "--calendar-id",
+            "nse-fo-source-test-2026-06",
+            "--market",
+            MARKET,
+            "--valid-from",
+            "2026-06-08",
+            "--valid-to",
+            "2026-06-15",
+            "--publisher",
+            "test-exchange",
+            "--source-url",
+            "https://example.test/market-holidays",
+            "--published-date",
+            "2026-06-01",
+            "--out",
+            str(output),
+        ]
+    )
+
+    assert code == 0
+    assert (output / "market_calendar.json").exists()
+    summary = pd.read_csv(output / "market_calendar_summary.csv")
+    assert bool(summary.loc[0, "compiled_from_sessions"])
+    assert summary.loc[0, "market"] == MARKET
+
+
+@pytest.mark.parametrize(
+    ("case", "match"),
+    [
+        ("columns", "columns must be exactly"),
+        ("column_whitespace", "columns must be exactly"),
+        ("duplicate", "unique dates"),
+        ("missing_close", "require open_time and close_time"),
+        ("out_of_range", "outside coverage"),
+        ("closed_with_time", "closed market calendar sessions cannot"),
+    ],
+)
+def test_market_calendar_builder_rejects_invalid_source_before_output(
+    tmp_path,
+    case,
+    match,
+):
+    source = _session_source_path(tmp_path)
+    frame = pd.read_csv(source, dtype=str, keep_default_na=False)
+    if case == "columns":
+        frame = frame.drop(columns=["label"])
+    elif case == "column_whitespace":
+        frame = frame.rename(columns={"date": " date"})
+    elif case == "duplicate":
+        frame = pd.concat([frame, frame.iloc[[0]]], ignore_index=True)
+    elif case == "missing_close":
+        frame.loc[0, "close_time"] = ""
+    elif case == "out_of_range":
+        frame.loc[0, "date"] = "2026-06-16"
+    elif case == "closed_with_time":
+        frame.loc[0, "status"] = "closed"
+    frame.to_csv(source, index=False)
+    output = tmp_path / "compiled_calendar"
+
+    with pytest.raises(ValueError, match=match):
+        write_market_calendar_from_sessions(
+            source,
+            output,
+            calendar_id="nse-fo-source-test-2026-06",
+            market=MARKET,
+            valid_from="2026-06-08",
+            valid_to="2026-06-15",
+            publisher="test-exchange",
+            source_url="https://example.test/market-holidays",
+            published_date="2026-06-01",
+        )
+
+    assert not output.exists()
 
 
 def test_mapped_normalization_manifest_detects_calendar_drift(tmp_path):

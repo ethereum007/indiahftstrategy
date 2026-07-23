@@ -125,7 +125,10 @@ from reports.leadlag_replay_walkforward import (
     LeadLagReplayWalkForwardThresholds,
     write_leadlag_replay_walkforward,
 )
-from reports.market_calendar import write_market_calendar_report
+from reports.market_calendar import (
+    write_market_calendar_from_sessions,
+    write_market_calendar_report,
+)
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
@@ -3331,6 +3334,23 @@ def main(argv: list[str] | None = None) -> int:
     market_calendar.add_argument("--calendar", required=True)
     market_calendar.add_argument("--out", required=True)
     market_calendar.add_argument("--market", default=None)
+
+    market_calendar_build = sub.add_parser(
+        "build-market-calendar",
+        help=(
+            "Compile a strict versioned market calendar from an "
+            "operator-supplied sessions CSV."
+        ),
+    )
+    market_calendar_build.add_argument("--sessions", required=True)
+    market_calendar_build.add_argument("--calendar-id", required=True)
+    market_calendar_build.add_argument("--market", required=True)
+    market_calendar_build.add_argument("--valid-from", required=True)
+    market_calendar_build.add_argument("--valid-to", required=True)
+    market_calendar_build.add_argument("--publisher", required=True)
+    market_calendar_build.add_argument("--source-url", required=True)
+    market_calendar_build.add_argument("--published-date", required=True)
+    market_calendar_build.add_argument("--out", required=True)
 
     portability = sub.add_parser(
         "market-portability-report",
@@ -7914,6 +7934,20 @@ def main(argv: list[str] | None = None) -> int:
             args.calendar,
             args.out,
             expected_market=args.market,
+        )
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "build-market-calendar":
+        result = write_market_calendar_from_sessions(
+            args.sessions,
+            args.out,
+            calendar_id=args.calendar_id,
+            market=args.market,
+            valid_from=args.valid_from,
+            valid_to=args.valid_to,
+            publisher=args.publisher,
+            source_url=args.source_url,
+            published_date=args.published_date,
         )
         print(result.summary.to_string(index=False))
         return 0

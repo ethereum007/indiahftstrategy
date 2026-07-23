@@ -6585,10 +6585,27 @@ run was attempted but did not complete within the 30-minute runner ceiling and
 is not counted as passing; it emitted no failure before termination. All
 outputs remain non-authorizing.
 
+Latest authoritative calendar compilation boundary: operators can now compile
+an exact `date,status,open_time,close_time,label` session CSV into the
+canonical versioned market-calendar JSON with `build-market-calendar`. The
+selected market profile supplies the timezone; the existing strict calendar
+loader rejects malformed status, time, duplicate-date, and coverage cases in a
+temporary validation directory before a new output directory is created. The
+generated JSON embeds the untouched source filename and SHA-256, the manifest
+fingerprints that source as an input, and the normal report, checks, summary,
+runbook, and canonical JSON are tracked as non-authorizing artifacts.
+Compiler, CLI, input-drift, invalid-source, and downstream-readiness coverage
+passes (`16 passed`), and the broader calendar/readiness, mapping, vendor
+onboarding, and provider pipeline regression set passes (`108 passed`).
+Repository collection is healthy at `2506 tests`. No NSE dates or arbitrary
+exchange/vendor parsing assumptions are embedded; an operator must still
+obtain and normalize the first authoritative calendar source. The full
+repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
-1. Ingest and retain an authoritative NSE calendar artifact for the first real
-   research period.
+1. Acquire and normalize the first authoritative NSE calendar source into the
+   `build-market-calendar` contract for the first real research period.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

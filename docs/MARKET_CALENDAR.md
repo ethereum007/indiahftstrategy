@@ -45,6 +45,53 @@ carry explicit `HH:MM:SS` open and close times, including for weekend or
 special sessions. Duplicate overrides and overrides outside the coverage range
 are rejected.
 
+## Compile An Authoritative Session File
+
+`build-market-calendar` converts an operator-normalized session CSV into the
+canonical JSON contract, validates it before writing any output, and emits the
+usual governed calendar report. It does not scrape an exchange webpage or
+claim to understand arbitrary NSE, Arrow.money, iRage, or broker exports.
+Obtain the authoritative source separately and normalize its exceptional
+sessions into these exact ordered columns:
+
+```csv
+date,status,open_time,close_time,label
+2026-01-26,closed,,,exchange holiday
+2026-02-01,open,09:15:00,15:30:00,special session
+```
+
+The compiler requires:
+
+- `date` in `YYYY-MM-DD` form within the declared coverage period.
+- `status` equal to `closed` or `open`.
+- Blank times for a closed date and explicit `HH:MM:SS` times for an open
+  override.
+- Exactly one row per exceptional date.
+- Publisher, source URL, publication date, calendar ID, and market supplied
+  explicitly by the operator.
+
+The timezone is derived from the selected market profile, not accepted as a
+free-form CLI value. The untouched CSV is retained as a manifest-fingerprinted
+input, while its schema version, filename, and SHA-256 are embedded in the
+generated JSON provenance:
+
+```powershell
+python -m hft_cli build-market-calendar `
+  --sessions data\calendars\nse_fo_2026_sessions.csv `
+  --calendar-id nse-fo-2026-v1 `
+  --market india_nse_index_derivatives `
+  --valid-from 2026-01-01 `
+  --valid-to 2026-12-31 `
+  --publisher "authoritative publisher" `
+  --source-url "https://authoritative.example/calendar" `
+  --published-date 2025-12-15 `
+  --out runs\market_calendar\nse_fo_2026
+```
+
+The output includes `market_calendar.json`, report CSVs, a runbook, and a
+manifest. No exchange dates are bundled by the platform, and the resulting
+evidence remains non-authorizing.
+
 ## Evidence Rules
 
 - A supplied calendar must match the selected market and timezone.

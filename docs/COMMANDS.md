@@ -9129,6 +9129,44 @@ staged_order_summary.csv
 manifest.json
 ```
 
+## Market Calendar Compilation
+
+Compile an operator-normalized authoritative session file into the platform's
+versioned calendar contract:
+
+```powershell
+python -m hft_cli build-market-calendar `
+  --sessions data\calendars\nse_fo_2026_sessions.csv `
+  --calendar-id nse-fo-2026-v1 `
+  --market india_nse_index_derivatives `
+  --valid-from 2026-01-01 `
+  --valid-to 2026-12-31 `
+  --publisher "authoritative publisher" `
+  --source-url "https://authoritative.example/calendar" `
+  --published-date 2025-12-15 `
+  --out runs\market_calendar\nse_fo_2026
+```
+
+The source CSV columns must be exactly
+`date,status,open_time,close_time,label`, in that order. Closed rows leave both
+times blank; open overrides require `HH:MM:SS` times. The compiler derives the
+timezone from `--market`, rejects malformed, duplicate, or out-of-coverage
+rows before creating a new output directory, and writes:
+
+```text
+market_calendar.json
+market_calendar_sessions.csv
+market_calendar_checks.csv
+market_calendar_summary.csv
+market_calendar_runbook.md
+manifest.json
+```
+
+The manifest fingerprints the untouched source CSV and the generated calendar
+is an artifact. This command expects normalized operator input; it is not an
+exchange-site or vendor-format scraper. See `docs/MARKET_CALENDAR.md` for the
+full contract and provenance rules.
+
 ## Data Diagnostics
 
 ```powershell
