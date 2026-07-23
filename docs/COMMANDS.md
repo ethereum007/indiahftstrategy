@@ -9259,6 +9259,26 @@ data_readiness_runbook.md
 manifest.json
 ```
 
+Verify a retained daily report against its manifest-bound component inputs
+and threshold contract before using it as evidence:
+
+```powershell
+python -m hft_cli verify-data-readiness-report `
+  --report runs\data_readiness\india_nse_2026_06_10 `
+  --fail-on-breach
+```
+
+The verifier reconstructs all item, check, summary, action-queue, config, and
+runbook artifacts and requires exact deterministic agreement, current input
+fingerprints, the canonical manifest contract, and explicit non-routing and
+non-submission authority. The manifest must contain exactly the six documented
+report artifacts; unexpected order, routing, or other sidecars are rejected.
+`--fail-on-breach` returns exit code `2` when that evidence contract fails.
+The JSON output reports `ready` separately, so a faithfully reconstructed
+blocked report remains distinguishable from altered or stale evidence.
+Editing artifacts and writing a fresh manifest around them does not satisfy
+semantic verification.
+
 When `--market-portability` is supplied with `--expected-strategy` and
 `--expected-market`, the gate reads `market_portability_config.json` and fails
 closed unless that exact strategy-market pair is in `ready_pairs`.
@@ -9288,6 +9308,9 @@ fields, summary, component, and failed-check state for scheduler handoff.
 `data_readiness_runbook.md` mirrors the same handoff with component readiness
 and failed checks, and these sidecars are manifest-tracked so `catalog-runs`
 can promote blocked vendor-data work into the top-level action plan.
+The summary, config, runbook, and manifest also retain explicit
+`non_authorizing`, `authorizes_routing=false`, and
+`authorizes_submission=false` state.
 Use `--fail-on-blocked-actions` to stop when blocked data-readiness actions
 remain, or `--fail-on-actions` when any queued data-readiness handoff should
 stop automation for operator review.
@@ -9348,6 +9371,15 @@ dataset to not-ready and fails the always-on
 `data_readiness_manifest_coverage` check. Dataset rows, config JSON, and the
 runbook retain reported-versus-effective readiness, the exact manifest error,
 artifact/input match counts, manifest SHA-256, and dependency count; failures
+route back to `review-data-readiness`.
+Each daily report is also semantically reconstructed with
+`verify-data-readiness-report`. The always-on
+`data_readiness_report_verification_coverage` check requires every
+directory-backed day to match its current inputs and thresholds artifact for
+artifact and to preserve its non-authorizing state. This rejects coherent
+hash manifests freshly written around altered daily artifacts. Dataset rows,
+config JSON, and the runbook retain semantic verification, input-current,
+artifact-consistency, authority, and exact error state; semantic gaps also
 route back to `review-data-readiness`.
 The comparison manifest separately fingerprints every readiness directory,
 each readiness manifest, and the recursively flattened manifest dependencies.

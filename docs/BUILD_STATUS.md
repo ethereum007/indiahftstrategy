@@ -6637,6 +6637,28 @@ regressions pass (`36 passed`), and the complete scale-up suite passes (`154
 passed`). Repository collection is healthy at `2511 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest daily data-readiness semantic integrity gate: retained
+`data_readiness` reports can now be reconstructed with
+`verify-data-readiness-report` from their manifest-bound component inputs and
+exact threshold contract. Verification requires current input and artifact
+fingerprints, deterministic equality for all four CSV artifacts plus config
+and runbook, exactly that six-artifact set, the canonical manifest
+input/parameter/metadata contract, and explicit non-routing/non-submission
+authority in summary, config, runbook, and manifest. Freshly re-manifested
+artifact tampering, unexpected sidecars, and authority widening remain
+invalid. Directory-backed `compare-data-readiness` invokes this verifier for
+every day and requires complete
+`data_readiness_report_verification_coverage`, retaining input-current,
+artifact-consistency, authority, and exact error state in rows, config, and
+runbook. The data-readiness suite passes (`32 passed`), comparison passes (`16
+passed`), research consumers pass (`21 passed`), catalog/manifest regressions
+pass (`70 passed`), and the complete scale-up suite passes (`154 passed`).
+Repository collection is healthy at `2514 tests`. A full repository run of the
+preceding state reached 55% after 40 minutes with no failure or stderr before
+it was stopped as impractical for this cadence; the final exact-bundle
+tightening is covered by the focused suite. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

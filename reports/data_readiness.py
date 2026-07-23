@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields
 from datetime import date
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +16,11 @@ from reports.market_calendar import (
     MarketCalendarReportVerification,
     verify_market_calendar_report,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    MANIFEST_NAME,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 SUMMARY_FILES = {
@@ -29,14 +35,19 @@ SUMMARY_FILES = {
     "instrument_metadata": "instrument_metadata_summary.csv",
 }
 DATA_READINESS_RUN_TYPE = "data_readiness"
+DATA_READINESS_ITEMS_FILE = "data_readiness_items.csv"
+DATA_READINESS_CHECKS_FILE = "data_readiness_checks.csv"
 DATA_READINESS_SUMMARY_FILE = "data_readiness_summary.csv"
+DATA_READINESS_ACTION_QUEUE_FILE = "data_readiness_action_queue.csv"
+DATA_READINESS_CONFIG_FILE = "data_readiness_config.json"
+DATA_READINESS_RUNBOOK_FILE = "data_readiness_runbook.md"
 DATA_READINESS_REQUIRED_ARTIFACTS = (
-    "data_readiness_items.csv",
-    "data_readiness_checks.csv",
+    DATA_READINESS_ITEMS_FILE,
+    DATA_READINESS_CHECKS_FILE,
     DATA_READINESS_SUMMARY_FILE,
-    "data_readiness_action_queue.csv",
-    "data_readiness_config.json",
-    "data_readiness_runbook.md",
+    DATA_READINESS_ACTION_QUEUE_FILE,
+    DATA_READINESS_CONFIG_FILE,
+    DATA_READINESS_RUNBOOK_FILE,
 )
 
 
@@ -84,6 +95,23 @@ class DataReadinessReport:
     @property
     def ready(self) -> bool:
         return bool(self.summary.iloc[0]["ready"]) if not self.summary.empty else False
+
+
+@dataclass(frozen=True)
+class DataReadinessReportVerification:
+    verified: bool
+    ready: bool
+    manifest_current: bool
+    inputs_current: bool
+    artifacts_consistent: bool
+    non_authorizing: bool
+    output_dir: Path
+    manifest_path: Path
+    manifest_artifact_count: int = 0
+    manifest_artifact_match_count: int = 0
+    manifest_input_fingerprint_count: int = 0
+    manifest_input_fingerprint_match_count: int = 0
+    error: str = ""
 
 
 def evaluate_data_readiness(
@@ -136,52 +164,7 @@ def write_data_readiness_report(
 ) -> DataReadinessReport:
     thresholds = thresholds or DataReadinessThresholds()
     _validate_thresholds(thresholds)
-    calendar_summary = _read_optional_summary(
-        market_calendar_dir,
-        "market_calendar",
-    )
-    calendar_verification = (
-        verify_market_calendar_report(market_calendar_dir)
-        if market_calendar_dir is not None
-        else None
-    )
-    calendar_summary = _with_market_calendar_verification(
-        calendar_summary,
-        calendar_verification,
-    )
-    report = evaluate_data_readiness(
-        market_calendar_summary=calendar_summary,
-        vendor_intake_summary=_read_optional_summary(vendor_intake_dir, "vendor_intake"),
-        schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
-        mapped_data_summary=_read_optional_summary(mapped_data_dir, "mapped_data"),
-        tick_diagnostic_summary=_read_optional_summary(tick_diagnostics_dir, "tick_diagnostics"),
-        chain_diagnostic_summary=_read_optional_summary(chain_diagnostics_dir, "chain_diagnostics"),
-        market_profile_summary=_read_optional_summary(market_profile_dir, "market_profile"),
-        market_portability_config=_read_optional_market_portability_config(market_portability_dir),
-        instrument_metadata_summary=_read_optional_summary(instrument_metadata_dir, "instrument_metadata"),
-        thresholds=thresholds,
-    )
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    report.items.to_csv(out / "data_readiness_items.csv", index=False)
-    report.checks.to_csv(out / "data_readiness_checks.csv", index=False)
-    report.summary.to_csv(out / DATA_READINESS_SUMMARY_FILE, index=False)
-    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks, report.items)
-    action_queue.to_csv(out / "data_readiness_action_queue.csv", index=False)
-    (out / "data_readiness_config.json").write_text(
-        json.dumps(
-            _config(report.summary.iloc[0], report.items, report.checks, action_queue, thresholds),
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (out / "data_readiness_runbook.md").write_text(
-        _runbook_markdown(report.summary.iloc[0], report.items, report.checks, action_queue),
-        encoding="utf-8",
-    )
-    inputs: dict[str, Any] = {
+    source_paths = {
         "market_calendar": market_calendar_dir,
         "vendor_intake": vendor_intake_dir,
         "schema_audit": schema_audit_dir,
@@ -192,6 +175,31 @@ def write_data_readiness_report(
         "market_portability": market_portability_dir,
         "instrument_metadata": instrument_metadata_dir,
     }
+    report, calendar_verification = _build_data_readiness_from_paths(
+        source_paths,
+        thresholds=thresholds,
+    )
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    report.items.to_csv(out / DATA_READINESS_ITEMS_FILE, index=False)
+    report.checks.to_csv(out / DATA_READINESS_CHECKS_FILE, index=False)
+    report.summary.to_csv(out / DATA_READINESS_SUMMARY_FILE, index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks, report.items)
+    action_queue.to_csv(out / DATA_READINESS_ACTION_QUEUE_FILE, index=False)
+    (out / DATA_READINESS_CONFIG_FILE).write_text(
+        json.dumps(
+            _config(report.summary.iloc[0], report.items, report.checks, action_queue, thresholds),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (out / DATA_READINESS_RUNBOOK_FILE).write_text(
+        _runbook_markdown(report.summary.iloc[0], report.items, report.checks, action_queue),
+        encoding="utf-8",
+    )
+    inputs: dict[str, Any] = dict(source_paths)
     if calendar_verification is not None:
         inputs["market_calendar_manifest"] = (
             calendar_verification.manifest_path
@@ -204,8 +212,467 @@ def write_data_readiness_report(
         run_type=DATA_READINESS_RUN_TYPE,
         parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
+        extra=_data_readiness_manifest_extra(report),
     )
     return DataReadinessReport(report.items, report.checks, report.summary, out, action_queue)
+
+
+def verify_data_readiness_report(
+    report_dir: str | Path,
+) -> DataReadinessReportVerification:
+    requested = Path(report_dir)
+    root = requested.parent if requested.is_file() else requested
+    root = root.resolve()
+    manifest_path = root / MANIFEST_NAME
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_RUN_TYPE,
+        required_artifacts=DATA_READINESS_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    inputs_current = False
+    artifacts_consistent = False
+    non_authorizing = False
+    try:
+        manifest = _read_json_object(
+            manifest_path,
+            "data-readiness manifest",
+        )
+        parameters = _mapping(manifest.get("parameters"))
+        thresholds = _data_readiness_thresholds_from_manifest(parameters)
+        inputs = _mapping(manifest.get("inputs"))
+        source_paths = _data_readiness_source_paths_from_manifest(inputs)
+        expected_report, calendar_verification = (
+            _build_data_readiness_from_paths(
+                source_paths,
+                thresholds=thresholds,
+            )
+        )
+        expected_extra = _data_readiness_manifest_extra(expected_report)
+        input_contract_current = _data_readiness_input_contract_current(
+            inputs,
+            source_paths,
+            calendar_verification,
+        )
+        inputs_current = bool(
+            input_contract_current
+            and integrity.input_fingerprint_count
+            == integrity.input_fingerprint_match_count
+            and integrity.input_fingerprint_count > 0
+        )
+        artifacts_consistent = bool(
+            _data_readiness_artifacts_consistent(
+                root,
+                expected_report,
+                thresholds,
+                manifest,
+            )
+            and parameters == {"thresholds": asdict(thresholds)}
+            and _mapping(manifest.get("extra")) == expected_extra
+        )
+        non_authorizing = _data_readiness_authority_consistent(
+            root,
+            _mapping(manifest.get("extra")),
+            expected_report.ready,
+        )
+        verified = bool(
+            integrity.passed
+            and inputs_current
+            and artifacts_consistent
+            and non_authorizing
+        )
+        error = ""
+        if not verified:
+            error = (
+                integrity.error
+                or (
+                    "data-readiness input contract is invalid"
+                    if not inputs_current
+                    else ""
+                )
+                or (
+                    "data-readiness artifacts do not reconstruct from inputs"
+                    if not artifacts_consistent
+                    else ""
+                )
+                or "data-readiness report widens authority"
+            )
+        return DataReadinessReportVerification(
+            verified=verified,
+            ready=bool(verified and expected_report.ready),
+            manifest_current=integrity.passed,
+            inputs_current=inputs_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            manifest_artifact_count=integrity.artifact_count,
+            manifest_artifact_match_count=integrity.artifact_match_count,
+            manifest_input_fingerprint_count=(
+                integrity.input_fingerprint_count
+            ),
+            manifest_input_fingerprint_match_count=(
+                integrity.input_fingerprint_match_count
+            ),
+            error=error,
+        )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        return DataReadinessReportVerification(
+            verified=False,
+            ready=False,
+            manifest_current=integrity.passed,
+            inputs_current=inputs_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            manifest_artifact_count=integrity.artifact_count,
+            manifest_artifact_match_count=integrity.artifact_match_count,
+            manifest_input_fingerprint_count=(
+                integrity.input_fingerprint_count
+            ),
+            manifest_input_fingerprint_match_count=(
+                integrity.input_fingerprint_match_count
+            ),
+            error=integrity.error or str(exc),
+        )
+
+
+def _build_data_readiness_from_paths(
+    source_paths: Mapping[str, str | Path | None],
+    *,
+    thresholds: DataReadinessThresholds,
+) -> tuple[DataReadinessReport, MarketCalendarReportVerification | None]:
+    unexpected = set(source_paths) - set(SUMMARY_FILES)
+    if unexpected:
+        raise ValueError(
+            "unsupported data-readiness inputs: "
+            + ",".join(sorted(unexpected))
+        )
+    market_calendar_path = source_paths.get("market_calendar")
+    calendar_summary = _read_optional_summary(
+        market_calendar_path,
+        "market_calendar",
+    )
+    calendar_verification = (
+        verify_market_calendar_report(market_calendar_path)
+        if market_calendar_path is not None
+        else None
+    )
+    calendar_summary = _with_market_calendar_verification(
+        calendar_summary,
+        calendar_verification,
+    )
+    report = evaluate_data_readiness(
+        market_calendar_summary=calendar_summary,
+        vendor_intake_summary=_read_optional_summary(
+            source_paths.get("vendor_intake"),
+            "vendor_intake",
+        ),
+        schema_audit_summary=_read_optional_summary(
+            source_paths.get("schema_audit"),
+            "schema_audit",
+        ),
+        mapped_data_summary=_read_optional_summary(
+            source_paths.get("mapped_data"),
+            "mapped_data",
+        ),
+        tick_diagnostic_summary=_read_optional_summary(
+            source_paths.get("tick_diagnostics"),
+            "tick_diagnostics",
+        ),
+        chain_diagnostic_summary=_read_optional_summary(
+            source_paths.get("chain_diagnostics"),
+            "chain_diagnostics",
+        ),
+        market_profile_summary=_read_optional_summary(
+            source_paths.get("market_profile"),
+            "market_profile",
+        ),
+        market_portability_config=_read_optional_market_portability_config(
+            source_paths.get("market_portability")
+        ),
+        instrument_metadata_summary=_read_optional_summary(
+            source_paths.get("instrument_metadata"),
+            "instrument_metadata",
+        ),
+        thresholds=thresholds,
+    )
+    return report, calendar_verification
+
+
+def _data_readiness_manifest_extra(
+    report: DataReadinessReport,
+) -> dict[str, object]:
+    return {
+        "ready": report.ready,
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+
+
+def _data_readiness_thresholds_from_manifest(
+    parameters: Mapping[str, Any],
+) -> DataReadinessThresholds:
+    if set(parameters) != {"thresholds"}:
+        raise ValueError(
+            "data-readiness manifest parameters must contain only thresholds"
+        )
+    values = _mapping(parameters.get("thresholds"))
+    expected_fields = {field.name for field in fields(DataReadinessThresholds)}
+    if set(values) != expected_fields:
+        raise ValueError(
+            "data-readiness manifest threshold contract is incomplete"
+        )
+    thresholds = DataReadinessThresholds(**dict(values))
+    _validate_thresholds(thresholds)
+    if dict(values) != asdict(thresholds):
+        raise ValueError(
+            "data-readiness manifest threshold values are not canonical"
+        )
+    return thresholds
+
+
+def _data_readiness_source_paths_from_manifest(
+    inputs: Mapping[str, Any],
+) -> dict[str, Path]:
+    allowed = {
+        *SUMMARY_FILES,
+        "market_calendar_manifest",
+        "market_calendar_source",
+    }
+    unexpected = set(inputs) - allowed
+    if unexpected:
+        raise ValueError(
+            "data-readiness manifest contains unsupported inputs: "
+            + ",".join(sorted(unexpected))
+        )
+    return {
+        component: _manifest_path_input(inputs, component)
+        for component in SUMMARY_FILES
+        if component in inputs
+    }
+
+
+def _manifest_path_input(
+    inputs: Mapping[str, Any],
+    name: str,
+) -> Path:
+    value = _mapping(inputs.get(name))
+    if value.get("kind") not in {"file", "directory"} or not value.get(
+        "path"
+    ):
+        raise ValueError(
+            f"data-readiness manifest lacks a fingerprinted {name} input"
+        )
+    return Path(str(value["path"])).resolve()
+
+
+def _data_readiness_input_contract_current(
+    inputs: Mapping[str, Any],
+    source_paths: Mapping[str, Path],
+    calendar_verification: MarketCalendarReportVerification | None,
+) -> bool:
+    expected_paths = dict(source_paths)
+    if "market_calendar" in source_paths:
+        if (
+            calendar_verification is None
+            or calendar_verification.source_path is None
+        ):
+            return False
+        expected_paths["market_calendar_manifest"] = (
+            calendar_verification.manifest_path
+        )
+        expected_paths["market_calendar_source"] = (
+            calendar_verification.source_path
+        )
+    if set(inputs) != set(expected_paths):
+        return False
+    return all(
+        _manifest_path_fingerprint_matches(
+            _mapping(inputs.get(name)),
+            Path(path).resolve(),
+        )
+        for name, path in expected_paths.items()
+    )
+
+
+def _manifest_path_fingerprint_matches(
+    fingerprint: Mapping[str, Any],
+    path: Path,
+) -> bool:
+    kind = str(fingerprint.get("kind", ""))
+    expected_kind = (
+        "file"
+        if path.is_file()
+        else "directory"
+        if path.is_dir()
+        else ""
+    )
+    try:
+        return bool(
+            expected_kind
+            and kind == expected_kind
+            and Path(str(fingerprint.get("path", ""))).resolve() == path
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _data_readiness_artifacts_consistent(
+    root: Path,
+    expected: DataReadinessReport,
+    thresholds: DataReadinessThresholds,
+    manifest: Mapping[str, Any],
+) -> bool:
+    action_queue = (
+        expected.action_queue
+        if expected.action_queue is not None
+        else _action_queue(expected.checks, expected.items)
+    )
+    expected_config = _config(
+        expected.summary.iloc[0],
+        expected.items,
+        expected.checks,
+        action_queue,
+        thresholds,
+    )
+    return bool(
+        _data_readiness_manifest_artifacts_exact(manifest)
+        and _csv_frame_matches(
+            root / DATA_READINESS_ITEMS_FILE,
+            expected.items,
+        )
+        and _csv_frame_matches(
+            root / DATA_READINESS_CHECKS_FILE,
+            expected.checks,
+        )
+        and _csv_frame_matches(
+            root / DATA_READINESS_SUMMARY_FILE,
+            expected.summary,
+        )
+        and _csv_frame_matches(
+            root / DATA_READINESS_ACTION_QUEUE_FILE,
+            action_queue,
+        )
+        and _read_json_object(
+            root / DATA_READINESS_CONFIG_FILE,
+            "data-readiness config",
+        )
+        == expected_config
+        and (root / DATA_READINESS_RUNBOOK_FILE).read_text(
+            encoding="utf-8"
+        )
+        == _runbook_markdown(
+            expected.summary.iloc[0],
+            expected.items,
+            expected.checks,
+            action_queue,
+        )
+    )
+
+
+def _data_readiness_manifest_artifacts_exact(
+    manifest: Mapping[str, Any],
+) -> bool:
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        return False
+    names = [
+        str(item.get("path", "")).replace("\\", "/")
+        for item in artifacts
+        if isinstance(item, Mapping)
+    ]
+    return bool(
+        len(names) == len(DATA_READINESS_REQUIRED_ARTIFACTS)
+        and len(names) == len(artifacts)
+        and set(names) == set(DATA_READINESS_REQUIRED_ARTIFACTS)
+    )
+
+
+def _data_readiness_authority_consistent(
+    root: Path,
+    manifest_extra: Mapping[str, Any],
+    ready: bool,
+) -> bool:
+    summary = _read_csv_frame(
+        root / DATA_READINESS_SUMMARY_FILE,
+        "data-readiness summary",
+    )
+    config = _read_json_object(
+        root / DATA_READINESS_CONFIG_FILE,
+        "data-readiness config",
+    )
+    if len(summary.index) != 1:
+        return False
+    row = summary.iloc[0]
+    expected = {
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+    return bool(
+        _to_bool(row.get("non_authorizing", False))
+        and not _to_bool(row.get("authorizes_routing", True))
+        and not _to_bool(row.get("authorizes_submission", True))
+        and _to_bool(config.get("non_authorizing", False))
+        and not _to_bool(config.get("authorizes_routing", True))
+        and not _to_bool(config.get("authorizes_submission", True))
+        and dict(manifest_extra)
+        == {
+            "ready": bool(ready),
+            **expected,
+        }
+    )
+
+
+def _csv_frame_matches(path: Path, expected: pd.DataFrame) -> bool:
+    actual = _read_csv_frame(path, path.name)
+    expected_roundtrip = pd.read_csv(
+        StringIO(expected.to_csv(index=False)),
+        keep_default_na=False,
+    )
+    return bool(
+        list(actual.columns) == list(expected_roundtrip.columns)
+        and actual.to_dict(orient="records")
+        == expected_roundtrip.to_dict(orient="records")
+    )
+
+
+def _read_csv_frame(path: Path, label: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, keep_default_na=False)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return payload
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _items(summaries: dict[str, pd.DataFrame], thresholds: DataReadinessThresholds) -> pd.DataFrame:
@@ -1241,6 +1708,9 @@ def _summary(
         [
             {
                 "ready": ready,
+                "non_authorizing": True,
+                "authorizes_routing": False,
+                "authorizes_submission": False,
                 "components": int(len(items)),
                 "required_components": int(len(required)),
                 "provided_components": int(items["provided"].astype(bool).sum()) if not items.empty else 0,
@@ -1439,6 +1909,9 @@ def _config(
     return {
         "schema_version": 1,
         "ready": _to_bool(summary_row.get("ready", False)),
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
         "recommendation": _value_text(summary_row.get("recommendation")),
         "thresholds": asdict(thresholds),
         "summary": _jsonable_record(summary_row.to_dict()),
@@ -1769,6 +2242,9 @@ def _runbook_markdown(
         "# Data Readiness Runbook",
         "",
         f"- Ready: {ready_label}",
+        "- Non-authorizing: yes",
+        "- Authorizes routing: no",
+        "- Authorizes submission: no",
         f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
         f"- Failed checks: {int(_value_number(summary_row.get('failed_checks')))}",
         f"- Ready components: {int(_value_number(summary_row.get('ready_components')))}",

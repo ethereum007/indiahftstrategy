@@ -15,7 +15,11 @@ from reports.data_readiness_comparison import (
     load_data_readiness_comparison_evidence,
     write_data_readiness_comparison,
 )
-from reports.manifest import verify_experiment_manifest
+from reports.market_calendar import write_market_calendar_report
+from reports.manifest import (
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from tests.data_readiness_helpers import write_manifest_bound_data_readiness
 
 
@@ -55,10 +59,7 @@ def write_readiness_dir(
     header_hash="",
     mapping_hash="",
     mapping_coverage=1.0,
-    calendar_id="",
-    calendar_hash="",
-    calendar_valid_from="",
-    calendar_valid_to="",
+    market_calendar_dir=None,
 ):
     return write_manifest_bound_data_readiness(
         path,
@@ -73,10 +74,6 @@ def write_readiness_dir(
             "vendor_intake_source_header_sha256": header_hash,
             "vendor_intake_mapping_draft_sha256": mapping_hash,
             "vendor_intake_mapping_coverage": mapping_coverage,
-            "market_calendar_id": calendar_id,
-            "market_calendar_sha256": calendar_hash,
-            "market_calendar_valid_from": calendar_valid_from,
-            "market_calendar_valid_to": calendar_valid_to,
             "recommendation": (
                 "feed_strategy_research"
                 if ready
@@ -84,6 +81,7 @@ def write_readiness_dir(
             ),
         },
         source_text=f"source_hash\n{source_hash or path.name}\n",
+        market_calendar_dir=market_calendar_dir,
     )
 
 
@@ -164,14 +162,34 @@ def test_cli_comparison_requires_consistent_calendar(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
     out_dir = tmp_path / "comparison"
-    calendar_kwargs = {
-        "calendar_id": "nse-fo-test-2026-06",
-        "calendar_hash": "e" * 64,
-        "calendar_valid_from": "2026-06-01",
-        "calendar_valid_to": "2026-06-30",
-    }
-    write_readiness_dir(day1, **calendar_kwargs)
-    write_readiness_dir(day2, **calendar_kwargs)
+    calendar_source = tmp_path / "calendar.json"
+    calendar_dir = tmp_path / "calendar_report"
+    calendar_source.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "calendar_id": "nse-fo-test-2026-06",
+                "market": "india_nse_index_derivatives",
+                "timezone": "Asia/Kolkata",
+                "valid_from": "2026-06-01",
+                "valid_to": "2026-06-30",
+                "provenance": {
+                    "publisher": "test-exchange",
+                    "source_url": "https://example.test/calendar",
+                    "published_date": "2026-05-01",
+                },
+                "sessions": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    write_market_calendar_report(
+        calendar_source,
+        calendar_dir,
+        expected_market="india_nse_index_derivatives",
+    )
+    write_readiness_dir(day1, market_calendar_dir=calendar_dir)
+    write_readiness_dir(day2, market_calendar_dir=calendar_dir)
 
     code = main(
         [
@@ -585,6 +603,70 @@ def test_write_data_readiness_comparison_rejects_stale_readiness_input(tmp_path)
     assert report.summary.loc[0, "data_readiness_manifest_coverage"] == 0.5
 
 
+def test_comparison_rejects_resealed_semantic_readiness_tamper(
+    tmp_path,
+):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    write_readiness_dir(day1)
+    write_readiness_dir(day2)
+    manifest_path = day1 / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    summary_path = day1 / "data_readiness_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "recommendation"] = "route_live_orders"
+    summary.to_csv(summary_path, index=False)
+    write_experiment_manifest(
+        day1,
+        run_type=manifest["run_type"],
+        parameters=manifest["parameters"],
+        inputs={
+            name: value["path"]
+            for name, value in manifest["inputs"].items()
+        },
+        extra=manifest["extra"],
+    )
+
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_RUN_TYPE,
+        required_artifacts=DATA_READINESS_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    report = write_data_readiness_comparison(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["resealed", "current"],
+        thresholds=DataReadinessComparisonThresholds(min_datasets=2),
+    )
+
+    assert integrity.passed
+    assert not report.accepted
+    assert report.summary.loc[0, "data_readiness_manifest_coverage"] == 1.0
+    assert (
+        report.summary.loc[
+            0,
+            "data_readiness_report_verification_coverage",
+        ]
+        == 0.5
+    )
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert "data_readiness_report_verification_coverage" in failed
+    resealed = report.dataset_runs.set_index("dataset").loc["resealed"]
+    assert resealed["data_readiness_manifest_current"]
+    assert not resealed["data_readiness_report_verified"]
+    assert not resealed["data_readiness_report_artifacts_consistent"]
+    queue = report.action_queue.set_index("check")
+    assert (
+        queue.loc[
+            "data_readiness_report_verification_coverage",
+            "recommendation",
+        ]
+        == "regenerate_semantically_verified_data_readiness"
+    )
+
+
 def test_comparison_manifest_tracks_transitive_readiness_dependencies(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
@@ -613,7 +695,10 @@ def test_comparison_manifest_tracks_transitive_readiness_dependencies(tmp_path):
 
     assert report.accepted
     assert current.passed
-    assert dependency_paths == {str(source1.resolve()), str(source2.resolve())}
+    assert dependency_paths == {
+        str(source1.parent.resolve()),
+        str(source2.parent.resolve()),
+    }
     assert load_data_readiness_comparison_evidence(out_dir).passed
 
     day1_manifest = day1 / "manifest.json"

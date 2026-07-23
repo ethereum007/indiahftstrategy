@@ -4,9 +4,16 @@ import pandas as pd
 
 from hft_cli import main
 from reports.data_readiness import (
+    DATA_READINESS_REQUIRED_ARTIFACTS,
+    DATA_READINESS_RUN_TYPE,
     DataReadinessThresholds,
     evaluate_data_readiness,
+    verify_data_readiness_report,
     write_data_readiness_report,
+)
+from reports.manifest import (
+    verify_experiment_manifest,
+    write_experiment_manifest,
 )
 from reports.market_portability import (
     MarketPortabilityReportConfig,
@@ -226,6 +233,21 @@ def calendar_report_bound(frame, calendar):
     ):
         result[column] = values[column]
     return result
+
+
+def reseal_data_readiness_report(path):
+    manifest_path = path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    write_experiment_manifest(
+        path,
+        run_type=manifest["run_type"],
+        parameters=manifest["parameters"],
+        inputs={
+            name: value["path"]
+            for name, value in manifest["inputs"].items()
+        },
+        extra=manifest["extra"],
+    )
 
 
 def test_data_readiness_accepts_clean_tick_diagnostics():
@@ -803,6 +825,9 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     assert int(saved_summary.loc[0, "failed_check_count"]) == 0
     assert pd.isna(saved_summary.loc[0, "primary_blocker_check"])
     assert config["ready"]
+    assert config["non_authorizing"]
+    assert not config["authorizes_routing"]
+    assert not config["authorizes_submission"]
     assert config["component_counts"]["failed_checks"] == 0
     assert config["failed_check_count"] == 0
     assert config["failed_checks"] == []
@@ -819,11 +844,32 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     assert config["blocked_actions"] == []
     assert "# Data Readiness Runbook" in runbook
     assert "- Ready: yes" in runbook
+    assert "- Non-authorizing: yes" in runbook
+    assert "- Authorizes routing: no" in runbook
+    assert "- Authorizes submission: no" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "data_readiness_action_queue.csv" in artifact_paths
     assert "data_readiness_config.json" in artifact_paths
     assert "data_readiness_runbook.md" in artifact_paths
+    verification = verify_data_readiness_report(out_dir)
+    assert verification.verified
+    assert verification.ready
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert (
+        main(
+            [
+                "verify-data-readiness-report",
+                "--report",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
 
     blocked_gate_code = main(
         [
@@ -847,6 +893,92 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     )
     assert blocked_gate_code == 0
     assert action_gate_code == 0
+
+
+def test_data_readiness_verifier_rejects_resealed_semantic_tamper(
+    tmp_path,
+):
+    tick_dir = tmp_path / "tick_diag"
+    out_dir = tmp_path / "data_readiness"
+    tick_dir.mkdir()
+    tick_summary().to_csv(
+        tick_dir / "diagnostic_summary.csv",
+        index=False,
+    )
+    write_data_readiness_report(
+        output_dir=out_dir,
+        tick_diagnostics_dir=tick_dir,
+    )
+    manifest_path = out_dir / "manifest.json"
+    summary_path = out_dir / "data_readiness_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "authorizes_routing"] = True
+    summary.to_csv(summary_path, index=False)
+    reseal_data_readiness_report(out_dir)
+
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_RUN_TYPE,
+        required_artifacts=DATA_READINESS_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    verification = verify_data_readiness_report(out_dir)
+
+    assert integrity.passed
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert not verification.artifacts_consistent
+    assert not verification.non_authorizing
+    assert not verification.verified
+    assert verification.error == (
+        "data-readiness artifacts do not reconstruct from inputs"
+    )
+    assert (
+        main(
+            [
+                "verify-data-readiness-report",
+                "--report",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+
+def test_data_readiness_verifier_rejects_resealed_extra_artifact(
+    tmp_path,
+):
+    tick_dir = tmp_path / "tick_diag"
+    out_dir = tmp_path / "data_readiness"
+    tick_dir.mkdir()
+    tick_summary().to_csv(
+        tick_dir / "diagnostic_summary.csv",
+        index=False,
+    )
+    write_data_readiness_report(
+        output_dir=out_dir,
+        tick_diagnostics_dir=tick_dir,
+    )
+    (out_dir / "unexpected_order_payload.csv").write_text(
+        "instrument_id,side,qty\nNIFTY_TEST,BUY,1\n",
+        encoding="utf-8",
+    )
+    reseal_data_readiness_report(out_dir)
+
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=DATA_READINESS_RUN_TYPE,
+        required_artifacts=DATA_READINESS_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    verification = verify_data_readiness_report(out_dir)
+
+    assert integrity.passed
+    assert integrity.artifact_count == 7
+    assert verification.manifest_current
+    assert not verification.artifacts_consistent
+    assert not verification.verified
 
 
 def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_path):

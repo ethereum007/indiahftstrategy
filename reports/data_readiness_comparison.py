@@ -8,9 +8,8 @@ import numpy as np
 import pandas as pd
 
 from reports.data_readiness import (
-    DATA_READINESS_REQUIRED_ARTIFACTS,
-    DATA_READINESS_RUN_TYPE,
     DATA_READINESS_SUMMARY_FILE,
+    verify_data_readiness_report,
 )
 from reports.manifest import (
     ManifestIntegrity,
@@ -258,6 +257,9 @@ def compare_data_readiness(
     runs = datasets.copy().reset_index(drop=True)
     runs["ready"] = runs["ready"].map(_to_bool)
     lineage_columns_present = "data_readiness_manifest_required" in runs.columns
+    verification_columns_present = (
+        "data_readiness_report_verification_required" in runs.columns
+    )
     if "reported_ready" not in runs.columns:
         runs["reported_ready"] = runs["ready"]
     runs["reported_ready"] = runs["reported_ready"].map(_to_bool)
@@ -272,9 +274,26 @@ def compare_data_readiness(
     if not lineage_columns_present:
         runs["data_readiness_manifest_required"] = False
     for column in (
+        "data_readiness_report_verification_required",
+        "data_readiness_report_verified",
+        "data_readiness_report_inputs_current",
+        "data_readiness_report_artifacts_consistent",
+        "data_readiness_report_non_authorizing",
+    ):
+        if column not in runs.columns:
+            runs[column] = False
+        runs[column] = runs[column].map(_to_bool)
+    if not verification_columns_present:
+        runs["data_readiness_report_verification_required"] = False
+    runs["ready"] = runs["ready"] & (
+        ~runs["data_readiness_report_verification_required"]
+        | runs["data_readiness_report_verified"]
+    )
+    for column in (
         "data_readiness_manifest_error",
         "data_readiness_manifest_path",
         "data_readiness_manifest_sha256",
+        "data_readiness_report_verification_error",
     ):
         if column not in runs.columns:
             runs[column] = ""
@@ -388,12 +407,7 @@ def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] 
                 f"data readiness summary must contain exactly one row: {summary_path}"
             )
         manifest_path = root / "manifest.json"
-        integrity = verify_experiment_manifest(
-            manifest_path,
-            expected_run_type=DATA_READINESS_RUN_TYPE,
-            required_artifacts=DATA_READINESS_REQUIRED_ARTIFACTS,
-            require_input_fingerprints=True,
-        )
+        verification = verify_data_readiness_report(root)
         manifest_sha256 = ""
         if manifest_path.is_file():
             try:
@@ -405,37 +419,55 @@ def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] 
         label = labels[idx] if labels is not None else path.stem
         reported_ready = _to_bool(row.get("ready", False))
         reported_failed_checks = _number(row, "failed_checks", fallback=0.0)
-        manifest_current = bool(integrity.passed)
+        manifest_current = bool(verification.manifest_current)
+        report_verified = bool(verification.verified)
         rows.append(
             {
                 "dataset": label,
                 "dataset_path": str(path),
                 "data_readiness_root": str(root.resolve()),
                 "reported_ready": reported_ready,
-                "ready": bool(reported_ready and manifest_current),
+                "ready": bool(reported_ready and report_verified),
                 "components": _number(row, "components", fallback=0.0),
                 "required_components": _number(row, "required_components", fallback=0.0),
                 "provided_components": _number(row, "provided_components", fallback=0.0),
                 "ready_components": _number(row, "ready_components", fallback=0.0),
                 "reported_failed_checks": reported_failed_checks,
-                "failed_checks": reported_failed_checks + (0 if manifest_current else 1),
+                "failed_checks": reported_failed_checks
+                + (0 if report_verified else 1),
                 "data_readiness_manifest_required": True,
-                "data_readiness_manifest_provided": bool(integrity.exists),
+                "data_readiness_manifest_provided": manifest_path.is_file(),
                 "data_readiness_manifest_current": manifest_current,
-                "data_readiness_manifest_error": str(integrity.error),
+                "data_readiness_manifest_error": (
+                    "" if manifest_current else verification.error
+                ),
                 "data_readiness_manifest_path": str(manifest_path.resolve()),
                 "data_readiness_manifest_sha256": manifest_sha256,
                 "data_readiness_manifest_artifact_count": int(
-                    integrity.artifact_count
+                    verification.manifest_artifact_count
                 ),
                 "data_readiness_manifest_artifact_match_count": int(
-                    integrity.artifact_match_count
+                    verification.manifest_artifact_match_count
                 ),
                 "data_readiness_manifest_input_fingerprint_count": int(
-                    integrity.input_fingerprint_count
+                    verification.manifest_input_fingerprint_count
                 ),
                 "data_readiness_manifest_input_fingerprint_match_count": int(
-                    integrity.input_fingerprint_match_count
+                    verification.manifest_input_fingerprint_match_count
+                ),
+                "data_readiness_report_verification_required": True,
+                "data_readiness_report_verified": report_verified,
+                "data_readiness_report_inputs_current": bool(
+                    verification.inputs_current
+                ),
+                "data_readiness_report_artifacts_consistent": bool(
+                    verification.artifacts_consistent
+                ),
+                "data_readiness_report_non_authorizing": bool(
+                    verification.non_authorizing
+                ),
+                "data_readiness_report_verification_error": str(
+                    verification.error
                 ),
                 "data_readiness_dependency_count": int(len(dependencies)),
                 "source_file_sha256": _text(
@@ -529,6 +561,16 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
         if "data_readiness_manifest_current" in runs.columns
         else 0
     )
+    verification_required = bool(
+        runs["data_readiness_report_verification_required"].any()
+        if "data_readiness_report_verification_required" in runs.columns
+        else False
+    )
+    verified_reports = int(
+        runs["data_readiness_report_verified"].sum()
+        if "data_readiness_report_verified" in runs.columns
+        else 0
+    )
     return pd.DataFrame(
         [
             {
@@ -546,6 +588,21 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "data_readiness_manifest_errors": _joined_text_values(
                     runs,
                     "data_readiness_manifest_error",
+                ),
+                "data_readiness_report_verification_required": (
+                    verification_required
+                ),
+                "verified_data_readiness_reports": verified_reports,
+                "data_readiness_report_verification_coverage": (
+                    verified_reports / dataset_count
+                    if verification_required and dataset_count
+                    else np.nan
+                ),
+                "data_readiness_report_verification_errors": (
+                    _joined_text_values(
+                        runs,
+                        "data_readiness_report_verification_error",
+                    )
                 ),
                 "data_readiness_dependency_count": int(
                     pd.to_numeric(
@@ -611,6 +668,18 @@ def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd
             _threshold_check(
                 "data_readiness_manifest_coverage",
                 row["data_readiness_manifest_coverage"],
+                ">=",
+                1.0,
+            ),
+        )
+    if _to_bool(
+        row.get("data_readiness_report_verification_required", False)
+    ):
+        checks.insert(
+            2,
+            _threshold_check(
+                "data_readiness_report_verification_coverage",
+                row["data_readiness_report_verification_coverage"],
                 ">=",
                 1.0,
             ),
@@ -720,6 +789,37 @@ def _config(
                 ).split(";")
                 if _value_text(
                     summary_row.get("data_readiness_manifest_errors")
+                )
+                else []
+            ),
+            "report_verification_required": _to_bool(
+                summary_row.get(
+                    "data_readiness_report_verification_required",
+                    False,
+                )
+            ),
+            "verified_reports": int(
+                _value_number(
+                    summary_row.get("verified_data_readiness_reports")
+                )
+            ),
+            "report_verification_coverage": float(
+                _value_number(
+                    summary_row.get(
+                        "data_readiness_report_verification_coverage"
+                    )
+                )
+            ),
+            "report_verification_errors": (
+                _value_text(
+                    summary_row.get(
+                        "data_readiness_report_verification_errors"
+                    )
+                ).split(";")
+                if _value_text(
+                    summary_row.get(
+                        "data_readiness_report_verification_errors"
+                    )
                 )
                 else []
             ),
@@ -857,6 +957,7 @@ def _next_gate_for_check(check_name: str) -> str:
         return "market-calendar-report"
     if check_name in {
         "data_readiness_manifest_coverage",
+        "data_readiness_report_verification_coverage",
         "ready_datasets",
         "ready_rate",
         "total_failed_checks",
@@ -880,6 +981,8 @@ def _action_recommendation(check_name: str) -> str:
         return "collect_additional_vendor_data_days"
     if check_name == "data_readiness_manifest_coverage":
         return "regenerate_current_manifest_bound_data_readiness"
+    if check_name == "data_readiness_report_verification_coverage":
+        return "regenerate_semantically_verified_data_readiness"
     if check_name in {"ready_datasets", "ready_rate", "total_failed_checks"}:
         return "fix_failed_data_readiness_runs"
     if check_name == "unique_source_files":
@@ -915,6 +1018,8 @@ def _runbook_markdown(
         f"- Failed datasets: {int(_value_number(summary_row.get('failed_datasets')))}",
         f"- Current readiness-manifest coverage: {_format_number(summary_row.get('data_readiness_manifest_coverage'))}",
         f"- Readiness-manifest errors: {_value_text(summary_row.get('data_readiness_manifest_errors'))}",
+        f"- Semantic readiness-report coverage: {_format_number(summary_row.get('data_readiness_report_verification_coverage'))}",
+        f"- Semantic readiness-report errors: {_value_text(summary_row.get('data_readiness_report_verification_errors'))}",
         f"- Bound readiness dependencies: {int(_value_number(summary_row.get('data_readiness_dependency_count')))}",
         f"- Market-calendar coverage: {_format_number(summary_row.get('market_calendar_coverage'))}",
         f"- Market-calendar IDs: {_value_text(summary_row.get('market_calendar_ids'))}",
@@ -966,6 +1071,7 @@ def _dataset_table(dataset_runs: pd.DataFrame) -> str:
             "Reported ready",
             "Ready",
             "Manifest current",
+            "Semantically verified",
             "Manifest error",
             "Failed checks",
             "Source hash",
@@ -981,6 +1087,9 @@ def _dataset_table(dataset_runs: pd.DataFrame) -> str:
                 "yes" if _to_bool(row.get("ready")) else "no",
                 "yes"
                 if _to_bool(row.get("data_readiness_manifest_current"))
+                else "no",
+                "yes"
+                if _to_bool(row.get("data_readiness_report_verified"))
                 else "no",
                 _value_text(row.get("data_readiness_manifest_error")),
                 str(int(_value_number(row.get("failed_checks")))),
