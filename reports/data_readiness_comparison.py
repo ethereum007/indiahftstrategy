@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields
+from io import StringIO
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -12,6 +15,7 @@ from reports.data_readiness import (
     verify_data_readiness_report,
 )
 from reports.manifest import (
+    MANIFEST_NAME,
     ManifestIntegrity,
     file_sha256,
     manifest_dependency_paths,
@@ -21,14 +25,27 @@ from reports.manifest import (
 
 
 DATA_READINESS_COMPARISON_RUN_TYPE = "data_readiness_comparison"
+DATA_READINESS_COMPARISON_RUNS_FILE = "data_readiness_runs.csv"
+DATA_READINESS_COMPARISON_CHECKS_FILE = (
+    "data_readiness_comparison_checks.csv"
+)
 DATA_READINESS_COMPARISON_SUMMARY_FILE = "data_readiness_comparison_summary.csv"
+DATA_READINESS_COMPARISON_ACTION_QUEUE_FILE = (
+    "data_readiness_comparison_action_queue.csv"
+)
+DATA_READINESS_COMPARISON_CONFIG_FILE = (
+    "data_readiness_comparison_config.json"
+)
+DATA_READINESS_COMPARISON_RUNBOOK_FILE = (
+    "data_readiness_comparison_runbook.md"
+)
 DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS = (
-    "data_readiness_runs.csv",
-    "data_readiness_comparison_checks.csv",
+    DATA_READINESS_COMPARISON_RUNS_FILE,
+    DATA_READINESS_COMPARISON_CHECKS_FILE,
     DATA_READINESS_COMPARISON_SUMMARY_FILE,
-    "data_readiness_comparison_action_queue.csv",
-    "data_readiness_comparison_config.json",
-    "data_readiness_comparison_runbook.md",
+    DATA_READINESS_COMPARISON_ACTION_QUEUE_FILE,
+    DATA_READINESS_COMPARISON_CONFIG_FILE,
+    DATA_READINESS_COMPARISON_RUNBOOK_FILE,
 )
 DATA_READINESS_COMPARISON_REQUIRED_SUMMARY_COLUMNS = (
     "accepted",
@@ -66,6 +83,23 @@ class DataReadinessComparisonReport:
 
 
 @dataclass(frozen=True)
+class DataReadinessComparisonReportVerification:
+    verified: bool
+    accepted: bool
+    manifest_current: bool
+    inputs_current: bool
+    artifacts_consistent: bool
+    non_authorizing: bool
+    output_dir: Path
+    manifest_path: Path
+    manifest_artifact_count: int = 0
+    manifest_artifact_match_count: int = 0
+    manifest_input_fingerprint_count: int = 0
+    manifest_input_fingerprint_match_count: int = 0
+    error: str = ""
+
+
+@dataclass(frozen=True)
 class DataReadinessComparisonEvidence:
     summary: pd.DataFrame
     requested_path: Path | None = None
@@ -73,6 +107,7 @@ class DataReadinessComparisonEvidence:
     summary_path: Path | None = None
     manifest_path: Path | None = None
     manifest_integrity: ManifestIntegrity | None = None
+    verification: DataReadinessComparisonReportVerification | None = None
     read_error: str = ""
 
     @property
@@ -92,8 +127,20 @@ class DataReadinessComparisonEvidence:
         return bool(self.manifest_integrity is not None and self.manifest_integrity.passed)
 
     @property
+    def semantically_verified(self) -> bool:
+        return bool(
+            self.verification is not None
+            and self.verification.verified
+        )
+
+    @property
     def passed(self) -> bool:
-        return bool(not self.read_error and self.accepted and self.manifest_current)
+        return bool(
+            not self.read_error
+            and self.accepted
+            and self.manifest_current
+            and self.semantically_verified
+        )
 
     @property
     def reason(self) -> str:
@@ -109,13 +156,28 @@ class DataReadinessComparisonEvidence:
             )
             suffix = error if error.startswith("manifest_") else f"manifest_{error}"
             return f"data_readiness_comparison_{suffix}"
+        if not self.semantically_verified:
+            error = (
+                self.verification.error
+                if self.verification is not None
+                else ""
+            )
+            return (
+                "data_readiness_comparison_"
+                + _verification_error_slug(error)
+            )
         if not self.accepted:
             return "data_readiness_comparison_not_accepted"
         return "accepted"
 
     @property
     def recommendation(self) -> str:
-        if not self.provided or not self.manifest_current or self.read_error:
+        if (
+            not self.provided
+            or not self.manifest_current
+            or not self.semantically_verified
+            or self.read_error
+        ):
             return self.reason
         value = str(self.summary.iloc[0].get("recommendation", "")).strip()
         return value or self.reason
@@ -134,13 +196,14 @@ def load_data_readiness_comparison_evidence(
     else:
         root = requested
         summary_path = root / DATA_READINESS_COMPARISON_SUMMARY_FILE
-    manifest_path = root / "manifest.json"
+    manifest_path = root / MANIFEST_NAME
     integrity = verify_experiment_manifest(
         manifest_path,
         expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
         required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
         require_input_fingerprints=True,
     )
+    verification = verify_data_readiness_comparison(root)
 
     summary = pd.DataFrame()
     read_error = ""
@@ -171,6 +234,7 @@ def load_data_readiness_comparison_evidence(
         summary_path=summary_path,
         manifest_path=manifest_path,
         manifest_integrity=integrity,
+        verification=verification,
         read_error=read_error,
     )
 
@@ -180,6 +244,7 @@ def data_readiness_comparison_evidence_record(
 ) -> dict[str, object]:
     row = evidence.summary.iloc[0] if evidence.provided else pd.Series(dtype=object)
     integrity = evidence.manifest_integrity
+    verification = evidence.verification
     manifest_path = evidence.manifest_path
     manifest_sha256 = ""
     if manifest_path is not None and manifest_path.is_file():
@@ -191,6 +256,7 @@ def data_readiness_comparison_evidence_record(
         "requested": evidence.requested,
         "provided": evidence.provided,
         "manifest_required": evidence.requested,
+        "semantic_verification_required": evidence.requested,
         "verified": evidence.passed,
         "read_error": evidence.read_error,
         "input_dir": str(evidence.root or ""),
@@ -214,6 +280,22 @@ def data_readiness_comparison_evidence_record(
         ),
         "manifest_input_fingerprint_match_count": int(
             integrity.input_fingerprint_match_count if integrity is not None else 0
+        ),
+        "semantically_verified": evidence.semantically_verified,
+        "verification_inputs_current": bool(
+            verification is not None
+            and verification.inputs_current
+        ),
+        "verification_artifacts_consistent": bool(
+            verification is not None
+            and verification.artifacts_consistent
+        ),
+        "verification_non_authorizing": bool(
+            verification is not None
+            and verification.non_authorizing
+        ),
+        "verification_error": str(
+            verification.error if verification is not None else ""
         ),
         "dataset_count": int(_number(row, "dataset_count", fallback=0.0)),
         "ready_rate": _number(row, "ready_rate", fallback=0.0),
@@ -336,6 +418,9 @@ def compare_data_readiness(
     action_queue = _action_queue(checks)
     accepted = bool(checks["passed"].all()) if not checks.empty else False
     summary["accepted"] = accepted
+    summary["non_authorizing"] = True
+    summary["authorizes_routing"] = False
+    summary["authorizes_submission"] = False
     summary["recommendation"] = "feed_walkforward_research" if accepted else "collect_or_fix_data"
     summary["ready_action_count"] = 0
     summary["blocked_action_count"] = int(len(action_queue))
@@ -365,12 +450,21 @@ def write_data_readiness_comparison(
     report = compare_data_readiness(runs, thresholds=thresholds)
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    report.dataset_runs.to_csv(out / "data_readiness_runs.csv", index=False)
-    report.checks.to_csv(out / "data_readiness_comparison_checks.csv", index=False)
+    report.dataset_runs.to_csv(
+        out / DATA_READINESS_COMPARISON_RUNS_FILE,
+        index=False,
+    )
+    report.checks.to_csv(
+        out / DATA_READINESS_COMPARISON_CHECKS_FILE,
+        index=False,
+    )
     report.summary.to_csv(out / DATA_READINESS_COMPARISON_SUMMARY_FILE, index=False)
     action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks)
-    action_queue.to_csv(out / "data_readiness_comparison_action_queue.csv", index=False)
-    (out / "data_readiness_comparison_config.json").write_text(
+    action_queue.to_csv(
+        out / DATA_READINESS_COMPARISON_ACTION_QUEUE_FILE,
+        index=False,
+    )
+    (out / DATA_READINESS_COMPARISON_CONFIG_FILE).write_text(
         json.dumps(
             _config(report.summary.iloc[0], report.dataset_runs, report.checks, action_queue, thresholds),
             indent=2,
@@ -379,7 +473,7 @@ def write_data_readiness_comparison(
         + "\n",
         encoding="utf-8",
     )
-    (out / "data_readiness_comparison_runbook.md").write_text(
+    (out / DATA_READINESS_COMPARISON_RUNBOOK_FILE).write_text(
         _runbook_markdown(report.summary.iloc[0], report.dataset_runs, report.checks, action_queue),
         encoding="utf-8",
     )
@@ -388,8 +482,430 @@ def write_data_readiness_comparison(
         run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
         parameters={"labels": labels, "thresholds": asdict(thresholds)},
         inputs=_comparison_manifest_inputs(readiness_dirs),
+        extra=_data_readiness_comparison_manifest_extra(report),
     )
     return DataReadinessComparisonReport(report.dataset_runs, report.checks, report.summary, out, action_queue)
+
+
+def verify_data_readiness_comparison(
+    report_dir: str | Path,
+) -> DataReadinessComparisonReportVerification:
+    requested = Path(report_dir)
+    root = requested.parent if requested.is_file() else requested
+    root = root.resolve()
+    manifest_path = root / MANIFEST_NAME
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    inputs_current = False
+    artifacts_consistent = False
+    non_authorizing = False
+    try:
+        manifest = _read_json_object(
+            manifest_path,
+            "data-readiness comparison manifest",
+        )
+        parameters = _mapping(manifest.get("parameters"))
+        labels, thresholds = _comparison_parameters_from_manifest(
+            parameters
+        )
+        inputs = _mapping(manifest.get("inputs"))
+        readiness_dirs = _comparison_readiness_paths_from_manifest(inputs)
+        expected_report = compare_data_readiness(
+            _read_readiness_runs(readiness_dirs, labels=labels),
+            thresholds=thresholds,
+        )
+        expected_parameters = {
+            "labels": labels,
+            "thresholds": asdict(thresholds),
+        }
+        expected_extra = _data_readiness_comparison_manifest_extra(
+            expected_report
+        )
+        inputs_current = bool(
+            _comparison_input_contract_current(inputs, readiness_dirs)
+            and integrity.input_fingerprint_count
+            == integrity.input_fingerprint_match_count
+            and integrity.input_fingerprint_count > 0
+        )
+        artifacts_consistent = bool(
+            _comparison_artifacts_consistent(
+                root,
+                expected_report,
+                thresholds,
+                manifest,
+            )
+            and dict(parameters) == expected_parameters
+            and _mapping(manifest.get("extra")) == expected_extra
+        )
+        non_authorizing = _comparison_authority_consistent(
+            root,
+            _mapping(manifest.get("extra")),
+            expected_report.accepted,
+        )
+        verified = bool(
+            integrity.passed
+            and inputs_current
+            and artifacts_consistent
+            and non_authorizing
+        )
+        error = ""
+        if not verified:
+            error = (
+                integrity.error
+                or (
+                    "input contract is invalid"
+                    if not inputs_current
+                    else ""
+                )
+                or (
+                    "artifacts do not reconstruct from inputs"
+                    if not artifacts_consistent
+                    else ""
+                )
+                or "report widens authority"
+            )
+        return DataReadinessComparisonReportVerification(
+            verified=verified,
+            accepted=bool(verified and expected_report.accepted),
+            manifest_current=integrity.passed,
+            inputs_current=inputs_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            manifest_artifact_count=integrity.artifact_count,
+            manifest_artifact_match_count=(
+                integrity.artifact_match_count
+            ),
+            manifest_input_fingerprint_count=(
+                integrity.input_fingerprint_count
+            ),
+            manifest_input_fingerprint_match_count=(
+                integrity.input_fingerprint_match_count
+            ),
+            error=error,
+        )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        return DataReadinessComparisonReportVerification(
+            verified=False,
+            accepted=False,
+            manifest_current=integrity.passed,
+            inputs_current=inputs_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            manifest_artifact_count=integrity.artifact_count,
+            manifest_artifact_match_count=(
+                integrity.artifact_match_count
+            ),
+            manifest_input_fingerprint_count=(
+                integrity.input_fingerprint_count
+            ),
+            manifest_input_fingerprint_match_count=(
+                integrity.input_fingerprint_match_count
+            ),
+            error=integrity.error or str(exc),
+        )
+
+
+def _data_readiness_comparison_manifest_extra(
+    report: DataReadinessComparisonReport,
+) -> dict[str, object]:
+    return {
+        "accepted": report.accepted,
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+
+
+def _comparison_parameters_from_manifest(
+    parameters: Mapping[str, Any],
+) -> tuple[list[str] | None, DataReadinessComparisonThresholds]:
+    if set(parameters) != {"labels", "thresholds"}:
+        raise ValueError(
+            "comparison manifest parameters must contain labels and thresholds"
+        )
+    raw_labels = parameters.get("labels")
+    if raw_labels is None:
+        labels = None
+    elif isinstance(raw_labels, list) and all(
+        isinstance(value, str) for value in raw_labels
+    ):
+        labels = list(raw_labels)
+    else:
+        raise ValueError("comparison manifest labels must be a string list")
+    values = _mapping(parameters.get("thresholds"))
+    expected_fields = {
+        field.name
+        for field in fields(DataReadinessComparisonThresholds)
+    }
+    if set(values) != expected_fields:
+        raise ValueError(
+            "comparison manifest threshold contract is incomplete"
+        )
+    thresholds = DataReadinessComparisonThresholds(**dict(values))
+    _validate_thresholds(thresholds)
+    expected = {
+        "labels": labels,
+        "thresholds": asdict(thresholds),
+    }
+    if dict(parameters) != expected:
+        raise ValueError(
+            "comparison manifest parameters are not canonical"
+        )
+    return labels, thresholds
+
+
+def _comparison_readiness_paths_from_manifest(
+    inputs: Mapping[str, Any],
+) -> list[Path]:
+    value = inputs.get("readiness")
+    if not isinstance(value, list) or not value:
+        raise ValueError(
+            "comparison manifest lacks readiness input fingerprints"
+        )
+    paths = [
+        _manifest_path_fingerprint(item, "readiness")
+        for item in value
+    ]
+    return paths
+
+
+def _manifest_path_fingerprint(value: Any, label: str) -> Path:
+    fingerprint = _mapping(value)
+    if fingerprint.get("kind") not in {"file", "directory"}:
+        raise ValueError(
+            f"comparison manifest {label} input is not fingerprinted"
+        )
+    raw_path = str(fingerprint.get("path", "")).strip()
+    if not raw_path:
+        raise ValueError(
+            f"comparison manifest {label} input path is missing"
+        )
+    return Path(raw_path).resolve()
+
+
+def _comparison_input_contract_current(
+    inputs: Mapping[str, Any],
+    readiness_dirs: list[Path],
+) -> bool:
+    expected = _comparison_manifest_inputs(readiness_dirs)
+    if set(inputs) != set(expected):
+        return False
+    return all(
+        _manifest_input_path_contract(inputs.get(name))
+        == _expected_input_path_contract(value)
+        for name, value in expected.items()
+    )
+
+
+def _manifest_input_path_contract(value: Any) -> Any:
+    if isinstance(value, list):
+        return [
+            _manifest_input_path_contract(item)
+            for item in value
+        ]
+    fingerprint = _mapping(value)
+    kind = str(fingerprint.get("kind", ""))
+    raw_path = str(fingerprint.get("path", "")).strip()
+    if kind not in {"file", "directory"} or not raw_path:
+        return None
+    return kind, str(Path(raw_path).resolve())
+
+
+def _expected_input_path_contract(value: Any) -> Any:
+    if isinstance(value, (list, tuple)):
+        return [
+            _expected_input_path_contract(item)
+            for item in value
+        ]
+    if not isinstance(value, (str, Path)):
+        return None
+    path = Path(value).resolve()
+    kind = (
+        "file"
+        if path.is_file()
+        else "directory"
+        if path.is_dir()
+        else ""
+    )
+    return (kind, str(path)) if kind else None
+
+
+def _comparison_artifacts_consistent(
+    root: Path,
+    expected: DataReadinessComparisonReport,
+    thresholds: DataReadinessComparisonThresholds,
+    manifest: Mapping[str, Any],
+) -> bool:
+    action_queue = (
+        expected.action_queue
+        if expected.action_queue is not None
+        else _action_queue(expected.checks)
+    )
+    expected_config = _config(
+        expected.summary.iloc[0],
+        expected.dataset_runs,
+        expected.checks,
+        action_queue,
+        thresholds,
+    )
+    return bool(
+        _comparison_manifest_artifacts_exact(manifest)
+        and _csv_frame_matches(
+            root / DATA_READINESS_COMPARISON_RUNS_FILE,
+            expected.dataset_runs,
+        )
+        and _csv_frame_matches(
+            root / DATA_READINESS_COMPARISON_CHECKS_FILE,
+            expected.checks,
+        )
+        and _csv_frame_matches(
+            root / DATA_READINESS_COMPARISON_SUMMARY_FILE,
+            expected.summary,
+        )
+        and _csv_frame_matches(
+            root / DATA_READINESS_COMPARISON_ACTION_QUEUE_FILE,
+            action_queue,
+        )
+        and _read_json_object(
+            root / DATA_READINESS_COMPARISON_CONFIG_FILE,
+            "data-readiness comparison config",
+        )
+        == expected_config
+        and (root / DATA_READINESS_COMPARISON_RUNBOOK_FILE).read_text(
+            encoding="utf-8"
+        )
+        == _runbook_markdown(
+            expected.summary.iloc[0],
+            expected.dataset_runs,
+            expected.checks,
+            action_queue,
+        )
+    )
+
+
+def _comparison_manifest_artifacts_exact(
+    manifest: Mapping[str, Any],
+) -> bool:
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        return False
+    names = [
+        str(item.get("path", "")).replace("\\", "/")
+        for item in artifacts
+        if isinstance(item, Mapping)
+    ]
+    return bool(
+        len(names) == len(DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS)
+        and len(names) == len(artifacts)
+        and set(names)
+        == set(DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS)
+    )
+
+
+def _comparison_authority_consistent(
+    root: Path,
+    manifest_extra: Mapping[str, Any],
+    accepted: bool,
+) -> bool:
+    summary = _read_csv_frame(
+        root / DATA_READINESS_COMPARISON_SUMMARY_FILE,
+        "data-readiness comparison summary",
+    )
+    config = _read_json_object(
+        root / DATA_READINESS_COMPARISON_CONFIG_FILE,
+        "data-readiness comparison config",
+    )
+    if len(summary.index) != 1:
+        return False
+    row = summary.iloc[0]
+    expected = {
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+    return bool(
+        _to_bool(row.get("non_authorizing", False))
+        and not _to_bool(row.get("authorizes_routing", True))
+        and not _to_bool(row.get("authorizes_submission", True))
+        and _to_bool(config.get("non_authorizing", False))
+        and not _to_bool(config.get("authorizes_routing", True))
+        and not _to_bool(config.get("authorizes_submission", True))
+        and dict(manifest_extra)
+        == {
+            "accepted": bool(accepted),
+            **expected,
+        }
+    )
+
+
+def _csv_frame_matches(path: Path, expected: pd.DataFrame) -> bool:
+    actual = _read_csv_frame(path, path.name)
+    expected_roundtrip = pd.read_csv(
+        StringIO(expected.to_csv(index=False)),
+        keep_default_na=False,
+    )
+    return bool(
+        list(actual.columns) == list(expected_roundtrip.columns)
+        and actual.to_dict(orient="records")
+        == expected_roundtrip.to_dict(orient="records")
+    )
+
+
+def _read_csv_frame(path: Path, label: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, keep_default_na=False)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return payload
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _verification_error_slug(error: str) -> str:
+    text = str(error).strip().lower()
+    prefix = "data-readiness comparison "
+    if text.startswith(prefix):
+        text = text[len(prefix):]
+    slug = "".join(
+        character if character.isalnum() else "_"
+        for character in text
+    )
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug.strip("_") or "semantic_verification_failed"
 
 
 def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] | None) -> pd.DataFrame:
@@ -406,7 +922,7 @@ def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] 
             raise ValueError(
                 f"data readiness summary must contain exactly one row: {summary_path}"
             )
-        manifest_path = root / "manifest.json"
+        manifest_path = root / MANIFEST_NAME
         verification = verify_data_readiness_report(root)
         manifest_sha256 = ""
         if manifest_path.is_file():
@@ -522,7 +1038,7 @@ def _comparison_manifest_inputs(
     dependency_paths: dict[str, Path] = {}
     for raw_path in readiness_dirs:
         root, _ = _readiness_report_paths(Path(raw_path))
-        manifest_path = (root / "manifest.json").resolve()
+        manifest_path = (root / MANIFEST_NAME).resolve()
         if not manifest_path.is_file():
             continue
         manifest_paths[str(manifest_path)] = manifest_path
@@ -758,6 +1274,9 @@ def _config(
     return {
         "schema_version": 1,
         "accepted": _to_bool(summary_row.get("accepted", False)),
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
         "recommendation": _value_text(summary_row.get("recommendation")),
         "thresholds": asdict(thresholds),
         "summary": _jsonable_record(summary_row.to_dict()),
@@ -1012,6 +1531,9 @@ def _runbook_markdown(
         "# Data Readiness Comparison Runbook",
         "",
         f"- Accepted: {accepted_label}",
+        "- Non-authorizing: yes",
+        "- Authorizes routing: no",
+        "- Authorizes submission: no",
         f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
         f"- Dataset count: {int(_value_number(summary_row.get('dataset_count')))}",
         f"- Ready datasets: {int(_value_number(summary_row.get('ready_datasets')))}",

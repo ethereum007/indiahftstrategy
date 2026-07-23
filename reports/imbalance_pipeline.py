@@ -523,6 +523,24 @@ def _candidate_stage_config(row: dict[str, Any]) -> dict[str, Any]:
             "input_fingerprint_match_count": _int(
                 pd.Series(row), "manifest_input_fingerprint_match_count"
             ),
+            "semantically_verified": _to_bool(
+                row.get("semantically_verified", False)
+            ),
+            "verification_inputs_current": _to_bool(
+                row.get("verification_inputs_current", False)
+            ),
+            "verification_artifacts_consistent": _to_bool(
+                row.get(
+                    "verification_artifacts_consistent",
+                    False,
+                )
+            ),
+            "verification_non_authorizing": _to_bool(
+                row.get("verification_non_authorizing", False)
+            ),
+            "verification_error": str(
+                row.get("verification_error", "")
+            ),
         }
     return record
 
@@ -617,6 +635,17 @@ def _data_readiness_comparison_stage(
         "manifest_input_fingerprint_match_count": int(
             check["manifest_input_fingerprint_match_count"]
         ),
+        "semantically_verified": bool(check["semantically_verified"]),
+        "verification_inputs_current": bool(
+            check["verification_inputs_current"]
+        ),
+        "verification_artifacts_consistent": bool(
+            check["verification_artifacts_consistent"]
+        ),
+        "verification_non_authorizing": bool(
+            check["verification_non_authorizing"]
+        ),
+        "verification_error": str(check["verification_error"]),
     }
 
 

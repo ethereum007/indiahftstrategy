@@ -6659,6 +6659,26 @@ it was stopped as impractical for this cadence; the final exact-bundle
 tightening is covered by the focused suite. All outputs remain
 non-authorizing.
 
+Latest multi-day readiness semantic integrity gate: retained
+`data_readiness_comparison` reports can now be reconstructed with
+`verify-data-readiness-comparison` from the manifest-bound ordered daily
+directories, labels, and threshold contract. Verification first requires each
+daily report to pass its own semantic gate, then requires deterministic
+equality for all four comparison CSVs plus config and runbook, exactly that
+six-artifact set, the canonical manifest parameter/input/metadata contract,
+current recursively flattened dependencies, and explicit non-routing and
+non-submission authority. Freshly re-manifested comparison tampering and
+unexpected order sidecars remain invalid. The shared comparison evidence
+loader enforces this gate for imbalance research, settlement and quote-risk
+consumers, and scale-up; their retained configs expose semantic verification,
+input-current, artifact-consistency, authority, and exact error state. The
+comparison suite passes (`18 passed`), research consumers pass (`21 passed`),
+the complete scale-up suite passes (`154 passed`), and catalog/manifest
+regressions pass (`70 passed`). Repository collection is healthy at `2516
+tests`. All outputs remain non-authorizing; the full repository suite was not
+rerun because the preceding state reached only 55% after 40 minutes without a
+failure, while this slice is covered by its focused and downstream suites.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

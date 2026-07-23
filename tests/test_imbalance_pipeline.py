@@ -15,7 +15,10 @@ from reports.imbalance_pipeline import write_imbalance_research_pipeline
 from reports.imbalance_replay_walkforward import ImbalanceReplayWalkForwardThresholds
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
-from tests.data_readiness_helpers import write_manifest_bound_data_readiness
+from tests.data_readiness_helpers import (
+    reseal_experiment_manifest,
+    write_manifest_bound_data_readiness,
+)
 
 
 def ns_ist(value: str) -> int:
@@ -224,9 +227,24 @@ def test_imbalance_research_pipeline_can_require_data_readiness_comparison(tmp_p
     assert report.ready
     assert bool(stages.loc["data_readiness_comparison", "status"])
     assert bool(stages.loc["data_readiness_comparison", "manifest_current"])
+    assert bool(
+        stages.loc[
+            "data_readiness_comparison",
+            "semantically_verified",
+        ]
+    )
+    assert bool(
+        stages.loc[
+            "data_readiness_comparison",
+            "verification_non_authorizing",
+        ]
+    )
     assert bool(stages.loc["edge_walkforward", "status"])
     assert config["pipeline"]["stages"][0]["stage"] == "data_readiness_comparison"
     assert config["pipeline"]["stages"][0]["lineage"]["manifest_current"]
+    assert config["pipeline"]["stages"][0]["lineage"][
+        "semantically_verified"
+    ]
     assert "data_readiness_comparison_manifest" in manifest["inputs"]
 
 
@@ -240,6 +258,7 @@ def test_imbalance_pipeline_blocks_tampered_data_readiness_comparison(tmp_path):
     summary = pd.read_csv(summary_path)
     summary.loc[0, "recommendation"] = "tampered_after_manifest"
     summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(comparison_dir)
 
     report = write_imbalance_research_pipeline(
         [fold],
@@ -256,10 +275,24 @@ def test_imbalance_pipeline_blocks_tampered_data_readiness_comparison(tmp_path):
     comparison = stages.loc["data_readiness_comparison"]
     assert not report.ready
     assert not bool(comparison["status"])
-    assert comparison["reason"] == "data_readiness_comparison_manifest_artifact_drift"
-    assert comparison["manifest_error"] == "artifact_drift"
+    assert bool(comparison["manifest_current"])
+    assert not bool(comparison["semantically_verified"])
+    assert not bool(comparison["verification_artifacts_consistent"])
+    assert comparison["reason"] == (
+        "data_readiness_comparison_"
+        "artifacts_do_not_reconstruct_from_inputs"
+    )
+    assert comparison["manifest_error"] == ""
+    assert comparison["verification_error"] == (
+        "artifacts do not reconstruct from inputs"
+    )
     assert bool(stages.loc["edge_walkforward", "skipped"])
-    assert config["pipeline"]["stages"][0]["lineage"]["manifest_error"] == "artifact_drift"
+    lineage = config["pipeline"]["stages"][0]["lineage"]
+    assert lineage["manifest_current"]
+    assert not lineage["semantically_verified"]
+    assert lineage["verification_error"] == (
+        "artifacts do not reconstruct from inputs"
+    )
 
 
 def test_imbalance_pipeline_blocks_nonportable_market_pair(tmp_path):

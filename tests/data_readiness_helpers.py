@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -9,6 +10,37 @@ from reports.data_readiness import (
     DataReadinessThresholds,
     write_data_readiness_report,
 )
+from reports.manifest import write_experiment_manifest
+
+
+def reseal_experiment_manifest(path: str | Path) -> dict[str, object]:
+    root = Path(path)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    def source_value(value):
+        if isinstance(value, list):
+            return [source_value(item) for item in value]
+        if isinstance(value, Mapping):
+            if value.get("kind") in {"file", "directory"}:
+                return value["path"]
+            return {
+                str(name): source_value(item)
+                for name, item in value.items()
+            }
+        return value
+
+    write_experiment_manifest(
+        root,
+        run_type=manifest["run_type"],
+        parameters=manifest["parameters"],
+        inputs={
+            name: source_value(value)
+            for name, value in manifest["inputs"].items()
+        },
+        extra=manifest["extra"],
+    )
+    return manifest
 
 
 def write_manifest_bound_data_readiness(

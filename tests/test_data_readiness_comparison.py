@@ -13,6 +13,7 @@ from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
     compare_data_readiness,
     load_data_readiness_comparison_evidence,
+    verify_data_readiness_comparison,
     write_data_readiness_comparison,
 )
 from reports.market_calendar import write_market_calendar_report
@@ -20,7 +21,10 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
-from tests.data_readiness_helpers import write_manifest_bound_data_readiness
+from tests.data_readiness_helpers import (
+    reseal_experiment_manifest,
+    write_manifest_bound_data_readiness,
+)
 
 
 def readiness_runs():
@@ -83,6 +87,10 @@ def write_readiness_dir(
         source_text=f"source_hash\n{source_hash or path.name}\n",
         market_calendar_dir=market_calendar_dir,
     )
+
+
+def reseal_comparison_report(path):
+    reseal_experiment_manifest(path)
 
 
 def test_compare_data_readiness_accepts_multiple_clean_datasets():
@@ -326,6 +334,9 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert report.summary.loc[0, "unique_mapping_drafts"] == 1
     assert report.summary.loc[0, "data_readiness_manifest_coverage"] == 1.0
     assert report.summary.loc[0, "current_data_readiness_manifests"] == 2
+    assert bool(report.summary.loc[0, "non_authorizing"])
+    assert not bool(report.summary.loc[0, "authorizes_routing"])
+    assert not bool(report.summary.loc[0, "authorizes_submission"])
     assert report.dataset_runs["data_readiness_manifest_current"].all()
     assert (out_dir / "data_readiness_runs.csv").exists()
     assert (out_dir / "data_readiness_comparison_checks.csv").exists()
@@ -340,6 +351,9 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert action_queue.empty
     assert "next_gate_help_command" in action_queue.columns
     assert config["accepted"]
+    assert config["non_authorizing"]
+    assert not config["authorizes_routing"]
+    assert not config["authorizes_submission"]
     assert config["ready_action_count"] == 0
     assert config["blocked_action_count"] == 0
     assert config["next_gate"] == ""
@@ -355,6 +369,9 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert config["data_readiness_lineage"]["dependency_count"] == 2
     assert "# Data Readiness Comparison Runbook" in runbook
     assert "- Accepted: yes" in runbook
+    assert "- Non-authorizing: yes" in runbook
+    assert "- Authorizes routing: no" in runbook
+    assert "- Authorizes submission: no" in runbook
     assert "- Current readiness-manifest coverage: 1" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
@@ -366,6 +383,33 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
         "readiness_dependencies",
         "readiness_manifests",
     }
+    assert manifest["extra"] == {
+        "accepted": True,
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+    verification = verify_data_readiness_comparison(out_dir)
+    evidence = load_data_readiness_comparison_evidence(out_dir)
+    assert verification.verified
+    assert verification.accepted
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert evidence.passed
+    assert evidence.semantically_verified
+    assert (
+        main(
+            [
+                "verify-data-readiness-comparison",
+                "--report",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
 
     blocked_gate_code = main(
         [
@@ -665,6 +709,95 @@ def test_comparison_rejects_resealed_semantic_readiness_tamper(
         ]
         == "regenerate_semantically_verified_data_readiness"
     )
+
+
+def test_comparison_verifier_rejects_resealed_authority_widening(
+    tmp_path,
+):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    write_readiness_dir(day1)
+    write_readiness_dir(day2)
+    write_data_readiness_comparison(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        thresholds=DataReadinessComparisonThresholds(min_datasets=2),
+    )
+    summary_path = out_dir / "data_readiness_comparison_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "authorizes_routing"] = True
+    summary.to_csv(summary_path, index=False)
+    reseal_comparison_report(out_dir)
+
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    verification = verify_data_readiness_comparison(out_dir)
+    evidence = load_data_readiness_comparison_evidence(out_dir)
+    record = evidence.summary.iloc[0]
+
+    assert integrity.passed
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert not verification.artifacts_consistent
+    assert not verification.non_authorizing
+    assert not verification.verified
+    assert not evidence.passed
+    assert evidence.reason == (
+        "data_readiness_comparison_"
+        "artifacts_do_not_reconstruct_from_inputs"
+    )
+    assert bool(record["accepted"])
+    assert (
+        main(
+            [
+                "verify-data-readiness-comparison",
+                "--report",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+
+def test_comparison_verifier_rejects_resealed_extra_artifact(
+    tmp_path,
+):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    write_readiness_dir(day1)
+    write_readiness_dir(day2)
+    write_data_readiness_comparison(
+        [day1, day2],
+        output_dir=out_dir,
+        thresholds=DataReadinessComparisonThresholds(min_datasets=2),
+    )
+    (out_dir / "unexpected_order_payload.csv").write_text(
+        "instrument_id,side,qty\nNIFTY_TEST,BUY,1\n",
+        encoding="utf-8",
+    )
+    reseal_comparison_report(out_dir)
+
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    verification = verify_data_readiness_comparison(out_dir)
+
+    assert integrity.passed
+    assert integrity.artifact_count == 7
+    assert verification.manifest_current
+    assert not verification.artifacts_consistent
+    assert not verification.verified
 
 
 def test_comparison_manifest_tracks_transitive_readiness_dependencies(tmp_path):

@@ -2473,6 +2473,26 @@ def _data_readiness_comparison_plan_fields(
                 fallback=0.0,
             )
         ),
+        "data_readiness_comparison_semantically_verified": _to_bool(
+            row.get("semantically_verified", False)
+        ),
+        "data_readiness_comparison_verification_inputs_current": _to_bool(
+            row.get("verification_inputs_current", False)
+        ),
+        "data_readiness_comparison_verification_artifacts_consistent": (
+            _to_bool(
+                row.get(
+                    "verification_artifacts_consistent",
+                    False,
+                )
+            )
+        ),
+        "data_readiness_comparison_verification_non_authorizing": _to_bool(
+            row.get("verification_non_authorizing", False)
+        ),
+        "data_readiness_comparison_verification_error": str(
+            row.get("verification_error", "")
+        ),
         "data_readiness_comparison_accepted": _to_bool(
             row.get("accepted", False)
         ),
@@ -3399,6 +3419,10 @@ def _data_readiness_comparison_lineage(plan_row: pd.Series) -> dict[str, object]
         "manifest_current",
         "verified",
         "manifest_run_type_matches",
+        "semantically_verified",
+        "verification_inputs_current",
+        "verification_artifacts_consistent",
+        "verification_non_authorizing",
         "accepted",
     ):
         result[field] = _to_bool(plan_row[f"{prefix}{field}"])
@@ -3419,6 +3443,7 @@ def _data_readiness_comparison_lineage(plan_row: pd.Series) -> dict[str, object]
         "manifest_sha256",
         "manifest_error",
         "manifest_run_type",
+        "verification_error",
         "recommendation",
     ):
         result[field] = str(plan_row[f"{prefix}{field}"])

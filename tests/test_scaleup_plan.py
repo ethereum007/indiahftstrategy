@@ -12,7 +12,10 @@ from reports.manifest import (
     write_experiment_manifest,
 )
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
-from tests.data_readiness_helpers import write_manifest_bound_data_readiness
+from tests.data_readiness_helpers import (
+    reseal_experiment_manifest,
+    write_manifest_bound_data_readiness,
+)
 
 
 def path_tail(value):
@@ -6480,6 +6483,11 @@ def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
     assert report.ready
     assert comparison_lineage["verified"]
     assert comparison_lineage["manifest_current"]
+    assert comparison_lineage["semantically_verified"]
+    assert comparison_lineage["verification_inputs_current"]
+    assert comparison_lineage["verification_artifacts_consistent"]
+    assert comparison_lineage["verification_non_authorizing"]
+    assert comparison_lineage["verification_error"] == ""
     assert comparison_lineage["manifest_run_type_matches"]
     assert comparison_lineage["manifest_artifact_count"] == 6
     assert comparison_lineage["manifest_artifact_match_count"] == 6
@@ -6523,6 +6531,7 @@ def test_write_scaleup_plan_blocks_tampered_data_readiness_comparison(tmp_path):
     summary = pd.read_csv(summary_path)
     summary.loc[0, "recommendation"] = "tampered_after_manifest"
     summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(comparison)
     out_dir = tmp_path / "scaleup"
 
     report = write_scaleup_plan(
@@ -6539,15 +6548,20 @@ def test_write_scaleup_plan_blocks_tampered_data_readiness_comparison(tmp_path):
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert not report.ready
     assert {
-        "data_readiness_comparison_manifest_current",
         "data_readiness_comparison_verified",
     } <= failed
     assert lineage["accepted"]
-    assert not lineage["manifest_current"]
+    assert lineage["manifest_current"]
     assert not lineage["verified"]
-    assert lineage["manifest_error"] == "artifact_drift"
+    assert not lineage["semantically_verified"]
+    assert not lineage["verification_artifacts_consistent"]
+    assert lineage["manifest_error"] == ""
+    assert lineage["verification_error"] == (
+        "artifacts do not reconstruct from inputs"
+    )
     assert lineage["reason"] == (
-        "data_readiness_comparison_manifest_artifact_drift"
+        "data_readiness_comparison_"
+        "artifacts_do_not_reconstruct_from_inputs"
     )
     assert path_tail(
         manifest["inputs"]["data_readiness_comparison_manifest"]["path"]

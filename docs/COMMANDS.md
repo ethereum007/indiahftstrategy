@@ -9353,6 +9353,27 @@ data_readiness_comparison_runbook.md
 manifest.json
 ```
 
+Verify a retained comparison against its ordered daily reports, labels, and
+threshold contract before using it as research or scale-up evidence:
+
+```powershell
+python -m hft_cli verify-data-readiness-comparison `
+  --report runs\data_readiness\india_nse_comparison `
+  --fail-on-breach
+```
+
+The verifier first semantically verifies every daily readiness report, then
+reconstructs all four CSV artifacts, the config JSON, and the runbook. It
+requires exact deterministic agreement, current fingerprints for every daily
+directory, manifest, and recursively flattened dependency, the canonical
+parameter/input/metadata contract, exactly the six documented artifacts, and
+explicit non-routing and non-submission authority. Editing comparison
+artifacts, adding an order or routing sidecar, and writing a fresh manifest
+around the result does not satisfy semantic verification.
+`--fail-on-breach` returns exit code `2` when the evidence contract fails. The
+JSON output reports `accepted` separately, so a faithfully reconstructed
+rejected comparison remains distinguishable from altered or stale evidence.
+
 `data_readiness_comparison_action_queue.csv` maps failed multi-day checks to
 the next gate, such as `review-data-readiness` for failed dataset readiness or
 `pipeline-vendor-market-data-batch` for missing distinct source files,

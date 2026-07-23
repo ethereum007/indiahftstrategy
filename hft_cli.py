@@ -80,6 +80,7 @@ from reports.broker_vendor_data_readiness import (
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
+    verify_data_readiness_comparison,
     write_data_readiness_comparison,
 )
 from reports.data_readiness import (
@@ -3323,6 +3324,22 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness_compare.add_argument("--fail-on-breach", action="store_true")
     data_readiness_compare.add_argument("--fail-on-blocked-actions", action="store_true")
     data_readiness_compare.add_argument("--fail-on-actions", action="store_true")
+
+    data_readiness_comparison_verify = sub.add_parser(
+        "verify-data-readiness-comparison",
+        help=(
+            "Reconstruct a multi-day data-readiness comparison from its "
+            "manifest-bound daily reports."
+        ),
+    )
+    data_readiness_comparison_verify.add_argument(
+        "--report",
+        required=True,
+    )
+    data_readiness_comparison_verify.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
 
     instrument_metadata = sub.add_parser(
         "instrument-metadata-report",
@@ -7961,6 +7978,37 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "verify-data-readiness-comparison":
+        result = verify_data_readiness_comparison(args.report)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "accepted": result.accepted,
+                    "manifest_current": result.manifest_current,
+                    "inputs_current": result.inputs_current,
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "non_authorizing": result.non_authorizing,
+                    "report_dir": str(result.output_dir),
+                    "manifest_path": str(result.manifest_path),
+                    "manifest_artifact_count": (
+                        result.manifest_artifact_count
+                    ),
+                    "manifest_artifact_match_count": (
+                        result.manifest_artifact_match_count
+                    ),
+                    "manifest_input_fingerprint_count": (
+                        result.manifest_input_fingerprint_count
+                    ),
+                    "manifest_input_fingerprint_match_count": (
+                        result.manifest_input_fingerprint_match_count
+                    ),
+                    "error": result.error,
+                },
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.verified else 0
     if args.command == "instrument-metadata-report":
         result = write_instrument_metadata_report(
             args.input,
