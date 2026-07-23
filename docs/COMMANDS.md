@@ -5129,6 +5129,18 @@ cutover_runbook.md
 manifest.json
 ```
 
+Filesystem-backed cutover does not trust `scaleup_config.json` in isolation.
+It requires the sibling scale-up plan, checks, summary, and manifest; verifies
+the expected scale-up run type, complete artifact set, current fingerprints,
+cross-artifact agreement, ready state, and non-authorizing authority; and
+reopens any active proof-refresh bundle through the shared manifest and
+semantic verifier. The cutover authorization, summary, config, and manifest
+retain the carried and current proof-refresh hashes and verification decisions.
+The cutover manifest fingerprints the scale-up manifest, all required scale-up
+artifacts, and its recursively flattened dependencies, so source drift
+invalidates the handoff. Re-sealing structurally valid manifests cannot conceal
+a proof-refresh semantic mismatch.
+
 `cutover_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so schedulers can route the first
 failed authorization check without parsing `cutover_checks.csv`. It also

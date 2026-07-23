@@ -6769,6 +6769,25 @@ full repository suite was not rerun because the preceding full run reached only
 55% after 40 minutes without a failure, while this slice is covered by focused
 and downstream suites.
 
+Latest scale-up-to-cutover proof-refresh lineage gate: filesystem-backed
+cutover now loads the complete sealed scale-up artifact family instead of
+trusting `scaleup_config.json` directly. It verifies the scale-up manifest,
+required artifacts, recursive dependencies, cross-artifact contract, ready
+state, and non-authorizing authority; reopens active proof-refresh evidence
+through the shared semantic verifier; and compares the carried refresh lineage
+with the current source. Authorization, summary, config, and manifest output
+retain all 71 scale-up provenance fields, while the cutover manifest binds the
+scale-up manifest, artifacts, and recursively flattened dependencies. Tests
+cover a valid end-to-end refresh handoff, ordinary source drift, and a
+structurally re-sealed outer manifest whose refresh semantics were altered.
+The complete cutover suite passes (`122 passed`), route-enable regressions pass
+(`124 passed`), broker-dispatch regressions pass (`130 passed`), and catalog
+plus manifest regressions pass (`72 passed`). Repository collection is healthy
+at `2534 tests`. All outputs remain non-authorizing; the full repository suite
+was not rerun because the preceding full run reached only 55% after 40 minutes
+without a failure, while this slice is covered by focused and downstream
+suites.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

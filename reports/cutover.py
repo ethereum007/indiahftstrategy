@@ -23,6 +23,12 @@ from reports.operational_lineage import (
     runtime_session_lineage_fields,
     runtime_session_lineage_manifest_inputs,
 )
+from reports.scaleup_runtime_provenance import (
+    empty_scaleup_runtime_provenance,
+    load_scaleup_runtime_provenance,
+    scaleup_runtime_fields,
+    scaleup_runtime_manifest_inputs,
+)
 from reports.vendor_market_data import vendor_market_data_batch_source_active
 
 
@@ -47,6 +53,9 @@ ACTION_QUEUE_COLUMNS = [
 ]
 RUNTIME_LINEAGE_OUTPUT_COLUMNS = tuple(
     runtime_session_lineage_fields(empty_runtime_session_lineage()).keys()
+)
+SCALEUP_PROVENANCE_OUTPUT_COLUMNS = tuple(
+    scaleup_runtime_fields(empty_scaleup_runtime_provenance()).keys()
 )
 STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     "leadlag_edge_lineage_required",
@@ -369,6 +378,7 @@ def evaluate_cutover_gate(
     broker_readiness_summary: pd.DataFrame | None = None,
     runtime_session_summary: pd.DataFrame | None = None,
     runtime_session_lineage: dict[str, Any] | None = None,
+    scaleup_provenance: dict[str, Any] | None = None,
     operator_review: pd.DataFrame | None = None,
     thresholds: CutoverGateThresholds | None = None,
 ) -> CutoverGateReport:
@@ -380,6 +390,10 @@ def evaluate_cutover_gate(
     broker_readiness_summary = _optional_frame(broker_readiness_summary)
     runtime_session_summary = _optional_frame(runtime_session_summary)
     operator_review = _optional_frame(operator_review)
+    scaleup_provenance = (
+        scaleup_provenance
+        or empty_scaleup_runtime_provenance()
+    )
 
     scaleup = _scaleup_state(scaleup_summary.iloc[0], scaleup_config, scaleup_checks)
     broker = _broker_state(broker_readiness_summary)
@@ -389,8 +403,23 @@ def evaluate_cutover_gate(
         runtime_session_lineage or empty_runtime_session_lineage(),
     )
     operator = _operator_state(operator_review, scaleup)
-    checks = _checks(scaleup, broker, runtime, operator, thresholds)
-    authorization = _authorization(scaleup, broker, runtime, operator, thresholds, checks)
+    checks = _checks(
+        scaleup,
+        broker,
+        runtime,
+        operator,
+        thresholds,
+        scaleup_provenance,
+    )
+    authorization = _authorization(
+        scaleup,
+        broker,
+        runtime,
+        operator,
+        thresholds,
+        checks,
+        scaleup_provenance,
+    )
     action_queue = _action_queue(authorization.iloc[0], checks)
     summary = _summary_with_actions(_summary(authorization.iloc[0], checks), checks, action_queue)
     config = _config(authorization.iloc[0], thresholds, checks, action_queue)
@@ -435,6 +464,9 @@ def write_cutover_gate_report(
     scaleup_checks_path = (
         scaleup / "scaleup_checks.csv" if scaleup.is_dir() else scaleup_config_path.with_name("scaleup_checks.csv")
     )
+    scaleup_provenance = load_scaleup_runtime_provenance(
+        scaleup_config_path
+    )
     runtime_session_summary_path = (
         _summary_path(runtime_session_dir, "runtime_session_summary.csv")
         if runtime_session_dir is not None
@@ -467,6 +499,7 @@ def write_cutover_gate_report(
         broker_readiness_summary=_read_required(broker_readiness_summary_path, "broker_readiness"),
         runtime_session_summary=_read_optional(runtime_session_summary_path),
         runtime_session_lineage=runtime_lineage,
+        scaleup_provenance=scaleup_provenance,
         operator_review=_read_optional(operator_review_path),
         thresholds=thresholds,
     )
@@ -505,6 +538,9 @@ def write_cutover_gate_report(
         inputs["runtime_session_summary"] = runtime_session_summary_path
     if operator_review_path is not None:
         inputs["operator_review"] = Path(operator_review_path)
+    inputs.update(
+        scaleup_runtime_manifest_inputs(scaleup_provenance)
+    )
     inputs.update(runtime_session_lineage_manifest_inputs(runtime_lineage))
     write_experiment_manifest(
         out,
@@ -516,6 +552,7 @@ def write_cutover_gate_report(
             **_runtime_strategy_portfolio_leadlag_summary_fields(
                 report.summary.iloc[0]
             ),
+            **scaleup_runtime_fields(scaleup_provenance),
             **runtime_session_lineage_fields(runtime_lineage),
             "authorizes_submission": False,
         },
@@ -536,6 +573,7 @@ def _checks(
     runtime: dict[str, Any],
     operator: dict[str, Any],
     thresholds: CutoverGateThresholds,
+    scaleup_provenance: dict[str, Any],
 ) -> pd.DataFrame:
     target_mode = _identity_key(thresholds.target_mode)
     checks = [
@@ -672,6 +710,9 @@ def _checks(
             "scale-up proof freshness market does not match cutover market",
         ),
     ]
+    checks.extend(
+        _scaleup_provenance_checks(scaleup_provenance)
+    )
     if _runtime_strategy_portfolio_active(runtime):
         checks.extend(
             [
@@ -4175,6 +4216,99 @@ def _sha256_text(value: object) -> str:
     return normalized
 
 
+def _scaleup_provenance_checks(
+    provenance: dict[str, Any],
+) -> list[dict[str, object]]:
+    fields = scaleup_runtime_fields(provenance)
+    if not _to_bool(
+        fields.get("scaleup_manifest_required", False)
+    ):
+        return []
+    checks = [
+        _check(
+            name,
+            _to_bool(fields.get(name, False)),
+            "is",
+            True,
+            _to_bool(fields.get(name, False)),
+            reason,
+        )
+        for name, reason in (
+            (
+                "scaleup_manifest_provided",
+                "scale-up manifest is missing",
+            ),
+            (
+                "scaleup_manifest_current",
+                "scale-up artifacts or recursive inputs have drifted",
+            ),
+            (
+                "scaleup_contract_consistent",
+                "scale-up config, summary, checks, plan, and manifest disagree",
+            ),
+            (
+                "scaleup_non_authorizing",
+                "scale-up proof contains a submission-authorizing claim",
+            ),
+            (
+                "scaleup_source_ready",
+                "scale-up plan is not ready",
+            ),
+            (
+                "scaleup_provenance_gate_passed",
+                "scale-up provenance gate did not pass",
+            ),
+        )
+    ]
+    if not _to_bool(
+        fields.get("scaleup_proof_refresh_active", False)
+    ):
+        return checks
+    checks.extend(
+        [
+            _check(
+                name,
+                _to_bool(fields.get(name, False)),
+                "is",
+                True,
+                _to_bool(fields.get(name, False)),
+                reason,
+            )
+            for name, reason in (
+                (
+                    "scaleup_proof_refresh_verified",
+                    "scale-up proof-refresh evidence was not verified",
+                ),
+                (
+                    "scaleup_proof_refresh_manifest_current",
+                    "carried proof-refresh manifest is not current",
+                ),
+                (
+                    "scaleup_proof_refresh_semantically_verified",
+                    "carried proof-refresh evidence failed semantic verification",
+                ),
+                (
+                    "scaleup_proof_refresh_source_manifest_current",
+                    "current proof-refresh source manifest is not current",
+                ),
+                (
+                    "scaleup_proof_refresh_source_semantically_verified",
+                    "current proof-refresh source failed semantic verification",
+                ),
+                (
+                    "scaleup_proof_refresh_source_provenance_gate_passed",
+                    "current proof-refresh source provenance gate did not pass",
+                ),
+                (
+                    "scaleup_proof_refresh_matches_current",
+                    "scale-up proof-refresh lineage differs from its current source",
+                ),
+            )
+        ]
+    )
+    return checks
+
+
 def _authorization(
     scaleup: dict[str, Any],
     broker: dict[str, Any],
@@ -4182,6 +4316,7 @@ def _authorization(
     operator: dict[str, Any],
     thresholds: CutoverGateThresholds,
     checks: pd.DataFrame,
+    scaleup_provenance: dict[str, Any],
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].astype(bool).all()) if not checks.empty else False
     return pd.DataFrame(
@@ -4202,6 +4337,7 @@ def _authorization(
                 "proof_refresh_market": scaleup["proof_refresh_market"],
                 "proof_refresh_mixed_identity": scaleup["proof_refresh_mixed_identity"],
                 "proof_source": scaleup["proof_source"],
+                **scaleup_runtime_fields(scaleup_provenance),
                 "scaleup_broker_schema_status": scaleup["broker_schema_status"],
                 "scaleup_broker_schema_reviewed": scaleup["broker_schema_reviewed"],
                 "scaleup_broker_schema_review_mode": scaleup["broker_schema_review_mode"],
@@ -4965,6 +5101,9 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "proof_refresh_ready": _to_bool(authorization["proof_refresh_ready"]),
                 "proof_refresh_strategy": str(authorization["proof_refresh_strategy"]),
                 "proof_refresh_market": str(authorization["proof_refresh_market"]),
+                **_scaleup_provenance_summary_fields(
+                    authorization
+                ),
                 "scaleup_broker_schema_status": str(authorization["scaleup_broker_schema_status"]),
                 "scaleup_broker_schema_reviewed": _to_bool(authorization["scaleup_broker_schema_reviewed"]),
                 "scaleup_broker_schema_review_mode": str(authorization["scaleup_broker_schema_review_mode"]),
@@ -5411,7 +5550,9 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 def _component(check: str) -> str:
     if check.startswith("runtime_lineage_broker_readiness_"):
         return "broker_readiness"
-    if check.startswith("proof_refresh_"):
+    if check.startswith("proof_refresh_") or check.startswith(
+        "scaleup_proof_refresh_"
+    ):
         return "proof_refresh"
     if "route_readiness" in check:
         return "route_readiness"
@@ -6068,6 +6209,9 @@ def _config(
             "mixed_identity": _to_bool(authorization["proof_refresh_mixed_identity"]),
             "proof_source": str(authorization["proof_source"]),
         },
+        "scaleup_provenance": _scaleup_provenance_config(
+            authorization
+        ),
         "scaleup_route_readiness": {
             "required": _to_bool(authorization["scaleup_route_readiness_required"]),
             "provided": _to_bool(authorization["scaleup_route_readiness_provided"]),
@@ -8710,6 +8854,24 @@ def _runtime_state(
 
 def _runtime_lineage_output_fields(runtime: dict[str, Any]) -> dict[str, Any]:
     return {column: runtime[column] for column in RUNTIME_LINEAGE_OUTPUT_COLUMNS}
+
+
+def _scaleup_provenance_summary_fields(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    return {
+        column: authorization[column]
+        for column in SCALEUP_PROVENANCE_OUTPUT_COLUMNS
+    }
+
+
+def _scaleup_provenance_config(
+    authorization: pd.Series,
+) -> dict[str, Any]:
+    return {
+        column: _jsonable_check_value(authorization[column])
+        for column in SCALEUP_PROVENANCE_OUTPUT_COLUMNS
+    }
 
 
 def _runtime_strategy_portfolio_leadlag_output_fields(
