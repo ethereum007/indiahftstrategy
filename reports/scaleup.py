@@ -23,6 +23,11 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
+from reports.proof_refresh import (
+    load_proof_refresh_evidence,
+    proof_refresh_evidence_manifest_inputs,
+    proof_refresh_evidence_record,
+)
 
 
 STRATEGY_PORTFOLIO_REQUIRED_ARTIFACTS = (
@@ -562,7 +567,12 @@ def write_scaleup_plan(
     launch_path = _summary_path(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch", "02_launch"))
     launch_pipeline_path = _launch_pipeline_summary_path(launch_dir)
     exposure_path = _optional_summary_input(order_exposure_dir, "order_exposure_summary.csv")
-    proof_refresh_path = _optional_summary_input(proof_refresh_dir, "proof_refresh_summary.csv")
+    proof_refresh_evidence = load_proof_refresh_evidence(
+        proof_refresh_dir
+    )
+    proof_refresh_record = proof_refresh_evidence_record(
+        proof_refresh_evidence
+    )
     instrument_metadata_path = _optional_summary_input(instrument_metadata_dir, "instrument_metadata_summary.csv")
     data_readiness_path = _optional_summary_input(data_readiness_dir, "data_readiness_summary.csv")
     comparison_evidence = load_data_readiness_comparison_evidence(
@@ -601,7 +611,9 @@ def write_scaleup_plan(
     )
     exposure = _read_optional_summary(exposure_path, "order_exposure_summary.csv") if exposure_path else None
     proof_refresh = (
-        _read_optional_summary(proof_refresh_path, "proof_refresh_summary.csv") if proof_refresh_path else None
+        pd.DataFrame([proof_refresh_record])
+        if proof_refresh_evidence.requested
+        else None
     )
     instrument_metadata = (
         _read_optional_summary(instrument_metadata_path, "instrument_metadata_summary.csv")
@@ -714,6 +726,14 @@ def write_scaleup_plan(
             "scale-up output must not overwrite the source data-readiness "
             "comparison bundle"
         )
+    if (
+        proof_refresh_evidence.root is not None
+        and out.resolve() == proof_refresh_evidence.root.resolve()
+    ):
+        raise ValueError(
+            "scale-up output must not overwrite the source proof-refresh "
+            "bundle"
+        )
     out.mkdir(parents=True, exist_ok=True)
     report.plan.to_csv(out / "scaleup_plan.csv", index=False)
     report.checks.to_csv(out / "scaleup_checks.csv", index=False)
@@ -728,8 +748,11 @@ def write_scaleup_plan(
         inputs["launch_pipeline"] = launch_pipeline_path
     if exposure_path is not None:
         inputs["order_exposure"] = exposure_path
-    if proof_refresh_path is not None:
-        inputs["proof_refresh"] = proof_refresh_path
+    inputs.update(
+        proof_refresh_evidence_manifest_inputs(
+            proof_refresh_evidence
+        )
+    )
     if instrument_metadata_path is not None:
         inputs["instrument_metadata"] = instrument_metadata_path
     if data_readiness_path is not None:
@@ -791,6 +814,24 @@ def write_scaleup_plan(
         inputs=inputs,
         extra={
             "ready": bool(report.ready),
+            "proof_refresh_verified": bool(
+                report.summary.iloc[0].get(
+                    "proof_refresh_verified",
+                    False,
+                )
+            ),
+            "proof_refresh_manifest_current": bool(
+                report.summary.iloc[0].get(
+                    "proof_refresh_manifest_current",
+                    False,
+                )
+            ),
+            "proof_refresh_manifest_sha256": str(
+                report.summary.iloc[0].get(
+                    "proof_refresh_manifest_sha256",
+                    "",
+                )
+            ),
             "data_readiness_comparison_verified": bool(
                 report.summary.iloc[0].get(
                     "data_readiness_comparison_verified",
@@ -1317,14 +1358,18 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
             checks.append(_threshold_check("abs_net_delta", abs(_number(exposure, "net_delta")), "<=", thresholds.max_abs_net_delta))
         if thresholds.max_abs_net_vega is not None:
             checks.append(_threshold_check("abs_net_vega", abs(_number(exposure, "net_vega")), "<=", thresholds.max_abs_net_vega))
+    proof_refresh_available = bool(
+        not proof_refresh.empty
+        and _to_bool(proof_refresh.get("provided", True))
+    )
     if thresholds.require_proof_refresh:
         checks.append(
             _check(
                 "proof_refresh_available",
-                not proof_refresh.empty,
+                proof_refresh_available,
                 "is",
                 True,
-                not proof_refresh.empty,
+                proof_refresh_available,
                 "proof refresh gate is required but no proof refresh summary was supplied",
             )
         )
@@ -1333,6 +1378,46 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         proof_refresh_strategy = _strategy_key(proof_refresh.get("strategy", ""))
         proof_refresh_market = _identity_key(proof_refresh.get("market", ""))
         proof_refresh_mixed_identity = _to_bool(proof_refresh.get("mixed_identity", False))
+        proof_refresh_manifest_required = _to_bool(
+            proof_refresh.get("manifest_required", False)
+        )
+        proof_refresh_semantic_required = _to_bool(
+            proof_refresh.get(
+                "semantic_verification_required",
+                False,
+            )
+        )
+        if proof_refresh_manifest_required:
+            manifest_current = _to_bool(
+                proof_refresh.get("manifest_current", False)
+            )
+            checks.append(
+                _check(
+                    "proof_refresh_manifest_current",
+                    manifest_current,
+                    "is",
+                    True,
+                    manifest_current,
+                    "proof refresh manifest is missing, stale, or invalid",
+                )
+            )
+        if proof_refresh_semantic_required:
+            semantically_verified = _to_bool(
+                proof_refresh.get(
+                    "semantically_verified",
+                    False,
+                )
+            )
+            checks.append(
+                _check(
+                    "proof_refresh_semantically_verified",
+                    semantically_verified,
+                    "is",
+                    True,
+                    semantically_verified,
+                    "proof refresh report failed semantic verification",
+                )
+            )
         checks.append(
             _check(
                 "proof_refresh_ready",
@@ -2840,8 +2925,103 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "shadow_broker_route_dispatch_roundtrip_scenario_count": int(
                     _number(shadow, "broker_route_dispatch_roundtrip_scenario_count", fallback=0.0)
                 ),
-                "proof_refresh_provided": not proof_refresh.empty,
+                "proof_refresh_requested": _to_bool(
+                    proof_refresh.get("requested", False)
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_provided": _to_bool(
+                    proof_refresh.get("provided", True)
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_reported_ready": _to_bool(
+                    proof_refresh.get(
+                        "reported_ready",
+                        proof_refresh.get("ready", False),
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
                 "proof_refresh_ready": _to_bool(proof_refresh.get("ready", False)) if not proof_refresh.empty else False,
+                "proof_refresh_verified": _to_bool(
+                    proof_refresh.get(
+                        "verified",
+                        proof_refresh.get("ready", False),
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_manifest_required": _to_bool(
+                    proof_refresh.get("manifest_required", False)
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_manifest_current": _to_bool(
+                    proof_refresh.get("manifest_current", False)
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_manifest_sha256": str(
+                    proof_refresh.get("manifest_sha256", "")
+                )
+                if not proof_refresh.empty
+                else "",
+                "proof_refresh_semantic_verification_required": _to_bool(
+                    proof_refresh.get(
+                        "semantic_verification_required",
+                        False,
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_semantically_verified": _to_bool(
+                    proof_refresh.get(
+                        "semantically_verified",
+                        False,
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_verification_inputs_current": _to_bool(
+                    proof_refresh.get(
+                        "verification_inputs_current",
+                        False,
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_verification_artifacts_consistent": _to_bool(
+                    proof_refresh.get(
+                        "verification_artifacts_consistent",
+                        False,
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_verification_non_authorizing": _to_bool(
+                    proof_refresh.get(
+                        "verification_non_authorizing",
+                        False,
+                    )
+                )
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_verification_error": str(
+                    proof_refresh.get("verification_error", "")
+                )
+                if not proof_refresh.empty
+                else "",
+                "proof_refresh_read_error": str(
+                    proof_refresh.get("read_error", "")
+                )
+                if not proof_refresh.empty
+                else "",
+                "proof_refresh_reason": str(
+                    proof_refresh.get("reason", "")
+                )
+                if not proof_refresh.empty
+                else "",
                 "proof_refresh_strategy": _strategy_key(proof_refresh.get("strategy", ""))
                 if not proof_refresh.empty
                 else "",
@@ -3624,7 +3804,42 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     plan_row["strategy_portfolio_notional_cap_applied"]
                 ),
                 "authorizes_submission": False,
+                "proof_refresh_requested": _to_bool(plan_row["proof_refresh_requested"]),
+                "proof_refresh_provided": _to_bool(plan_row["proof_refresh_provided"]),
+                "proof_refresh_reported_ready": _to_bool(
+                    plan_row["proof_refresh_reported_ready"]
+                ),
                 "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
+                "proof_refresh_verified": _to_bool(plan_row["proof_refresh_verified"]),
+                "proof_refresh_manifest_required": _to_bool(
+                    plan_row["proof_refresh_manifest_required"]
+                ),
+                "proof_refresh_manifest_current": _to_bool(
+                    plan_row["proof_refresh_manifest_current"]
+                ),
+                "proof_refresh_manifest_sha256": str(
+                    plan_row["proof_refresh_manifest_sha256"]
+                ),
+                "proof_refresh_semantic_verification_required": _to_bool(
+                    plan_row["proof_refresh_semantic_verification_required"]
+                ),
+                "proof_refresh_semantically_verified": _to_bool(
+                    plan_row["proof_refresh_semantically_verified"]
+                ),
+                "proof_refresh_verification_inputs_current": _to_bool(
+                    plan_row["proof_refresh_verification_inputs_current"]
+                ),
+                "proof_refresh_verification_artifacts_consistent": _to_bool(
+                    plan_row["proof_refresh_verification_artifacts_consistent"]
+                ),
+                "proof_refresh_verification_non_authorizing": _to_bool(
+                    plan_row["proof_refresh_verification_non_authorizing"]
+                ),
+                "proof_refresh_verification_error": str(
+                    plan_row["proof_refresh_verification_error"]
+                ),
+                "proof_refresh_read_error": str(plan_row["proof_refresh_read_error"]),
+                "proof_refresh_reason": str(plan_row["proof_refresh_reason"]),
                 "proof_refresh_strategy": str(plan_row["proof_refresh_strategy"]),
                 "proof_refresh_market": str(plan_row["proof_refresh_market"]),
                 "proof_refresh_mixed_identity": _to_bool(plan_row["proof_refresh_mixed_identity"]),
@@ -4239,13 +4454,39 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
         },
         "proof_freshness": {
             "required": bool(thresholds.require_proof_refresh),
+            "requested": _to_bool(plan_row["proof_refresh_requested"]),
             "provided": _to_bool(plan_row["proof_refresh_provided"]),
+            "reported_ready": _to_bool(plan_row["proof_refresh_reported_ready"]),
             "ready": _to_bool(plan_row["proof_refresh_ready"]),
+            "verified": _to_bool(plan_row["proof_refresh_verified"]),
             "strategy": str(plan_row["proof_refresh_strategy"]),
             "market": str(plan_row["proof_refresh_market"]),
             "mixed_identity": _to_bool(plan_row["proof_refresh_mixed_identity"]),
             "proof_source": str(plan_row["proof_source"]),
             "fresh_proof_required": _to_bool(plan_row["fresh_proof_required"]),
+            "manifest": {
+                "required": _to_bool(plan_row["proof_refresh_manifest_required"]),
+                "current": _to_bool(plan_row["proof_refresh_manifest_current"]),
+                "sha256": str(plan_row["proof_refresh_manifest_sha256"]),
+            },
+            "semantic_verification": {
+                "required": _to_bool(
+                    plan_row["proof_refresh_semantic_verification_required"]
+                ),
+                "verified": _to_bool(plan_row["proof_refresh_semantically_verified"]),
+                "inputs_current": _to_bool(
+                    plan_row["proof_refresh_verification_inputs_current"]
+                ),
+                "artifacts_consistent": _to_bool(
+                    plan_row["proof_refresh_verification_artifacts_consistent"]
+                ),
+                "non_authorizing": _to_bool(
+                    plan_row["proof_refresh_verification_non_authorizing"]
+                ),
+                "error": str(plan_row["proof_refresh_verification_error"]),
+            },
+            "read_error": str(plan_row["proof_refresh_read_error"]),
+            "reason": str(plan_row["proof_refresh_reason"]),
             "recommendation": str(plan_row["proof_refresh_recommendation"]),
         },
         "shadow_proof_freshness": {

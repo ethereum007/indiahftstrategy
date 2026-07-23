@@ -11,6 +11,8 @@ import pandas as pd
 
 from reports.manifest import (
     MANIFEST_NAME,
+    ManifestIntegrity,
+    file_sha256,
     manifest_dependency_paths,
     verify_experiment_manifest,
     write_experiment_manifest,
@@ -32,6 +34,16 @@ PROOF_REFRESH_REQUIRED_ARTIFACTS = (
     PROOF_REFRESH_ACTION_QUEUE_FILE,
     PROOF_REFRESH_CONFIG_FILE,
     PROOF_REFRESH_RUNBOOK_FILE,
+)
+PROOF_REFRESH_REQUIRED_SUMMARY_COLUMNS = (
+    "ready",
+    "proof_source",
+    "fresh_proof_required",
+    "strategy",
+    "market",
+    "mixed_identity",
+    "failed_checks",
+    "recommendation",
 )
 
 
@@ -74,6 +86,104 @@ class ProofRefreshReportVerification:
     manifest_input_fingerprint_count: int = 0
     manifest_input_fingerprint_match_count: int = 0
     error: str = ""
+
+
+@dataclass(frozen=True)
+class ProofRefreshEvidence:
+    summary: pd.DataFrame
+    requested_path: Path | None = None
+    root: Path | None = None
+    summary_path: Path | None = None
+    manifest_path: Path | None = None
+    manifest_integrity: ManifestIntegrity | None = None
+    verification: ProofRefreshReportVerification | None = None
+    read_error: str = ""
+
+    @property
+    def requested(self) -> bool:
+        return self.requested_path is not None
+
+    @property
+    def provided(self) -> bool:
+        return not self.summary.empty
+
+    @property
+    def reported_ready(self) -> bool:
+        return bool(
+            self.provided
+            and _value_bool(
+                self.summary.iloc[0].get("ready", False)
+            )
+        )
+
+    @property
+    def manifest_current(self) -> bool:
+        return bool(
+            self.manifest_integrity is not None
+            and self.manifest_integrity.passed
+        )
+
+    @property
+    def semantically_verified(self) -> bool:
+        return bool(
+            self.verification is not None
+            and self.verification.verified
+        )
+
+    @property
+    def verified(self) -> bool:
+        return bool(
+            not self.read_error
+            and self.provided
+            and self.manifest_current
+            and self.semantically_verified
+        )
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.verified and self.reported_ready)
+
+    @property
+    def reason(self) -> str:
+        if not self.requested:
+            return "proof_refresh_missing"
+        if self.read_error:
+            return f"proof_refresh_{self.read_error}"
+        if not self.manifest_current:
+            error = (
+                self.manifest_integrity.error
+                if self.manifest_integrity is not None
+                and self.manifest_integrity.error
+                else "invalid"
+            )
+            suffix = (
+                error
+                if error.startswith("manifest_")
+                else f"manifest_{error}"
+            )
+            return f"proof_refresh_{suffix}"
+        if not self.semantically_verified:
+            error = (
+                self.verification.error
+                if self.verification is not None
+                else ""
+            )
+            return (
+                "proof_refresh_"
+                + _proof_refresh_verification_error_slug(error)
+            )
+        if not self.reported_ready:
+            return "proof_refresh_not_ready"
+        return "ready"
+
+    @property
+    def recommendation(self) -> str:
+        if not self.verified:
+            return self.reason
+        value = str(
+            self.summary.iloc[0].get("recommendation", "")
+        ).strip()
+        return value or self.reason
 
 
 def evaluate_proof_refresh(
@@ -489,6 +599,193 @@ def verify_proof_refresh_report(
             ),
             error=integrity.error or str(exc),
         )
+
+
+def load_proof_refresh_evidence(
+    path: str | Path | None,
+) -> ProofRefreshEvidence:
+    if path is None:
+        return ProofRefreshEvidence(summary=pd.DataFrame())
+
+    requested = Path(path).resolve()
+    if requested.is_file() or requested.suffix.lower() == ".csv":
+        root = requested.parent
+        summary_path = requested
+    else:
+        root = requested
+        summary_path = root / PROOF_REFRESH_SUMMARY_FILE
+    canonical_summary_path = root / PROOF_REFRESH_SUMMARY_FILE
+    manifest_path = root / MANIFEST_NAME
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=PROOF_REFRESH_RUN_TYPE,
+        required_artifacts=PROOF_REFRESH_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    verification = verify_proof_refresh_report(root)
+
+    summary = pd.DataFrame()
+    read_error = (
+        ""
+        if summary_path.resolve() == canonical_summary_path.resolve()
+        else "summary_path_invalid"
+    )
+    if not read_error and not summary_path.is_file():
+        read_error = "summary_missing"
+    elif not read_error:
+        try:
+            summary = pd.read_csv(summary_path)
+        except (
+            OSError,
+            UnicodeDecodeError,
+            pd.errors.EmptyDataError,
+            pd.errors.ParserError,
+        ):
+            read_error = "summary_unreadable"
+        if not read_error and summary.empty:
+            read_error = "summary_empty"
+        if not read_error and len(summary.index) != 1:
+            read_error = "summary_row_count_invalid"
+        if not read_error:
+            missing = [
+                column
+                for column in PROOF_REFRESH_REQUIRED_SUMMARY_COLUMNS
+                if column not in summary.columns
+            ]
+            if missing:
+                read_error = "summary_schema_invalid"
+
+    return ProofRefreshEvidence(
+        summary=summary,
+        requested_path=requested,
+        root=root,
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        manifest_integrity=integrity,
+        verification=verification,
+        read_error=read_error,
+    )
+
+
+def proof_refresh_evidence_record(
+    evidence: ProofRefreshEvidence,
+) -> dict[str, object]:
+    row = (
+        evidence.summary.iloc[0]
+        if evidence.provided
+        else pd.Series(dtype=object)
+    )
+    integrity = evidence.manifest_integrity
+    verification = evidence.verification
+    manifest_path = evidence.manifest_path
+    manifest_sha256 = ""
+    if manifest_path is not None and manifest_path.is_file():
+        try:
+            manifest_sha256 = file_sha256(manifest_path)
+        except OSError:
+            manifest_sha256 = ""
+    return {
+        "requested": evidence.requested,
+        "provided": evidence.provided,
+        "manifest_required": evidence.requested,
+        "semantic_verification_required": evidence.requested,
+        "verified": evidence.verified,
+        "read_error": evidence.read_error,
+        "input_dir": str(evidence.root or ""),
+        "summary_path": str(evidence.summary_path or ""),
+        "reported_ready": evidence.reported_ready,
+        "ready": evidence.ready,
+        "proof_source": _value_text(row.get("proof_source")),
+        "fresh_proof_required": _value_bool(
+            row.get("fresh_proof_required", False)
+        ),
+        "strategy": _strategy_key(row.get("strategy", "")),
+        "market": _identity_key(row.get("market", "")),
+        "mixed_identity": _value_bool(
+            row.get("mixed_identity", False)
+        ),
+        "failed_checks": _value_int(row.get("failed_checks", 0)),
+        "manifest_provided": bool(
+            integrity is not None and integrity.exists
+        ),
+        "manifest_current": evidence.manifest_current,
+        "manifest_error": str(
+            integrity.error if integrity is not None else ""
+        ),
+        "manifest_run_type": str(
+            integrity.run_type if integrity is not None else ""
+        ),
+        "manifest_run_type_matches": bool(
+            integrity is not None and integrity.run_type_matches
+        ),
+        "manifest_path": str(manifest_path or ""),
+        "manifest_sha256": manifest_sha256,
+        "manifest_artifact_count": int(
+            integrity.artifact_count if integrity is not None else 0
+        ),
+        "manifest_artifact_match_count": int(
+            integrity.artifact_match_count
+            if integrity is not None
+            else 0
+        ),
+        "manifest_input_fingerprint_count": int(
+            integrity.input_fingerprint_count
+            if integrity is not None
+            else 0
+        ),
+        "manifest_input_fingerprint_match_count": int(
+            integrity.input_fingerprint_match_count
+            if integrity is not None
+            else 0
+        ),
+        "semantically_verified": evidence.semantically_verified,
+        "verification_inputs_current": bool(
+            verification is not None
+            and verification.inputs_current
+        ),
+        "verification_artifacts_consistent": bool(
+            verification is not None
+            and verification.artifacts_consistent
+        ),
+        "verification_non_authorizing": bool(
+            verification is not None
+            and verification.non_authorizing
+        ),
+        "verification_baseline_proof_verified": bool(
+            verification is not None
+            and verification.baseline_proof_verified
+        ),
+        "verification_latest_proof_provided": bool(
+            verification is not None
+            and verification.latest_proof_provided
+        ),
+        "verification_latest_proof_verified": bool(
+            verification is not None
+            and verification.latest_proof_verified
+        ),
+        "verification_error": str(
+            verification.error if verification is not None else ""
+        ),
+        "reason": evidence.reason,
+        "recommendation": evidence.recommendation,
+    }
+
+
+def proof_refresh_evidence_manifest_inputs(
+    evidence: ProofRefreshEvidence,
+) -> dict[str, object]:
+    if not evidence.requested or evidence.root is None:
+        return {}
+    inputs: dict[str, object] = {
+        "proof_refresh": evidence.root,
+    }
+    manifest_path = evidence.manifest_path
+    if manifest_path is not None and manifest_path.is_file():
+        inputs["proof_refresh_manifest"] = manifest_path
+        dependencies = manifest_dependency_paths(manifest_path)
+        if dependencies:
+            inputs["proof_refresh_dependencies"] = dependencies
+    return inputs
 
 
 def _proof_verification_summary_fields(
@@ -1631,6 +1928,20 @@ def _split_items(value: object) -> list[str]:
         return []
     normalized = text.replace(",", ";")
     return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _proof_refresh_verification_error_slug(error: str) -> str:
+    text = str(error).strip().lower()
+    if not text:
+        return "verification_failed"
+    normalized = "".join(
+        character if character.isalnum() else "_"
+        for character in text
+    )
+    return (
+        "verification_"
+        + "_".join(part for part in normalized.split("_") if part)
+    )
 
 
 def _help_command(next_gate: str) -> str:

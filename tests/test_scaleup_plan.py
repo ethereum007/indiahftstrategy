@@ -11,6 +11,11 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
+from reports.proof import ProofThresholds, write_proof_report
+from reports.proof_refresh import (
+    ProofRefreshThresholds,
+    write_proof_refresh_report,
+)
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
 from tests.data_readiness_helpers import (
     reseal_experiment_manifest,
@@ -1754,6 +1759,63 @@ def write_inputs(
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
     exposure_summary(exposure_passed).to_csv(exposure / "order_exposure_summary.csv", index=False)
     return evidence, shadow, launch, exposure
+
+
+def write_proof_refresh_bundle(root):
+    root.mkdir(parents=True, exist_ok=True)
+    drift = root.parent / f"_{root.name}_drift"
+    replay = root.parent / f"_{root.name}_replay"
+    baseline = root.parent / f"_{root.name}_baseline_proof"
+    source = root.parent / f"_{root.name}_source.csv"
+    drift.mkdir(parents=True, exist_ok=True)
+    replay.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": True,
+                "failed_checks": 0,
+                "recommendation": "reuse_existing_proof_assumptions",
+            }
+        ]
+    ).to_csv(drift / "fill_model_drift_summary.csv", index=False)
+    source.write_text("ts,bid,ask\n1,100,101\n", encoding="utf-8")
+    pd.DataFrame(
+        [
+            {
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "net_pnl": 10.0,
+                "total_costs": 0.0,
+                "fills": 10,
+                "orders_sent": 10,
+                "order_to_trade_ratio": 1.0,
+                "otr_breached": False,
+                "turnover": 1000.0,
+                "maker_share": 1.0,
+            }
+        ]
+    ).to_csv(replay / "summary.csv", index=False)
+    write_experiment_manifest(
+        replay,
+        run_type="scaleup_proof_refresh_unit_replay",
+        inputs={"source": source},
+    )
+    write_proof_report(
+        [replay],
+        output_dir=baseline,
+        thresholds=ProofThresholds(min_net_pnl=0.0, min_fills=1),
+    )
+    report = write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        output_dir=root,
+        thresholds=ProofRefreshThresholds(
+            expected_strategy="lead_lag_taker",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+    assert report.ready
+    return root, source
 
 
 def write_broker_readiness_bundle(
@@ -7126,6 +7188,184 @@ def test_write_scaleup_plan_outputs_artifacts(tmp_path):
     assert path_tail(manifest["inputs"]["instrument_metadata"]["path"]).endswith(
         "/metadata/instrument_metadata_summary.csv"
     )
+
+
+def test_write_scaleup_plan_verifies_proof_refresh_bundle(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    proof_refresh, proof_source = write_proof_refresh_bundle(
+        tmp_path / "proof_refresh"
+    )
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        proof_refresh_dir=proof_refresh,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    summary = report.summary.iloc[0]
+    proof = report.config["proof_freshness"]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert report.ready
+    assert bool(summary["proof_refresh_requested"])
+    assert bool(summary["proof_refresh_provided"])
+    assert bool(summary["proof_refresh_reported_ready"])
+    assert bool(summary["proof_refresh_ready"])
+    assert bool(summary["proof_refresh_verified"])
+    assert bool(summary["proof_refresh_manifest_current"])
+    assert bool(summary["proof_refresh_semantically_verified"])
+    assert summary["proof_refresh_reason"] == "ready"
+    assert proof["requested"]
+    assert proof["provided"]
+    assert proof["reported_ready"]
+    assert proof["ready"]
+    assert proof["verified"]
+    assert proof["manifest"]["required"]
+    assert proof["manifest"]["current"]
+    assert proof["manifest"]["sha256"] == file_sha256(
+        proof_refresh / "manifest.json"
+    )
+    assert proof["semantic_verification"] == {
+        "required": True,
+        "verified": True,
+        "inputs_current": True,
+        "artifacts_consistent": True,
+        "non_authorizing": True,
+        "error": "",
+    }
+    assert {
+        "proof_refresh",
+        "proof_refresh_manifest",
+        "proof_refresh_dependencies",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["proof_refresh"]["path"]).endswith(
+        "/proof_refresh"
+    )
+    assert manifest["extra"]["proof_refresh_verified"]
+    assert manifest["extra"]["proof_refresh_manifest_current"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    proof_source.write_text(
+        "ts,bid,ask\n1,100,101\n2,101,102\n",
+        encoding="utf-8",
+    )
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_write_scaleup_plan_blocks_resealed_tampered_proof_refresh(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    proof_refresh, _ = write_proof_refresh_bundle(
+        tmp_path / "proof_refresh"
+    )
+    refresh_summary_path = proof_refresh / "proof_refresh_summary.csv"
+    refresh_summary = pd.read_csv(refresh_summary_path)
+    refresh_summary.loc[0, "proof_source"] = "latest"
+    refresh_summary.to_csv(refresh_summary_path, index=False)
+    reseal_experiment_manifest(proof_refresh)
+    assert verify_experiment_manifest(
+        proof_refresh / "manifest.json",
+        expected_run_type="proof_refresh_gate",
+        require_input_fingerprints=True,
+    ).passed
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        proof_refresh_dir=proof_refresh,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    summary = report.summary.iloc[0]
+    proof = report.config["proof_freshness"]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    expected_error = "artifacts do not reconstruct from inputs"
+    expected_reason = (
+        "proof_refresh_verification_"
+        "artifacts_do_not_reconstruct_from_inputs"
+    )
+    assert not report.ready
+    assert {
+        "proof_refresh_semantically_verified",
+        "proof_refresh_ready",
+    } <= failed
+    assert "proof_refresh_manifest_current" not in failed
+    assert bool(summary["proof_refresh_reported_ready"])
+    assert not bool(summary["proof_refresh_ready"])
+    assert not bool(summary["proof_refresh_verified"])
+    assert bool(summary["proof_refresh_manifest_current"])
+    assert not bool(summary["proof_refresh_semantically_verified"])
+    assert summary["proof_refresh_verification_error"] == expected_error
+    assert summary["proof_refresh_reason"] == expected_reason
+    assert proof["reported_ready"]
+    assert not proof["ready"]
+    assert not proof["verified"]
+    assert proof["manifest"]["current"]
+    assert not proof["semantic_verification"]["verified"]
+    assert not proof["semantic_verification"]["artifacts_consistent"]
+    assert proof["semantic_verification"]["error"] == expected_error
+    assert proof["reason"] == expected_reason
+    assert not manifest["extra"]["proof_refresh_verified"]
+    assert manifest["extra"]["proof_refresh_manifest_current"]
+
+
+def test_write_scaleup_plan_blocks_unbound_proof_refresh_csv(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    proof_refresh, _ = write_proof_refresh_bundle(
+        tmp_path / "proof_refresh"
+    )
+    unbound_summary = proof_refresh / "operator_summary.csv"
+    summary = pd.read_csv(proof_refresh / "proof_refresh_summary.csv")
+    summary.loc[0, "proof_source"] = "latest"
+    summary.to_csv(unbound_summary, index=False)
+    assert verify_experiment_manifest(
+        proof_refresh / "manifest.json",
+        expected_run_type="proof_refresh_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        proof_refresh_dir=unbound_summary,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    proof = report.config["proof_freshness"]
+    assert not report.ready
+    assert {
+        "proof_refresh_available",
+        "proof_refresh_ready",
+    } <= failed
+    assert "proof_refresh_semantically_verified" not in failed
+    assert proof["manifest"]["current"]
+    assert proof["semantic_verification"]["verified"]
+    assert not proof["verified"]
+    assert proof["read_error"] == "summary_path_invalid"
+    assert proof["reason"] == "proof_refresh_summary_path_invalid"
 
 
 def test_write_scaleup_plan_fingerprints_route_readiness_input(tmp_path):

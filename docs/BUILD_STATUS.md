@@ -6733,6 +6733,25 @@ passed`). Repository collection is healthy at `2526 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this focused
 evidence-integrity slice.
 
+Latest scale-up proof-refresh consumption integrity gate: filesystem-backed
+`plan-scaleup` now consumes proof refresh through the shared evidence loader
+instead of trusting `proof_refresh_summary.csv` directly. Every supplied
+refresh must have the expected run type and exact six-artifact manifest, current
+recursively flattened inputs, deterministic semantic reconstruction, and
+non-authorizing authority before its reported readiness can become effective.
+Scale-up summary/config output separates reported from effective readiness and
+retains manifest SHA-256, input/artifact/authority verification, exact error,
+and reason. Its manifest binds the complete refresh directory, refresh manifest,
+and recursively flattened drift/proof/replay dependencies, so later source
+drift invalidates the retained scale-up plan. A resealed proof-source edit is
+now blocked by both semantic-verification and effective-readiness checks. The
+proof-refresh plus complete scale-up suites pass (`169 passed`), and downstream
+cutover, catalog, and manifest regressions pass (`192 passed`). Repository
+collection is healthy at `2529 tests`. All outputs remain non-authorizing; the
+full repository suite was not rerun because the preceding full run reached only
+55% after 40 minutes without a failure, while this slice is covered by focused
+and downstream suites.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

@@ -3996,6 +3996,17 @@ manifest.json
 adds `failed_check_count` plus `primary_blocker`, the first failed check as a
 structured record with value, operator, threshold, passed, and reason fields.
 
+Any supplied `--proof-refresh` is treated as decision evidence even when the
+explicit require flag is omitted. Scale-up requires the
+`proof_refresh_gate` manifest, exactly the six documented refresh artifacts,
+current recursively flattened source fingerprints, deterministic
+reconstruction from the original drift/proof/calibrated-replay inputs, and
+explicit non-routing/non-submission authority. The summary and config retain
+the source's `reported_ready` value separately from effective `ready`,
+manifest path identity, semantic-verification state, exact error, and
+operator-facing reason. A freshly re-manifested readiness or proof-source edit
+therefore remains blocked instead of authorizing larger limits.
+
 Any supplied `--data-readiness-comparison` is treated as decision evidence,
 even when the explicit require flag is omitted. Scale-up requires the expected
 `data_readiness_comparison` manifest run type, all six required comparison
@@ -4027,11 +4038,11 @@ scale-up retains `shadow_broker_vendor_data_readiness_*` fields and a nested
 closed when the comparison-level Arrow.money/iRage wrapper proof is partial,
 unready, or has failed checks.
 `manifest.json` fingerprints the resolved evidence, shadow-comparison, launch,
-launch-pipeline, proof-refresh, metadata, data-readiness, data-readiness
-comparison summary and manifest, exposure, route-readiness, broker-readiness
-summary CSVs, and broker-readiness config JSON sidecars rather than only the
-input folders, so scale-up handoffs can prove the exact records behind each
-recommendation and detect later comparison-manifest drift. If a
+launch-pipeline, metadata, data-readiness, data-readiness comparison summary
+and manifest, exposure, route-readiness, broker-readiness summary CSVs, and
+broker-readiness config JSON sidecars. Proof refresh is bound as its complete
+report directory, manifest, and recursively flattened source dependencies, so
+scale-up handoffs detect later replay-source drift as well as report edits. If a
 strategy portfolio allocation is supplied, scale-up reads
 `strategy_portfolio_summary.csv` and `strategy_portfolio_allocations.csv`,
 requires a ready positive allocation for the scale-up strategy/market when
