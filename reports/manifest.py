@@ -80,7 +80,11 @@ def build_experiment_manifest(
         "generated_at_utc": _utc_now(),
         "run_type": run_type,
         "parameters": _jsonable(parameters or {}),
-        "inputs": {name: _input_fingerprint(value) for name, value in (inputs or {}).items()},
+        "inputs": {
+            name: _input_fingerprint(value)
+            for name, value in (inputs or {}).items()
+            if value is not None
+        },
         "artifacts": _artifact_fingerprints(
             out,
             exclude_paths=artifact_exclude_paths,

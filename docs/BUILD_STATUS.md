@@ -6572,6 +6572,19 @@ runtime-guard, and runtime-session suites pass (`25`, `32`, and `13` passed).
 Repository collection is healthy at `2496 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest manifest optional-input normalization: the shared experiment-manifest
+writer now omits top-level inputs whose value is `None`, preventing every
+current producer from serializing absent optional evidence as a JSON-null
+pseudo-input. Nested structured contract metadata can still retain meaningful
+null values, and read-side compatibility tests inject historical null entries
+directly to prove they remain inert. Concrete fingerprints remain active and
+fail closed after source deletion. Manifest/lineage, catalog/readiness/evidence,
+broker-readiness, scale-up/runtime, and provider scale-up coverage passes (`509
+passed`). Repository collection is healthy at `2497 tests`. A full repository
+run was attempted but did not complete within the 30-minute runner ceiling and
+is not counted as passing; it emitted no failure before termination. All
+outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Ingest and retain an authoritative NSE calendar artifact for the first real

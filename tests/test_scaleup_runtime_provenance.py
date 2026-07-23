@@ -175,7 +175,7 @@ def _write_optional_broker_scaleup_bundle(root, broker_input):
     ).to_csv(root / "scaleup_checks.csv", index=False)
     source = root.parent / "optional_scaleup_source.csv"
     pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
-    write_experiment_manifest(
+    manifest_path = write_experiment_manifest(
         root,
         run_type="scaleup_plan",
         inputs={
@@ -184,6 +184,13 @@ def _write_optional_broker_scaleup_bundle(root, broker_input):
         },
         extra={"ready": True, "authorizes_submission": False},
     )
+    if broker_input is None:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["inputs"]["broker_readiness_config"] = None
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return config_path
 
 

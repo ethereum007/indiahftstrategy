@@ -34,6 +34,34 @@ def test_write_experiment_manifest_hashes_inputs_and_artifacts(tmp_path):
     assert manifest["environment"]["python"]
 
 
+def test_write_experiment_manifest_omits_top_level_null_inputs(tmp_path):
+    source = tmp_path / "ticks.csv"
+    output = tmp_path / "run"
+    source.write_text("ts,bid,ask\n1,100,101\n", encoding="utf-8")
+    output.mkdir()
+    (output / "summary.csv").write_text("passed\ntrue\n", encoding="utf-8")
+
+    manifest_path = write_experiment_manifest(
+        output,
+        run_type="unit_test_run",
+        inputs={
+            "ticks": source,
+            "optional_evidence": None,
+            "structured_contract": {"optional_note": None},
+        },
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        require_input_fingerprints=True,
+    )
+    assert "optional_evidence" not in manifest["inputs"]
+    assert manifest["inputs"]["structured_contract"]["optional_note"] is None
+    assert integrity.passed
+    assert integrity.input_fingerprint_count == 1
+
+
 def test_verify_experiment_manifest_checks_artifacts_and_inputs(tmp_path):
     source = tmp_path / "ticks.csv"
     output = tmp_path / "run"

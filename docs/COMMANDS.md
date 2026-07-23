@@ -41,6 +41,12 @@ fixtures outside regular NSE session hours.
 Replay, sweep, proof, and selection output folders include `manifest.json` with
 run parameters, input hashes, output artifact hashes, git state, and runtime
 package versions.
+The shared writer omits top-level input names whose value is `None`, because
+absence is not evidence and cannot be fingerprinted. Nested structured input
+metadata may still contain null fields. Semantic readers retain compatibility
+with historical manifests that serialized optional inputs as JSON null, while
+real file or directory fingerprints remain fail closed if their sources drift
+or disappear.
 
 ## Experiment Catalog
 

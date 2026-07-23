@@ -170,7 +170,7 @@ def _write_optional_roundtrip_readiness_bundle(root, roundtrip_input):
         "# Broker readiness\n\nReview-only evidence bundle.\n",
         encoding="utf-8",
     )
-    write_experiment_manifest(
+    manifest_path = write_experiment_manifest(
         root,
         run_type="broker_readiness",
         inputs={
@@ -179,6 +179,13 @@ def _write_optional_roundtrip_readiness_bundle(root, roundtrip_input):
         },
         extra={"ready": True},
     )
+    if roundtrip_input is None:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["inputs"]["dispatch_roundtrip"] = None
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return config_path
 
 
