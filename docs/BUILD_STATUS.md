@@ -6752,6 +6752,23 @@ full repository suite was not rerun because the preceding full run reached only
 55% after 40 minutes without a failure, while this slice is covered by focused
 and downstream suites.
 
+Latest scale-up-to-runtime proof-refresh lineage gate: filesystem-backed
+runtime provenance now reconciles proof-refresh claims across scale-up config,
+summary, plan, and manifest metadata, then reopens the currently fingerprinted
+refresh bundle through the shared manifest and semantic verifier. Telemetry
+retains carried and source manifest hashes, verification state, source gate
+state, and current-source match; runtime guard independently revalidates the
+source and compares those fields before applying trading limits. A proof-source
+edit followed by fresh proof-refresh and outer scale-up manifest seals still
+halts because the source artifacts no longer reconstruct the claimed refresh
+report. Runtime provenance, telemetry, and guard regressions pass (`64
+passed`); runtime-session, cutover, and research-family regressions pass (`144
+passed`); catalog and manifest regressions pass (`72 passed`). Repository
+collection is healthy at `2532 tests`. All outputs remain non-authorizing; the
+full repository suite was not rerun because the preceding full run reached only
+55% after 40 minutes without a failure, while this slice is covered by focused
+and downstream suites.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

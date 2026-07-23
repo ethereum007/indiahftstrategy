@@ -631,9 +631,14 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
 
 
 def test_runtime_session_monitor_carries_proof_refresh_state(tmp_path):
-    scaleup_dir = tmp_path / "scaleup"
+    from tests.test_scaleup_runtime_provenance import (
+        _write_proof_refresh_scaleup_bundle,
+    )
+
+    scaleup_dir, _, _ = _write_proof_refresh_scaleup_bundle(
+        tmp_path / "scaleup"
+    )
     out_dir = tmp_path / "session"
-    write_scaleup_dir(scaleup_dir, scaleup_config(require_proof_refresh=True))
 
     report = write_runtime_session_monitor(
         scaleup_dir=scaleup_dir,
@@ -648,11 +653,13 @@ def test_runtime_session_monitor_carries_proof_refresh_state(tmp_path):
     assert bool(summary["proof_refresh_required"])
     assert bool(summary["proof_refresh_provided"])
     assert bool(summary["proof_refresh_ready"])
-    assert summary["proof_refresh_strategy"] == "surface_mm"
+    assert summary["proof_refresh_strategy"] == "lead_lag_taker"
     assert summary["proof_refresh_market"] == "india_nse_index_derivatives"
     assert not bool(summary["proof_refresh_mixed_identity"])
-    assert summary["proof_source"] == "latest"
-    assert set(report.steps["proof_refresh_strategy"]) == {"surface_mm"}
+    assert summary["proof_source"] == "baseline"
+    assert set(report.steps["proof_refresh_strategy"]) == {
+        "lead_lag_taker"
+    }
     assert set(report.steps["proof_refresh_market"]) == {"india_nse_index_derivatives"}
 
 

@@ -12,6 +12,10 @@ from reports.manifest import (
     manifest_dependency_paths,
     verify_experiment_manifest,
 )
+from reports.proof_refresh import (
+    load_proof_refresh_evidence,
+    proof_refresh_evidence_record,
+)
 from reports.scaleup import load_strategy_portfolio_provenance
 
 
@@ -54,6 +58,59 @@ BROKER_READINESS_LINEAGE_FIELDS = (
     ),
 )
 
+PROOF_REFRESH_REPORT_FIELDS = (
+    ("requested", "proof_refresh_requested"),
+    ("provided", "proof_refresh_provided"),
+    ("reported_ready", "proof_refresh_reported_ready"),
+    ("ready", "proof_refresh_ready"),
+    ("verified", "proof_refresh_verified"),
+    ("strategy", "proof_refresh_strategy"),
+    ("market", "proof_refresh_market"),
+    ("mixed_identity", "proof_refresh_mixed_identity"),
+    ("proof_source", "proof_source"),
+    ("read_error", "proof_refresh_read_error"),
+    ("reason", "proof_refresh_reason"),
+)
+
+PROOF_REFRESH_MANIFEST_FIELDS = (
+    ("required", "proof_refresh_manifest_required", "manifest_required"),
+    ("current", "proof_refresh_manifest_current", "manifest_current"),
+    ("sha256", "proof_refresh_manifest_sha256", "manifest_sha256"),
+)
+
+PROOF_REFRESH_SEMANTIC_FIELDS = (
+    (
+        "required",
+        "proof_refresh_semantic_verification_required",
+        "semantic_verification_required",
+    ),
+    (
+        "verified",
+        "proof_refresh_semantically_verified",
+        "semantically_verified",
+    ),
+    (
+        "inputs_current",
+        "proof_refresh_verification_inputs_current",
+        "verification_inputs_current",
+    ),
+    (
+        "artifacts_consistent",
+        "proof_refresh_verification_artifacts_consistent",
+        "verification_artifacts_consistent",
+    ),
+    (
+        "non_authorizing",
+        "proof_refresh_verification_non_authorizing",
+        "verification_non_authorizing",
+    ),
+    (
+        "error",
+        "proof_refresh_verification_error",
+        "verification_error",
+    ),
+)
+
 
 def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any]:
     return {
@@ -72,6 +129,29 @@ def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any
         "dependency_count": 0,
         "dependency_paths": [],
         "artifact_paths": [],
+        "proof_refresh_active": False,
+        "proof_refresh_required": False,
+        "proof_refresh_requested": False,
+        "proof_refresh_provided": False,
+        "proof_refresh_reported_ready": False,
+        "proof_refresh_ready": False,
+        "proof_refresh_verified": False,
+        "proof_refresh_manifest_required": False,
+        "proof_refresh_manifest_current": False,
+        "proof_refresh_manifest_sha256": "",
+        "proof_refresh_semantic_verification_required": False,
+        "proof_refresh_semantically_verified": False,
+        "proof_refresh_verification_inputs_current": False,
+        "proof_refresh_verification_artifacts_consistent": False,
+        "proof_refresh_verification_non_authorizing": False,
+        "proof_refresh_verification_error": "",
+        "proof_refresh_read_error": "",
+        "proof_refresh_reason": "",
+        "proof_refresh_source_manifest_current": False,
+        "proof_refresh_source_manifest_sha256": "",
+        "proof_refresh_source_semantically_verified": False,
+        "proof_refresh_source_provenance_gate_passed": False,
+        "proof_refresh_matches_current": True,
         "strategy_portfolio_required": False,
         "strategy_portfolio_provided": False,
         "strategy_portfolio_manifest_required": False,
@@ -136,6 +216,16 @@ def load_scaleup_runtime_provenance(
     checks = _read_csv(root / "scaleup_checks.csv")
     plan = _read_csv(root / "scaleup_plan.csv")
 
+    proof_refresh_active = _proof_refresh_active(config, manifest)
+    proof_refresh_path = _manifest_input_path(
+        manifest,
+        "proof_refresh",
+    )
+    current_proof_refresh: dict[str, object] = {}
+    if proof_refresh_path is not None:
+        current_proof_refresh = proof_refresh_evidence_record(
+            load_proof_refresh_evidence(proof_refresh_path)
+        )
     broker_readiness_active = _broker_readiness_active(config, manifest)
     broker_readiness_config_path = _manifest_input_path(
         manifest,
@@ -173,6 +263,9 @@ def load_scaleup_runtime_provenance(
         summary=summary,
         checks=checks,
         plan=plan,
+        proof_refresh_active=proof_refresh_active,
+        proof_refresh_path=proof_refresh_path,
+        current_proof_refresh=current_proof_refresh,
         broker_readiness_active=broker_readiness_active,
         broker_readiness_config_path=broker_readiness_config_path,
         current_broker_readiness_fields=current_broker_readiness_fields,
@@ -180,6 +273,41 @@ def load_scaleup_runtime_provenance(
     non_authorizing = _scaleup_non_authorizing(config, manifest, summary, plan)
     source_ready = _bool(config.get("ready", False))
     evidence.update(_lineage(config))
+    proof_refresh_errors = [
+        error
+        for error in errors
+        if error.startswith("scaleup_proof_refresh_")
+    ]
+    evidence.update(
+        {
+            "proof_refresh_active": proof_refresh_active,
+            "proof_refresh_source_manifest_current": _bool(
+                current_proof_refresh.get("manifest_current", False)
+            ),
+            "proof_refresh_source_manifest_sha256": _text(
+                current_proof_refresh.get("manifest_sha256", "")
+            ),
+            "proof_refresh_source_semantically_verified": _bool(
+                current_proof_refresh.get(
+                    "semantically_verified",
+                    False,
+                )
+            ),
+            "proof_refresh_source_provenance_gate_passed": _bool(
+                current_proof_refresh.get("verified", False)
+            ),
+            "proof_refresh_matches_current": bool(
+                not proof_refresh_active
+                or (
+                    proof_refresh_path is not None
+                    and not proof_refresh_errors
+                    and _bool(
+                        current_proof_refresh.get("verified", False)
+                    )
+                )
+            ),
+        }
+    )
     broker_readiness_errors = [
         error
         for error in errors
@@ -257,6 +385,21 @@ def scaleup_runtime_manifest_extra(provenance: Mapping[str, Any]) -> dict[str, A
         "scaleup_provenance_gate_passed": _bool(
             provenance.get("provenance_gate_passed", False)
         ),
+        "proof_refresh_manifest_sha256": _text(
+            provenance.get("proof_refresh_manifest_sha256", "")
+        ),
+        "proof_refresh_source_manifest_sha256": _text(
+            provenance.get(
+                "proof_refresh_source_manifest_sha256",
+                "",
+            )
+        ),
+        "proof_refresh_verified": _bool(
+            provenance.get("proof_refresh_verified", False)
+        ),
+        "proof_refresh_matches_current": _bool(
+            provenance.get("proof_refresh_matches_current", False)
+        ),
         "strategy_portfolio_manifest_sha256": _text(
             provenance.get("strategy_portfolio_manifest_sha256", "")
         ),
@@ -306,6 +449,102 @@ def scaleup_runtime_fields(provenance: Mapping[str, Any]) -> dict[str, Any]:
             provenance.get("provenance_gate_passed", False)
         ),
         "scaleup_dependency_count": int(provenance.get("dependency_count", 0)),
+        "scaleup_proof_refresh_active": _bool(
+            provenance.get("proof_refresh_active", False)
+        ),
+        "scaleup_proof_refresh_required": _bool(
+            provenance.get("proof_refresh_required", False)
+        ),
+        "scaleup_proof_refresh_requested": _bool(
+            provenance.get("proof_refresh_requested", False)
+        ),
+        "scaleup_proof_refresh_provided": _bool(
+            provenance.get("proof_refresh_provided", False)
+        ),
+        "scaleup_proof_refresh_reported_ready": _bool(
+            provenance.get("proof_refresh_reported_ready", False)
+        ),
+        "scaleup_proof_refresh_ready": _bool(
+            provenance.get("proof_refresh_ready", False)
+        ),
+        "scaleup_proof_refresh_verified": _bool(
+            provenance.get("proof_refresh_verified", False)
+        ),
+        "scaleup_proof_refresh_manifest_required": _bool(
+            provenance.get("proof_refresh_manifest_required", False)
+        ),
+        "scaleup_proof_refresh_manifest_current": _bool(
+            provenance.get("proof_refresh_manifest_current", False)
+        ),
+        "scaleup_proof_refresh_manifest_sha256": _text(
+            provenance.get("proof_refresh_manifest_sha256", "")
+        ),
+        "scaleup_proof_refresh_semantic_verification_required": _bool(
+            provenance.get(
+                "proof_refresh_semantic_verification_required",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_semantically_verified": _bool(
+            provenance.get(
+                "proof_refresh_semantically_verified",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_verification_inputs_current": _bool(
+            provenance.get(
+                "proof_refresh_verification_inputs_current",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_verification_artifacts_consistent": _bool(
+            provenance.get(
+                "proof_refresh_verification_artifacts_consistent",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_verification_non_authorizing": _bool(
+            provenance.get(
+                "proof_refresh_verification_non_authorizing",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_verification_error": _text(
+            provenance.get("proof_refresh_verification_error", "")
+        ),
+        "scaleup_proof_refresh_read_error": _text(
+            provenance.get("proof_refresh_read_error", "")
+        ),
+        "scaleup_proof_refresh_reason": _text(
+            provenance.get("proof_refresh_reason", "")
+        ),
+        "scaleup_proof_refresh_source_manifest_current": _bool(
+            provenance.get(
+                "proof_refresh_source_manifest_current",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_source_manifest_sha256": _text(
+            provenance.get(
+                "proof_refresh_source_manifest_sha256",
+                "",
+            )
+        ),
+        "scaleup_proof_refresh_source_semantically_verified": _bool(
+            provenance.get(
+                "proof_refresh_source_semantically_verified",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_source_provenance_gate_passed": _bool(
+            provenance.get(
+                "proof_refresh_source_provenance_gate_passed",
+                False,
+            )
+        ),
+        "scaleup_proof_refresh_matches_current": _bool(
+            provenance.get("proof_refresh_matches_current", False)
+        ),
         "scaleup_strategy_portfolio_required": _bool(
             provenance.get("strategy_portfolio_required", False)
         ),
@@ -428,6 +667,9 @@ def _scaleup_contract_errors(
     summary: pd.DataFrame,
     checks: pd.DataFrame,
     plan: pd.DataFrame,
+    proof_refresh_active: bool,
+    proof_refresh_path: Path | None,
+    current_proof_refresh: Mapping[str, Any],
     broker_readiness_active: bool,
     broker_readiness_config_path: Path | None,
     current_broker_readiness_fields: Mapping[str, Any],
@@ -479,6 +721,20 @@ def _scaleup_contract_errors(
             if not _same(row.get(summary_field), limits.get(config_field)):
                 errors.append(f"scaleup_summary_{summary_field}_mismatch")
 
+    if proof_refresh_active:
+        errors.extend(
+            _proof_refresh_contract_errors(
+                manifest_extra=extra,
+                summary=row,
+                plan=plan_row,
+                scaleup_ready=ready,
+                proof_refresh=_mapping(
+                    config.get("proof_freshness")
+                ),
+                proof_refresh_path=proof_refresh_path,
+                current=current_proof_refresh,
+            )
+        )
     portfolio = _mapping(config.get("strategy_portfolio"))
     portfolio_active = _bool(portfolio.get("required", False)) or _bool(
         portfolio.get("provided", False)
@@ -504,6 +760,237 @@ def _scaleup_contract_errors(
             )
         )
     return errors
+
+
+def _proof_refresh_contract_errors(
+    *,
+    manifest_extra: dict[str, Any],
+    summary: pd.Series,
+    plan: pd.Series,
+    scaleup_ready: bool,
+    proof_refresh: dict[str, Any],
+    proof_refresh_path: Path | None,
+    current: Mapping[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    if not proof_refresh:
+        errors.append("scaleup_proof_refresh_config_missing")
+
+    for config_field, report_field in PROOF_REFRESH_REPORT_FIELDS:
+        _compare_proof_refresh_report_field(
+            errors,
+            config=proof_refresh,
+            config_field=config_field,
+            report_field=report_field,
+            summary=summary,
+            plan=plan,
+        )
+
+    for config_field, report_field in (
+        ("fresh_proof_required", "fresh_proof_required"),
+        ("recommendation", "proof_refresh_recommendation"),
+    ):
+        if config_field not in proof_refresh:
+            errors.append(
+                f"scaleup_proof_refresh_{config_field}_missing:config"
+            )
+        elif report_field not in plan.index:
+            errors.append(
+                f"scaleup_proof_refresh_{config_field}_missing:plan"
+            )
+        elif not _same(
+            plan.get(report_field),
+            proof_refresh.get(config_field),
+        ):
+            errors.append(
+                f"scaleup_proof_refresh_{config_field}_plan_mismatch"
+            )
+
+    if "required" not in proof_refresh:
+        errors.append("scaleup_proof_refresh_required_missing:config")
+    refresh_manifest = _mapping(proof_refresh.get("manifest"))
+    for config_field, report_field, _ in PROOF_REFRESH_MANIFEST_FIELDS:
+        _compare_proof_refresh_nested_field(
+            errors,
+            section=refresh_manifest,
+            section_name="manifest",
+            config_field=config_field,
+            report_field=report_field,
+            summary=summary,
+            plan=plan,
+        )
+    semantic = _mapping(
+        proof_refresh.get("semantic_verification")
+    )
+    for config_field, report_field, _ in PROOF_REFRESH_SEMANTIC_FIELDS:
+        _compare_proof_refresh_nested_field(
+            errors,
+            section=semantic,
+            section_name="semantic_verification",
+            config_field=config_field,
+            report_field=report_field,
+            summary=summary,
+            plan=plan,
+        )
+    if scaleup_ready:
+        for field, value in (
+            ("provided", proof_refresh.get("provided", False)),
+            ("ready", proof_refresh.get("ready", False)),
+            ("verified", proof_refresh.get("verified", False)),
+            (
+                "manifest_current",
+                refresh_manifest.get("current", False),
+            ),
+            (
+                "semantically_verified",
+                semantic.get("verified", False),
+            ),
+            (
+                "verification_inputs_current",
+                semantic.get("inputs_current", False),
+            ),
+            (
+                "verification_artifacts_consistent",
+                semantic.get("artifacts_consistent", False),
+            ),
+            (
+                "verification_non_authorizing",
+                semantic.get("non_authorizing", False),
+            ),
+        ):
+            if not _bool(value):
+                errors.append(
+                    f"scaleup_proof_refresh_{field}_not_ready"
+                )
+
+    for extra_field, expected in (
+        (
+            "proof_refresh_verified",
+            proof_refresh.get("verified", False),
+        ),
+        (
+            "proof_refresh_manifest_current",
+            refresh_manifest.get("current", False),
+        ),
+        (
+            "proof_refresh_manifest_sha256",
+            refresh_manifest.get("sha256", ""),
+        ),
+    ):
+        if extra_field not in manifest_extra:
+            errors.append(
+                f"scaleup_{extra_field}_missing:manifest"
+            )
+        elif not _same(
+            manifest_extra.get(extra_field),
+            expected,
+        ):
+            errors.append(
+                f"scaleup_{extra_field}_manifest_mismatch"
+            )
+
+    if proof_refresh_path is None:
+        errors.append("scaleup_proof_refresh_source_missing")
+        return errors
+
+    for config_field, _, source_field in (
+        *(
+            (config_field, report_field, config_field)
+            for config_field, report_field
+            in PROOF_REFRESH_REPORT_FIELDS
+        ),
+        (
+            "fresh_proof_required",
+            "fresh_proof_required",
+            "fresh_proof_required",
+        ),
+        (
+            "recommendation",
+            "proof_refresh_recommendation",
+            "recommendation",
+        ),
+    ):
+        if not _proof_refresh_source_same(
+            config_field,
+            proof_refresh.get(config_field),
+            current.get(source_field),
+        ):
+            errors.append(
+                f"scaleup_proof_refresh_{config_field}_source_mismatch"
+            )
+    for config_field, _, source_field in PROOF_REFRESH_MANIFEST_FIELDS:
+        if not _same(
+            refresh_manifest.get(config_field),
+            current.get(source_field),
+        ):
+            errors.append(
+                "scaleup_proof_refresh_manifest_"
+                f"{config_field}_source_mismatch"
+            )
+    for config_field, _, source_field in PROOF_REFRESH_SEMANTIC_FIELDS:
+        if not _same(
+            semantic.get(config_field),
+            current.get(source_field),
+        ):
+            errors.append(
+                "scaleup_proof_refresh_semantic_verification_"
+                f"{config_field}_source_mismatch"
+            )
+    if not _bool(current.get("verified", False)):
+        errors.append(
+            "scaleup_proof_refresh_source_provenance_not_current"
+        )
+    return errors
+
+
+def _compare_proof_refresh_report_field(
+    errors: list[str],
+    *,
+    config: Mapping[str, Any],
+    config_field: str,
+    report_field: str,
+    summary: pd.Series,
+    plan: pd.Series,
+) -> None:
+    if config_field not in config:
+        errors.append(
+            f"scaleup_proof_refresh_{config_field}_missing:config"
+        )
+        return
+    expected = config.get(config_field)
+    for source, row in (("summary", summary), ("plan", plan)):
+        if report_field not in row.index:
+            errors.append(
+                f"scaleup_proof_refresh_{config_field}_missing:{source}"
+            )
+        elif not _same(row.get(report_field), expected):
+            errors.append(
+                f"scaleup_proof_refresh_{config_field}_{source}_mismatch"
+            )
+
+
+def _compare_proof_refresh_nested_field(
+    errors: list[str],
+    *,
+    section: Mapping[str, Any],
+    section_name: str,
+    config_field: str,
+    report_field: str,
+    summary: pd.Series,
+    plan: pd.Series,
+) -> None:
+    error_prefix = (
+        f"scaleup_proof_refresh_{section_name}_{config_field}"
+    )
+    if config_field not in section:
+        errors.append(f"{error_prefix}_missing:config")
+        return
+    expected = section.get(config_field)
+    for source, row in (("summary", summary), ("plan", plan)):
+        if report_field not in row.index:
+            errors.append(f"{error_prefix}_missing:{source}")
+        elif not _same(row.get(report_field), expected):
+            errors.append(f"{error_prefix}_{source}_mismatch")
 
 
 def _broker_readiness_contract_errors(
@@ -691,12 +1178,73 @@ def _scaleup_non_authorizing(
 
 
 def _lineage(config: dict[str, Any]) -> dict[str, Any]:
+    proof_refresh = _mapping(config.get("proof_freshness"))
+    proof_refresh_manifest = _mapping(
+        proof_refresh.get("manifest")
+    )
+    proof_refresh_semantic = _mapping(
+        proof_refresh.get("semantic_verification")
+    )
     portfolio = _mapping(config.get("strategy_portfolio"))
     scorecard = _mapping(portfolio.get("scorecard_provenance"))
     family = _mapping(portfolio.get("research_family"))
     broker_readiness = _mapping(config.get("broker_readiness"))
     broker_lineage = _mapping(broker_readiness.get("lineage"))
     return {
+        "proof_refresh_required": _bool(
+            proof_refresh.get("required", False)
+        ),
+        "proof_refresh_requested": _bool(
+            proof_refresh.get("requested", False)
+        ),
+        "proof_refresh_provided": _bool(
+            proof_refresh.get("provided", False)
+        ),
+        "proof_refresh_reported_ready": _bool(
+            proof_refresh.get("reported_ready", False)
+        ),
+        "proof_refresh_ready": _bool(
+            proof_refresh.get("ready", False)
+        ),
+        "proof_refresh_verified": _bool(
+            proof_refresh.get("verified", False)
+        ),
+        "proof_refresh_manifest_required": _bool(
+            proof_refresh_manifest.get("required", False)
+        ),
+        "proof_refresh_manifest_current": _bool(
+            proof_refresh_manifest.get("current", False)
+        ),
+        "proof_refresh_manifest_sha256": _text(
+            proof_refresh_manifest.get("sha256", "")
+        ),
+        "proof_refresh_semantic_verification_required": _bool(
+            proof_refresh_semantic.get("required", False)
+        ),
+        "proof_refresh_semantically_verified": _bool(
+            proof_refresh_semantic.get("verified", False)
+        ),
+        "proof_refresh_verification_inputs_current": _bool(
+            proof_refresh_semantic.get("inputs_current", False)
+        ),
+        "proof_refresh_verification_artifacts_consistent": _bool(
+            proof_refresh_semantic.get(
+                "artifacts_consistent",
+                False,
+            )
+        ),
+        "proof_refresh_verification_non_authorizing": _bool(
+            proof_refresh_semantic.get("non_authorizing", False)
+        ),
+        "proof_refresh_verification_error": _text(
+            proof_refresh_semantic.get("error", "")
+        ),
+        "proof_refresh_read_error": _text(
+            proof_refresh.get("read_error", "")
+        ),
+        "proof_refresh_reason": _text(
+            proof_refresh.get("reason", "")
+        ),
         "strategy_portfolio_required": _bool(portfolio.get("required", False)),
         "strategy_portfolio_provided": _bool(portfolio.get("provided", False)),
         "strategy_portfolio_manifest_required": _bool(
@@ -796,6 +1344,31 @@ def _broker_readiness_active(
     )
 
 
+def _proof_refresh_active(
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+) -> bool:
+    proof_refresh = _mapping(config.get("proof_freshness"))
+    refresh_manifest = _mapping(proof_refresh.get("manifest"))
+    semantic = _mapping(
+        proof_refresh.get("semantic_verification")
+    )
+    parameters = _mapping(manifest.get("parameters"))
+    thresholds = _mapping(parameters.get("thresholds"))
+    inputs = _mapping(manifest.get("inputs"))
+    return bool(
+        _bool(proof_refresh.get("required", False))
+        or _bool(proof_refresh.get("requested", False))
+        or _bool(proof_refresh.get("provided", False))
+        or _bool(refresh_manifest.get("required", False))
+        or _bool(semantic.get("required", False))
+        or _bool(thresholds.get("require_proof_refresh", False))
+        or _manifest_input_is_fingerprint(
+            inputs.get("proof_refresh")
+        )
+    )
+
+
 def _manifest_input_is_fingerprint(value: Any) -> bool:
     return isinstance(value, Mapping) and bool(_text(value.get("path")))
 
@@ -853,6 +1426,45 @@ def _same(actual: Any, expected: Any) -> bool:
             return True
         return abs(actual_number - expected_number) <= 1e-9
     return _text(actual) == _text(expected)
+
+
+def _proof_refresh_source_same(
+    field: str,
+    actual: Any,
+    expected: Any,
+) -> bool:
+    if field == "strategy":
+        return _strategy_identity(actual) == _strategy_identity(expected)
+    if field == "market":
+        return _identity_key(actual) == _identity_key(expected)
+    return _same(actual, expected)
+
+
+def _strategy_identity(value: Any) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice": "imbalance",
+        "microprice_imbalance": "imbalance",
+        "order_book_imbalance": "imbalance",
+        "obi": "imbalance",
+        "surface": "surface_mm",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: Any) -> str:
+    return (
+        _text(value)
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+        .replace(".", "_")
+    )
 
 
 def _bool(value: Any) -> bool:

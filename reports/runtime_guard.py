@@ -47,6 +47,9 @@ RUNTIME_LINEAGE_COLUMNS = (
     "runtime_telemetry_scaleup_provenance_gate_passed",
     "runtime_telemetry_scaleup_manifest_sha256",
     "runtime_telemetry_scaleup_manifest_matches_current",
+    "runtime_telemetry_proof_refresh_manifest_sha256",
+    "runtime_telemetry_proof_refresh_provenance_gate_passed",
+    "runtime_telemetry_proof_refresh_matches_current",
     "runtime_telemetry_strategy_portfolio_manifest_sha256",
     "runtime_telemetry_strategy_portfolio_matches_current",
     "runtime_telemetry_scorecard_manifest_sha256",
@@ -780,6 +783,48 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         ):
             passed = _to_bool(row.get(name, False))
             checks.append(_check(name, passed, "is", True, passed, reason))
+        proof_refresh_active = _to_bool(
+            row.get("scaleup_proof_refresh_active", False)
+        )
+        if proof_refresh_active:
+            for name, reason in (
+                (
+                    "scaleup_proof_refresh_verified",
+                    "scale-up proof-refresh evidence was not verified",
+                ),
+                (
+                    "scaleup_proof_refresh_manifest_current",
+                    "carried proof-refresh manifest is not current",
+                ),
+                (
+                    "scaleup_proof_refresh_semantically_verified",
+                    "carried proof-refresh evidence failed semantic verification",
+                ),
+                (
+                    "scaleup_proof_refresh_source_manifest_current",
+                    "current proof-refresh source manifest is not current",
+                ),
+                (
+                    "scaleup_proof_refresh_source_semantically_verified",
+                    "current proof-refresh source failed semantic verification",
+                ),
+                (
+                    "scaleup_proof_refresh_source_provenance_gate_passed",
+                    "current proof-refresh source provenance gate did not pass",
+                ),
+                (
+                    "scaleup_proof_refresh_matches_current",
+                    "scale-up proof-refresh lineage differs from its current source",
+                ),
+                (
+                    "runtime_telemetry_proof_refresh_matches_current",
+                    "runtime telemetry proof-refresh lineage differs from current scale-up",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(
+                    _check(name, passed, "is", True, passed, reason)
+                )
         broker_readiness_active = bool(
             _to_bool(row.get("scaleup_broker_readiness_required", False))
             or _to_bool(row.get("scaleup_broker_readiness_provided", False))
@@ -796,7 +841,7 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
             row.get("scaleup_strategy_portfolio_provided", False)
         ) or _to_bool(
             row.get("scaleup_research_family_bound", False)
-        ) or broker_readiness_active
+        ) or proof_refresh_active or broker_readiness_active
         lineage_carried = _to_bool(
             row.get("runtime_telemetry_scaleup_provenance_carried", False)
         )
@@ -816,7 +861,7 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 ),
                 (
                     "runtime_telemetry_lineage_matches_current",
-                    "runtime telemetry portfolio, scorecard, family, or broker-readiness lineage differs from current scale-up",
+                    "runtime telemetry proof-refresh, portfolio, scorecard, family, or broker-readiness lineage differs from current scale-up",
                 ),
             ):
                 passed = _to_bool(row.get(name, False))
@@ -2068,6 +2113,50 @@ def _runtime_lineage_fields(
         and telemetry_scaleup_sha == current_scaleup_sha
     )
 
+    proof_refresh_active = _to_bool(
+        provenance.get("proof_refresh_active", False)
+    )
+    current_proof_refresh_source_sha = _clean(
+        provenance.get("proof_refresh_source_manifest_sha256")
+    )
+    current_proof_refresh_source_gate = _to_bool(
+        provenance.get(
+            "proof_refresh_source_provenance_gate_passed",
+            False,
+        )
+    )
+    current_proof_refresh_source_match = _to_bool(
+        provenance.get("proof_refresh_matches_current", False)
+    )
+    telemetry_proof_refresh_sha = _clean(
+        _value(
+            latest,
+            "scaleup_proof_refresh_manifest_sha256",
+            "",
+        )
+    )
+    telemetry_proof_refresh_gate = _bool_value(
+        latest,
+        "scaleup_proof_refresh_source_provenance_gate_passed",
+        fallback=False,
+    )
+    telemetry_proof_refresh_source_match = _bool_value(
+        latest,
+        "scaleup_proof_refresh_matches_current",
+        fallback=False,
+    )
+    proof_refresh_matches = bool(
+        not proof_refresh_active
+        or (
+            current_proof_refresh_source_sha
+            and telemetry_proof_refresh_sha
+            == current_proof_refresh_source_sha
+            and current_proof_refresh_source_gate
+            and current_proof_refresh_source_match
+            and telemetry_proof_refresh_gate
+            and telemetry_proof_refresh_source_match
+        )
+    )
     current_portfolio_sha = _clean(
         provenance.get("strategy_portfolio_manifest_sha256")
     )
@@ -2158,6 +2247,7 @@ def _runtime_lineage_fields(
     )
     lineage_matches = bool(
         scaleup_matches
+        and proof_refresh_matches
         and portfolio_matches
         and scorecard_matches
         and family_matches
@@ -2168,6 +2258,15 @@ def _runtime_lineage_fields(
         "runtime_telemetry_scaleup_provenance_gate_passed": telemetry_gate,
         "runtime_telemetry_scaleup_manifest_sha256": telemetry_scaleup_sha,
         "runtime_telemetry_scaleup_manifest_matches_current": scaleup_matches,
+        "runtime_telemetry_proof_refresh_manifest_sha256": (
+            telemetry_proof_refresh_sha
+        ),
+        "runtime_telemetry_proof_refresh_provenance_gate_passed": (
+            telemetry_proof_refresh_gate
+        ),
+        "runtime_telemetry_proof_refresh_matches_current": (
+            proof_refresh_matches
+        ),
         "runtime_telemetry_strategy_portfolio_manifest_sha256": telemetry_portfolio_sha,
         "runtime_telemetry_strategy_portfolio_matches_current": portfolio_matches,
         "runtime_telemetry_scorecard_manifest_sha256": telemetry_scorecard_sha,

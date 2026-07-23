@@ -4564,6 +4564,14 @@ Telemetry carries the scale-up `strategy` and `market` identities from
 When scale-up required proof-refresh evidence, telemetry also carries
 `proof_refresh_*` fields from the scale-up config and fails closed if the proof
 is missing, unready, mixed, or for a different strategy/market.
+For filesystem-backed scale-up bundles, telemetry does not trust those copied
+fields alone. The scale-up provenance reader reconciles proof-refresh state
+across config, summary, plan, and manifest metadata, reopens the currently
+fingerprinted refresh source, and reruns its manifest and semantic verifier.
+It carries the refresh manifest hash, semantic/input/artifact/authority state,
+source gate state, and current-source match into telemetry. A refresh edit
+followed by fresh refresh and scale-up manifest seals still fails closed when
+the source artifacts no longer reconstruct the claimed refresh report.
 When scale-up required broker resume-gate evidence, telemetry also carries
 `broker_resume_*` fields from the scale-up config and fails closed if the
 resume authorization, its strategy/market identity, or its proof-refresh
@@ -4646,6 +4654,13 @@ scale-up config, the same way it checks scenario and adapter continuity.
 If proof refresh was required or supplied at scale-up, the guard also requires
 runtime telemetry to carry ready, non-mixed proof-refresh identity matching the
 scale-up proof target.
+For filesystem-backed evidence, the guard additionally requires both the
+current scale-up read and telemetry snapshot to retain verified, current,
+semantically reconstructed proof-refresh lineage. It compares the
+proof-refresh manifest hash and source-gate/current-match fields carried by
+telemetry with the source revalidated during guard evaluation, so a snapshot
+built before later refresh drift halts independently of the ordinary runtime
+limits.
 If broker resume-gate evidence was required or supplied at scale-up, the guard
 also requires runtime telemetry to carry a ready resume authorization and ready
 resume proof-refresh identity matching the scale-up strategy and market.

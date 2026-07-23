@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.operational_lineage import (
     broker_readiness_lineage_fields,
     broker_readiness_lineage_manifest_inputs,
@@ -11,7 +15,9 @@ from reports.operational_lineage import (
 )
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
+from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.scaleup_runtime_provenance import load_scaleup_runtime_provenance
+from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
 def _write_broker_readiness_bundle(root):
@@ -194,6 +200,31 @@ def _write_optional_broker_scaleup_bundle(root, broker_input):
     return config_path
 
 
+def _write_proof_refresh_scaleup_bundle(root):
+    from tests.test_scaleup_plan import (
+        write_inputs,
+        write_proof_refresh_bundle,
+    )
+
+    inputs_root = root.parent / f"{root.name}_inputs"
+    evidence, shadow, launch, _ = write_inputs(inputs_root)
+    proof_refresh, proof_source = write_proof_refresh_bundle(
+        inputs_root / "proof_refresh"
+    )
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        proof_refresh_dir=proof_refresh,
+        output_dir=root,
+        thresholds=ScaleUpThresholds(
+            require_proof_refresh=True,
+        ),
+    )
+    assert report.ready
+    return root, proof_refresh, proof_source
+
+
 def test_scaleup_runtime_ignores_null_optional_broker_readiness_input(
     tmp_path,
 ):
@@ -274,6 +305,220 @@ def _tamper_carried_broker_manifest_sha(scaleup_dir, fake_sha):
         scaleup_dir / "manifest.json",
         extra_updates={"broker_readiness_manifest_sha256": fake_sha},
     )
+
+
+def test_runtime_retains_current_scaleup_proof_refresh_lineage(tmp_path):
+    scaleup_dir, proof_refresh, _ = (
+        _write_proof_refresh_scaleup_bundle(
+            tmp_path / "scaleup"
+        )
+    )
+
+    provenance = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "telemetry",
+        snapshot_ts_ns=1_000,
+    )
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "guard",
+    )
+
+    refresh_sha = file_sha256(proof_refresh / "manifest.json")
+    telemetry_row = telemetry.summary.iloc[0]
+    guard_row = guard.summary.iloc[0]
+    assert provenance["manifest_current"]
+    assert provenance["contract_consistent"], provenance["contract_error"]
+    assert provenance["proof_refresh_active"]
+    assert provenance["proof_refresh_required"]
+    assert provenance["proof_refresh_requested"]
+    assert provenance["proof_refresh_verified"]
+    assert provenance["proof_refresh_manifest_current"]
+    assert provenance["proof_refresh_manifest_sha256"] == refresh_sha
+    assert provenance["proof_refresh_semantically_verified"]
+    assert provenance["proof_refresh_source_manifest_current"]
+    assert provenance["proof_refresh_source_manifest_sha256"] == refresh_sha
+    assert provenance["proof_refresh_source_semantically_verified"]
+    assert provenance["proof_refresh_source_provenance_gate_passed"]
+    assert provenance["proof_refresh_matches_current"]
+    assert provenance["provenance_gate_passed"]
+    assert telemetry.ready
+    assert telemetry_row["scaleup_proof_refresh_matches_current"]
+    assert (
+        telemetry_row["scaleup_proof_refresh_manifest_sha256"]
+        == refresh_sha
+    )
+    assert not guard.halted
+    assert guard_row[
+        "runtime_telemetry_proof_refresh_provenance_gate_passed"
+    ]
+    assert guard_row[
+        "runtime_telemetry_proof_refresh_matches_current"
+    ]
+    assert guard_row["runtime_telemetry_lineage_matches_current"]
+
+
+def test_runtime_rejects_resealed_proof_refresh_semantic_drift(tmp_path):
+    scaleup_dir, proof_refresh, _ = (
+        _write_proof_refresh_scaleup_bundle(
+            tmp_path / "scaleup"
+        )
+    )
+    refresh_summary_path = (
+        proof_refresh / "proof_refresh_summary.csv"
+    )
+    refresh_summary = pd.read_csv(refresh_summary_path)
+    refresh_summary.loc[0, "proof_source"] = "latest"
+    refresh_summary.to_csv(refresh_summary_path, index=False)
+    reseal_experiment_manifest(proof_refresh)
+    refresh_sha = file_sha256(proof_refresh / "manifest.json")
+
+    scaleup_config_path = scaleup_dir / "scaleup_config.json"
+    scaleup_config = json.loads(
+        scaleup_config_path.read_text(encoding="utf-8")
+    )
+    scaleup_config["proof_freshness"]["manifest"]["sha256"] = (
+        refresh_sha
+    )
+    scaleup_config_path.write_text(
+        json.dumps(scaleup_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    for name in ("scaleup_summary.csv", "scaleup_plan.csv"):
+        path = scaleup_dir / name
+        frame = pd.read_csv(path)
+        frame.loc[0, "proof_refresh_manifest_sha256"] = refresh_sha
+        frame.to_csv(path, index=False)
+    _refresh_scaleup_manifest(
+        scaleup_dir / "manifest.json",
+        extra_updates={
+            "proof_refresh_manifest_sha256": refresh_sha,
+        },
+    )
+
+    assert verify_experiment_manifest(
+        proof_refresh / "manifest.json",
+        expected_run_type="proof_refresh_gate",
+        require_input_fingerprints=True,
+    ).passed
+    assert verify_experiment_manifest(
+        scaleup_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+    provenance = load_scaleup_runtime_provenance(
+        scaleup_config_path
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "telemetry",
+        snapshot_ts_ns=1_000,
+    )
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "guard",
+    )
+
+    telemetry_failed = set(
+        telemetry.checks.loc[
+            ~telemetry.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    guard_failed = set(
+        guard.checks.loc[
+            ~guard.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert provenance["manifest_current"]
+    assert provenance["proof_refresh_manifest_sha256"] == refresh_sha
+    assert provenance["proof_refresh_source_manifest_current"]
+    assert provenance["proof_refresh_source_manifest_sha256"] == refresh_sha
+    assert not provenance["proof_refresh_source_semantically_verified"]
+    assert not provenance["proof_refresh_source_provenance_gate_passed"]
+    assert not provenance["proof_refresh_matches_current"]
+    assert not provenance["contract_consistent"]
+    assert not provenance["provenance_gate_passed"]
+    assert (
+        "scaleup_proof_refresh_semantic_verification_"
+        "verified_source_mismatch"
+        in provenance["contract_error"]
+    )
+    assert (
+        "scaleup_proof_refresh_source_provenance_not_current"
+        in provenance["contract_error"]
+    )
+    assert not telemetry.ready
+    assert {
+        "scaleup_contract_consistent",
+        "scaleup_provenance_gate_passed",
+        "scaleup_proof_refresh_source_semantically_verified",
+        "scaleup_proof_refresh_source_provenance_gate_passed",
+        "scaleup_proof_refresh_matches_current",
+    } <= telemetry_failed
+    assert guard.halted
+    assert {
+        "scaleup_contract_consistent",
+        "scaleup_provenance_gate_passed",
+        "scaleup_proof_refresh_source_semantically_verified",
+        "scaleup_proof_refresh_source_provenance_gate_passed",
+        "scaleup_proof_refresh_matches_current",
+        "runtime_telemetry_proof_refresh_matches_current",
+        "runtime_telemetry_lineage_matches_current",
+    } <= guard_failed
+
+
+def test_guard_rejects_telemetry_after_proof_refresh_source_drift(
+    tmp_path,
+):
+    scaleup_dir, proof_refresh, _ = (
+        _write_proof_refresh_scaleup_bundle(
+            tmp_path / "scaleup"
+        )
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "telemetry",
+        snapshot_ts_ns=1_000,
+    )
+    assert telemetry.ready
+
+    refresh_summary_path = (
+        proof_refresh / "proof_refresh_summary.csv"
+    )
+    refresh_summary = pd.read_csv(refresh_summary_path)
+    refresh_summary.loc[0, "proof_source"] = "latest"
+    refresh_summary.to_csv(refresh_summary_path, index=False)
+    reseal_experiment_manifest(proof_refresh)
+
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "guard",
+    )
+    failed = set(
+        guard.checks.loc[
+            ~guard.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    summary = guard.summary.iloc[0]
+    assert guard.halted
+    assert not summary[
+        "runtime_telemetry_proof_refresh_matches_current"
+    ]
+    assert {
+        "scaleup_manifest_current",
+        "scaleup_proof_refresh_matches_current",
+        "runtime_telemetry_proof_refresh_matches_current",
+        "runtime_telemetry_lineage_matches_current",
+    } <= failed
 
 
 def test_runtime_telemetry_and_guard_retain_current_broker_readiness_lineage(

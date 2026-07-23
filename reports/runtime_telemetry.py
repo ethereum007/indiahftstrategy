@@ -56,6 +56,29 @@ SCALEUP_PROVENANCE_COLUMNS = [
     "scaleup_source_ready",
     "scaleup_provenance_gate_passed",
     "scaleup_dependency_count",
+    "scaleup_proof_refresh_active",
+    "scaleup_proof_refresh_required",
+    "scaleup_proof_refresh_requested",
+    "scaleup_proof_refresh_provided",
+    "scaleup_proof_refresh_reported_ready",
+    "scaleup_proof_refresh_ready",
+    "scaleup_proof_refresh_verified",
+    "scaleup_proof_refresh_manifest_required",
+    "scaleup_proof_refresh_manifest_current",
+    "scaleup_proof_refresh_manifest_sha256",
+    "scaleup_proof_refresh_semantic_verification_required",
+    "scaleup_proof_refresh_semantically_verified",
+    "scaleup_proof_refresh_verification_inputs_current",
+    "scaleup_proof_refresh_verification_artifacts_consistent",
+    "scaleup_proof_refresh_verification_non_authorizing",
+    "scaleup_proof_refresh_verification_error",
+    "scaleup_proof_refresh_read_error",
+    "scaleup_proof_refresh_reason",
+    "scaleup_proof_refresh_source_manifest_current",
+    "scaleup_proof_refresh_source_manifest_sha256",
+    "scaleup_proof_refresh_source_semantically_verified",
+    "scaleup_proof_refresh_source_provenance_gate_passed",
+    "scaleup_proof_refresh_matches_current",
     "scaleup_strategy_portfolio_required",
     "scaleup_strategy_portfolio_provided",
     "scaleup_strategy_portfolio_manifest_required",
@@ -566,6 +589,41 @@ def _checks(row: pd.Series) -> pd.DataFrame:
         ):
             passed = _to_bool(row.get(name, False))
             checks.append(_check(name, passed, "is", True, passed, reason))
+        if _to_bool(row.get("scaleup_proof_refresh_active", False)):
+            for name, reason in (
+                (
+                    "scaleup_proof_refresh_verified",
+                    "scale-up proof-refresh evidence was not verified",
+                ),
+                (
+                    "scaleup_proof_refresh_manifest_current",
+                    "carried proof-refresh manifest is not current",
+                ),
+                (
+                    "scaleup_proof_refresh_semantically_verified",
+                    "carried proof-refresh evidence failed semantic verification",
+                ),
+                (
+                    "scaleup_proof_refresh_source_manifest_current",
+                    "current proof-refresh source manifest is not current",
+                ),
+                (
+                    "scaleup_proof_refresh_source_semantically_verified",
+                    "current proof-refresh source failed semantic verification",
+                ),
+                (
+                    "scaleup_proof_refresh_source_provenance_gate_passed",
+                    "current proof-refresh source provenance gate did not pass",
+                ),
+                (
+                    "scaleup_proof_refresh_matches_current",
+                    "scale-up proof-refresh lineage differs from its current source",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(
+                    _check(name, passed, "is", True, passed, reason)
+                )
         portfolio_active = _to_bool(
             row.get("scaleup_strategy_portfolio_required", False)
         ) or _to_bool(row.get("scaleup_strategy_portfolio_provided", False))
