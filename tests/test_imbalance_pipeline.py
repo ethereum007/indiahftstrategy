@@ -15,6 +15,7 @@ from reports.imbalance_pipeline import write_imbalance_research_pipeline
 from reports.imbalance_replay_walkforward import ImbalanceReplayWalkForwardThresholds
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
+from tests.data_readiness_helpers import write_manifest_bound_data_readiness
 
 
 def ns_ist(value: str) -> int:
@@ -44,20 +45,18 @@ def write_ticks(path, day: str):
 
 def write_data_readiness_comparison(path, *, accepted=True):
     readiness_dir = path.parent / f"{path.name}_source"
-    readiness_dir.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
-            {
-                "ready": accepted,
-                "components": 1,
-                "required_components": 1,
-                "provided_components": 1,
-                "ready_components": 1 if accepted else 0,
-                "failed_checks": 0 if accepted else 1,
-                "recommendation": "compare_data_readiness",
-            }
-        ]
-    ).to_csv(readiness_dir / "data_readiness_summary.csv", index=False)
+    write_manifest_bound_data_readiness(
+        readiness_dir,
+        {
+            "ready": accepted,
+            "components": 1,
+            "required_components": 1,
+            "provided_components": 1,
+            "ready_components": 1 if accepted else 0,
+            "failed_checks": 0 if accepted else 1,
+            "recommendation": "compare_data_readiness",
+        },
+    )
     write_data_readiness_comparison_report(
         [readiness_dir],
         output_dir=path,

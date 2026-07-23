@@ -12,6 +12,7 @@ from reports.manifest import (
     write_experiment_manifest,
 )
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
+from tests.data_readiness_helpers import write_manifest_bound_data_readiness
 
 
 def path_tail(value):
@@ -1557,29 +1558,28 @@ def write_data_readiness_comparison_bundle(root, *, accepted=True):
     readiness_dirs = []
     for index, source_hash in enumerate(("a" * 64, "d" * 64), start=1):
         readiness = source_root / f"day{index}"
-        readiness.mkdir(parents=True, exist_ok=True)
         ready = accepted or index == 1
-        pd.DataFrame(
-            [
-                {
-                    "ready": ready,
-                    "components": 1,
-                    "required_components": 1,
-                    "provided_components": 1,
-                    "ready_components": 1 if ready else 0,
-                    "failed_checks": 0 if ready else 1,
-                    "vendor_intake_source_file_sha256": source_hash,
-                    "vendor_intake_source_header_sha256": "b" * 64,
-                    "vendor_intake_mapping_draft_sha256": "c" * 64,
-                    "vendor_intake_mapping_coverage": 1.0,
-                    "recommendation": (
-                        "feed_strategy_research"
-                        if ready
-                        else "fix_data_readiness_gaps"
-                    ),
-                }
-            ]
-        ).to_csv(readiness / "data_readiness_summary.csv", index=False)
+        write_manifest_bound_data_readiness(
+            readiness,
+            {
+                "ready": ready,
+                "components": 1,
+                "required_components": 1,
+                "provided_components": 1,
+                "ready_components": 1 if ready else 0,
+                "failed_checks": 0 if ready else 1,
+                "vendor_intake_source_file_sha256": source_hash,
+                "vendor_intake_source_header_sha256": "b" * 64,
+                "vendor_intake_mapping_draft_sha256": "c" * 64,
+                "vendor_intake_mapping_coverage": 1.0,
+                "recommendation": (
+                    "feed_strategy_research"
+                    if ready
+                    else "fix_data_readiness_gaps"
+                ),
+            },
+            source_text=f"source_hash\n{source_hash}\n",
+        )
         readiness_dirs.append(readiness)
     write_data_readiness_comparison(
         readiness_dirs,

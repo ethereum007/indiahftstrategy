@@ -9340,6 +9340,20 @@ mirrors dataset rows, failed-check names, action counts, and
 `data_readiness_comparison_runbook.md` mirrors the blocked actions, dataset
 rows, and failed checks for operator review, and these sidecars are
 manifest-tracked for catalog promotion.
+Every directory-backed readiness input must now carry a current
+`data_readiness` manifest with the complete six-artifact bundle and at least
+one file- or directory-fingerprinted source. A loose summary, stale artifact,
+wrong run type, missing source fingerprint, or upstream input drift forces the
+dataset to not-ready and fails the always-on
+`data_readiness_manifest_coverage` check. Dataset rows, config JSON, and the
+runbook retain reported-versus-effective readiness, the exact manifest error,
+artifact/input match counts, manifest SHA-256, and dependency count; failures
+route back to `review-data-readiness`.
+The comparison manifest separately fingerprints every readiness directory,
+each readiness manifest, and the recursively flattened manifest dependencies.
+This keeps retained comparison evidence sensitive to later raw vendor export,
+mapping, diagnostic, or market-calendar source drift even when the daily
+readiness artifacts themselves have not changed.
 `--require-market-calendar` requires every readiness run to retain a calendar
 ID, SHA-256, and coverage bounds. `--require-consistent-market-calendar` also
 requires one ID and one source fingerprint across the compared runs; calendar

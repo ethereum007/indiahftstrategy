@@ -6619,6 +6619,24 @@ pass (`34 passed`), and readiness-comparison plus manifest regressions pass
 remain non-authorizing; the full repository suite was not rerun for this
 slice.
 
+Latest multi-day readiness lineage closure: directory-backed
+`compare-data-readiness` no longer accepts a loose or stale daily summary as a
+ready dataset. Every daily input now requires the expected `data_readiness`
+run type, complete six-artifact bundle, at least one source fingerprint, and
+current artifact/input hashes. Comparison rows retain reported versus
+effective readiness, exact manifest error, manifest SHA-256, artifact/input
+match counts, and dependency count; the always-on
+`data_readiness_manifest_coverage` check routes gaps back to
+`review-data-readiness`. The comparison manifest separately binds each daily
+directory, daily manifest, and recursively flattened dependency set, so later
+raw vendor, mapping, diagnostic, or calendar-source drift invalidates retained
+comparison evidence before research or scale-up consumers can use it. The
+comparison suite passes (`15 passed`), vendor/provider writers pass (`19
+passed`), research consumers pass (`28 passed`), readiness/manifest
+regressions pass (`36 passed`), and the complete scale-up suite passes (`154
+passed`). Repository collection is healthy at `2511 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

@@ -28,6 +28,16 @@ SUMMARY_FILES = {
     "market_portability": "market_portability_config.json",
     "instrument_metadata": "instrument_metadata_summary.csv",
 }
+DATA_READINESS_RUN_TYPE = "data_readiness"
+DATA_READINESS_SUMMARY_FILE = "data_readiness_summary.csv"
+DATA_READINESS_REQUIRED_ARTIFACTS = (
+    "data_readiness_items.csv",
+    "data_readiness_checks.csv",
+    DATA_READINESS_SUMMARY_FILE,
+    "data_readiness_action_queue.csv",
+    "data_readiness_config.json",
+    "data_readiness_runbook.md",
+)
 
 
 @dataclass(frozen=True)
@@ -155,7 +165,7 @@ def write_data_readiness_report(
     out.mkdir(parents=True, exist_ok=True)
     report.items.to_csv(out / "data_readiness_items.csv", index=False)
     report.checks.to_csv(out / "data_readiness_checks.csv", index=False)
-    report.summary.to_csv(out / "data_readiness_summary.csv", index=False)
+    report.summary.to_csv(out / DATA_READINESS_SUMMARY_FILE, index=False)
     action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks, report.items)
     action_queue.to_csv(out / "data_readiness_action_queue.csv", index=False)
     (out / "data_readiness_config.json").write_text(
@@ -191,7 +201,7 @@ def write_data_readiness_report(
         )
     write_experiment_manifest(
         out,
-        run_type="data_readiness",
+        run_type=DATA_READINESS_RUN_TYPE,
         parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
     )

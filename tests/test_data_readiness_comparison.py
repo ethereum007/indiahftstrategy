@@ -3,11 +3,20 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.data_readiness import (
+    DATA_READINESS_REQUIRED_ARTIFACTS,
+    DATA_READINESS_RUN_TYPE,
+)
 from reports.data_readiness_comparison import (
+    DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+    DATA_READINESS_COMPARISON_RUN_TYPE,
     DataReadinessComparisonThresholds,
     compare_data_readiness,
+    load_data_readiness_comparison_evidence,
     write_data_readiness_comparison,
 )
+from reports.manifest import verify_experiment_manifest
+from tests.data_readiness_helpers import write_manifest_bound_data_readiness
 
 
 def readiness_runs():
@@ -51,28 +60,31 @@ def write_readiness_dir(
     calendar_valid_from="",
     calendar_valid_to="",
 ):
-    path.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        [
-            {
-                "ready": ready,
-                "components": 6,
-                "required_components": 3,
-                "provided_components": 6,
-                "ready_components": 6 if ready else 5,
-                "failed_checks": failed_checks,
-                "vendor_intake_source_file_sha256": source_hash,
-                "vendor_intake_source_header_sha256": header_hash,
-                "vendor_intake_mapping_draft_sha256": mapping_hash,
-                "vendor_intake_mapping_coverage": mapping_coverage,
-                "market_calendar_id": calendar_id,
-                "market_calendar_sha256": calendar_hash,
-                "market_calendar_valid_from": calendar_valid_from,
-                "market_calendar_valid_to": calendar_valid_to,
-                "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
-            }
-        ]
-    ).to_csv(path / "data_readiness_summary.csv", index=False)
+    return write_manifest_bound_data_readiness(
+        path,
+        {
+            "ready": ready,
+            "components": 6,
+            "required_components": 3,
+            "provided_components": 6,
+            "ready_components": 6 if ready else 5,
+            "failed_checks": failed_checks,
+            "vendor_intake_source_file_sha256": source_hash,
+            "vendor_intake_source_header_sha256": header_hash,
+            "vendor_intake_mapping_draft_sha256": mapping_hash,
+            "vendor_intake_mapping_coverage": mapping_coverage,
+            "market_calendar_id": calendar_id,
+            "market_calendar_sha256": calendar_hash,
+            "market_calendar_valid_from": calendar_valid_from,
+            "market_calendar_valid_to": calendar_valid_to,
+            "recommendation": (
+                "feed_strategy_research"
+                if ready
+                else "fix_data_readiness_gaps"
+            ),
+        },
+        source_text=f"source_hash\n{source_hash or path.name}\n",
+    )
 
 
 def test_compare_data_readiness_accepts_multiple_clean_datasets():
@@ -294,6 +306,9 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert report.summary.loc[0, "source_file_fingerprint_coverage"] == 1.0
     assert report.summary.loc[0, "unique_header_fingerprints"] == 1
     assert report.summary.loc[0, "unique_mapping_drafts"] == 1
+    assert report.summary.loc[0, "data_readiness_manifest_coverage"] == 1.0
+    assert report.summary.loc[0, "current_data_readiness_manifests"] == 2
+    assert report.dataset_runs["data_readiness_manifest_current"].all()
     assert (out_dir / "data_readiness_runs.csv").exists()
     assert (out_dir / "data_readiness_comparison_checks.csv").exists()
     assert (out_dir / "data_readiness_comparison_summary.csv").exists()
@@ -316,13 +331,23 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert config["next_actions"] == []
     assert config["ready_actions"] == []
     assert config["blocked_actions"] == []
+    assert config["data_readiness_lineage"]["manifest_required"]
+    assert config["data_readiness_lineage"]["current_manifests"] == 2
+    assert config["data_readiness_lineage"]["manifest_coverage"] == 1.0
+    assert config["data_readiness_lineage"]["dependency_count"] == 2
     assert "# Data Readiness Comparison Runbook" in runbook
     assert "- Accepted: yes" in runbook
+    assert "- Current readiness-manifest coverage: 1" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "data_readiness_comparison_action_queue.csv" in artifact_paths
     assert "data_readiness_comparison_config.json" in artifact_paths
     assert "data_readiness_comparison_runbook.md" in artifact_paths
+    assert set(manifest["inputs"]) == {
+        "readiness",
+        "readiness_dependencies",
+        "readiness_manifests",
+    }
 
     blocked_gate_code = main(
         [
@@ -492,3 +517,140 @@ def test_cli_compare_data_readiness_can_fail_on_low_mapping_coverage(tmp_path):
     assert summary.loc[0, "min_mapping_coverage"] == 0.8
     assert "min_mapping_coverage" in set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert queue.loc[0, "recommendation"] == "improve_vendor_mapping_coverage"
+
+
+def test_write_data_readiness_comparison_rejects_loose_summary(tmp_path):
+    loose = tmp_path / "loose"
+    current = tmp_path / "current"
+    out_dir = tmp_path / "comparison"
+    write_readiness_dir(loose)
+    write_readiness_dir(current)
+    (loose / "manifest.json").unlink()
+
+    report = write_data_readiness_comparison(
+        [loose, current],
+        output_dir=out_dir,
+        labels=["loose", "current"],
+        thresholds=DataReadinessComparisonThresholds(min_datasets=2),
+    )
+
+    assert not report.accepted
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert "data_readiness_manifest_coverage" in failed
+    assert report.summary.loc[0, "data_readiness_manifest_coverage"] == 0.5
+    loose_row = report.dataset_runs.set_index("dataset").loc["loose"]
+    assert loose_row["reported_ready"]
+    assert not loose_row["ready"]
+    assert not loose_row["data_readiness_manifest_current"]
+    assert loose_row["data_readiness_manifest_error"] == "manifest_missing"
+    queue = report.action_queue.set_index("check")
+    assert (
+        queue.loc["data_readiness_manifest_coverage", "next_gate"]
+        == "review-data-readiness"
+    )
+    assert queue.loc[
+        "data_readiness_manifest_coverage",
+        "recommendation",
+    ] == "regenerate_current_manifest_bound_data_readiness"
+
+
+def test_write_data_readiness_comparison_rejects_stale_readiness_input(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    source1 = write_readiness_dir(day1)
+    write_readiness_dir(day2)
+    source1.write_text("source_hash\nchanged\n", encoding="utf-8")
+
+    readiness_integrity = verify_experiment_manifest(
+        day1 / "manifest.json",
+        expected_run_type=DATA_READINESS_RUN_TYPE,
+        required_artifacts=DATA_READINESS_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    report = write_data_readiness_comparison(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["stale", "current"],
+        thresholds=DataReadinessComparisonThresholds(min_datasets=2),
+    )
+
+    assert not readiness_integrity.passed
+    assert readiness_integrity.error == "input_drift"
+    assert not report.accepted
+    stale = report.dataset_runs.set_index("dataset").loc["stale"]
+    assert stale["reported_ready"]
+    assert not stale["ready"]
+    assert stale["data_readiness_manifest_error"] == "input_drift"
+    assert report.summary.loc[0, "data_readiness_manifest_coverage"] == 0.5
+
+
+def test_comparison_manifest_tracks_transitive_readiness_dependencies(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    source1 = write_readiness_dir(day1)
+    source2 = write_readiness_dir(day2)
+
+    report = write_data_readiness_comparison(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        thresholds=DataReadinessComparisonThresholds(min_datasets=2),
+    )
+    manifest_path = out_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    dependency_paths = {
+        item["path"]
+        for item in manifest["inputs"]["readiness_dependencies"]
+    }
+    current = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+
+    assert report.accepted
+    assert current.passed
+    assert dependency_paths == {str(source1.resolve()), str(source2.resolve())}
+    assert load_data_readiness_comparison_evidence(out_dir).passed
+
+    day1_manifest = day1 / "manifest.json"
+    original_manifest = day1_manifest.read_text(encoding="utf-8")
+    refreshed_manifest = json.loads(original_manifest)
+    refreshed_manifest["generated_at_utc"] = "2099-01-01T00:00:00+00:00"
+    day1_manifest.write_text(
+        json.dumps(refreshed_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_drift = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    assert not manifest_drift.passed
+    assert manifest_drift.error == "input_drift"
+
+    day1_manifest.write_text(original_manifest, encoding="utf-8")
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    ).passed
+
+    source1.write_text("source_hash\nchanged-after-comparison\n", encoding="utf-8")
+
+    drifted = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=DATA_READINESS_COMPARISON_RUN_TYPE,
+        required_artifacts=DATA_READINESS_COMPARISON_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    evidence = load_data_readiness_comparison_evidence(out_dir)
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+    assert not evidence.passed
+    assert evidence.reason == "data_readiness_comparison_manifest_input_drift"
