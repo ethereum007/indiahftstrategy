@@ -22,6 +22,11 @@ from reports.route_enable import (
     write_route_enable_packet,
 )
 from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
+from reports.scaleup_runtime_provenance import (
+    load_scaleup_runtime_provenance,
+    scaleup_runtime_fields,
+    scaleup_runtime_manifest_inputs,
+)
 
 
 def leadlag_lineage(prefix=""):
@@ -1553,6 +1558,109 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
+def write_minimal_scaleup_bundle(root):
+    root.mkdir(parents=True)
+    config = {
+        "ready": True,
+        "authorizes_submission": False,
+        "failed_check_count": 0,
+        "target_mode": "live_dryrun",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "limits": {
+            "max_orders_per_session": 10,
+            "max_notional_per_session": 100_000.0,
+            "pre_portfolio_max_notional_per_session": 100_000.0,
+        },
+    }
+    core = {
+        key: value
+        for key, value in config.items()
+        if key
+        in {
+            "ready",
+            "authorizes_submission",
+            "target_mode",
+            "strategy",
+            "market",
+            "scenario_key",
+            "adapter",
+        }
+    }
+    core.update(config["limits"])
+    (root / "scaleup_config.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([core]).to_csv(
+        root / "scaleup_summary.csv",
+        index=False,
+    )
+    pd.DataFrame([core]).to_csv(
+        root / "scaleup_plan.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [{"check": "scaleup_ready", "passed": True, "reason": ""}]
+    ).to_csv(root / "scaleup_checks.csv", index=False)
+    source = root.parent / "scaleup_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        root,
+        run_type="scaleup_plan",
+        inputs={"source": source},
+        extra={"ready": True, "authorizes_submission": False},
+    )
+    provenance = load_scaleup_runtime_provenance(
+        root / "scaleup_config.json"
+    )
+    assert provenance["provenance_gate_passed"]
+    return provenance
+
+
+def bind_scaleup_provenance_to_cutover(cutover):
+    provenance = load_scaleup_runtime_provenance(
+        cutover.parent / "scaleup" / "scaleup_config.json"
+    )
+    assert provenance["provenance_gate_passed"]
+    fields = scaleup_runtime_fields(provenance)
+    for name in (
+        "cutover_authorization.csv",
+        "cutover_summary.csv",
+    ):
+        path = cutover / name
+        frame = pd.read_csv(path).astype(object)
+        frame = pd.concat(
+            [
+                frame.drop(
+                    columns=[
+                        column
+                        for column in fields
+                        if column in frame.columns
+                    ]
+                ),
+                pd.DataFrame(
+                    [fields for _ in range(len(frame))],
+                    index=frame.index,
+                ),
+            ],
+            axis=1,
+        )
+        frame.loc[0, "authorizes_submission"] = False
+        frame.to_csv(path, index=False)
+    config_path = cutover / "cutover_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["scaleup_provenance"] = fields
+    config["authorizes_submission"] = False
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return provenance
+
+
 def cutover_runtime_lineage():
     state = empty_runtime_session_lineage(required=True)
     state.update(
@@ -1626,10 +1734,17 @@ def refresh_cutover_manifest(cutover, *, broker_readiness_config_path=None):
         "cutover_source": root / "cutover_source.csv",
     }
     scaleup_config_path = root / "scaleup" / "scaleup_config.json"
+    scaleup_provenance = load_scaleup_runtime_provenance(
+        scaleup_config_path
+    )
+    scaleup_fields = scaleup_runtime_fields(scaleup_provenance)
     runtime_summary_path = root / "runtime" / "runtime_session_summary.csv"
     runtime_manifest_path = root / "runtime" / "manifest.json"
     if scaleup_config_path.is_file():
         inputs["scaleup_config"] = scaleup_config_path
+        inputs.update(
+            scaleup_runtime_manifest_inputs(scaleup_provenance)
+        )
     if runtime_summary_path.is_file():
         inputs["runtime_session_summary"] = runtime_summary_path
     if runtime_manifest_path.is_file():
@@ -1641,6 +1756,7 @@ def refresh_cutover_manifest(cutover, *, broker_readiness_config_path=None):
         extra={
             "ready": bool(summary["ready"]),
             **leadlag,
+            **scaleup_fields,
             **lineage,
             "authorizes_submission": False,
         },
@@ -1684,7 +1800,7 @@ def bind_broker_readiness_cutover_lineage(root, cutover):
     scaleup = root / "scaleup"
     runtime = root / "runtime"
     broker.mkdir()
-    scaleup.mkdir()
+    scaleup.mkdir(exist_ok=True)
     runtime.mkdir()
 
     pd.DataFrame(
@@ -1729,15 +1845,58 @@ def bind_broker_readiness_cutover_lineage(root, cutover):
     assert broker_lineage["gate_passed"]
     broker_fields = broker_readiness_lineage_fields(broker_lineage)
 
+    scaleup_config = {
+        "ready": True,
+        "authorizes_submission": False,
+        "failed_check_count": 0,
+        "target_mode": "live_dryrun",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "limits": {
+            "max_orders_per_session": 10,
+            "max_notional_per_session": 100_000.0,
+            "pre_portfolio_max_notional_per_session": 100_000.0,
+        },
+        "broker_readiness": {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "lineage": {
+                field.removeprefix("broker_readiness_"): value
+                for field, value in broker_fields.items()
+            },
+        },
+    }
+    scaleup_core = {
+        "ready": True,
+        "authorizes_submission": False,
+        "target_mode": "live_dryrun",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "max_orders_per_session": 10,
+        "max_notional_per_session": 100_000.0,
+        "pre_portfolio_max_notional_per_session": 100_000.0,
+        **broker_fields,
+    }
     (scaleup / "scaleup_config.json").write_text(
-        json.dumps(
-            {"broker_readiness": {"required": True, "provided": True}},
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
+        json.dumps(scaleup_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    pd.DataFrame([scaleup_core]).to_csv(
+        scaleup / "scaleup_summary.csv",
+        index=False,
+    )
+    pd.DataFrame([scaleup_core]).to_csv(
+        scaleup / "scaleup_plan.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [{"check": "scaleup_ready", "passed": True, "reason": ""}]
+    ).to_csv(scaleup / "scaleup_checks.csv", index=False)
     scaleup_source = root / "scaleup_source.csv"
     pd.DataFrame([{"source": "fixture"}]).to_csv(scaleup_source, index=False)
     write_experiment_manifest(
@@ -1840,6 +1999,7 @@ def bind_broker_readiness_cutover_lineage(root, cutover):
         json.dumps(cutover_config_payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    bind_scaleup_provenance_to_cutover(cutover)
     refresh_cutover_manifest(cutover)
     return broker, broker_fields
 
@@ -1855,6 +2015,7 @@ def write_inputs(
     route_readiness=True,
     canonical_leadlag=False,
 ):
+    write_minimal_scaleup_bundle(root / "scaleup")
     cutover = root / "cutover"
     upload = root / "upload"
     export = root / "export"
@@ -1899,6 +2060,7 @@ def write_inputs(
     (cutover / "cutover_runbook.md").write_text("# Cutover Fixture\n", encoding="utf-8")
     (cutover / "broker_readiness_config.json").write_text("{}\n", encoding="utf-8")
     pd.DataFrame([{"source": "fixture"}]).to_csv(root / "cutover_source.csv", index=False)
+    bind_scaleup_provenance_to_cutover(cutover)
     refresh_cutover_manifest(cutover)
     upload_summary(ready=upload_ready, orders=upload_orders).to_csv(upload / "broker_upload_summary.csv", index=False)
     order_export_summary(orders=upload_orders, total_notional=export_notional).to_csv(
@@ -1906,6 +2068,64 @@ def write_inputs(
         index=False,
     )
     return cutover, upload, export
+
+
+def write_proof_refresh_route_inputs(root):
+    from reports.cutover import write_cutover_gate_report
+    from tests.test_cutover_gate import (
+        write_proof_refresh_cutover_inputs,
+    )
+
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        proof_refresh,
+        proof_source,
+        cutover_thresholds,
+    ) = write_proof_refresh_cutover_inputs(root)
+    cutover = root / "cutover"
+    cutover_report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=cutover,
+        thresholds=cutover_thresholds,
+    )
+    assert cutover_report.ready
+
+    upload = root / "upload"
+    export = root / "export"
+    upload.mkdir()
+    export.mkdir()
+    upload_summary(orders=2).to_csv(
+        upload / "broker_upload_summary.csv",
+        index=False,
+    )
+    order_export_summary(
+        orders=2,
+        total_notional=1_000.0,
+    ).to_csv(
+        export / "broker_order_summary.csv",
+        index=False,
+    )
+    route_thresholds = RouteEnableThresholds(
+        target_mode=cutover_thresholds.target_mode,
+        require_order_export_ready=True,
+        require_route_readiness=False,
+        require_dispatch_roundtrip=False,
+    )
+    return (
+        scaleup,
+        cutover,
+        upload,
+        export,
+        proof_refresh,
+        proof_source,
+        route_thresholds,
+    )
 
 
 def test_route_enable_accepts_ready_cutover_and_upload_pack():
@@ -5681,6 +5901,244 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     )
     assert not drifted.passed
     assert drifted.error == "input_drift"
+
+
+def test_route_enable_revalidates_cutover_scaleup_proof_refresh_lineage(
+    tmp_path,
+):
+    (
+        _,
+        cutover,
+        upload,
+        export,
+        proof_refresh,
+        _,
+        thresholds,
+    ) = write_proof_refresh_route_inputs(tmp_path)
+    out_dir = tmp_path / "route_enable"
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=out_dir,
+        thresholds=thresholds,
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert summary["cutover_scaleup_source_bound"]
+    assert summary[
+        "cutover_current_scaleup_provenance_gate_passed"
+    ]
+    assert summary["cutover_scaleup_provenance_matches_current"]
+    assert summary["cutover_scaleup_proof_refresh_active"]
+    assert summary[
+        "cutover_current_scaleup_proof_refresh_"
+        "source_semantically_verified"
+    ]
+    assert summary[
+        "cutover_current_scaleup_proof_refresh_"
+        "source_provenance_gate_passed"
+    ]
+    assert summary[
+        "cutover_current_scaleup_proof_refresh_matches_current"
+    ]
+    assert summary[
+        "cutover_scaleup_proof_refresh_manifest_sha256"
+    ] == file_sha256(proof_refresh / "manifest.json")
+    assert report.config["cutover_lineage"][
+        "cutover_scaleup_provenance_matches_current"
+    ]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][
+        "cutover_scaleup_provenance_matches_current"
+    ]
+    assert {
+        "cutover_manifest",
+        "cutover_artifacts",
+        "cutover_dependencies",
+    } <= set(manifest["inputs"])
+
+
+def test_route_enable_blocks_cutover_scaleup_provenance_contract_drift(
+    tmp_path,
+):
+    (
+        _,
+        cutover,
+        upload,
+        export,
+        _,
+        _,
+        thresholds,
+    ) = write_proof_refresh_route_inputs(tmp_path)
+    from tests.data_readiness_helpers import (
+        reseal_experiment_manifest,
+    )
+
+    config_path = cutover / "cutover_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["scaleup_provenance"][
+        "scaleup_proof_refresh_reason"
+    ] = "forged_reason"
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(cutover)
+    assert verify_experiment_manifest(
+        cutover / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=thresholds,
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert "cutover_lineage_contract_consistent" in failed
+    assert not report.summary.iloc[0][
+        "cutover_lineage_contract_consistent"
+    ]
+    assert (
+        "cutover_config_scaleup_proof_refresh_reason_mismatch"
+        in report.summary.iloc[0][
+            "cutover_lineage_contract_error"
+        ]
+    )
+
+
+def test_route_enable_blocks_resealed_cutover_scaleup_proof_refresh_drift(
+    tmp_path,
+):
+    (
+        scaleup,
+        cutover,
+        upload,
+        export,
+        proof_refresh,
+        _,
+        thresholds,
+    ) = write_proof_refresh_route_inputs(tmp_path)
+    from tests.data_readiness_helpers import (
+        reseal_experiment_manifest,
+    )
+    from tests.test_scaleup_runtime_provenance import (
+        _refresh_scaleup_manifest,
+    )
+
+    refresh_summary_path = (
+        proof_refresh / "proof_refresh_summary.csv"
+    )
+    refresh_summary = pd.read_csv(refresh_summary_path)
+    refresh_summary.loc[0, "proof_source"] = "latest"
+    refresh_summary.to_csv(refresh_summary_path, index=False)
+    reseal_experiment_manifest(proof_refresh)
+    refresh_sha = file_sha256(proof_refresh / "manifest.json")
+
+    scaleup_config_path = scaleup / "scaleup_config.json"
+    scaleup_config = json.loads(
+        scaleup_config_path.read_text(encoding="utf-8")
+    )
+    scaleup_config["proof_freshness"]["manifest"]["sha256"] = (
+        refresh_sha
+    )
+    scaleup_config_path.write_text(
+        json.dumps(scaleup_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    for name in ("scaleup_summary.csv", "scaleup_plan.csv"):
+        path = scaleup / name
+        frame = pd.read_csv(path)
+        frame.loc[0, "proof_refresh_manifest_sha256"] = refresh_sha
+        frame.to_csv(path, index=False)
+    _refresh_scaleup_manifest(
+        scaleup / "manifest.json",
+        extra_updates={
+            "proof_refresh_manifest_sha256": refresh_sha,
+        },
+    )
+    assert verify_experiment_manifest(
+        scaleup / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    reseal_experiment_manifest(cutover)
+    assert verify_experiment_manifest(
+        cutover / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    out_dir = tmp_path / "route_enable"
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=out_dir,
+        thresholds=thresholds,
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert "cutover_lineage_contract_consistent" not in failed
+    assert {
+        "cutover_current_scaleup_provenance_gate_passed",
+        "cutover_scaleup_provenance_matches_current",
+        (
+            "cutover_current_scaleup_proof_refresh_"
+            "source_semantically_verified"
+        ),
+        (
+            "cutover_current_scaleup_proof_refresh_"
+            "source_provenance_gate_passed"
+        ),
+        "cutover_current_scaleup_proof_refresh_matches_current",
+        "cutover_lineage_gate_passed",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert not summary[
+        "cutover_current_scaleup_provenance_gate_passed"
+    ]
+    assert not summary[
+        "cutover_scaleup_provenance_matches_current"
+    ]
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == (
+            "cutover_current_scaleup_proof_refresh_"
+            "source_semantically_verified"
+        )
+    ].iloc[0]
+    assert action["component"] == "proof_refresh"
+    assert action["next_gate"] == "review-proof-refresh"
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    ).passed
 
 
 def test_route_enable_blocks_drifted_cutover_lineage(tmp_path):

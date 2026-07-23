@@ -20,6 +20,11 @@ from reports.operational_lineage import (
     load_cutover_lineage,
     runtime_session_lineage_fields,
 )
+from reports.scaleup_runtime_provenance import (
+    load_scaleup_runtime_provenance,
+    scaleup_runtime_fields,
+    scaleup_runtime_manifest_inputs,
+)
 
 
 def leadlag_lineage(prefix=""):
@@ -1581,13 +1586,23 @@ def broker_bound_route_enable_lineage(**overrides):
 
 def refresh_cutover_manifest(cutover):
     runtime_lineage = cutover_runtime_lineage()
+    scaleup_provenance = load_scaleup_runtime_provenance(
+        cutover.parent / "scaleup" / "scaleup_config.json"
+    )
+    scaleup_fields = scaleup_runtime_fields(scaleup_provenance)
     summary = pd.read_csv(cutover / "cutover_summary.csv").iloc[0]
     leadlag = {
         column: value
         for column, value in summary.items()
         if column.startswith("runtime_strategy_portfolio_leadlag_")
     }
-    inputs = {"cutover_source": cutover.parent / "cutover_source.csv"}
+    inputs = {
+        "cutover_source": cutover.parent / "cutover_source.csv",
+        "scaleup_config": (
+            cutover.parent / "scaleup" / "scaleup_config.json"
+        ),
+        **scaleup_runtime_manifest_inputs(scaleup_provenance),
+    }
     broker_config = cutover / "broker_readiness_config.json"
     if broker_config.is_file():
         inputs["broker_readiness_config"] = broker_config
@@ -1598,6 +1613,7 @@ def refresh_cutover_manifest(cutover):
         extra={
             "ready": bool(summary["ready"]),
             **leadlag,
+            **scaleup_fields,
             **runtime_lineage,
             "authorizes_submission": False,
         },
@@ -1605,6 +1621,12 @@ def refresh_cutover_manifest(cutover):
 
 
 def write_cutover_fixture(root, *, canonical_leadlag=False):
+    from tests.test_route_enable import write_minimal_scaleup_bundle
+
+    scaleup_provenance = write_minimal_scaleup_bundle(
+        root / "scaleup"
+    )
+    scaleup_fields = scaleup_runtime_fields(scaleup_provenance)
     cutover = root / "cutover"
     cutover.mkdir(parents=True)
     runtime_lineage = cutover_runtime_lineage()
@@ -1630,6 +1652,7 @@ def write_cutover_fixture(root, *, canonical_leadlag=False):
             {
                 "ready": True,
                 **portfolio_summary,
+                **scaleup_fields,
                 **runtime_lineage,
                 "authorizes_submission": False,
             }
@@ -1648,6 +1671,7 @@ def write_cutover_fixture(root, *, canonical_leadlag=False):
             {
                 "ready": True,
                 **portfolio_config,
+                "scaleup_provenance": scaleup_fields,
                 "runtime_lineage": runtime_lineage,
                 "authorizes_submission": False,
             },
@@ -1762,8 +1786,16 @@ def write_inputs(
         route_readiness_ready=route_readiness,
         canonical_leadlag=canonical_leadlag,
     )
-    for column, value in lineage.items():
-        summary[column] = value
+    summary = pd.concat(
+        [
+            summary,
+            pd.DataFrame(
+                [lineage for _ in range(len(summary))],
+                index=summary.index,
+            ),
+        ],
+        axis=1,
+    )
     summary["authorizes_submission"] = False
     summary.to_csv(route / "route_enable_summary.csv", index=False)
     config = route_config(

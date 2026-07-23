@@ -6788,6 +6788,28 @@ was not rerun because the preceding full run reached only 55% after 40 minutes
 without a failure, while this slice is covered by focused and downstream
 suites.
 
+Latest cutover-to-route-enable proof-refresh lineage gate: the shared cutover
+loader now requires all 71 scale-up provenance fields to agree across cutover
+authorization, summary, config, and manifest metadata. It resolves the
+manifest-bound scale-up config and manifest, reopens that source through the
+shared scale-up/proof-refresh verifier, compares every carried field with the
+current result, and exposes current manifest, contract, provenance-gate, and
+proof-refresh semantic status to route enable. Route packets retain the full
+carried lineage plus current-source decisions, while proof semantic failures
+receive a `review-proof-refresh` remediation action. Tests cover a valid
+end-to-end handoff, a single-field cutover config forgery, and a proof-source
+edit followed by structurally valid refresh, scale-up, and cutover re-seals.
+Route-enable regressions pass (`127
+passed`), broker-dispatch regressions pass (`130 passed`), the complete
+send/ack/round-trip chain passes (`151 passed`), upstream
+scale-up/runtime/cutover regressions pass (`142 passed`), and catalog plus
+manifest regressions pass (`72 passed`). An additional `398` shared
+broker-readiness, acknowledgement, round-trip, and provider-lineage regressions
+also pass. Repository collection is healthy at `2537 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun because the preceding
+full run reached only 55% after 40 minutes without a failure, while this slice
+is covered by focused and downstream suites.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

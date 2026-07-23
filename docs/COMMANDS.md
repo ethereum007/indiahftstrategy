@@ -5600,6 +5600,18 @@ route_enable_runbook.md
 manifest.json
 ```
 
+Filesystem-backed route enable revalidates the complete scale-up provenance
+carried by cutover. It requires all 71 `scaleup_*` fields to agree across
+`cutover_authorization.csv`, `cutover_summary.csv`, the
+`scaleup_provenance` config block, and cutover manifest metadata. It then
+resolves the scale-up config and manifest bound by the cutover manifest,
+reopens that scale-up bundle through the shared provenance loader, and compares
+every carried field with the current result. The packet, summary, config, and
+manifest retain both the cutover-carried fields and the independently reopened
+manifest/proof-refresh decisions. A structurally re-sealed refresh, scale-up,
+and cutover chain still blocks route enable when refresh semantics no longer
+verify; those checks route to `review-proof-refresh`.
+
 `route_enable_config.json` keeps the legacy `failed_checks` name list and also
 adds `failed_check_count` plus `primary_blocker`, giving broker-route
 automation one compact blocker record before it reads the full check CSV. It

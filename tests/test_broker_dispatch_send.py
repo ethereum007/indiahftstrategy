@@ -37,6 +37,10 @@ from reports.operational_lineage import (
     route_enable_lineage_fields,
     runtime_session_lineage_fields,
 )
+from reports.scaleup_runtime_provenance import (
+    scaleup_runtime_fields,
+    scaleup_runtime_manifest_inputs,
+)
 
 
 def leadlag_lineage(prefix=""):
@@ -1509,6 +1513,12 @@ def _write_cutover_source(
     broker_readiness_config=None,
     canonical_leadlag=False,
 ):
+    from tests.test_route_enable import write_minimal_scaleup_bundle
+
+    scaleup_provenance = write_minimal_scaleup_bundle(
+        tmp_path / "scaleup"
+    )
+    scaleup_fields = scaleup_runtime_fields(scaleup_provenance)
     root = tmp_path / "cutover"
     root.mkdir()
     runtime_lineage = runtime_session_lineage_fields(empty_runtime_session_lineage())
@@ -1531,6 +1541,7 @@ def _write_cutover_source(
             }
         }
     summary = {
+        **scaleup_fields,
         **runtime_lineage,
         **portfolio_summary,
         "ready": True,
@@ -1549,6 +1560,7 @@ def _write_cutover_source(
             {
                 "ready": True,
                 **portfolio_config,
+                "scaleup_provenance": scaleup_fields,
                 "runtime_lineage": runtime_lineage,
                 "authorizes_submission": False,
             },
@@ -1561,7 +1573,11 @@ def _write_cutover_source(
     (root / "cutover_runbook.md").write_text("# Cutover fixture\n", encoding="utf-8")
     source = root / "runtime_source.txt"
     source.write_text("current\n", encoding="utf-8")
-    inputs = {"runtime_source": source}
+    inputs = {
+        "runtime_source": source,
+        "scaleup_config": tmp_path / "scaleup" / "scaleup_config.json",
+        **scaleup_runtime_manifest_inputs(scaleup_provenance),
+    }
     if broker_readiness_config is not None:
         broker_config_path = root / "broker_readiness_config.json"
         broker_config_path.write_text(
@@ -1574,6 +1590,7 @@ def _write_cutover_source(
         run_type="cutover_gate",
         inputs=inputs,
         extra={
+            **scaleup_fields,
             **runtime_lineage,
             **portfolio_summary,
             "ready": True,
@@ -1732,8 +1749,22 @@ def write_dispatch(
         canonical_leadlag=canonical_leadlag,
         adapter=adapter,
     )
-    for column, value in lineage_fields.items():
-        summary[column] = value
+    summary = pd.concat(
+        [
+            summary.drop(
+                columns=[
+                    column
+                    for column in lineage_fields
+                    if column in summary.columns
+                ]
+            ),
+            pd.DataFrame(
+                [lineage_fields for _ in range(len(summary))],
+                index=summary.index,
+            ),
+        ],
+        axis=1,
+    )
     summary["authorizes_submission"] = False
     summary.to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
     portfolio_leadlag = {
@@ -1742,10 +1773,26 @@ def write_dispatch(
         if column.startswith("strategy_portfolio_leadlag_")
     }
     orders = dispatch_orders(adapter=adapter)
-    for column, value in lineage_fields.items():
-        orders[column] = value
-    for column, value in portfolio_leadlag.items():
-        orders[column] = value
+    order_lineage = {
+        **lineage_fields,
+        **portfolio_leadlag,
+    }
+    orders = pd.concat(
+        [
+            orders.drop(
+                columns=[
+                    column
+                    for column in order_lineage
+                    if column in orders.columns
+                ]
+            ),
+            pd.DataFrame(
+                [order_lineage for _ in range(len(orders))],
+                index=orders.index,
+            ),
+        ],
+        axis=1,
+    )
     orders["authorizes_submission"] = False
     orders.to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
     config = dispatch_config(

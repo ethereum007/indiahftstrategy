@@ -593,6 +593,54 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
                     "cutover manifest is missing, stale, or incomplete",
                 ),
                 _check(
+                    "cutover_scaleup_manifest_required",
+                    cutover["cutover_scaleup_manifest_required"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_scaleup_manifest_required"]),
+                    "cutover does not require sealed scale-up provenance",
+                ),
+                _check(
+                    "cutover_scaleup_provenance_gate_passed",
+                    cutover["cutover_scaleup_provenance_gate_passed"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_scaleup_provenance_gate_passed"]),
+                    "cutover did not retain a valid scale-up provenance gate",
+                ),
+                _check(
+                    "cutover_scaleup_source_bound",
+                    cutover["cutover_scaleup_source_bound"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_scaleup_source_bound"]),
+                    "cutover does not bind the scale-up source needed for recursive verification",
+                ),
+                _check(
+                    "cutover_current_scaleup_provenance_gate_passed",
+                    cutover[
+                        "cutover_current_scaleup_provenance_gate_passed"
+                    ],
+                    "is",
+                    True,
+                    bool(
+                        cutover[
+                            "cutover_current_scaleup_provenance_gate_passed"
+                        ]
+                    ),
+                    "the current scale-up source provenance gate did not pass",
+                ),
+                _check(
+                    "cutover_scaleup_provenance_matches_current",
+                    cutover["cutover_scaleup_provenance_matches_current"],
+                    "is",
+                    True,
+                    bool(
+                        cutover["cutover_scaleup_provenance_matches_current"]
+                    ),
+                    "cutover scale-up provenance no longer matches its current source",
+                ),
+                _check(
                     "cutover_lineage_contract_consistent",
                     cutover["cutover_lineage_contract_consistent"],
                     "is",
@@ -618,6 +666,59 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
                 ),
             ]
         )
+        if cutover[
+            "cutover_current_scaleup_proof_refresh_active"
+        ]:
+            checks.extend(
+                [
+                    _check(
+                        "cutover_current_scaleup_proof_refresh_source_semantically_verified",
+                        cutover[
+                            "cutover_current_scaleup_proof_refresh_"
+                            "source_semantically_verified"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "cutover_current_scaleup_proof_refresh_"
+                                "source_semantically_verified"
+                            ]
+                        ),
+                        "current scale-up proof-refresh source failed semantic verification",
+                    ),
+                    _check(
+                        "cutover_current_scaleup_proof_refresh_source_provenance_gate_passed",
+                        cutover[
+                            "cutover_current_scaleup_proof_refresh_"
+                            "source_provenance_gate_passed"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "cutover_current_scaleup_proof_refresh_"
+                                "source_provenance_gate_passed"
+                            ]
+                        ),
+                        "current scale-up proof-refresh source provenance gate did not pass",
+                    ),
+                    _check(
+                        "cutover_current_scaleup_proof_refresh_matches_current",
+                        cutover[
+                            "cutover_current_scaleup_proof_refresh_matches_current"
+                        ],
+                        "is",
+                        True,
+                        bool(
+                            cutover[
+                                "cutover_current_scaleup_proof_refresh_matches_current"
+                            ]
+                        ),
+                        "current scale-up proof-refresh lineage does not match its source",
+                    ),
+                ]
+            )
         if cutover["cutover_broker_readiness_required"]:
             checks.extend(
                 [
@@ -4992,6 +5093,13 @@ def _component(check: str) -> str:
         return "upload_pack"
     if check.startswith("order_export_"):
         return "order_export"
+    if check.startswith(
+        (
+            "cutover_scaleup_proof_refresh_",
+            "cutover_current_scaleup_proof_refresh_",
+        )
+    ):
+        return "proof_refresh"
     if check.startswith("cutover_broker_resume_") or check.startswith("broker_resume_"):
         return "resume_gate"
     if check.startswith("cutover_broker_readiness_") or check in {
@@ -5022,6 +5130,8 @@ def _next_gate(check: str) -> str:
         return "pack-broker-upload"
     if component == "order_export":
         return "export-launch-orders"
+    if component == "proof_refresh":
+        return "review-proof-refresh"
     if component == "route_readiness":
         return "review-route-readiness"
     if component == "broker_dispatch_roundtrip":
@@ -5045,6 +5155,8 @@ def _action_recommendation(check: str) -> str:
         return "repair_or_rebuild_broker_upload_pack"
     if component == "order_export":
         return "repair_or_rebuild_broker_order_export"
+    if component == "proof_refresh":
+        return "repair_proof_refresh_before_route_enable"
     if component == "route_readiness":
         return "rerun_route_readiness_before_route_enable"
     if component == "broker_dispatch_roundtrip":

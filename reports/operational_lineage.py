@@ -23,9 +23,17 @@ from reports.manifest import (
     verify_experiment_manifest,
 )
 from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
+from reports.scaleup_runtime_provenance import (
+    empty_scaleup_runtime_provenance,
+    load_scaleup_runtime_provenance,
+    scaleup_runtime_fields,
+)
 
 
 LINEAGE_COLUMNS = (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS)
+SCALEUP_PROVENANCE_DEFAULTS = scaleup_runtime_fields(
+    empty_scaleup_runtime_provenance()
+)
 RUNTIME_SESSION_REQUIRED_ARTIFACTS = (
     "runtime_session_steps.csv",
     "runtime_session_summary.csv",
@@ -490,11 +498,26 @@ def empty_cutover_lineage(*, required: bool = False) -> dict[str, Any]:
         "broker_readiness_source_matches_scaleup": not required,
         "current_broker_readiness_manifest_sha256": "",
         "broker_readiness_matches_current": not required,
+        "scaleup_source_bound": not required,
+        "current_scaleup_manifest_sha256": "",
+        "current_scaleup_provenance_gate_passed": not required,
+        "current_scaleup_contract_error": "",
+        "current_scaleup_proof_refresh_active": False,
+        "current_scaleup_proof_refresh_source_semantically_verified": False,
+        "current_scaleup_proof_refresh_source_provenance_gate_passed": False,
+        "current_scaleup_proof_refresh_matches_current": not required,
+        "scaleup_provenance_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
         "artifact_paths": [],
     }
+    state.update(
+        {
+            column: _field_default(column)
+            for column in SCALEUP_PROVENANCE_COLUMNS
+        }
+    )
     state.update(
         {
             column: _field_default(column)
@@ -509,6 +532,7 @@ def empty_cutover_lineage(*, required: bool = False) -> dict[str, Any]:
 def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
     config_path = Path(cutover_config_path).resolve()
     root = config_path.parent
+    authorization_path = root / "cutover_authorization.csv"
     summary_path = root / "cutover_summary.csv"
     manifest_path = root / "manifest.json"
     state = empty_cutover_lineage(required=True)
@@ -524,10 +548,17 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         }
     )
 
+    authorization = _read_csv(authorization_path)
     summary = _read_csv(summary_path)
     config = _read_json(config_path)
     manifest = _read_json(manifest_path)
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    state.update(
+        {
+            column: _normalize(row.get(column), column)
+            for column in SCALEUP_PROVENANCE_COLUMNS
+        }
+    )
     runtime_fields = runtime_session_lineage_fields(empty_runtime_session_lineage())
     state.update(
         {
@@ -555,17 +586,26 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         )
 
     errors = _cutover_contract_errors(
+        authorization=authorization,
         summary=summary,
         config=config,
         manifest=manifest,
         lineage=state,
+        scaleup_fields=tuple(SCALEUP_PROVENANCE_COLUMNS),
         runtime_fields=tuple(runtime_fields),
     )
     extra = _mapping(manifest.get("extra"))
+    authorization_row = (
+        authorization.iloc[0]
+        if not authorization.empty
+        else pd.Series(dtype=object)
+    )
     non_authorizing = bool(
         config
         and "authorizes_submission" in config
         and not _bool(config.get("authorizes_submission"))
+        and "authorizes_submission" in authorization_row.index
+        and not _bool(authorization_row.get("authorizes_submission"))
         and "authorizes_submission" in row.index
         and not _bool(row.get("authorizes_submission"))
         and extra
@@ -580,6 +620,13 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         runtime_fields=tuple(runtime_fields),
     )
     state.update(current_runtime)
+    current_scaleup = _cutover_current_scaleup_provenance_state(
+        lineage=state,
+        manifest=manifest,
+        manifest_path=manifest_path,
+        scaleup_fields=tuple(SCALEUP_PROVENANCE_COLUMNS),
+    )
+    state.update(current_scaleup)
     state["contract_consistent"] = not errors
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
@@ -594,6 +641,9 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         and state["runtime_lineage_matches_current"]
         and state["broker_readiness_source_matches_scaleup"]
         and state["broker_readiness_matches_current"]
+        and state["scaleup_source_bound"]
+        and state["current_scaleup_provenance_gate_passed"]
+        and state["scaleup_provenance_matches_current"]
     )
     return state
 
@@ -636,9 +686,60 @@ def cutover_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
         "cutover_broker_readiness_matches_current": _bool(
             lineage.get("broker_readiness_matches_current", False)
         ),
+        "cutover_scaleup_source_bound": _bool(
+            lineage.get("scaleup_source_bound", False)
+        ),
+        "cutover_current_scaleup_manifest_sha256": _text(
+            lineage.get("current_scaleup_manifest_sha256", "")
+        ),
+        "cutover_current_scaleup_provenance_gate_passed": _bool(
+            lineage.get("current_scaleup_provenance_gate_passed", False)
+        ),
+        "cutover_current_scaleup_contract_error": _text(
+            lineage.get("current_scaleup_contract_error", "")
+        ),
+        "cutover_current_scaleup_proof_refresh_active": _bool(
+            lineage.get("current_scaleup_proof_refresh_active", False)
+        ),
+        (
+            "cutover_current_scaleup_proof_refresh_"
+            "source_semantically_verified"
+        ): _bool(
+            lineage.get(
+                "current_scaleup_proof_refresh_source_semantically_verified",
+                False,
+            )
+        ),
+        (
+            "cutover_current_scaleup_proof_refresh_"
+            "source_provenance_gate_passed"
+        ): _bool(
+            lineage.get(
+                "current_scaleup_proof_refresh_source_provenance_gate_passed",
+                False,
+            )
+        ),
+        "cutover_current_scaleup_proof_refresh_matches_current": _bool(
+            lineage.get(
+                "current_scaleup_proof_refresh_matches_current",
+                False,
+            )
+        ),
+        "cutover_scaleup_provenance_matches_current": _bool(
+            lineage.get("scaleup_provenance_matches_current", False)
+        ),
         "cutover_lineage_gate_passed": _bool(lineage.get("gate_passed", False)),
         "cutover_lineage_dependency_count": int(lineage.get("dependency_count", 0)),
     }
+    fields.update(
+        {
+            f"cutover_{column}": _normalize(
+                lineage.get(column),
+                column,
+            )
+            for column in SCALEUP_PROVENANCE_COLUMNS
+        }
+    )
     runtime_fields = runtime_session_lineage_fields(empty_runtime_session_lineage())
     fields.update(
         {
@@ -739,6 +840,91 @@ def _cutover_current_runtime_lineage_state(
             source_bound
             and current.get("broker_readiness_matches_current", False)
         ),
+    }
+
+
+def _cutover_current_scaleup_provenance_state(
+    *,
+    lineage: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+    scaleup_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    scaleup_config_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "scaleup_config",
+    )
+    scaleup_manifest_path = _manifest_input_path(
+        manifest,
+        manifest_path,
+        "scaleup_manifest",
+    )
+    if scaleup_config_path is None and scaleup_manifest_path is not None:
+        scaleup_config_path = scaleup_manifest_path.with_name(
+            "scaleup_config.json"
+        )
+    if scaleup_manifest_path is None and scaleup_config_path is not None:
+        scaleup_manifest_path = scaleup_config_path.with_name("manifest.json")
+
+    carried_manifest_path = _existing_path(
+        lineage.get("scaleup_manifest_path")
+    )
+    source_bound = bool(
+        scaleup_config_path is not None
+        and scaleup_config_path.is_file()
+        and scaleup_manifest_path is not None
+        and scaleup_manifest_path.is_file()
+        and carried_manifest_path is not None
+        and carried_manifest_path.resolve() == scaleup_manifest_path.resolve()
+        and scaleup_config_path.parent == scaleup_manifest_path.parent
+    )
+    current = empty_scaleup_runtime_provenance(required=True)
+    if source_bound:
+        current = load_scaleup_runtime_provenance(scaleup_config_path)
+    current_fields = scaleup_runtime_fields(current)
+    matches_current = bool(
+        source_bound
+        and current.get("provenance_gate_passed", False)
+        and all(
+            _same(
+                lineage.get(column),
+                current_fields.get(column),
+                column,
+            )
+            for column in scaleup_fields
+        )
+    )
+    return {
+        "scaleup_source_bound": source_bound,
+        "current_scaleup_manifest_sha256": _text(
+            current.get("manifest_sha256", "")
+        ),
+        "current_scaleup_provenance_gate_passed": _bool(
+            current.get("provenance_gate_passed", False)
+        ),
+        "current_scaleup_contract_error": _text(
+            current.get("contract_error", "")
+        ),
+        "current_scaleup_proof_refresh_active": _bool(
+            current.get("proof_refresh_active", False)
+        ),
+        "current_scaleup_proof_refresh_source_semantically_verified": _bool(
+            current.get(
+                "proof_refresh_source_semantically_verified",
+                False,
+            )
+        ),
+        "current_scaleup_proof_refresh_source_provenance_gate_passed": _bool(
+            current.get(
+                "proof_refresh_source_provenance_gate_passed",
+                False,
+            )
+        ),
+        "current_scaleup_proof_refresh_matches_current": _bool(
+            current.get("proof_refresh_matches_current", False)
+        ),
+        "scaleup_provenance_matches_current": matches_current,
     }
 
 
@@ -2550,13 +2736,17 @@ def _runtime_session_contract_errors(
 
 def _cutover_contract_errors(
     *,
+    authorization: pd.DataFrame,
     summary: pd.DataFrame,
     config: dict[str, Any],
     manifest: dict[str, Any],
     lineage: Mapping[str, Any],
+    scaleup_fields: tuple[str, ...],
     runtime_fields: tuple[str, ...],
 ) -> list[str]:
     errors: list[str] = []
+    if authorization.empty:
+        errors.append("cutover_authorization_missing_or_empty")
     if summary.empty:
         errors.append("cutover_summary_missing_or_empty")
     if not config:
@@ -2566,8 +2756,29 @@ def _cutover_contract_errors(
     if errors:
         return errors
 
+    authorization_row = authorization.iloc[0]
     row = summary.iloc[0]
     extra = _mapping(manifest.get("extra"))
+    config_scaleup = _mapping(config.get("scaleup_provenance"))
+    for column in scaleup_fields:
+        expected = lineage[column]
+        for source, record in (
+            ("authorization", authorization_row),
+            ("summary", row),
+        ):
+            if column not in record.index:
+                errors.append(f"cutover_{source}_{column}_missing")
+            elif not _same(record.get(column), expected, column):
+                errors.append(f"cutover_{source}_{column}_mismatch")
+        if column not in config_scaleup:
+            errors.append(f"cutover_config_{column}_missing")
+        elif not _same(config_scaleup.get(column), expected, column):
+            errors.append(f"cutover_config_{column}_mismatch")
+        if column not in extra:
+            errors.append(f"cutover_manifest_{column}_missing")
+        elif not _same(extra.get(column), expected, column):
+            errors.append(f"cutover_manifest_{column}_mismatch")
+
     config_lineage = _mapping(config.get("runtime_lineage"))
     for column in runtime_fields:
         expected = lineage[column]
@@ -3675,6 +3886,11 @@ def _leadlag_contract_field(column: str) -> str:
 
 
 def _field_default(column: str) -> Any:
+    for provenance_column, default in SCALEUP_PROVENANCE_DEFAULTS.items():
+        if column == provenance_column or column.endswith(
+            f"_{provenance_column}"
+        ):
+            return default
     leadlag_field = _leadlag_contract_field(column)
     if leadlag_field in {
         "leadlag_edge_lineage_required",
