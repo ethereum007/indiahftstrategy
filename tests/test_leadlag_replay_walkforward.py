@@ -172,6 +172,7 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
     catalog = catalog_experiment_runs([out_dir]).catalog
     walkforward_row = catalog.loc[catalog["run_type"] == "leadlag_replay_walkforward"].iloc[0]
+    proof_row = catalog.loc[catalog["run_type"] == "proof_report"].iloc[0]
     assert report.passed
     assert report.output_dir == out_dir
     assert int(report.summary.loc[0, "fold_count"]) == 2
@@ -183,6 +184,13 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert config["replay_defaults"]["trigger_ticks"] == 10.0
     assert walkforward_row["summary_file"] == "leadlag_replay_walkforward_summary.csv"
     assert bool(walkforward_row["summary_status"])
+    assert bool(proof_row["summary_status"])
+    assert bool(proof_row["proof_report_verification_required"])
+    assert bool(proof_row["proof_report_verification_verified"])
+    assert bool(proof_row["proof_report_verification_passed"])
+    assert bool(
+        proof_row["proof_report_verification_replay_manifests_current"]
+    )
     assert (out_dir / "leadlag_replay_walkforward_folds.csv").exists()
     assert (out_dir / "leadlag_replay_walkforward_checks.csv").exists()
     assert (out_dir / "leadlag_replay_walkforward_summary.csv").exists()

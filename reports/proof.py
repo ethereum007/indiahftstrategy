@@ -1,13 +1,32 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields
+from io import StringIO
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    MANIFEST_NAME,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+
+
+PROOF_REPORT_RUN_TYPE = "proof_report"
+PROOF_METRICS_FILE = "proof_metrics.csv"
+PROOF_CHECKS_FILE = "proof_checks.csv"
+PROOF_SUMMARY_FILE = "proof_summary.csv"
+PROOF_REPORT_REQUIRED_ARTIFACTS = (
+    PROOF_METRICS_FILE,
+    PROOF_CHECKS_FILE,
+    PROOF_SUMMARY_FILE,
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +51,26 @@ class ProofReport:
     @property
     def passed(self) -> bool:
         return bool(self.summary.iloc[0]["all_passed"]) if not self.summary.empty else False
+
+
+@dataclass(frozen=True)
+class ProofReportVerification:
+    verified: bool
+    passed: bool
+    manifest_current: bool
+    inputs_current: bool
+    replay_manifests_current: bool
+    artifacts_consistent: bool
+    non_authorizing: bool
+    output_dir: Path
+    manifest_path: Path
+    manifest_artifact_count: int = 0
+    manifest_artifact_match_count: int = 0
+    manifest_input_fingerprint_count: int = 0
+    manifest_input_fingerprint_match_count: int = 0
+    replay_manifest_count: int = 0
+    replay_manifest_current_count: int = 0
+    error: str = ""
 
 
 def evaluate_replay_dir(
@@ -81,19 +120,419 @@ def write_proof_report(
     thresholds: ProofThresholds | None = None,
     run_names: list[str] | None = None,
 ) -> ProofReport:
-    report = evaluate_replay_dirs(run_dirs, thresholds=thresholds, run_names=run_names)
+    thresholds = thresholds or ProofThresholds()
+    canonical_run_names = list(run_names) if run_names is not None else None
+    report = evaluate_replay_dirs(
+        run_dirs,
+        thresholds=thresholds,
+        run_names=canonical_run_names,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    report.metrics.to_csv(out / "proof_metrics.csv", index=False)
-    report.checks.to_csv(out / "proof_checks.csv", index=False)
-    report.summary.to_csv(out / "proof_summary.csv", index=False)
+    report.metrics.to_csv(out / PROOF_METRICS_FILE, index=False)
+    report.checks.to_csv(out / PROOF_CHECKS_FILE, index=False)
+    report.summary.to_csv(out / PROOF_SUMMARY_FILE, index=False)
     write_experiment_manifest(
         out,
-        run_type="proof_report",
-        parameters={"thresholds": asdict(thresholds or ProofThresholds())},
-        inputs={"run_dirs": run_dirs},
+        run_type=PROOF_REPORT_RUN_TYPE,
+        parameters={
+            "run_names": canonical_run_names,
+            "thresholds": asdict(thresholds),
+        },
+        inputs=_proof_manifest_inputs(run_dirs),
+        extra=_proof_manifest_extra(report),
     )
     return ProofReport(report.metrics, report.checks, report.summary, out)
+
+
+def verify_proof_report(report_dir: str | Path) -> ProofReportVerification:
+    requested = Path(report_dir)
+    root = requested.parent if requested.is_file() else requested
+    root = root.resolve()
+    manifest_path = root / MANIFEST_NAME
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=PROOF_REPORT_RUN_TYPE,
+        required_artifacts=PROOF_REPORT_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    inputs_current = False
+    replay_manifests_current = False
+    artifacts_consistent = False
+    non_authorizing = False
+    replay_manifest_count = 0
+    replay_manifest_current_count = 0
+    try:
+        manifest = _read_json_object(manifest_path, "proof manifest")
+        parameters = _mapping(manifest.get("parameters"))
+        run_names, thresholds = _proof_parameters_from_manifest(parameters)
+        inputs = _mapping(manifest.get("inputs"))
+        run_dirs = _proof_run_paths_from_manifest(inputs)
+        if run_names is not None and len(run_names) != len(run_dirs):
+            raise ValueError("proof run names do not match replay inputs")
+        expected_report = evaluate_replay_dirs(
+            run_dirs,
+            thresholds=thresholds,
+            run_names=run_names,
+        )
+        expected_parameters = {
+            "run_names": run_names,
+            "thresholds": asdict(thresholds),
+        }
+        expected_extra = _proof_manifest_extra(expected_report)
+        inputs_current = bool(
+            _proof_input_contract_current(inputs, run_dirs)
+            and integrity.input_fingerprint_count
+            == integrity.input_fingerprint_match_count
+            and integrity.input_fingerprint_count > 0
+        )
+        (
+            replay_manifests_current,
+            replay_manifest_count,
+            replay_manifest_current_count,
+        ) = _proof_replay_manifests_current(run_dirs)
+        artifacts_consistent = bool(
+            _proof_artifacts_consistent(root, expected_report, manifest)
+            and dict(parameters) == expected_parameters
+            and _mapping(manifest.get("extra")) == expected_extra
+        )
+        non_authorizing = _proof_authority_consistent(
+            root,
+            _mapping(manifest.get("extra")),
+            expected_report.passed,
+        )
+        verified = bool(
+            integrity.passed
+            and inputs_current
+            and replay_manifests_current
+            and artifacts_consistent
+            and non_authorizing
+        )
+        error = ""
+        if not verified:
+            error = (
+                integrity.error
+                or (
+                    "input contract is invalid"
+                    if not inputs_current
+                    else ""
+                )
+                or (
+                    "replay manifests are missing, stale, or unfingerprinted"
+                    if not replay_manifests_current
+                    else ""
+                )
+                or (
+                    "artifacts do not reconstruct from replay inputs"
+                    if not artifacts_consistent
+                    else ""
+                )
+                or "report widens authority"
+            )
+        return ProofReportVerification(
+            verified=verified,
+            passed=bool(verified and expected_report.passed),
+            manifest_current=integrity.passed,
+            inputs_current=inputs_current,
+            replay_manifests_current=replay_manifests_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            manifest_artifact_count=integrity.artifact_count,
+            manifest_artifact_match_count=integrity.artifact_match_count,
+            manifest_input_fingerprint_count=(
+                integrity.input_fingerprint_count
+            ),
+            manifest_input_fingerprint_match_count=(
+                integrity.input_fingerprint_match_count
+            ),
+            replay_manifest_count=replay_manifest_count,
+            replay_manifest_current_count=replay_manifest_current_count,
+            error=error,
+        )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        return ProofReportVerification(
+            verified=False,
+            passed=False,
+            manifest_current=integrity.passed,
+            inputs_current=inputs_current,
+            replay_manifests_current=replay_manifests_current,
+            artifacts_consistent=artifacts_consistent,
+            non_authorizing=non_authorizing,
+            output_dir=root,
+            manifest_path=manifest_path,
+            manifest_artifact_count=integrity.artifact_count,
+            manifest_artifact_match_count=integrity.artifact_match_count,
+            manifest_input_fingerprint_count=(
+                integrity.input_fingerprint_count
+            ),
+            manifest_input_fingerprint_match_count=(
+                integrity.input_fingerprint_match_count
+            ),
+            replay_manifest_count=replay_manifest_count,
+            replay_manifest_current_count=replay_manifest_current_count,
+            error=integrity.error or str(exc),
+        )
+
+
+def _proof_manifest_extra(report: ProofReport) -> dict[str, object]:
+    return {
+        "all_passed": report.passed,
+        "non_authorizing": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+    }
+
+
+def _proof_parameters_from_manifest(
+    parameters: Mapping[str, Any],
+) -> tuple[list[str] | None, ProofThresholds]:
+    if set(parameters) != {"run_names", "thresholds"}:
+        raise ValueError(
+            "proof manifest parameters must contain run_names and thresholds"
+        )
+    raw_run_names = parameters.get("run_names")
+    if raw_run_names is None:
+        run_names = None
+    elif isinstance(raw_run_names, list) and all(
+        isinstance(value, str) for value in raw_run_names
+    ):
+        run_names = list(raw_run_names)
+    else:
+        raise ValueError("proof manifest run_names must be a string list")
+    values = _mapping(parameters.get("thresholds"))
+    expected_fields = {field.name for field in fields(ProofThresholds)}
+    if set(values) != expected_fields:
+        raise ValueError("proof manifest threshold contract is incomplete")
+    thresholds = ProofThresholds(**dict(values))
+    expected = {
+        "run_names": run_names,
+        "thresholds": asdict(thresholds),
+    }
+    if dict(parameters) != expected:
+        raise ValueError("proof manifest parameters are not canonical")
+    return run_names, thresholds
+
+
+def _proof_manifest_inputs(
+    run_dirs: list[str | Path],
+) -> dict[str, object]:
+    canonical_dirs = [Path(path).resolve() for path in run_dirs]
+    manifest_paths: dict[str, Path] = {}
+    dependency_paths: dict[str, Path] = {}
+    for root in canonical_dirs:
+        manifest_path = (root / MANIFEST_NAME).resolve()
+        if not manifest_path.is_file():
+            continue
+        manifest_paths[str(manifest_path)] = manifest_path
+        for dependency in manifest_dependency_paths(manifest_path):
+            resolved = dependency.resolve()
+            dependency_paths[str(resolved)] = resolved
+    inputs: dict[str, object] = {"run_dirs": canonical_dirs}
+    if manifest_paths:
+        inputs["run_manifests"] = [
+            manifest_paths[key] for key in sorted(manifest_paths)
+        ]
+    if dependency_paths:
+        inputs["run_dependencies"] = [
+            dependency_paths[key] for key in sorted(dependency_paths)
+        ]
+    return inputs
+
+
+def _proof_run_paths_from_manifest(
+    inputs: Mapping[str, Any],
+) -> list[Path]:
+    value = inputs.get("run_dirs")
+    if not isinstance(value, list) or not value:
+        raise ValueError("proof manifest lacks replay directory fingerprints")
+    return [
+        _manifest_path_fingerprint(item, "run_dirs")
+        for item in value
+    ]
+
+
+def _manifest_path_fingerprint(value: Any, label: str) -> Path:
+    fingerprint = _mapping(value)
+    if fingerprint.get("kind") != "directory":
+        raise ValueError(
+            f"proof manifest {label} input is not a directory fingerprint"
+        )
+    raw_path = str(fingerprint.get("path", "")).strip()
+    if not raw_path:
+        raise ValueError(f"proof manifest {label} input path is missing")
+    return Path(raw_path).resolve()
+
+
+def _proof_input_contract_current(
+    inputs: Mapping[str, Any],
+    run_dirs: list[Path],
+) -> bool:
+    expected = _proof_manifest_inputs(run_dirs)
+    if set(inputs) != set(expected):
+        return False
+    return all(
+        _manifest_input_path_contract(inputs.get(name))
+        == _expected_input_path_contract(value)
+        for name, value in expected.items()
+    )
+
+
+def _manifest_input_path_contract(value: Any) -> Any:
+    if isinstance(value, list):
+        return [
+            _manifest_input_path_contract(item)
+            for item in value
+        ]
+    fingerprint = _mapping(value)
+    kind = str(fingerprint.get("kind", ""))
+    raw_path = str(fingerprint.get("path", "")).strip()
+    if kind not in {"file", "directory"} or not raw_path:
+        return None
+    return kind, str(Path(raw_path).resolve())
+
+
+def _expected_input_path_contract(value: Any) -> Any:
+    if isinstance(value, (list, tuple)):
+        return [
+            _expected_input_path_contract(item)
+            for item in value
+        ]
+    if not isinstance(value, (str, Path)):
+        return None
+    path = Path(value).resolve()
+    kind = (
+        "file"
+        if path.is_file()
+        else "directory"
+        if path.is_dir()
+        else ""
+    )
+    return (kind, str(path)) if kind else None
+
+
+def _proof_replay_manifests_current(
+    run_dirs: list[Path],
+) -> tuple[bool, int, int]:
+    manifest_paths = [
+        (root / MANIFEST_NAME).resolve()
+        for root in run_dirs
+    ]
+    current_count = sum(
+        verify_experiment_manifest(
+            path,
+            require_input_fingerprints=True,
+        ).passed
+        for path in manifest_paths
+    )
+    return (
+        bool(manifest_paths and current_count == len(manifest_paths)),
+        len(manifest_paths),
+        int(current_count),
+    )
+
+
+def _proof_artifacts_consistent(
+    root: Path,
+    expected: ProofReport,
+    manifest: Mapping[str, Any],
+) -> bool:
+    return bool(
+        _proof_manifest_artifacts_exact(manifest)
+        and _csv_frame_matches(root / PROOF_METRICS_FILE, expected.metrics)
+        and _csv_frame_matches(root / PROOF_CHECKS_FILE, expected.checks)
+        and _csv_frame_matches(root / PROOF_SUMMARY_FILE, expected.summary)
+    )
+
+
+def _proof_manifest_artifacts_exact(
+    manifest: Mapping[str, Any],
+) -> bool:
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        return False
+    names = [
+        str(item.get("path", "")).replace("\\", "/")
+        for item in artifacts
+        if isinstance(item, Mapping)
+    ]
+    return bool(
+        len(names) == len(PROOF_REPORT_REQUIRED_ARTIFACTS)
+        and len(names) == len(artifacts)
+        and set(names) == set(PROOF_REPORT_REQUIRED_ARTIFACTS)
+    )
+
+
+def _proof_authority_consistent(
+    root: Path,
+    manifest_extra: Mapping[str, Any],
+    passed: bool,
+) -> bool:
+    summary = _read_csv_frame(root / PROOF_SUMMARY_FILE, "proof summary")
+    if len(summary.index) != 1:
+        return False
+    row = summary.iloc[0]
+    return bool(
+        _bool(row.get("non_authorizing", False))
+        and not _bool(row.get("authorizes_routing", True))
+        and not _bool(row.get("authorizes_submission", True))
+        and dict(manifest_extra)
+        == {
+            "all_passed": bool(passed),
+            "non_authorizing": True,
+            "authorizes_routing": False,
+            "authorizes_submission": False,
+        }
+    )
+
+
+def _csv_frame_matches(path: Path, expected: pd.DataFrame) -> bool:
+    actual = _read_csv_frame(path, path.name)
+    expected_roundtrip = pd.read_csv(
+        StringIO(expected.to_csv(index=False)),
+        keep_default_na=False,
+    )
+    return bool(
+        list(actual.columns) == list(expected_roundtrip.columns)
+        and actual.to_dict(orient="records")
+        == expected_roundtrip.to_dict(orient="records")
+    )
+
+
+def _read_csv_frame(path: Path, label: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, keep_default_na=False)
+    except (
+        OSError,
+        UnicodeDecodeError,
+        pd.errors.EmptyDataError,
+        pd.errors.ParserError,
+    ) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"{label} is unreadable") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return payload
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | bool]:
@@ -240,6 +679,9 @@ def _proof_summary(metrics: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "total_fills": int(metrics["fills"].sum()),
                 "worst_drawdown": float(metrics["max_drawdown"].max(skipna=True)),
                 "worst_regime_equity_change": float(metrics["worst_regime_equity_change"].min(skipna=True)),
+                "non_authorizing": True,
+                "authorizes_routing": False,
+                "authorizes_submission": False,
             }
         ]
     )
@@ -293,7 +735,7 @@ def _read_optional(path: Path) -> pd.DataFrame:
 
 
 def _read_manifest(run_dir: Path) -> dict:
-    path = run_dir / "manifest.json"
+    path = run_dir / MANIFEST_NAME
     if not path.exists():
         return {}
     try:

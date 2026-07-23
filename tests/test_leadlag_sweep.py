@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
-from reports.proof import ProofThresholds
+from reports.proof import ProofThresholds, verify_proof_report
 from strategies.run_leadlag_sweep import run_leadlag_sweep
 
 
@@ -75,6 +75,7 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert (out_dir / "manifest.json").exists()
     assert (out_dir / "proof" / "proof_checks.csv").exists()
     assert (out_dir / "proof" / "manifest.json").exists()
+    assert verify_proof_report(out_dir / "proof").verified
     assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "summary.csv").exists()
     assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "manifest.json").exists()
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))

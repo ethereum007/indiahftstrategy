@@ -1,7 +1,7 @@
 import pandas as pd
 
 from hft_cli import main
-from reports.proof import ProofThresholds
+from reports.proof import ProofThresholds, verify_proof_report
 from strategies.run_parity_sweep import run_parity_sweep
 
 
@@ -69,6 +69,7 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert (out_dir / "manifest.json").exists()
     assert (out_dir / "proof" / "proof_checks.csv").exists()
     assert (out_dir / "proof" / "manifest.json").exists()
+    assert verify_proof_report(out_dir / "proof").verified
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "summary.csv").exists()
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "manifest.json").exists()
 

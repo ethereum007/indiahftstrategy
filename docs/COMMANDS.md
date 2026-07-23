@@ -76,6 +76,13 @@ The catalog includes input provenance counters for each run, including exact
 file fingerprints, directory-tree fingerprints, hashed inputs, and
 unfingerprinted raw inputs. Use these columns to spot broad or unresolved
 handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
+For `proof_report` runs, the catalog also reconstructs the proof from its
+ordered replay directories, labels, and threshold contract. The reported
+`all_passed` value remains visible, but `summary_status` is forced to false
+when proof artifacts, replay manifests, source dependencies, or
+non-authorizing state do not verify. The
+`proof_report_verification_*` columns retain the exact semantic failure for
+strategy-evidence review.
 `experiment_catalog_summary.csv` also carries `action_queue_count`,
 `action_queue_ready_count`, `action_queue_blocked_count`, and
 `action_queue_unknown_count` for scheduler-level gating. It also carries
@@ -9437,12 +9444,32 @@ Outputs:
 proof_metrics.csv
 proof_checks.csv
 proof_summary.csv
+manifest.json
 ```
 
 Proof reports retain strategy and market identity from replay summaries,
 scenario keys, or replay manifests. A proof bundle that mixes provided strategy
 or market identities fails even when individual PnL, fill, regime, spread, and
 markout checks pass.
+
+Verify a retained proof bundle before cataloging or promoting it:
+
+```powershell
+python -m hft_cli verify-proof-report `
+  --report runs\proof\leadlag `
+  --fail-on-breach
+```
+
+The verifier reconstructs metrics, checks, and summary from the manifest-bound
+ordered replay directories, optional run labels, and exact threshold contract.
+Every replay directory must carry a current source-fingerprinted manifest. The
+proof manifest separately binds those manifests and their recursively
+flattened dependencies, must contain exactly the three documented report
+artifacts, and must preserve explicit non-routing and non-submission
+authority. Editing proof metrics or pass status, adding an order sidecar, and
+writing a fresh outer manifest does not satisfy semantic verification.
+`--fail-on-breach` returns exit code `2` when the evidence contract fails; the
+JSON output reports `passed` separately from `verified`.
 
 ## Stress Replay
 

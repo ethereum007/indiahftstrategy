@@ -1,7 +1,7 @@
 import pandas as pd
 
 from hft_cli import main
-from reports.proof import ProofThresholds
+from reports.proof import ProofThresholds, verify_proof_report
 from strategies.run_surface_mm_sweep import run_surface_mm_sweep
 
 
@@ -142,6 +142,7 @@ def test_run_surface_mm_sweep_writes_runs_proof_and_summary(tmp_path):
     assert (out_dir / "manifest.json").exists()
     assert (out_dir / "proof" / "proof_checks.csv").exists()
     assert (out_dir / "proof" / "manifest.json").exists()
+    assert verify_proof_report(out_dir / "proof").verified
     assert (
         out_dir
         / "runs"

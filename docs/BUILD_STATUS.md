@@ -6679,6 +6679,24 @@ tests`. All outputs remain non-authorizing; the full repository suite was not
 rerun because the preceding state reached only 55% after 40 minutes without a
 failure, while this slice is covered by its focused and downstream suites.
 
+Latest backtest-proof semantic integrity gate: newly written `proof_report`
+bundles bind ordered replay directories, optional run labels, each replay
+manifest, recursively flattened replay dependencies, and the exact proof
+threshold contract. `verify-proof-report` reconstructs metrics, checks, and
+summary, requires every replay manifest to remain current and
+source-fingerprinted, requires exactly the three documented artifacts, and
+enforces explicit non-routing/non-submission authority. Freshly re-manifested
+metric or pass-status edits, unexpected order sidecars, and an outer-manifest
+reseal after replay-source drift remain invalid. `catalog-runs` now retains the
+reported proof status but forces its effective status false on semantic
+failure, preventing altered proof from entering strategy-evidence review.
+Focused proof verification passes (`8 passed`), the complete catalog suite
+passes (`65 passed`), and strategy evidence plus all proof-producing sweep and
+replay walk-forward regressions pass (`82 passed`). Manifest regressions pass
+(`6 passed`), and repository collection is healthy at `2520 tests`. All
+outputs remain non-authorizing; the full repository suite was not rerun for
+this focused evidence-integrity slice.
+
 ## Next Build Targets
 
 1. Acquire and normalize the first authoritative NSE calendar source into the

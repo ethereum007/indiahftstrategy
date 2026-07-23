@@ -19,12 +19,64 @@ from reports.halt_execution import write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import write_halt_response_plan
 from reports.manifest import write_experiment_manifest
+from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import write_proof_refresh_report
 from reports.resume import write_resume_gate_report
 from reports.runtime_guard import write_runtime_guard_report
+from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
 def write_run(path, *, run_type, summary_name, summary_row):
+    if run_type == "proof_report":
+        replay = (
+            path.parent.parent
+            / f"_{path.parent.name}_{path.name}_catalog_replay"
+        )
+        replay.mkdir(parents=True, exist_ok=True)
+        source = replay.parent / f"{replay.name}_source.csv"
+        source.write_text("ts,bid,ask\n1,100,101\n", encoding="utf-8")
+        passed = bool(summary_row.get("all_passed", True))
+        net_pnl = float(
+            summary_row.get(
+                "total_net_pnl",
+                1.0 if passed else -1.0,
+            )
+        )
+        pd.DataFrame(
+            [
+                {
+                    "strategy": summary_row.get(
+                        "strategy",
+                        "lead_lag_taker",
+                    ),
+                    "market": summary_row.get(
+                        "market",
+                        "india_nse_index_derivatives",
+                    ),
+                    "net_pnl": net_pnl,
+                    "total_costs": 0.0,
+                    "fills": 1,
+                    "order_to_trade_ratio": 1.0,
+                    "otr_breached": False,
+                    "turnover": 100.0,
+                    "maker_share": 1.0,
+                }
+            ]
+        ).to_csv(replay / "summary.csv", index=False)
+        write_experiment_manifest(
+            replay,
+            run_type="catalog_unit_replay",
+            inputs={"source": source},
+        )
+        write_proof_report(
+            [replay],
+            output_dir=path,
+            thresholds=ProofThresholds(
+                min_net_pnl=0.0,
+                min_fills=1,
+            ),
+        )
+        return
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame([summary_row]).to_csv(path / summary_name, index=False)
     write_experiment_manifest(
@@ -164,6 +216,46 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert "experiment_catalog_action_plan.json" in artifact_paths
     assert "experiment_catalog_hygiene_gaps.csv" in artifact_paths
     assert "experiment_catalog_runbook.md" in artifact_paths
+
+
+def test_catalog_rejects_resealed_proof_semantic_tampering(tmp_path):
+    root = tmp_path / "runs"
+    proof = root / "proof"
+    write_run(
+        proof,
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={
+            "all_passed": True,
+            "failed_runs": 0,
+            "total_net_pnl": 42.0,
+        },
+    )
+    summary_path = proof / "proof_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "total_net_pnl"] = 424242.0
+    summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(proof)
+
+    report = catalog_experiment_runs([root])
+    row = report.catalog.iloc[0]
+
+    assert bool(row["summary_all_passed"])
+    assert not bool(row["summary_status"])
+    assert row["summary_status_column"] == "proof_report_verification"
+    assert bool(row["proof_report_verification_required"])
+    assert not bool(row["proof_report_verification_verified"])
+    assert bool(row["proof_report_verification_manifest_current"])
+    assert bool(row["proof_report_verification_inputs_current"])
+    assert bool(
+        row["proof_report_verification_replay_manifests_current"]
+    )
+    assert not bool(
+        row["proof_report_verification_artifacts_consistent"]
+    )
+    assert row["proof_report_verification_error"] == (
+        "artifacts do not reconstruct from replay inputs"
+    )
 
 
 def test_experiment_catalog_promotes_vendor_intake_action_queue(tmp_path):

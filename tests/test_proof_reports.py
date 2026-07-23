@@ -1,7 +1,16 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
-from reports.proof import ProofThresholds, evaluate_replay_dirs, write_proof_report
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
+from reports.proof import (
+    ProofThresholds,
+    evaluate_replay_dirs,
+    verify_proof_report,
+    write_proof_report,
+)
+from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
 def write_run(
@@ -56,6 +65,14 @@ def write_run(
         path / "markouts.csv",
         index=False,
     )
+    source = path.parent / f"{path.name}_source.csv"
+    source.write_text("ts,bid,ask\n1,100,101\n", encoding="utf-8")
+    write_experiment_manifest(
+        path,
+        run_type="unit_replay",
+        inputs={"source": source},
+    )
+    return source
 
 
 def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
@@ -103,6 +120,35 @@ def test_write_proof_report_outputs_metrics_checks_and_summary(tmp_path):
     assert (out_dir / "proof_checks.csv").exists()
     assert (out_dir / "proof_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    summary = pd.read_csv(out_dir / "proof_summary.csv")
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    verification = verify_proof_report(out_dir)
+    assert bool(summary.loc[0, "non_authorizing"])
+    assert not bool(summary.loc[0, "authorizes_routing"])
+    assert not bool(summary.loc[0, "authorizes_submission"])
+    assert manifest["parameters"]["run_names"] is None
+    assert set(manifest["inputs"]) == {
+        "run_dependencies",
+        "run_dirs",
+        "run_manifests",
+    }
+    assert manifest["extra"] == {
+        "all_passed": True,
+        "authorizes_routing": False,
+        "authorizes_submission": False,
+        "non_authorizing": True,
+    }
+    assert verification.verified
+    assert verification.passed
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert verification.replay_manifests_current
+    assert verification.artifacts_consistent
+    assert verification.non_authorizing
+    assert verification.replay_manifest_count == 1
+    assert verification.replay_manifest_current_count == 1
 
 
 def test_proof_report_blocks_mixed_strategy_or_market_runs(tmp_path):
@@ -201,8 +247,101 @@ def test_unified_cli_proof_report_dispatch_and_fail_on_breach(tmp_path):
             "--fail-on-breach",
         ]
     )
+    failed_proof_verification = verify_proof_report(fail_out)
+    failed_verify_code = main(
+        [
+            "verify-proof-report",
+            "--report",
+            str(fail_out),
+            "--fail-on-breach",
+        ]
+    )
 
     assert pass_code == 0
     assert fail_code == 2
+    assert failed_proof_verification.verified
+    assert not failed_proof_verification.passed
+    assert failed_verify_code == 0
     assert (pass_out / "proof_summary.csv").exists()
     assert (fail_out / "proof_checks.csv").exists()
+
+
+def test_proof_verifier_rejects_resealed_artifact_tampering(tmp_path):
+    run_dir = tmp_path / "replay"
+    out_dir = tmp_path / "proof"
+    write_run(run_dir)
+    write_proof_report(
+        [run_dir],
+        output_dir=out_dir,
+        thresholds=ProofThresholds(min_net_pnl=1.0, min_fills=1),
+    )
+    summary_path = out_dir / "proof_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "total_net_pnl"] = 999999.0
+    summary.to_csv(summary_path, index=False)
+    reseal_experiment_manifest(out_dir)
+
+    generic = verify_experiment_manifest(out_dir / "manifest.json")
+    verification = verify_proof_report(out_dir)
+    code = main(
+        [
+            "verify-proof-report",
+            "--report",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    assert generic.passed
+    assert verification.manifest_current
+    assert verification.inputs_current
+    assert verification.replay_manifests_current
+    assert not verification.artifacts_consistent
+    assert not verification.verified
+    assert verification.error == (
+        "artifacts do not reconstruct from replay inputs"
+    )
+    assert code == 2
+
+
+def test_proof_verifier_rejects_resealed_extra_order_sidecar(tmp_path):
+    run_dir = tmp_path / "replay"
+    out_dir = tmp_path / "proof"
+    write_run(run_dir)
+    write_proof_report([run_dir], output_dir=out_dir)
+    pd.DataFrame(
+        [{"instrument_id": "NIFTY", "side": "BUY", "qty": 1}]
+    ).to_csv(out_dir / "unexpected_orders.csv", index=False)
+    reseal_experiment_manifest(out_dir)
+
+    generic = verify_experiment_manifest(out_dir / "manifest.json")
+    verification = verify_proof_report(out_dir)
+
+    assert generic.passed
+    assert generic.artifact_count == 4
+    assert not verification.artifacts_consistent
+    assert not verification.verified
+
+
+def test_proof_verifier_rejects_resealed_outer_manifest_after_source_drift(
+    tmp_path,
+):
+    run_dir = tmp_path / "replay"
+    out_dir = tmp_path / "proof"
+    source = write_run(run_dir)
+    write_proof_report([run_dir], output_dir=out_dir)
+    source.write_text("ts,bid,ask\n1,99,102\n", encoding="utf-8")
+    reseal_experiment_manifest(out_dir)
+
+    generic = verify_experiment_manifest(out_dir / "manifest.json")
+    verification = verify_proof_report(out_dir)
+
+    assert generic.passed
+    assert verification.inputs_current
+    assert not verification.replay_manifests_current
+    assert verification.replay_manifest_count == 1
+    assert verification.replay_manifest_current_count == 0
+    assert not verification.verified
+    assert verification.error == (
+        "replay manifests are missing, stale, or unfingerprinted"
+    )

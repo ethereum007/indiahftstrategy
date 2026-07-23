@@ -37,6 +37,10 @@ from reports.evidence import (
     verify_strategy_evidence_review,
 )
 from reports.manifest import MANIFEST_NAME, file_sha256, write_experiment_manifest
+from reports.proof import (
+    PROOF_REPORT_RUN_TYPE,
+    verify_proof_report,
+)
 from reports.provider_market_data_imbalance_broker_active_lineage import (
     verified_provider_broker_active_lineage_records,
 )
@@ -392,6 +396,10 @@ def _catalog_row(
     run_dir = manifest_path.parent
     summary_file, summary_row = _summary_row(run_dir)
     status_column, status = _summary_status(summary_row)
+    proof_report_verification = _proof_report_verification_fields(
+        run_dir,
+        str(manifest.get("run_type", "")),
+    )
     strategy_evidence_verification = _strategy_evidence_verification_fields(
         run_dir,
         str(manifest.get("run_type", "")),
@@ -476,6 +484,16 @@ def _catalog_row(
             str(manifest.get("run_type", "")),
         )
     )
+    if (
+        proof_report_verification[
+            "proof_report_verification_required"
+        ]
+        and not proof_report_verification[
+            "proof_report_verification_verified"
+        ]
+    ):
+        status_column = "proof_report_verification"
+        status = False
     if (
         strategy_evidence_verification[
             "strategy_evidence_verification_required"
@@ -644,6 +662,7 @@ def _catalog_row(
         "summary_status": status,
         "parameters_json": json.dumps(manifest.get("parameters", {}), sort_keys=True),
         "inputs_json": json.dumps(inputs, sort_keys=True),
+        **proof_report_verification,
         **strategy_evidence_verification,
         **provider_release_review_verification,
         **provider_release_decision_verification,
@@ -673,6 +692,58 @@ def _catalog_row(
         else:
             row[key] = value
     return row
+
+
+def _proof_report_verification_fields(
+    run_dir: Path,
+    run_type: str,
+) -> dict[str, Any]:
+    required = run_type == PROOF_REPORT_RUN_TYPE
+    fields = {
+        "proof_report_verification_required": required,
+        "proof_report_verification_verified": False,
+        "proof_report_verification_passed": False,
+        "proof_report_verification_manifest_current": False,
+        "proof_report_verification_inputs_current": False,
+        "proof_report_verification_replay_manifests_current": False,
+        "proof_report_verification_artifacts_consistent": False,
+        "proof_report_verification_non_authorizing": False,
+        "proof_report_verification_replay_manifest_count": 0,
+        "proof_report_verification_replay_manifest_current_count": 0,
+        "proof_report_verification_error": "",
+    }
+    if not required:
+        return fields
+    verification = verify_proof_report(run_dir)
+    fields.update(
+        {
+            "proof_report_verification_verified": verification.verified,
+            "proof_report_verification_passed": verification.passed,
+            "proof_report_verification_manifest_current": (
+                verification.manifest_current
+            ),
+            "proof_report_verification_inputs_current": (
+                verification.inputs_current
+            ),
+            "proof_report_verification_replay_manifests_current": (
+                verification.replay_manifests_current
+            ),
+            "proof_report_verification_artifacts_consistent": (
+                verification.artifacts_consistent
+            ),
+            "proof_report_verification_non_authorizing": (
+                verification.non_authorizing
+            ),
+            "proof_report_verification_replay_manifest_count": (
+                verification.replay_manifest_count
+            ),
+            "proof_report_verification_replay_manifest_current_count": (
+                verification.replay_manifest_current_count
+            ),
+            "proof_report_verification_error": verification.error,
+        }
+    )
+    return fields
 
 
 def _vendor_intake_verification_fields(

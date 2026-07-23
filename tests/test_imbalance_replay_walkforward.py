@@ -7,7 +7,7 @@ from reports.imbalance_replay_walkforward import (
     ImbalanceReplayWalkForwardThresholds,
     write_imbalance_replay_walkforward,
 )
-from reports.proof import ProofThresholds
+from reports.proof import ProofThresholds, verify_proof_report
 
 
 def ns_ist(value: str) -> int:
@@ -151,6 +151,7 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert (out_dir / "imbalance_replay_walkforward_checks.csv").exists()
     assert (out_dir / "imbalance_replay_walkforward_summary.csv").exists()
     assert (out_dir / "proof" / "proof_summary.csv").exists()
+    assert verify_proof_report(out_dir / "proof").verified
     assert (out_dir / "runs" / "01_day1" / "summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
 

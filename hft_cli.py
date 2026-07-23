@@ -147,7 +147,11 @@ from reports.parity_candidate_promotion import (
 from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.parity_launch_pipeline import ParityLaunchPipelineConfig, write_parity_launch_pipeline
 from reports.parity_order_plan import ParityOrderPlanConfig, write_parity_order_plan
-from reports.proof import ProofThresholds, write_proof_report
+from reports.proof import (
+    ProofThresholds,
+    verify_proof_report,
+    write_proof_report,
+)
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.robust_selection_pipeline import write_robust_selection_pipeline
@@ -3423,6 +3427,16 @@ def main(argv: list[str] | None = None) -> int:
     proof.add_argument("--min-markout-mean", type=float, default=None)
     proof.add_argument("--min-spread-net", type=float, default=None)
     proof.add_argument("--fail-on-breach", action="store_true")
+
+    proof_verify = sub.add_parser(
+        "verify-proof-report",
+        help=(
+            "Reconstruct a proof report from its manifest-bound replay "
+            "directories."
+        ),
+    )
+    proof_verify.add_argument("--report", required=True)
+    proof_verify.add_argument("--fail-on-breach", action="store_true")
 
     catalog = sub.add_parser("catalog-runs", help="Build an experiment catalog from manifest-bearing run folders.")
     catalog.add_argument("--roots", nargs="+", required=True)
@@ -8123,6 +8137,45 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "verify-proof-report":
+        result = verify_proof_report(args.report)
+        print(
+            json.dumps(
+                {
+                    "verified": result.verified,
+                    "passed": result.passed,
+                    "manifest_current": result.manifest_current,
+                    "inputs_current": result.inputs_current,
+                    "replay_manifests_current": (
+                        result.replay_manifests_current
+                    ),
+                    "artifacts_consistent": result.artifacts_consistent,
+                    "non_authorizing": result.non_authorizing,
+                    "report": str(result.output_dir),
+                    "manifest_path": str(result.manifest_path),
+                    "manifest_artifact_count": (
+                        result.manifest_artifact_count
+                    ),
+                    "manifest_artifact_match_count": (
+                        result.manifest_artifact_match_count
+                    ),
+                    "manifest_input_fingerprint_count": (
+                        result.manifest_input_fingerprint_count
+                    ),
+                    "manifest_input_fingerprint_match_count": (
+                        result.manifest_input_fingerprint_match_count
+                    ),
+                    "replay_manifest_count": result.replay_manifest_count,
+                    "replay_manifest_current_count": (
+                        result.replay_manifest_current_count
+                    ),
+                    "error": result.error,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2 if args.fail_on_breach and not result.verified else 0
     if args.command == "catalog-runs":
         result = write_experiment_catalog(
             args.roots,

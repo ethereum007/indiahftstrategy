@@ -3,7 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
-from reports.proof import ProofThresholds
+from reports.proof import ProofThresholds, verify_proof_report
 from strategies.run_imbalance_sweep import run_imbalance_sweep
 
 
@@ -73,6 +73,7 @@ def test_run_imbalance_sweep_writes_runs_summary_and_proof(tmp_path):
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "sweep_summary.csv").exists()
     assert (out_dir / "proof" / "proof_summary.csv").exists()
+    assert verify_proof_report(out_dir / "proof").verified
     assert (out_dir / "runs").is_dir()
     assert (out_dir / "manifest.json").exists()
 
