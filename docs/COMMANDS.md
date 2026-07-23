@@ -4574,6 +4574,10 @@ scale-up manifest, all required scale-up artifacts, and its flattened
 dependencies, so later portfolio, scorecard, registration, robust-study, or
 raw-source drift invalidates the snapshot. Telemetry outputs remain explicitly
 non-authorizing.
+The scale-up provenance reader activates optional broker-readiness lineage only
+from explicit required/provided state or a concrete fingerprinted manifest
+path. A legacy JSON-null input is treated as absent; a fingerprinted broker
+source remains active and fails closed if the source is later removed.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`

@@ -128,6 +128,106 @@ def _write_scaleup_bundle(root, broker_lineage):
     return root
 
 
+def _write_optional_broker_scaleup_bundle(root, broker_input):
+    root.mkdir(parents=True)
+    config = {
+        "schema_version": 1,
+        "ready": True,
+        "authorizes_submission": False,
+        "failed_check_count": 0,
+        "target_mode": "shadow",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "limits": {
+            "max_orders_per_session": 10,
+            "max_notional_per_session": 100_000.0,
+            "pre_portfolio_max_notional_per_session": 100_000.0,
+        },
+        "broker_readiness": {
+            "required": False,
+            "provided": False,
+            "lineage": {},
+        },
+    }
+    core = {
+        "ready": True,
+        "authorizes_submission": False,
+        "target_mode": "shadow",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "max_orders_per_session": 10,
+        "max_notional_per_session": 100_000.0,
+        "pre_portfolio_max_notional_per_session": 100_000.0,
+    }
+    config_path = root / "scaleup_config.json"
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([core]).to_csv(root / "scaleup_summary.csv", index=False)
+    pd.DataFrame([core]).to_csv(root / "scaleup_plan.csv", index=False)
+    pd.DataFrame(
+        [{"check": "scaleup_ready", "passed": True, "reason": ""}]
+    ).to_csv(root / "scaleup_checks.csv", index=False)
+    source = root.parent / "optional_scaleup_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        root,
+        run_type="scaleup_plan",
+        inputs={
+            "source": source,
+            "broker_readiness_config": broker_input,
+        },
+        extra={"ready": True, "authorizes_submission": False},
+    )
+    return config_path
+
+
+def test_scaleup_runtime_ignores_null_optional_broker_readiness_input(
+    tmp_path,
+):
+    config_path = _write_optional_broker_scaleup_bundle(
+        tmp_path / "scaleup",
+        None,
+    )
+
+    provenance = load_scaleup_runtime_provenance(config_path)
+
+    assert provenance["manifest_current"]
+    assert provenance["contract_consistent"], provenance["contract_error"]
+    assert provenance["non_authorizing"]
+    assert provenance["source_ready"]
+    assert provenance["broker_readiness_matches_current"]
+    assert provenance["provenance_gate_passed"]
+
+
+def test_scaleup_runtime_keeps_deleted_broker_fingerprint_active(
+    tmp_path,
+):
+    broker_config = tmp_path / "broker_readiness_config.json"
+    broker_config.write_text("{}\n", encoding="utf-8")
+    config_path = _write_optional_broker_scaleup_bundle(
+        tmp_path / "scaleup",
+        broker_config,
+    )
+    broker_config.unlink()
+
+    provenance = load_scaleup_runtime_provenance(config_path)
+
+    assert not provenance["manifest_current"]
+    assert not provenance["contract_consistent"]
+    assert not provenance["broker_readiness_matches_current"]
+    assert not provenance["provenance_gate_passed"]
+    assert (
+        "scaleup_broker_readiness_source_missing"
+        in provenance["contract_error"]
+    )
+
+
 def _manifest_input_values(value):
     if isinstance(value, list):
         return [_manifest_input_values(item) for item in value]

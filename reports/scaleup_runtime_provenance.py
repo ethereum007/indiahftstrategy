@@ -786,7 +786,7 @@ def _broker_readiness_active(
         or _bool(lineage.get("lineage_required", False))
         or _bool(lineage.get("lineage_provided", False))
         or any(
-            name in inputs
+            _manifest_input_is_fingerprint(inputs.get(name))
             for name in (
                 "broker_readiness",
                 "broker_readiness_config",
@@ -794,6 +794,10 @@ def _broker_readiness_active(
             )
         )
     )
+
+
+def _manifest_input_is_fingerprint(value: Any) -> bool:
+    return isinstance(value, Mapping) and bool(_text(value.get("path")))
 
 
 def _load_broker_readiness_lineage(config_path: str | Path) -> dict[str, Any]:

@@ -6559,6 +6559,19 @@ previously blocked provider scale-up workflows now pass (`2 passed`).
 Repository collection is healthy at `2494 tests`. All outputs remain
 non-authorizing; the full repository suite was not rerun for this slice.
 
+Latest scale-up runtime optional-evidence activation repair: the semantic
+runtime provenance reader now treats broker-readiness manifest inputs as active
+only when they carry a concrete fingerprint path or the scale-up config
+explicitly requires/provides broker evidence. Legacy
+`broker_readiness_config: null` inputs no longer manufacture missing-lineage
+errors, while a real fingerprint remains active after its source is deleted
+and fails closed through manifest, current-source, telemetry, guard, and
+runtime-session checks. The complete scale-up suite passes (`154 passed`),
+focused runtime provenance passes (`4 passed`), and the complete telemetry,
+runtime-guard, and runtime-session suites pass (`25`, `32`, and `13` passed).
+Repository collection is healthy at `2496 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun for this slice.
+
 ## Next Build Targets
 
 1. Ingest and retain an authoritative NSE calendar artifact for the first real
