@@ -24,6 +24,27 @@ def tick_mapping():
     )
 
 
+def chain_mapping():
+    return pd.DataFrame(
+        [
+            {"normalized_column": column, "source_column": column}
+            for column in (
+                "ts",
+                "expiry",
+                "strike",
+                "call_bid",
+                "call_ask",
+                "call_bid_qty",
+                "call_ask_qty",
+                "put_bid",
+                "put_ask",
+                "put_bid_qty",
+                "put_ask_qty",
+            )
+        ]
+    )
+
+
 def test_normalize_mapped_tick_data_uses_reviewed_vendor_mapping():
     raw = pd.DataFrame(
         [
@@ -208,6 +229,45 @@ def test_normalize_mapped_tick_data_preserves_high_water_quarantine_provenance()
         config=MappedDataConfig(
             adapter="arrow_money",
             kind="ticks",
+            filter_session=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert int(summary["output_rows"]) == 3
+    assert int(summary["quarantined_rows"]) == 2
+    assert int(summary["dropped_nonmonotonic_rows"]) == 2
+    assert list(report.data["ts"]) == [100, 100, 125]
+
+
+def test_normalize_mapped_chain_data_preserves_high_water_quarantine_provenance():
+    base = {
+        "expiry": "2026-06-25",
+        "call_bid": 100.0,
+        "call_ask": 100.5,
+        "call_bid_qty": 75,
+        "call_ask_qty": 150,
+        "put_bid": 90.0,
+        "put_ask": 90.5,
+        "put_bid_qty": 75,
+        "put_ask_qty": 150,
+    }
+    rows = [
+        {
+            **base,
+            "ts": timestamp,
+            "strike": 22500.0 + offset * 50.0,
+        }
+        for offset, timestamp in enumerate([100, 50, 75, 100, 125])
+    ]
+
+    report = normalize_mapped_data(
+        pd.DataFrame(rows),
+        chain_mapping(),
+        config=MappedDataConfig(
+            adapter="irage",
+            kind="chain",
             filter_session=False,
         ),
     )

@@ -1980,6 +1980,100 @@ def test_vendor_market_data_pipeline_onboards_option_chain_file(tmp_path):
     assert bool(pd.read_csv(out_dir / "04_data_readiness" / "data_readiness_summary.csv").loc[0, "ready"])
 
 
+def test_vendor_market_data_pipeline_gates_nonmonotonic_option_chain_rows(tmp_path):
+    timestamps = [
+        "2026-06-10 09:15:01",
+        "2026-06-10 09:15:00",
+        "2026-06-10 09:15:00",
+        "2026-06-10 09:15:01",
+        "2026-06-10 09:15:02",
+    ]
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": timestamp,
+                "expiry_date": "2026-06-25",
+                "strike_price": 22500 + offset * 50,
+                "ce_bid": 100.0 + offset * 0.5,
+                "ce_ask": 100.5 + offset * 0.5,
+                "ce_bid_qty": 75,
+                "ce_ask_qty": 150,
+                "pe_bid": 90.0 + offset * 0.5,
+                "pe_ask": 90.5 + offset * 0.5,
+                "pe_bid_qty": 75,
+                "pe_ask_qty": 150,
+            }
+            for offset, timestamp in enumerate(timestamps)
+        ]
+    )
+    raw_path = tmp_path / "irage_chain_nonmonotonic.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_chain_pipeline"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="irage",
+            kind="chain",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+        ),
+    )
+    mapped_summary = blocked.mapped_data.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert blocked.mapped_data.ready
+    assert list(blocked.mapped_data.data["ts"]) == [
+        pd.Timestamp("2026-06-10 09:15:01", tz="Asia/Kolkata").value,
+        pd.Timestamp("2026-06-10 09:15:01", tz="Asia/Kolkata").value,
+        pd.Timestamp("2026-06-10 09:15:02", tz="Asia/Kolkata").value,
+    ]
+    assert int(mapped_summary["dropped_nonmonotonic_rows"]) == 2
+    assert int(blocked.summary.loc[0, "dropped_nonmonotonic_rows"]) == 2
+    assert "mapped_data_dropped_nonmonotonic_rows" in failed
+    assert blocked_config["normalized"]["dropped_nonmonotonic_rows"] == 2
+    assert "- Nonmonotonic chain rows: 2" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_chain_pipeline"
+    allowed = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=allowed_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="irage",
+            kind="chain",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            max_nonmonotonic_rows=2,
+        ),
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert allowed.ready
+    assert int(allowed.summary.loc[0, "dropped_nonmonotonic_rows"]) == 2
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_nonmonotonic_rows"
+    ] == 2
+
+
 def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_path):
     raw = pd.DataFrame(
         [

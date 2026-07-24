@@ -1400,6 +1400,12 @@ def _next_gate_help_command(next_gate: str) -> str:
     return f"python -m hft_cli {gate} --help" if gate else ""
 
 
+def _nonmonotonic_label(row: pd.Series) -> str:
+    if _value_text(row.get("kind")).lower() == "chain":
+        return "Nonmonotonic chain rows"
+    return "Nonmonotonic tick packets"
+
+
 def _pipeline_runbook_markdown(
     summary_row: pd.Series,
     components: pd.DataFrame,
@@ -1421,7 +1427,7 @@ def _pipeline_runbook_markdown(
         f"- Non-integral integer-field rows: {int(_number_from_value(summary_row.get('dropped_nonintegral_rows', 0)))}",
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
         f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
-        f"- Nonmonotonic tick packets: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
+        f"- {_nonmonotonic_label(summary_row)}: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
         f"- Nonpositive depth rows: {int(_number_from_value(summary_row.get('dropped_negative_depth_rows', 0)))}",
         f"- Invalid trade rows: {int(_number_from_value(summary_row.get('dropped_invalid_trade_rows', 0)))}",
         f"- Price-grid validation: {'yes' if _truthy(summary_row.get('price_grid_validation_enabled', False)) else 'no'}",
@@ -1498,7 +1504,7 @@ def _batch_runbook_markdown(
         f"- Non-integral integer-field rows: {int(_number_from_value(summary_row.get('dropped_nonintegral_rows', 0)))}",
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
         f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
-        f"- Nonmonotonic tick packets: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
+        f"- {_nonmonotonic_label(summary_row)}: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
         f"- Nonpositive depth rows: {int(_number_from_value(summary_row.get('dropped_negative_depth_rows', 0)))}",
         f"- Invalid trade rows: {int(_number_from_value(summary_row.get('dropped_invalid_trade_rows', 0)))}",
         f"- Price-grid validation: {'yes' if _truthy(summary_row.get('price_grid_validation_enabled', False)) else 'no'}",

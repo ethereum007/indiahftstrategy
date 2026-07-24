@@ -2060,15 +2060,18 @@ def _mapped_quarantine_checks(
         ),
     ]
     kind = _vendor_data_kind(_text(row, "kind"))
+    if kind in {"ticks", "chain"}:
+        checks.append(
+            _threshold_check(
+                "mapped_data_dropped_nonmonotonic_rows",
+                _number(row, "dropped_nonmonotonic_rows"),
+                "<=",
+                thresholds.max_nonmonotonic_rows,
+            )
+        )
     if kind == "ticks":
         checks.extend(
             [
-                _threshold_check(
-                    "mapped_data_dropped_nonmonotonic_rows",
-                    _number(row, "dropped_nonmonotonic_rows"),
-                    "<=",
-                    thresholds.max_nonmonotonic_rows,
-                ),
                 _threshold_check(
                     "mapped_data_dropped_duplicate_tick_rows",
                     _number(row, "dropped_duplicate_rows"),

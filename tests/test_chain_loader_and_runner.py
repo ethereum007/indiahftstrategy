@@ -150,6 +150,29 @@ def test_option_chain_normalizer_quarantines_int64_overflow_before_casts():
     assert normalized.quarantine.dropped_nonintegral_rows == 0
 
 
+def test_option_chain_normalizer_quarantines_every_row_below_the_high_water_mark():
+    base = chain_rows().iloc[0].to_dict()
+    rows = []
+    for offset, timestamp in enumerate([100, 50, 75, 100, 125]):
+        rows.append(
+            {
+                **base,
+                "time": timestamp,
+                "k": 1000.0 + offset * 10.0,
+            }
+        )
+
+    normalized = normalize_option_chain(
+        pd.DataFrame(rows),
+        column_map=chain_map(),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert list(normalized.data["ts"]) == [100, 100, 125]
+    assert normalized.quarantine.dropped_nonmonotonic_rows == 2
+
+
 def test_parity_box_runner_writes_outputs(tmp_path):
     chain = pd.DataFrame(
         [

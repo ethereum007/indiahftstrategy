@@ -1081,6 +1081,12 @@ def _action_value(value: object) -> str:
     return str(value)
 
 
+def _nonmonotonic_label(row: pd.Series) -> str:
+    if str(row.get("kind", "")).strip().lower() == "chain":
+        return "Nonmonotonic chain rows"
+    return "Nonmonotonic tick packets"
+
+
 def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd.DataFrame) -> str:
     lines = [
         "# Broker Vendor Data Readiness Runbook",
@@ -1106,7 +1112,7 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Non-integral integer-field rows: {_int(row.get('dropped_nonintegral_rows', 0))}",
         f"- Duplicate tick packets: {_int(row.get('dropped_duplicate_rows', 0))}",
         f"- Integer-overflow rows: {_int(row.get('dropped_integer_overflow_rows', 0))}",
-        f"- Nonmonotonic tick packets: {_int(row.get('dropped_nonmonotonic_rows', 0))}",
+        f"- {_nonmonotonic_label(row)}: {_int(row.get('dropped_nonmonotonic_rows', 0))}",
         f"- Nonpositive depth rows: {_int(row.get('dropped_negative_depth_rows', 0))}",
         f"- Invalid trade rows: {_int(row.get('dropped_invalid_trade_rows', 0))}",
         f"- Price-grid validation: {'yes' if _bool(row.get('price_grid_validation_enabled', False)) else 'no'}",

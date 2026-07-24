@@ -7038,6 +7038,18 @@ regressions pass (`143` tests). Repository collection is healthy at
 `2598 tests`. The full suite was not rerun because recent complete runs exceed
 40 minutes. All outputs remain non-authorizing.
 
+Latest option-chain timestamp high-water gate: chain normalization now matches
+tick replay integrity by quarantining every row below the greatest earlier
+valid timestamp before sorting. Equal-timestamp rows remain valid, preserving
+multi-strike snapshots. The retained `dropped_nonmonotonic_rows` evidence now
+fails the existing zero-default `--max-nonmonotonic-rows` readiness gate for
+both ticks and chains and is carried through mapped, Arrow.money/iRage vendor,
+batch, and broker-vendor reports. Normalization, mapped-data, readiness,
+vendor, broker-vendor, snapshot-coverage, calendar, contract-authority,
+parity, and surface regressions pass (`139` tests). Repository collection is
+healthy at `2602 tests`. The full suite was not rerun because recent complete
+runs exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

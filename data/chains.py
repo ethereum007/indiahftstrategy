@@ -51,6 +51,7 @@ class ChainQuarantineReport:
     dropped_integer_overflow_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
+    dropped_nonmonotonic_rows: int = 0
     dropped_negative_depth_rows: int = 0
     dropped_non_trading_day_rows: int = 0
     dropped_calendar_closed_rows: int = 0
@@ -152,6 +153,10 @@ def normalize_option_chain(
     negative_depth_count = int((~depth_mask).sum())
     out = out.loc[depth_mask].copy()
 
+    monotonic_mask = out["ts"].eq(out["ts"].cummax())
+    nonmonotonic_count = int((~monotonic_mask).sum())
+    out = out.loc[monotonic_mask].copy()
+
     non_trading_day_count = 0
     calendar_closed_count = 0
     calendar_out_of_range_count = 0
@@ -201,6 +206,7 @@ def normalize_option_chain(
         dropped_integer_overflow_rows=integer_overflow_count,
         dropped_nonpositive_quote_rows=nonpositive_quote_count,
         dropped_crossed_quote_rows=crossed_count,
+        dropped_nonmonotonic_rows=nonmonotonic_count,
         dropped_negative_depth_rows=negative_depth_count,
         dropped_non_trading_day_rows=non_trading_day_count,
         dropped_calendar_closed_rows=calendar_closed_count,

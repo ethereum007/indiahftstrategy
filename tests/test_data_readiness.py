@@ -509,6 +509,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
     mapped.loc[0, "dropped_nonintegral_rows"] = 1
     mapped.loc[0, "dropped_duplicate_rows"] = 1
     mapped.loc[0, "dropped_integer_overflow_rows"] = 1
+    mapped.loc[0, "dropped_nonmonotonic_rows"] = 1
     mapped.loc[0, "dropped_negative_depth_rows"] = 1
     mapped.loc[0, "dropped_invalid_trade_rows"] = 1
     mapped.loc[0, "dropped_non_trading_day_rows"] = 1
@@ -527,12 +528,49 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
         "mapped_data_dropped_nonintegral_rows",
         "mapped_data_dropped_duplicate_tick_rows",
         "mapped_data_dropped_integer_overflow_rows",
+        "mapped_data_dropped_nonmonotonic_rows",
         "mapped_data_dropped_negative_depth_rows",
         "mapped_data_dropped_invalid_trade_rows",
         "mapped_data_dropped_non_trading_day_rows",
         "mapped_data_dropped_out_of_session_rows",
     } <= failed
     assert report.summary.loc[0, "next_gate"] == "normalize-mapped-data"
+
+
+def test_data_readiness_gates_nonmonotonic_chain_quarantine():
+    mapped = mapped_data_summary()
+    mapped.loc[0, "kind"] = "chain"
+    mapped.loc[0, "dropped_nonmonotonic_rows"] = 2
+
+    blocked = evaluate_data_readiness(
+        mapped_data_summary=mapped,
+        chain_diagnostic_summary=chain_summary(),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            require_mapped_data=True,
+        ),
+    )
+    allowed = evaluate_data_readiness(
+        mapped_data_summary=mapped,
+        chain_diagnostic_summary=chain_summary(),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            require_mapped_data=True,
+            max_nonmonotonic_rows=2,
+        ),
+    )
+
+    failed = set(
+        blocked.checks.loc[
+            ~blocked.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not blocked.ready
+    assert "mapped_data_dropped_nonmonotonic_rows" in failed
+    assert allowed.ready
 
 
 def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
