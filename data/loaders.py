@@ -30,6 +30,7 @@ class QuarantineReport:
     total_rows: int
     kept_rows: int
     dropped_null_rows: int = 0
+    dropped_nonfinite_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -94,14 +95,28 @@ def normalize_ticks(
     source = _apply_column_map(df, column_map)
     _require_columns(source, REQUIRED_COLUMNS)
     out = source.copy()
-    out["ts"] = _to_ns(out["ts"], unit=timestamp_unit, timestamp_tz=timestamp_tz)
     for col in ("last", "last_qty"):
         if col not in out.columns:
             out[col] = np.nan
 
     total_rows = len(out)
+    optional_columns = ["last", "last_qty"]
+    optional_values_present = out[optional_columns].notna()
+    out["ts"] = _to_ns(out["ts"], unit=timestamp_unit, timestamp_tz=timestamp_tz)
+    numeric_columns = [col for col in ENGINE_COLUMNS if col != "ts"]
+    out[numeric_columns] = out[numeric_columns].apply(pd.to_numeric, errors="coerce")
+    optional_parse_failed = optional_values_present & out[optional_columns].isna()
     null_mask = out[REQUIRED_COLUMNS].isna().any(axis=1)
     out = out.loc[~null_mask].copy()
+    finite_mask = _finite_numeric_mask(
+        out,
+        ENGINE_COLUMNS,
+        nullable_columns=optional_columns,
+    )
+    finite_mask &= ~optional_parse_failed.loc[out.index].any(axis=1)
+    nonfinite_count = int((~finite_mask).sum())
+    out = out.loc[finite_mask].copy()
+    out["ts"] = out["ts"].astype("int64")
     quote_positive_mask = (out["bid"] > 0) & (out["ask"] > 0)
     nonpositive_count = int((~quote_positive_mask).sum())
     out = out.loc[quote_positive_mask].copy()
@@ -158,6 +173,7 @@ def normalize_ticks(
         total_rows=total_rows,
         kept_rows=len(out),
         dropped_null_rows=int(null_mask.sum()),
+        dropped_nonfinite_rows=nonfinite_count,
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,
@@ -195,11 +211,11 @@ def _to_ns(
     timestamp_tz: str | None,
 ) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(values):
-        dt = pd.to_datetime(values)
+        dt = pd.to_datetime(values, errors="coerce")
     elif unit == "datetime":
-        dt = pd.to_datetime(values)
+        dt = pd.to_datetime(values, errors="coerce")
     else:
-        return values.astype("int64") * _unit_multiplier(unit)
+        return pd.to_numeric(values, errors="coerce") * _unit_multiplier(unit)
 
     if dt.dt.tz is None:
         if timestamp_tz:
@@ -208,7 +224,29 @@ def _to_ns(
             dt = dt.dt.tz_localize(IST)
     else:
         dt = dt.dt.tz_convert(IST)
-    return dt.dt.as_unit("ns").astype("int64")
+    ns = dt.dt.as_unit("ns").astype("int64")
+    return ns.mask(dt.isna()).astype("Int64")
+
+
+def _finite_numeric_mask(
+    frame: pd.DataFrame,
+    columns: list[str],
+    *,
+    nullable_columns: list[str] | tuple[str, ...] = (),
+) -> pd.Series:
+    nullable = set(nullable_columns)
+    mask = pd.Series(True, index=frame.index, dtype=bool)
+    for column in columns:
+        values = pd.to_numeric(frame[column], errors="coerce")
+        finite = pd.Series(
+            np.isfinite(values.astype("float64").to_numpy()),
+            index=frame.index,
+            dtype=bool,
+        )
+        if column in nullable:
+            finite |= values.isna()
+        mask &= finite
+    return mask
 
 
 def _unit_multiplier(unit: str) -> int:

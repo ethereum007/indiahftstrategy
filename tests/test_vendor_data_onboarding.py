@@ -486,6 +486,86 @@ def test_vendor_market_data_pipeline_gates_null_required_rows(tmp_path):
     ] == 1
 
 
+def test_vendor_market_data_pipeline_gates_nonfinite_numeric_rows(tmp_path):
+    raw = vendor_ticks("2026-06-12")
+    raw.loc[1, "best_bid"] = float("inf")
+    raw_path = tmp_path / "nonfinite_quote_ticks.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_nonfinite_pipeline"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+        ),
+    )
+
+    mapped_summary = blocked.mapped_data.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert blocked.mapped_data.ready
+    assert int(mapped_summary["dropped_nonfinite_rows"]) == 1
+    assert int(blocked.summary.loc[0, "dropped_nonfinite_rows"]) == 1
+    assert "mapped_data_dropped_nonfinite_rows" in failed
+    assert blocked_config["normalized"]["dropped_nonfinite_rows"] == 1
+    assert "- Non-finite numeric rows: 1" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_nonfinite_pipeline"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--max-nonfinite-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    allowed_summary = pd.read_csv(
+        allowed_dir / "vendor_market_data_pipeline_summary.csv"
+    ).iloc[0]
+
+    assert code == 0
+    assert bool(allowed_summary["ready"])
+    assert int(allowed_summary["dropped_nonfinite_rows"]) == 1
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_nonfinite_rows"
+    ] == 1
+
+
 def test_vendor_market_data_pipeline_uses_exact_approved_mapping_review(tmp_path):
     review_dir, raw_path = approved_mapping_review(tmp_path)
     out_dir = tmp_path / "reviewed_pipeline"
@@ -859,6 +939,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert summary["comparison_accepted"]
     assert summary["market"] == "india_nse_index_derivatives"
     assert int(summary["dropped_null_rows"]) == 0
+    assert int(summary["dropped_nonfinite_rows"]) == 0
     assert summary["blocked_action_count"] == 0
     assert summary["next_gate"] == ""
     assert report.action_queue is not None
@@ -869,8 +950,10 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert "- Ready: yes" in runbook
     assert "- Market: india_nse_index_derivatives" in runbook
     assert "- Null required-field rows: 0" in runbook
+    assert "- Non-finite numeric rows: 0" in runbook
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
     assert (report.datasets["dropped_null_rows"].astype(int) == 0).all()
+    assert (report.datasets["dropped_nonfinite_rows"].astype(int) == 0).all()
     assert report.datasets["source_file_sha256"].nunique() == 2
     assert report.datasets["source_header_sha256"].nunique() == 1
     assert "dataset_manifests" in manifest["inputs"]
@@ -888,6 +971,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["blocked_actions"] == []
     assert config["dataset_count"] == 2
     assert config["dropped_null_rows"] == 0
+    assert config["dropped_nonfinite_rows"] == 0
     assert config["unique_source_files"] == 2
     assert config["source_file_fingerprint_coverage"] == 1.0
     assert config["min_mapping_coverage"] == 1.0
@@ -899,6 +983,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["comparison"]["thresholds"]["min_mapping_coverage"] == 1.0
     assert len(config["datasets"]) == 2
     assert config["datasets"][0]["dropped_null_rows"] == 0
+    assert config["datasets"][0]["dropped_nonfinite_rows"] == 0
     assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
@@ -928,6 +1013,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
             "0.05",
             "--max-null-rows",
             "2",
+            "--max-nonfinite-rows",
+            "3",
             "--min-datasets",
             "2",
             "--fail-on-blocked-actions",
@@ -943,6 +1030,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
         ).read_text(encoding="utf-8")
     )
     assert cli_config["data_readiness_thresholds"]["max_null_rows"] == 2
+    assert cli_config["data_readiness_thresholds"]["max_nonfinite_rows"] == 3
 
 
 def test_vendor_market_data_batch_uses_distinct_target_applications(tmp_path):

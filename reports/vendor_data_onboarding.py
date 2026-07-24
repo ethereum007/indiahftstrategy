@@ -63,6 +63,7 @@ class VendorMarketDataPipelineConfig:
     min_chain_snapshots_per_expiry: int = 1
     min_chain_snapshot_strikes: int = 1
     max_null_rows: int = 0
+    max_nonfinite_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -484,6 +485,9 @@ def write_vendor_market_data_batch_pipeline(
                 "dropped_null_rows": int(
                     _number(row, "dropped_null_rows", fallback=0.0)
                 ),
+                "dropped_nonfinite_rows": int(
+                    _number(row, "dropped_nonfinite_rows", fallback=0.0)
+                ),
                 "dropped_calendar_closed_rows": int(
                     _number(row, "dropped_calendar_closed_rows", fallback=0.0)
                 ),
@@ -725,6 +729,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         ),
         min_chain_snapshot_strikes=config.min_chain_snapshot_strikes,
         max_null_rows=config.max_null_rows,
+        max_nonfinite_rows=config.max_nonfinite_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
@@ -905,6 +910,13 @@ def _summary(
                     _number(
                         mapped_row,
                         "dropped_null_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "dropped_nonfinite_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_nonfinite_rows",
                         fallback=0.0,
                     )
                 ),
@@ -1312,6 +1324,7 @@ def _pipeline_runbook_markdown(
         f"- Calendar coverage: {_value_text(summary_row.get('market_calendar_valid_from')) or 'n/a'} to {_value_text(summary_row.get('market_calendar_valid_to')) or 'n/a'}",
         f"- Calendar SHA-256: {_value_text(summary_row.get('market_calendar_sha256'))}",
         f"- Null required-field rows: {int(_number_from_value(summary_row.get('dropped_null_rows', 0)))}",
+        f"- Non-finite numeric rows: {int(_number_from_value(summary_row.get('dropped_nonfinite_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Contract horizon timezone: {_value_text(summary_row.get('contract_horizon_market_timezone')) or 'n/a'}",
@@ -1379,6 +1392,7 @@ def _batch_runbook_markdown(
         f"- Mapping applications: {int(_number_from_value(summary_row.get('mapping_application_count', 0)))}",
         f"- Target-application coverage: {_number_from_value(summary_row.get('target_application_coverage', 0.0)):.3f}",
         f"- Null required-field rows: {int(_number_from_value(summary_row.get('dropped_null_rows', 0)))}",
+        f"- Non-finite numeric rows: {int(_number_from_value(summary_row.get('dropped_nonfinite_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -1516,6 +1530,15 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "dropped_nonfinite_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "dropped_nonfinite_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "dropped_calendar_closed_rows": int(
                     pd.to_numeric(
                         datasets.get("dropped_calendar_closed_rows", pd.Series(dtype=float)),
@@ -1633,6 +1656,9 @@ def _pipeline_config(
             "dropped_null_rows": int(
                 _number(row, "dropped_null_rows", fallback=0.0)
             ),
+            "dropped_nonfinite_rows": int(
+                _number(row, "dropped_nonfinite_rows", fallback=0.0)
+            ),
             "dropped_non_trading_day_rows": int(
                 _number(row, "dropped_non_trading_day_rows", fallback=0.0)
             ),
@@ -1702,6 +1728,9 @@ def _batch_config(
             "dropped_null_rows": int(
                 _number_from_value(item.get("dropped_null_rows", 0))
             ),
+            "dropped_nonfinite_rows": int(
+                _number_from_value(item.get("dropped_nonfinite_rows", 0))
+            ),
             "dropped_calendar_closed_rows": int(
                 _number_from_value(item.get("dropped_calendar_closed_rows", 0))
             ),
@@ -1756,6 +1785,9 @@ def _batch_config(
         "failed_datasets": int(_number(row, "failed_datasets", fallback=0.0)),
         "dropped_null_rows": int(
             _number(row, "dropped_null_rows", fallback=0.0)
+        ),
+        "dropped_nonfinite_rows": int(
+            _number(row, "dropped_nonfinite_rows", fallback=0.0)
         ),
         "dropped_calendar_closed_rows": int(
             _number(row, "dropped_calendar_closed_rows", fallback=0.0)
@@ -2011,6 +2043,7 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
             )
     for name in (
         "max_null_rows",
+        "max_nonfinite_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
         "max_nonpositive_depth_rows",

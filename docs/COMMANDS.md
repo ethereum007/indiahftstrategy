@@ -8867,6 +8867,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --tick-size 0.05 `
   --min-rows 100000 `
   --max-null-rows 0 `
+  --max-nonfinite-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8893,6 +8894,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --lot-size 65 `
   --tick-size 0.05 `
   --max-null-rows 0 `
+  --max-nonfinite-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -8941,6 +8943,12 @@ broker-vendor, and direct readiness commands accept `--max-null-rows`, which
 defaults to `0`. The check uses the pre-normalization quarantine evidence, so
 a bad row cannot disappear before diagnostics and leave the file apparently
 ready. Any nonzero budget is retained as an explicit reviewed exception.
+Required numeric fields are also checked for positive or negative infinity
+before quantity/timestamp casts and before diagnostics. Optional trade price
+and quantity fields may remain null, but a supplied non-finite value is
+quarantined. The same commands accept `--max-nonfinite-rows`, which defaults
+to `0`; `dropped_nonfinite_rows` is retained in mapped-data, pipeline, batch,
+broker-vendor, and runbook evidence.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9434,6 +9442,7 @@ python -m hft_cli review-data-readiness `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
   --max-null-rows 0 `
+  --max-nonfinite-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

@@ -9,6 +9,7 @@ import pandas as pd
 
 from data.loaders import (
     _apply_column_map,
+    _finite_numeric_mask,
     _to_ns,
     calendar_closed_mask,
     calendar_out_of_range_mask,
@@ -42,6 +43,7 @@ class ChainQuarantineReport:
     total_rows: int
     kept_rows: int
     dropped_null_rows: int = 0
+    dropped_nonfinite_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_negative_depth_rows: int = 0
@@ -100,12 +102,20 @@ def normalize_option_chain(
     source = _apply_column_map(df, column_map)
     _require_columns(source, REQUIRED_CHAIN_COLUMNS)
     out = source.copy()
-    out["ts"] = _to_ns(out["ts"], unit=timestamp_unit, timestamp_tz=timestamp_tz)
-    out["strike"] = out["strike"].astype("float64")
-
     total_rows = len(out)
+    out["ts"] = _to_ns(out["ts"], unit=timestamp_unit, timestamp_tz=timestamp_tz)
+    numeric_columns = [
+        column for column in REQUIRED_CHAIN_COLUMNS if column not in {"ts", "expiry"}
+    ]
+    out[numeric_columns] = out[numeric_columns].apply(pd.to_numeric, errors="coerce")
+
     null_mask = out[REQUIRED_CHAIN_COLUMNS].isna().any(axis=1)
     out = out.loc[~null_mask].copy()
+    finite_mask = _finite_numeric_mask(out, ["ts", *numeric_columns])
+    nonfinite_count = int((~finite_mask).sum())
+    out = out.loc[finite_mask].copy()
+    out["ts"] = out["ts"].astype("int64")
+    out["strike"] = out["strike"].astype("float64")
 
     positive_quote_mask = (
         (out["call_bid"] > 0)
@@ -169,6 +179,7 @@ def normalize_option_chain(
         total_rows=total_rows,
         kept_rows=len(out),
         dropped_null_rows=int(null_mask.sum()),
+        dropped_nonfinite_rows=nonfinite_count,
         dropped_nonpositive_quote_rows=nonpositive_quote_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_negative_depth_rows=negative_depth_count,

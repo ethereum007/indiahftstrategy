@@ -80,6 +80,38 @@ def test_normalize_ticks_accepts_datetime_strings_and_units():
     assert list(normalized_seconds.data["ts"]) == [1_000_000_000, 2_000_000_000]
 
 
+def test_normalize_ticks_quarantines_nonfinite_numeric_values_before_casts():
+    timestamp = ns_ist("2026-06-10 09:15:00")
+    rows = [
+        {
+            "ts": timestamp,
+            "bid": 100.0,
+            "ask": 100.05,
+            "bid_qty": 75,
+            "ask_qty": 150,
+            "last": 100.05,
+            "last_qty": 75,
+        }
+    ]
+    for column, value in (
+        ("ts", np.inf),
+        ("bid", -np.inf),
+        ("bid_qty", np.inf),
+        ("last", -np.inf),
+        ("last_qty", np.inf),
+    ):
+        row = rows[0].copy()
+        row[column] = value
+        rows.append(row)
+
+    normalized = normalize_ticks(pd.DataFrame(rows), filter_session=False)
+
+    assert len(normalized.data) == 1
+    assert normalized.quarantine.dropped_nonfinite_rows == 5
+    assert normalized.quarantine.dropped_null_rows == 0
+    assert normalized.quarantine.dropped_nonpositive_quote_rows == 0
+
+
 def test_session_mask_and_regime_boundaries():
     timestamps = pd.Series(
         [

@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from data.chains import normalize_option_chain
@@ -78,6 +79,30 @@ def test_option_chain_normalizer_separates_weekend_and_intraday_quarantine():
     assert len(normalized.data) == 1
     assert normalized.quarantine.dropped_non_trading_day_rows == 1
     assert normalized.quarantine.dropped_out_of_session_rows == 1
+
+
+def test_option_chain_normalizer_quarantines_nonfinite_numeric_values():
+    valid = chain_rows().iloc[[0]].copy()
+    nonfinite_strike = valid.copy()
+    nonfinite_strike["k"] = np.inf
+    nonfinite_depth = valid.copy()
+    nonfinite_depth["cbq"] = -np.inf
+    nonfinite_timestamp = valid.copy()
+    nonfinite_timestamp["time"] = np.inf
+
+    normalized = normalize_option_chain(
+        pd.concat(
+            [valid, nonfinite_strike, nonfinite_depth, nonfinite_timestamp],
+            ignore_index=True,
+        ),
+        column_map=chain_map(),
+        filter_session=False,
+    )
+
+    assert len(normalized.data) == 1
+    assert normalized.quarantine.dropped_nonfinite_rows == 3
+    assert normalized.quarantine.dropped_null_rows == 0
+    assert normalized.quarantine.dropped_negative_depth_rows == 0
 
 
 def test_parity_box_runner_writes_outputs(tmp_path):

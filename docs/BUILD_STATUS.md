@@ -6935,6 +6935,19 @@ regressions pass (`104` tests). Repository collection is healthy at `2569 tests`
 The full suite was not rerun because recent complete runs exceed 40
 minutes. All outputs remain non-authorizing.
 
+Latest non-finite numeric quarantine gate: tick and option-chain normalization
+now reject positive/negative infinity before quote logic, session filtering,
+and integer casts, including numeric timestamps, depths, and supplied optional
+trade fields. The reason is retained as `dropped_nonfinite_rows`, and readiness
+fails closed at the zero-default `--max-nonfinite-rows` budget. The threshold
+propagates through direct review, Arrow.money/iRage single-day and batch
+onboarding, broker-vendor proof, provider wrappers, configs, summaries, and
+runbooks. Nonzero budgets remain explicit retained exceptions; no row is
+silently repaired. Normalization, mapped-data, readiness, vendor,
+broker-vendor, and provider regressions pass (`80` tests). Repository
+collection is healthy at `2573 tests`. The full suite was not rerun because
+recent complete runs exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

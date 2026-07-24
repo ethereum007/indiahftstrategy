@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from adapters.broker import get_adapter
@@ -35,6 +36,7 @@ QUARANTINE_SUMMARY_FIELDS = (
     "quarantine_kept_rows",
     "quarantined_rows",
     "dropped_null_rows",
+    "dropped_nonfinite_rows",
     "dropped_nonpositive_quote_rows",
     "dropped_crossed_quote_rows",
     "dropped_nonmonotonic_rows",
@@ -766,7 +768,16 @@ def _apply_transform(values: pd.Series, transform: str) -> pd.Series:
     if key == "lowercase":
         return values.astype("string").str.lower()
     if key == "int":
-        return pd.to_numeric(values, errors="coerce").astype("Int64")
+        numeric = pd.to_numeric(values, errors="coerce")
+        finite = pd.Series(
+            np.isfinite(numeric.astype("float64").to_numpy()),
+            index=numeric.index,
+            dtype=bool,
+        )
+        numeric.loc[numeric.notna() & finite].astype("Int64")
+        if bool((numeric.notna() & ~finite).any()):
+            return numeric
+        return numeric.astype("Int64")
     if key == "float":
         return pd.to_numeric(values, errors="coerce")
     if key == "side_text":
