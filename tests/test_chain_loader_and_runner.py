@@ -105,6 +105,28 @@ def test_option_chain_normalizer_quarantines_nonfinite_numeric_values():
     assert normalized.quarantine.dropped_negative_depth_rows == 0
 
 
+def test_option_chain_normalizer_quarantines_nonintegral_depth_and_timestamp():
+    valid = chain_rows().iloc[[0]].copy()
+    valid["k"] = 1000.5
+    fractional_depth = valid.copy()
+    fractional_depth["cbq"] = 300.5
+    fractional_timestamp = valid.copy()
+    fractional_timestamp["time"] = 1.5
+
+    normalized = normalize_option_chain(
+        pd.concat([valid, fractional_depth, fractional_timestamp], ignore_index=True),
+        column_map=chain_map(),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert len(normalized.data) == 1
+    assert normalized.data.loc[0, "strike"] == 1000.5
+    assert normalized.quarantine.dropped_nonintegral_rows == 2
+    assert normalized.quarantine.dropped_nonfinite_rows == 0
+    assert normalized.quarantine.dropped_negative_depth_rows == 0
+
+
 def test_parity_box_runner_writes_outputs(tmp_path):
     chain = pd.DataFrame(
         [

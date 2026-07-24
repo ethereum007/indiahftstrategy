@@ -81,6 +81,7 @@ class DataReadinessThresholds:
     min_chain_snapshot_strikes: int = 1
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
+    max_nonintegral_rows: int = 0
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
@@ -1940,6 +1941,7 @@ def _mapped_quarantine_checks(
     quarantine_fields = {
         "dropped_null_rows",
         "dropped_nonfinite_rows",
+        "dropped_nonintegral_rows",
         "dropped_crossed_quote_rows",
         "dropped_nonpositive_quote_rows",
         "dropped_nonmonotonic_rows",
@@ -1962,6 +1964,12 @@ def _mapped_quarantine_checks(
             _number(row, "dropped_nonfinite_rows"),
             "<=",
             thresholds.max_nonfinite_rows,
+        ),
+        _threshold_check(
+            "mapped_data_dropped_nonintegral_rows",
+            _number(row, "dropped_nonintegral_rows"),
+            "<=",
+            thresholds.max_nonintegral_rows,
         ),
         _threshold_check(
             "mapped_data_dropped_crossed_quote_rows",
@@ -3098,6 +3106,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "min_chain_snapshot_strikes",
         "max_null_rows",
         "max_nonfinite_rows",
+        "max_nonintegral_rows",
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",

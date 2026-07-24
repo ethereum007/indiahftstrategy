@@ -10,6 +10,7 @@ import pandas as pd
 from data.loaders import (
     _apply_column_map,
     _finite_numeric_mask,
+    _integral_numeric_mask,
     _to_ns,
     calendar_closed_mask,
     calendar_out_of_range_mask,
@@ -44,6 +45,7 @@ class ChainQuarantineReport:
     kept_rows: int
     dropped_null_rows: int = 0
     dropped_nonfinite_rows: int = 0
+    dropped_nonintegral_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_negative_depth_rows: int = 0
@@ -107,6 +109,7 @@ def normalize_option_chain(
     numeric_columns = [
         column for column in REQUIRED_CHAIN_COLUMNS if column not in {"ts", "expiry"}
     ]
+    depth_cols = ["call_bid_qty", "call_ask_qty", "put_bid_qty", "put_ask_qty"]
     out[numeric_columns] = out[numeric_columns].apply(pd.to_numeric, errors="coerce")
 
     null_mask = out[REQUIRED_CHAIN_COLUMNS].isna().any(axis=1)
@@ -114,6 +117,9 @@ def normalize_option_chain(
     finite_mask = _finite_numeric_mask(out, ["ts", *numeric_columns])
     nonfinite_count = int((~finite_mask).sum())
     out = out.loc[finite_mask].copy()
+    integral_mask = _integral_numeric_mask(out, ["ts", *depth_cols])
+    nonintegral_count = int((~integral_mask).sum())
+    out = out.loc[integral_mask].copy()
     out["ts"] = out["ts"].astype("int64")
     out["strike"] = out["strike"].astype("float64")
 
@@ -130,7 +136,6 @@ def normalize_option_chain(
     crossed_count = int((~crossed_mask).sum())
     out = out.loc[crossed_mask].copy()
 
-    depth_cols = ["call_bid_qty", "call_ask_qty", "put_bid_qty", "put_ask_qty"]
     depth_mask = (out[depth_cols] > 0).all(axis=1)
     negative_depth_count = int((~depth_mask).sum())
     out = out.loc[depth_mask].copy()
@@ -180,6 +185,7 @@ def normalize_option_chain(
         kept_rows=len(out),
         dropped_null_rows=int(null_mask.sum()),
         dropped_nonfinite_rows=nonfinite_count,
+        dropped_nonintegral_rows=nonintegral_count,
         dropped_nonpositive_quote_rows=nonpositive_quote_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_negative_depth_rows=negative_depth_count,

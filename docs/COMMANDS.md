@@ -8868,6 +8868,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --min-rows 100000 `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
+  --max-nonintegral-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8895,6 +8896,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --tick-size 0.05 `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
+  --max-nonintegral-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -8949,6 +8951,12 @@ and quantity fields may remain null, but a supplied non-finite value is
 quarantined. The same commands accept `--max-nonfinite-rows`, which defaults
 to `0`; `dropped_nonfinite_rows` is retained in mapped-data, pipeline, batch,
 broker-vendor, and runbook evidence.
+Integer-semantic fields are validated before casting as well. Tick timestamps,
+bid/ask depth, supplied last quantity, option-chain timestamps, and all four
+chain depth columns must resolve to whole numbers; fractional seconds remain
+valid when their conversion produces integral nanoseconds. Violations are
+retained as `dropped_nonintegral_rows` and fail the zero-default
+`--max-nonintegral-rows` gate instead of being silently truncated.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9443,6 +9451,7 @@ python -m hft_cli review-data-readiness `
   --max-chain-median-spread-ticks 20 `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
+  --max-nonintegral-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

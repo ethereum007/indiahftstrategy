@@ -31,6 +31,7 @@ class QuarantineReport:
     kept_rows: int
     dropped_null_rows: int = 0
     dropped_nonfinite_rows: int = 0
+    dropped_nonintegral_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -116,6 +117,13 @@ def normalize_ticks(
     finite_mask &= ~optional_parse_failed.loc[out.index].any(axis=1)
     nonfinite_count = int((~finite_mask).sum())
     out = out.loc[finite_mask].copy()
+    integral_mask = _integral_numeric_mask(
+        out,
+        ["ts", "bid_qty", "ask_qty", "last_qty"],
+        nullable_columns=["last_qty"],
+    )
+    nonintegral_count = int((~integral_mask).sum())
+    out = out.loc[integral_mask].copy()
     out["ts"] = out["ts"].astype("int64")
     quote_positive_mask = (out["bid"] > 0) & (out["ask"] > 0)
     nonpositive_count = int((~quote_positive_mask).sum())
@@ -174,6 +182,7 @@ def normalize_ticks(
         kept_rows=len(out),
         dropped_null_rows=int(null_mask.sum()),
         dropped_nonfinite_rows=nonfinite_count,
+        dropped_nonintegral_rows=nonintegral_count,
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,
@@ -246,6 +255,23 @@ def _finite_numeric_mask(
         if column in nullable:
             finite |= values.isna()
         mask &= finite
+    return mask
+
+
+def _integral_numeric_mask(
+    frame: pd.DataFrame,
+    columns: list[str],
+    *,
+    nullable_columns: list[str] | tuple[str, ...] = (),
+) -> pd.Series:
+    nullable = set(nullable_columns)
+    mask = pd.Series(True, index=frame.index, dtype=bool)
+    for column in columns:
+        values = pd.to_numeric(frame[column], errors="coerce")
+        integral = values.mod(1).eq(0).fillna(False)
+        if column in nullable:
+            integral |= values.isna()
+        mask &= integral.astype(bool)
     return mask
 
 

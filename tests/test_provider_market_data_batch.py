@@ -115,6 +115,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "2",
             "--max-nonfinite-rows",
             "3",
+            "--max-nonintegral-rows",
+            "4",
             "--tick-size",
             "0.05",
             "--max-median-spread-ticks",
@@ -134,6 +136,7 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
     )
     assert cli_config["parameters"]["max_null_rows"] == 2
     assert cli_config["parameters"]["max_nonfinite_rows"] == 3
+    assert cli_config["parameters"]["max_nonintegral_rows"] == 4
 
 
 def test_provider_market_data_batch_blocks_reused_capture_file(tmp_path):

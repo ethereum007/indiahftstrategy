@@ -125,6 +125,38 @@ def test_normalize_mapped_tick_data_preserves_nonfinite_quarantine_provenance():
     assert int(summary["dropped_nonfinite_rows"]) == 2
 
 
+def test_normalize_mapped_tick_data_preserves_nonintegral_quarantine_provenance():
+    valid = {
+        "exchange_ts": ns_ist("2026-06-10 09:15:00"),
+        "best_bid": 100.0,
+        "best_ask": 100.05,
+        "bid_size": 75,
+        "ask_size": 150,
+        "last_px": 100.05,
+        "last_size": 75,
+    }
+    fractional_depth = valid.copy()
+    fractional_depth["bid_size"] = 75.5
+    fractional_last_size = valid.copy()
+    fractional_last_size["last_size"] = 75.5
+
+    report = normalize_mapped_data(
+        pd.DataFrame([valid, fractional_depth, fractional_last_size]),
+        tick_mapping(),
+        config=MappedDataConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            filter_session=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert int(summary["output_rows"]) == 1
+    assert int(summary["quarantined_rows"]) == 2
+    assert int(summary["dropped_nonintegral_rows"]) == 2
+
+
 def test_normalize_mapped_data_fails_closed_for_missing_required_source():
     mapping = tick_mapping()
     mapping.loc[mapping["normalized_column"] == "ask_qty", "source_column"] = "missing_ask_size"

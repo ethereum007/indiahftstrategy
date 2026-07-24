@@ -68,16 +68,20 @@ def test_normalize_ticks_accepts_datetime_strings_and_units():
 
     seconds = pd.DataFrame(
         {
-            "ts": [1, 2],
-            "bid": [100.00, 100.05],
-            "ask": [100.05, 100.10],
-            "bid_qty": [75, 75],
-            "ask_qty": [75, 75],
+            "ts": [1, 1.5, 2],
+            "bid": [100.00, 100.025, 100.05],
+            "ask": [100.05, 100.075, 100.10],
+            "bid_qty": [75, 75, 75],
+            "ask_qty": [75, 75, 75],
         }
     )
     normalized_seconds = normalize_ticks(seconds, timestamp_unit="s", filter_session=False)
 
-    assert list(normalized_seconds.data["ts"]) == [1_000_000_000, 2_000_000_000]
+    assert list(normalized_seconds.data["ts"]) == [
+        1_000_000_000,
+        1_500_000_000,
+        2_000_000_000,
+    ]
 
 
 def test_normalize_ticks_quarantines_nonfinite_numeric_values_before_casts():
@@ -109,6 +113,34 @@ def test_normalize_ticks_quarantines_nonfinite_numeric_values_before_casts():
     assert len(normalized.data) == 1
     assert normalized.quarantine.dropped_nonfinite_rows == 5
     assert normalized.quarantine.dropped_null_rows == 0
+    assert normalized.quarantine.dropped_nonpositive_quote_rows == 0
+
+
+def test_normalize_ticks_quarantines_nonintegral_integer_fields_before_casts():
+    valid = {
+        "ts": 1.0,
+        "bid": 100.0,
+        "ask": 100.05,
+        "bid_qty": 75.0,
+        "ask_qty": 150.0,
+        "last": 100.05,
+        "last_qty": 75.0,
+    }
+    rows = [valid]
+    for column in ("ts", "bid_qty", "ask_qty", "last_qty"):
+        row = valid.copy()
+        row[column] += 0.5
+        rows.append(row)
+
+    normalized = normalize_ticks(
+        pd.DataFrame(rows),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert len(normalized.data) == 1
+    assert normalized.quarantine.dropped_nonintegral_rows == 4
+    assert normalized.quarantine.dropped_nonfinite_rows == 0
     assert normalized.quarantine.dropped_nonpositive_quote_rows == 0
 
 

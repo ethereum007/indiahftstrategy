@@ -6948,6 +6948,19 @@ broker-vendor, and provider regressions pass (`80` tests). Repository
 collection is healthy at `2573 tests`. The full suite was not rerun because
 recent complete runs exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest integer-semantics quarantine gate: tick and option-chain normalization
+now rejects fractional timestamps after unit conversion, fractional market
+depth, and fractional supplied trade size before integer casting. Fractional
+seconds remain valid when they resolve to whole nanoseconds. The reason is
+retained as `dropped_nonintegral_rows`; readiness fails closed at the
+zero-default `--max-nonintegral-rows` budget across direct review,
+Arrow.money/iRage single-day and batch onboarding, broker-vendor proof, and
+provider wrappers. No finite fractional quantity can be silently truncated.
+Normalization, mapped-data, readiness, vendor, broker-vendor, and provider
+regressions pass (`84` tests). Repository collection is healthy at `2577 tests`.
+The full suite was not rerun because recent complete runs exceed 40 minutes.
+All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound
