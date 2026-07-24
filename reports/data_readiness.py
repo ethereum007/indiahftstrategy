@@ -88,6 +88,7 @@ class DataReadinessThresholds:
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
+    max_invalid_trade_rows: int = 0
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
@@ -1598,6 +1599,12 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
             thresholds.max_nonpositive_depth_rows,
         ),
         _threshold_check(
+            "tick_invalid_trade_rows",
+            _number(row, "invalid_trade_rows"),
+            "<=",
+            thresholds.max_invalid_trade_rows,
+        ),
+        _threshold_check(
             "tick_non_trading_day_rows",
             _number(row, "non_trading_day_rows", fallback=0.0),
             "<=",
@@ -1950,6 +1957,7 @@ def _mapped_quarantine_checks(
         "dropped_nonpositive_quote_rows",
         "dropped_nonmonotonic_rows",
         "dropped_negative_depth_rows",
+        "dropped_invalid_trade_rows",
         "dropped_non_trading_day_rows",
         "dropped_out_of_session_rows",
     }
@@ -2021,6 +2029,12 @@ def _mapped_quarantine_checks(
                     _number(row, "dropped_duplicate_rows"),
                     "<=",
                     thresholds.max_duplicate_tick_rows,
+                ),
+                _threshold_check(
+                    "mapped_data_dropped_invalid_trade_rows",
+                    _number(row, "dropped_invalid_trade_rows"),
+                    "<=",
+                    thresholds.max_invalid_trade_rows,
                 ),
             ]
         )
@@ -3131,6 +3145,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
         "max_nonpositive_depth_rows",
+        "max_invalid_trade_rows",
         "max_non_trading_day_rows",
         "max_out_of_session_rows",
         "max_unparseable_contract_expiry_rows",

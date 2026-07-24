@@ -32,6 +32,7 @@ def tick_summary(**overrides):
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
         "nonpositive_depth_rows": 0,
+        "invalid_trade_rows": 0,
         "out_of_session_rows": 0,
         "median_gap_ns": 1_000.0,
         "p99_gap_ns": 2_000.0,
@@ -101,6 +102,7 @@ def mapped_data_summary(ready=True):
                 "dropped_nonpositive_quote_rows": 0,
                 "dropped_nonmonotonic_rows": 0,
                 "dropped_negative_depth_rows": 0,
+                "dropped_invalid_trade_rows": 0,
                 "dropped_non_trading_day_rows": 0,
                 "dropped_out_of_session_rows": 0,
             }
@@ -372,6 +374,8 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
             "5",
             "--max-integer-overflow-rows",
             "6",
+            "--max-invalid-trade-rows",
+            "7",
             "--fail-on-breach",
         ]
     )
@@ -388,6 +392,7 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
     assert config["thresholds"]["max_nonintegral_rows"] == 4
     assert config["thresholds"]["max_duplicate_tick_rows"] == 5
     assert config["thresholds"]["max_integer_overflow_rows"] == 6
+    assert config["thresholds"]["max_invalid_trade_rows"] == 7
 
 
 def test_data_readiness_rejects_loose_market_calendar_summary(tmp_path):
@@ -425,13 +430,21 @@ def test_data_readiness_rejects_loose_market_calendar_summary(tmp_path):
 
 def test_data_readiness_fails_on_bad_tick_diagnostics():
     report = evaluate_data_readiness(
-        tick_diagnostic_summary=tick_summary(crossed_quote_rows=1, out_of_session_rows=1),
+        tick_diagnostic_summary=tick_summary(
+            crossed_quote_rows=1,
+            invalid_trade_rows=1,
+            out_of_session_rows=1,
+        ),
         thresholds=DataReadinessThresholds(),
     )
 
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
-    assert {"tick_crossed_quote_rows", "tick_out_of_session_rows"} <= failed
+    assert {
+        "tick_crossed_quote_rows",
+        "tick_invalid_trade_rows",
+        "tick_out_of_session_rows",
+    } <= failed
     assert report.action_queue is not None
     queue = report.action_queue.set_index("check")
     assert queue.loc["tick_crossed_quote_rows", "next_gate"] == "diagnose-ticks"
@@ -447,6 +460,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
     mapped.loc[0, "dropped_duplicate_rows"] = 1
     mapped.loc[0, "dropped_integer_overflow_rows"] = 1
     mapped.loc[0, "dropped_negative_depth_rows"] = 1
+    mapped.loc[0, "dropped_invalid_trade_rows"] = 1
     mapped.loc[0, "dropped_non_trading_day_rows"] = 1
     mapped.loc[0, "dropped_out_of_session_rows"] = 1
 
@@ -464,6 +478,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
         "mapped_data_dropped_duplicate_tick_rows",
         "mapped_data_dropped_integer_overflow_rows",
         "mapped_data_dropped_negative_depth_rows",
+        "mapped_data_dropped_invalid_trade_rows",
         "mapped_data_dropped_non_trading_day_rows",
         "mapped_data_dropped_out_of_session_rows",
     } <= failed

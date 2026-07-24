@@ -915,6 +915,94 @@ def test_vendor_market_data_pipeline_gates_nonpositive_tick_depth(tmp_path):
     ] == 2
 
 
+def test_vendor_market_data_pipeline_gates_invalid_trade_rows(tmp_path):
+    raw = pd.concat(
+        [
+            vendor_ticks("2026-06-12"),
+            vendor_ticks("2026-06-12").iloc[[0]],
+        ],
+        ignore_index=True,
+    )
+    raw.loc[0, "last_px"] = 0
+    raw.loc[1, "last_size"] = -1
+    raw.loc[2, "exchange_ts"] = "2026-06-12 09:15:02"
+    raw_path = tmp_path / "invalid_trade_ticks.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_invalid_trade_pipeline"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+        ),
+    )
+
+    mapped_summary = blocked.mapped_data.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert blocked.mapped_data.ready
+    assert int(mapped_summary["dropped_invalid_trade_rows"]) == 2
+    assert int(blocked.summary.loc[0, "dropped_invalid_trade_rows"]) == 2
+    assert "mapped_data_dropped_invalid_trade_rows" in failed
+    assert blocked_config["normalized"]["dropped_invalid_trade_rows"] == 2
+    assert "- Invalid trade rows: 2" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_invalid_trade_pipeline"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--max-invalid-trade-rows",
+            "2",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    allowed_summary = pd.read_csv(
+        allowed_dir / "vendor_market_data_pipeline_summary.csv"
+    ).iloc[0]
+
+    assert code == 0
+    assert bool(allowed_summary["ready"])
+    assert int(allowed_summary["dropped_invalid_trade_rows"]) == 2
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_invalid_trade_rows"
+    ] == 2
+
+
 def test_vendor_market_data_pipeline_gates_integer_overflow_rows(tmp_path):
     raw = vendor_ticks("2026-06-12")
     raw["bid_size"] = raw["bid_size"].astype("object")
@@ -1375,6 +1463,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert int(summary["dropped_integer_overflow_rows"]) == 0
     assert int(summary["dropped_nonmonotonic_rows"]) == 0
     assert int(summary["dropped_negative_depth_rows"]) == 0
+    assert int(summary["dropped_invalid_trade_rows"]) == 0
     assert summary["blocked_action_count"] == 0
     assert summary["next_gate"] == ""
     assert report.action_queue is not None
@@ -1405,6 +1494,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert (
         report.datasets["dropped_negative_depth_rows"].astype(int) == 0
     ).all()
+    assert (
+        report.datasets["dropped_invalid_trade_rows"].astype(int) == 0
+    ).all()
     assert report.datasets["source_file_sha256"].nunique() == 2
     assert report.datasets["source_header_sha256"].nunique() == 1
     assert "dataset_manifests" in manifest["inputs"]
@@ -1428,6 +1520,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["dropped_integer_overflow_rows"] == 0
     assert config["dropped_nonmonotonic_rows"] == 0
     assert config["dropped_negative_depth_rows"] == 0
+    assert config["dropped_invalid_trade_rows"] == 0
     assert config["unique_source_files"] == 2
     assert config["source_file_fingerprint_coverage"] == 1.0
     assert config["min_mapping_coverage"] == 1.0
@@ -1445,6 +1538,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["datasets"][0]["dropped_integer_overflow_rows"] == 0
     assert config["datasets"][0]["dropped_nonmonotonic_rows"] == 0
     assert config["datasets"][0]["dropped_negative_depth_rows"] == 0
+    assert config["datasets"][0]["dropped_invalid_trade_rows"] == 0
     assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()

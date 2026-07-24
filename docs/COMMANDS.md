@@ -8873,6 +8873,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
   --max-nonpositive-depth-rows 0 `
+  --max-invalid-trade-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8975,6 +8976,13 @@ with any zero or negative bid/ask quantity are quarantined before engine output;
 the compatibility evidence field is `dropped_negative_depth_rows`, and it
 counts zero depth as nonpositive too. The retained count fails the zero-default
 `--max-nonpositive-depth-rows` gate across direct and wrapped readiness paths.
+Optional tick trade fields may remain absent. When supplied, however, the last
+trade price must be strictly positive and the last trade quantity must be
+nonnegative. Rows violating either rule are quarantined without repairing the
+trade print, retained as `dropped_invalid_trade_rows`, surfaced by tick
+diagnostics as `invalid_trade_rows`, and fail the zero-default
+`--max-invalid-trade-rows` gate across direct, vendor, provider, batch, and
+broker-vendor readiness paths.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9487,6 +9495,7 @@ python -m hft_cli review-data-readiness `
   --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
   --max-nonpositive-depth-rows 0 `
+  --max-invalid-trade-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

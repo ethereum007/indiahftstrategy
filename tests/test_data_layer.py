@@ -213,6 +213,40 @@ def test_normalize_ticks_quarantines_nonpositive_top_of_book_depth():
     assert normalized.quarantine.dropped_negative_depth_rows == 2
 
 
+def test_normalize_ticks_quarantines_invalid_supplied_trade_fields():
+    valid = {
+        "ts": 1,
+        "bid": 100.0,
+        "ask": 100.05,
+        "bid_qty": 75,
+        "ask_qty": 150,
+        "last": 100.05,
+        "last_qty": 75,
+    }
+    no_trade_fields = {
+        "ts": 2,
+        "bid": 100.05,
+        "ask": 100.10,
+        "bid_qty": 75,
+        "ask_qty": 150,
+    }
+    zero_last = {**valid, "ts": 3, "last": 0}
+    negative_last = {**valid, "ts": 4, "last": -0.05}
+    negative_last_qty = {**valid, "ts": 5, "last_qty": -1}
+
+    normalized = normalize_ticks(
+        pd.DataFrame(
+            [valid, no_trade_fields, zero_last, negative_last, negative_last_qty]
+        ),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert list(normalized.data["ts"]) == [1, 2]
+    assert normalized.data.loc[1, "last_qty"] == 0
+    assert normalized.quarantine.dropped_invalid_trade_rows == 3
+
+
 def test_normalize_ticks_quarantines_int64_overflow_before_scaling_or_casts():
     valid = {
         "ts": 1,

@@ -43,6 +43,7 @@ QUARANTINE_SUMMARY_FIELDS = (
     "dropped_crossed_quote_rows",
     "dropped_nonmonotonic_rows",
     "dropped_negative_depth_rows",
+    "dropped_invalid_trade_rows",
     "dropped_non_trading_day_rows",
     "dropped_calendar_closed_rows",
     "dropped_calendar_out_of_range_rows",

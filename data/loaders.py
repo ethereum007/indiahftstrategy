@@ -38,6 +38,7 @@ class QuarantineReport:
     dropped_duplicate_rows: int = 0
     dropped_integer_overflow_rows: int = 0
     dropped_negative_depth_rows: int = 0
+    dropped_invalid_trade_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -150,6 +151,11 @@ def normalize_ticks(
     crossed_mask = out["ask"] >= out["bid"]
     crossed_count = int((~crossed_mask).sum())
     out = out.loc[crossed_mask].copy()
+    trade_mask = (out["last"].isna() | (out["last"] > 0)) & (
+        out["last_qty"].isna() | (out["last_qty"] >= 0)
+    )
+    invalid_trade_count = int((~trade_mask).sum())
+    out = out.loc[trade_mask].copy()
     monotonic_mask = out["ts"].eq(out["ts"].cummax())
     nonmonotonic_count = int((~monotonic_mask).sum())
     out = out.loc[monotonic_mask].copy()
@@ -209,6 +215,7 @@ def normalize_ticks(
         dropped_duplicate_rows=duplicate_count,
         dropped_integer_overflow_rows=integer_overflow_count,
         dropped_negative_depth_rows=negative_depth_count,
+        dropped_invalid_trade_rows=invalid_trade_count,
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,

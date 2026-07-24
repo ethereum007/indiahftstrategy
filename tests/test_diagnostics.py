@@ -32,6 +32,45 @@ def test_tick_diagnostics_reports_quality_issues_and_spread_stats(tmp_path):
     assert (out.output_dir / "diagnostic_issues.csv").exists()
 
 
+def test_tick_diagnostics_reports_invalid_supplied_trade_fields():
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist("2026-06-10 09:15:00"),
+                "bid": 100.0,
+                "ask": 100.05,
+                "bid_qty": 75,
+                "ask_qty": 150,
+                "last": 100.05,
+                "last_qty": 75,
+            },
+            {
+                "ts": ns_ist("2026-06-10 09:15:01"),
+                "bid": 100.05,
+                "ask": 100.10,
+                "bid_qty": 75,
+                "ask_qty": 150,
+                "last": 0,
+                "last_qty": 0,
+            },
+            {
+                "ts": ns_ist("2026-06-10 09:15:02"),
+                "bid": 100.10,
+                "ask": 100.15,
+                "bid_qty": 75,
+                "ask_qty": 150,
+                "last": 100.10,
+                "last_qty": -1,
+            },
+        ]
+    )
+
+    result = tick_diagnostics(ticks)
+
+    assert int(result.summary.loc[0, "invalid_trade_rows"]) == 2
+    assert list(result.issues["issue"]) == ["invalid_trade", "invalid_trade"]
+
+
 def test_tick_and_chain_diagnostics_split_non_trading_day_from_intraday_issues():
     timestamps = [
         ns_ist("2026-06-12 08:00:00"),

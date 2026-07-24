@@ -7011,6 +7011,20 @@ Repository collection is healthy at `2591 tests`. The full suite was not rerun
 because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
 
+Latest optional-trade integrity gate: tick normalization now quarantines rows
+when a supplied last-trade price is zero or negative, or a supplied last-trade
+quantity is negative. Missing optional trade fields remain valid, and zero
+last quantity remains valid. Violations are retained as
+`dropped_invalid_trade_rows`, raw tick diagnostics expose
+`invalid_trade_rows`, and readiness fails closed at the zero-default
+`--max-invalid-trade-rows` budget across direct review, Arrow.money/iRage
+single-day and batch onboarding, broker-vendor proof, and provider wrappers.
+No invalid trade print is repaired or inferred. Normalization, diagnostics,
+mapped-data, readiness, vendor, broker-vendor, and provider regressions pass
+(`106` tests). Repository collection is healthy at `2595 tests`. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All
+outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

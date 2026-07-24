@@ -137,6 +137,7 @@ def tick_diagnostics(
     else:
         frame["spread_ticks"] = np.nan
     gaps = frame["ts"].sort_values().diff().dropna()
+    invalid_trade = _invalid_trade_mask(frame)
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
@@ -154,6 +155,7 @@ def tick_diagnostics(
                 "crossed_quote_rows": int((frame["ask"] < frame["bid"]).sum()),
                 "nonpositive_quote_rows": int(((frame["bid"] <= 0) | (frame["ask"] <= 0)).sum()),
                 "nonpositive_depth_rows": int(((frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0)).sum()),
+                "invalid_trade_rows": int(invalid_trade.sum()),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -174,6 +176,7 @@ def tick_diagnostics(
             calendar_closed=calendar_closed,
             calendar_out_of_range=calendar_out_of_range,
             out_of_session=out_of_session,
+            invalid_trade=invalid_trade,
         ),
     )
 
@@ -456,6 +459,7 @@ def _tick_issues(
     calendar_closed: pd.Series,
     calendar_out_of_range: pd.Series,
     out_of_session: pd.Series,
+    invalid_trade: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -463,6 +467,7 @@ def _tick_issues(
         "crossed_quote": frame["ask"] < frame["bid"],
         "nonpositive_quote": (frame["bid"] <= 0) | (frame["ask"] <= 0),
         "nonpositive_depth": (frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0),
+        "invalid_trade": invalid_trade,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days
@@ -474,6 +479,17 @@ def _tick_issues(
         for idx in frame.index[mask]:
             rows.append({"row_index": int(idx), "ts": int(frame.loc[idx, "ts"]), "issue": issue})
     return pd.DataFrame(rows, columns=["row_index", "ts", "issue"])
+
+
+def _invalid_trade_mask(frame: pd.DataFrame) -> pd.Series:
+    invalid = pd.Series(False, index=frame.index, dtype=bool)
+    if "last" in frame.columns:
+        last = pd.to_numeric(frame["last"], errors="coerce")
+        invalid |= frame["last"].notna() & last.le(0)
+    if "last_qty" in frame.columns:
+        last_qty = pd.to_numeric(frame["last_qty"], errors="coerce")
+        invalid |= frame["last_qty"].notna() & last_qty.lt(0)
+    return invalid
 
 
 def _chain_issues(
