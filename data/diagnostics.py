@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from data.loaders import (
+    _timestamp_at_high_water_mask,
     calendar_closed_mask,
     calendar_out_of_range_mask,
     trading_day_mask,
@@ -139,6 +140,7 @@ def tick_diagnostics(
     else:
         frame["spread_ticks"] = np.nan
     gaps = frame["ts"].sort_values().diff().dropna()
+    nonmonotonic = ~_timestamp_at_high_water_mask(frame["ts"])
     invalid_trade = _invalid_trade_mask(frame)
     off_tick_price = _off_tick_price_mask(
         frame,
@@ -158,7 +160,7 @@ def tick_diagnostics(
                 "rows": int(len(frame)),
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
-                "nonmonotonic_rows": int((ticks["ts"].diff().fillna(0) < 0).sum()),
+                "nonmonotonic_rows": int(nonmonotonic.sum()),
                 "crossed_quote_rows": int((frame["ask"] < frame["bid"]).sum()),
                 "nonpositive_quote_rows": int(((frame["bid"] <= 0) | (frame["ask"] <= 0)).sum()),
                 "nonpositive_depth_rows": int(((frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0)).sum()),
@@ -182,6 +184,7 @@ def tick_diagnostics(
         summary=summary,
         issues=_tick_issues(
             frame,
+            nonmonotonic=nonmonotonic,
             non_trading_days=non_trading_days,
             calendar_closed=calendar_closed,
             calendar_out_of_range=calendar_out_of_range,
@@ -219,6 +222,7 @@ def chain_diagnostics(
         ("call_bid", "call_ask", "put_bid", "put_ask"),
         tick_size=tick_size,
     )
+    frame["nonmonotonic_ts"] = ~_timestamp_at_high_water_mask(frame["ts"])
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
@@ -276,6 +280,7 @@ def chain_diagnostics(
             median_call_spread_ticks=("call_spread_ticks", "median"),
             median_put_spread_ticks=("put_spread_ticks", "median"),
             off_tick_price_rows=("off_tick_price", "sum"),
+            nonmonotonic_rows=("nonmonotonic_ts", "sum"),
             parseable_contract_expiry_rows=(
                 "contract_expiry_parseable",
                 "sum",
@@ -407,6 +412,7 @@ def chain_diagnostics(
                 "strikes": int(frame["strike"].nunique()),
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
+                "nonmonotonic_rows": int(frame["nonmonotonic_ts"].sum()),
                 "crossed_quote_rows": int(((frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"])).sum()),
                 "nonpositive_quote_rows": int(
                     (
@@ -439,6 +445,7 @@ def chain_diagnostics(
         summary=summary,
         issues=_chain_issues(
             frame,
+            nonmonotonic=frame["nonmonotonic_ts"],
             non_trading_days=non_trading_days,
             calendar_closed=calendar_closed,
             calendar_out_of_range=calendar_out_of_range,
@@ -477,6 +484,7 @@ def write_diagnostics(result: DiagnosticResult, output_dir: str | Path) -> Diagn
 def _tick_issues(
     frame: pd.DataFrame,
     *,
+    nonmonotonic: pd.Series,
     non_trading_days: pd.Series,
     calendar_closed: pd.Series,
     calendar_out_of_range: pd.Series,
@@ -486,7 +494,7 @@ def _tick_issues(
 ) -> pd.DataFrame:
     rows = []
     checks = {
-        "nonmonotonic_ts": frame["ts"].diff().fillna(0) < 0,
+        "nonmonotonic_ts": nonmonotonic,
         "crossed_quote": frame["ask"] < frame["bid"],
         "nonpositive_quote": (frame["bid"] <= 0) | (frame["ask"] <= 0),
         "nonpositive_depth": (frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0),
@@ -557,6 +565,7 @@ def _validate_tick_size(tick_size: float | None) -> None:
 def _chain_issues(
     frame: pd.DataFrame,
     *,
+    nonmonotonic: pd.Series,
     non_trading_days: pd.Series,
     calendar_closed: pd.Series,
     calendar_out_of_range: pd.Series,
@@ -571,6 +580,7 @@ def _chain_issues(
 ) -> pd.DataFrame:
     rows = []
     checks = {
+        "nonmonotonic_ts": nonmonotonic,
         "crossed_quote": (frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"]),
         "nonpositive_quote": (frame["call_bid"] <= 0)
         | (frame["call_ask"] <= 0)

@@ -55,6 +55,7 @@ def chain_summary(**overrides):
         "min_snapshots_per_expiry": 10,
         "min_snapshot_strikes": 10,
         "p99_snapshot_gap_ns": 2_000.0,
+        "nonmonotonic_rows": 0,
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
         "nonpositive_depth_rows": 0,
@@ -570,6 +571,34 @@ def test_data_readiness_gates_nonmonotonic_chain_quarantine():
     )
     assert not blocked.ready
     assert "mapped_data_dropped_nonmonotonic_rows" in failed
+    assert allowed.ready
+
+
+def test_data_readiness_gates_nonmonotonic_chain_diagnostics():
+    blocked = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(nonmonotonic_rows=2),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+        ),
+    )
+    allowed = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(nonmonotonic_rows=2),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_nonmonotonic_rows=2,
+        ),
+    )
+
+    failed = set(
+        blocked.checks.loc[
+            ~blocked.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not blocked.ready
+    assert "chain_nonmonotonic_rows" in failed
     assert allowed.ready
 
 

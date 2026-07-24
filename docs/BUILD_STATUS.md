@@ -7050,6 +7050,20 @@ parity, and surface regressions pass (`139` tests). Repository collection is
 healthy at `2602 tests`. The full suite was not rerun because recent complete
 runs exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest raw timestamp diagnostic parity gate: tick and option-chain diagnostics
+now share the normalization layer's running high-water rule. The tick summary
+no longer undercounts sequences with multiple rows below an earlier maximum,
+and chain diagnostics now retain `nonmonotonic_rows` overall and by expiry plus
+one `nonmonotonic_ts` issue per affected source row. Direct chain readiness
+uses the existing zero-default `--max-nonmonotonic-rows` threshold, closing the
+case where mapped normalization evidence was omitted and a raw chain reversal
+could pass. Equal timestamps remain valid. Core diagnostics, normalization,
+mapped-data, snapshot-coverage, calendar, contract-authority, Arrow.money/iRage
+vendor, broker-vendor, provider, parity, and surface regressions pass (`171`
+tests). Repository collection is healthy at `2604 tests` across `164` files.
+The full suite was not rerun because recent complete runs exceed 40 minutes.
+All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

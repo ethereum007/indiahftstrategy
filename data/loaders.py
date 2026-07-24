@@ -156,7 +156,7 @@ def normalize_ticks(
     )
     invalid_trade_count = int((~trade_mask).sum())
     out = out.loc[trade_mask].copy()
-    monotonic_mask = out["ts"].eq(out["ts"].cummax())
+    monotonic_mask = _timestamp_at_high_water_mask(out["ts"])
     nonmonotonic_count = int((~monotonic_mask).sum())
     out = out.loc[monotonic_mask].copy()
     out = out.sort_values("ts", kind="mergesort").reset_index(drop=True)
@@ -348,6 +348,12 @@ def _int64_range_mask(
             in_range |= values.isna()
         mask &= in_range.fillna(False).astype(bool)
     return mask
+
+
+def _timestamp_at_high_water_mask(values: pd.Series) -> pd.Series:
+    """Keep timestamps that equal the greatest value observed so far."""
+
+    return values.eq(values.cummax()).fillna(False).astype(bool)
 
 
 def _object_int64_value_in_range(value: object) -> bool:

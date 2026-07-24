@@ -138,6 +138,71 @@ def test_tick_and_chain_diagnostics_report_off_tick_prices():
         tick_diagnostics(ticks, tick_size=0)
 
 
+def test_tick_and_chain_diagnostics_apply_timestamp_high_water():
+    timestamps = [
+        ns_ist("2026-06-10 09:15:04"),
+        ns_ist("2026-06-10 09:15:01"),
+        ns_ist("2026-06-10 09:15:02"),
+        ns_ist("2026-06-10 09:15:04"),
+        ns_ist("2026-06-10 09:15:05"),
+    ]
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": timestamp,
+                "bid": 100.0 + offset * 0.05,
+                "ask": 100.05 + offset * 0.05,
+                "bid_qty": 75,
+                "ask_qty": 150,
+            }
+            for offset, timestamp in enumerate(timestamps)
+        ]
+    )
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": timestamp,
+                "expiry": "2026-06-25",
+                "strike": 22500.0 + offset * 50.0,
+                "call_bid": 100.0,
+                "call_ask": 100.5,
+                "call_bid_qty": 75,
+                "call_ask_qty": 75,
+                "put_bid": 90.0,
+                "put_ask": 90.5,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+            for offset, timestamp in enumerate(timestamps)
+        ]
+    )
+
+    tick_result = tick_diagnostics(ticks)
+    chain_result = chain_diagnostics(chain)
+
+    chain_overall = chain_result.summary.loc[
+        chain_result.summary["scope"] == "overall"
+    ].iloc[0]
+    chain_expiry = chain_result.summary.loc[
+        chain_result.summary["scope"] == "expiry"
+    ].iloc[0]
+    assert int(tick_result.summary.loc[0, "nonmonotonic_rows"]) == 2
+    assert int(chain_overall["nonmonotonic_rows"]) == 2
+    assert int(chain_expiry["nonmonotonic_rows"]) == 2
+    assert list(
+        tick_result.issues.loc[
+            tick_result.issues["issue"] == "nonmonotonic_ts",
+            "row_index",
+        ]
+    ) == [1, 2]
+    assert list(
+        chain_result.issues.loc[
+            chain_result.issues["issue"] == "nonmonotonic_ts",
+            "row_index",
+        ]
+    ) == [1, 2]
+
+
 def test_tick_and_chain_diagnostics_split_non_trading_day_from_intraday_issues():
     timestamps = [
         ns_ist("2026-06-12 08:00:00"),

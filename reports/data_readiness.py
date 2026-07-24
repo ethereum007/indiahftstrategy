@@ -1673,6 +1673,12 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
             ">=",
             thresholds.min_chain_snapshot_strikes,
         ),
+        _threshold_check(
+            "chain_nonmonotonic_rows",
+            _number(row, "nonmonotonic_rows", fallback=0.0),
+            "<=",
+            thresholds.max_nonmonotonic_rows,
+        ),
         _threshold_check("chain_crossed_quote_rows", _number(row, "crossed_quote_rows"), "<=", thresholds.max_crossed_quote_rows),
         _threshold_check(
             "chain_nonpositive_quote_rows",

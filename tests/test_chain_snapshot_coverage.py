@@ -62,7 +62,11 @@ def _chain() -> pd.DataFrame:
             rows.append(
                 _row(ts=ts, expiry="2026-07-07", strike=strike)
             )
-    return pd.DataFrame(rows)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["ts", "expiry", "strike"], kind="mergesort")
+        .reset_index(drop=True)
+    )
 
 
 def _vendor_chain() -> pd.DataFrame:

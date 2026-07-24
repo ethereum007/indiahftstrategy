@@ -13,6 +13,7 @@ from data.loaders import (
     _finite_numeric_mask,
     _int64_range_mask,
     _integral_numeric_mask,
+    _timestamp_at_high_water_mask,
     _to_ns,
     calendar_closed_mask,
     calendar_out_of_range_mask,
@@ -153,7 +154,7 @@ def normalize_option_chain(
     negative_depth_count = int((~depth_mask).sum())
     out = out.loc[depth_mask].copy()
 
-    monotonic_mask = out["ts"].eq(out["ts"].cummax())
+    monotonic_mask = _timestamp_at_high_water_mask(out["ts"])
     nonmonotonic_count = int((~monotonic_mask).sum())
     out = out.loc[monotonic_mask].copy()
 

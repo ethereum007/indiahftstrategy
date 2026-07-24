@@ -9006,7 +9006,12 @@ merely because it is newer than the immediately preceding stale row.
 Equal-timestamp tick state changes and multi-strike option snapshots remain
 valid. The retained `dropped_nonmonotonic_rows` count fails the zero-default
 `--max-nonmonotonic-rows` gate across direct, vendor, provider, batch, and
-broker-vendor readiness evidence.
+broker-vendor readiness evidence. Raw tick and chain diagnostics use the same
+high-water rule rather than an adjacent-delta approximation, emit one
+`nonmonotonic_ts` issue for every row below the running maximum, and expose
+`nonmonotonic_rows` in both overall and per-expiry chain summaries. Direct
+chain readiness therefore also fails the same gate when normalization or
+mapped-data evidence is bypassed.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
