@@ -125,6 +125,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "7",
             "--tick-size",
             "0.05",
+            "--max-off-tick-price-rows",
+            "0",
             "--max-median-spread-ticks",
             "2",
             "--fail-on-breach",
@@ -146,6 +148,7 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
     assert cli_config["parameters"]["max_duplicate_tick_rows"] == 5
     assert cli_config["parameters"]["max_integer_overflow_rows"] == 6
     assert cli_config["parameters"]["max_nonmonotonic_rows"] == 7
+    assert cli_config["parameters"]["max_off_tick_price_rows"] == 0
 
 
 def test_provider_market_data_batch_blocks_reused_capture_file(tmp_path):

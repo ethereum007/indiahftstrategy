@@ -23,6 +23,7 @@ class ProviderMarketDataLiveIngestConfig:
     min_capture_rows: int | None = None
     pipeline_min_rows: int | None = None
     tick_size: float | None = None
+    max_off_tick_price_rows: int | None = None
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
 
@@ -203,6 +204,7 @@ def evaluate_provider_market_data_live_session_ingest(
                 min_capture_rows=int(effective["min_capture_rows"]),
                 pipeline_min_rows=int(effective["pipeline_min_rows"]),
                 tick_size=effective["tick_size"],
+                max_off_tick_price_rows=effective["max_off_tick_price_rows"],
                 max_p99_gap_ns=effective["max_p99_gap_ns"],
                 max_median_spread_ticks=effective["max_median_spread_ticks"],
             ),
@@ -523,6 +525,9 @@ def _effective_batch_config(packet: dict[str, Any], config: ProviderMarketDataLi
         if config.pipeline_min_rows is not None
         else int(_number(planned.get("pipeline_min_rows"), fallback=1)),
         "tick_size": config.tick_size if config.tick_size is not None else _optional_number(planned.get("tick_size")),
+        "max_off_tick_price_rows": config.max_off_tick_price_rows
+        if config.max_off_tick_price_rows is not None
+        else _optional_int(planned.get("max_off_tick_price_rows")),
         "max_p99_gap_ns": config.max_p99_gap_ns
         if config.max_p99_gap_ns is not None
         else _optional_number(planned.get("max_p99_gap_ns")),
@@ -1039,6 +1044,7 @@ def _normalize_config(config: ProviderMarketDataLiveIngestConfig) -> ProviderMar
         min_capture_rows=config.min_capture_rows,
         pipeline_min_rows=config.pipeline_min_rows,
         tick_size=config.tick_size,
+        max_off_tick_price_rows=config.max_off_tick_price_rows,
         max_p99_gap_ns=config.max_p99_gap_ns,
         max_median_spread_ticks=config.max_median_spread_ticks,
     )
@@ -1468,6 +1474,15 @@ def _optional_number(value: object) -> float | None:
     if value in {"", None}:
         return None
     return _number(value, fallback=0.0)
+
+
+def _optional_int(value: object) -> int | None:
+    number = _optional_number(value)
+    if number is None:
+        return None
+    if not float(number).is_integer():
+        raise ValueError("expected an integer value")
+    return int(number)
 
 
 def _number(value: object, *, fallback: float = 0.0) -> float:

@@ -8874,6 +8874,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-duplicate-tick-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-invalid-trade-rows 0 `
+  --max-off-tick-price-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8904,6 +8905,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-nonintegral-rows 0 `
   --max-integer-overflow-rows 0 `
   --max-nonpositive-depth-rows 0 `
+  --max-off-tick-price-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -8983,6 +8985,14 @@ trade print, retained as `dropped_invalid_trade_rows`, surfaced by tick
 diagnostics as `invalid_trade_rows`, and fail the zero-default
 `--max-invalid-trade-rows` gate across direct, vendor, provider, batch, and
 broker-vendor readiness paths.
+When `--tick-size` is declared, tick diagnostics also validate bid, ask, and
+supplied last-trade prices against that grid; chain diagnostics validate call
+and put bid/ask premiums while leaving strike spacing to contract rules.
+`--max-off-tick-price-rows` opts into the readiness gate and requires the tick
+size evidence to be present. Use `0` for fail-closed exchange-grid proof.
+Diagnostics tolerate normal binary floating-point representation, but they do
+not round or rewrite a genuinely off-grid price because the data or the
+declared tick size may be wrong.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9496,6 +9506,7 @@ python -m hft_cli review-data-readiness `
   --max-duplicate-tick-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-invalid-trade-rows 0 `
+  --max-off-tick-price-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

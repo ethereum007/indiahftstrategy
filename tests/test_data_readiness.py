@@ -33,6 +33,9 @@ def tick_summary(**overrides):
         "nonpositive_quote_rows": 0,
         "nonpositive_depth_rows": 0,
         "invalid_trade_rows": 0,
+        "price_grid_validation_enabled": True,
+        "price_grid_tick_size": 0.05,
+        "off_tick_price_rows": 0,
         "out_of_session_rows": 0,
         "median_gap_ns": 1_000.0,
         "p99_gap_ns": 2_000.0,
@@ -55,6 +58,9 @@ def chain_summary(**overrides):
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
         "nonpositive_depth_rows": 0,
+        "price_grid_validation_enabled": True,
+        "price_grid_tick_size": 0.05,
+        "off_tick_price_rows": 0,
         "out_of_session_rows": 0,
         "scope": "overall",
     }
@@ -376,6 +382,8 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
             "6",
             "--max-invalid-trade-rows",
             "7",
+            "--max-off-tick-price-rows",
+            "0",
             "--fail-on-breach",
         ]
     )
@@ -393,6 +401,7 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
     assert config["thresholds"]["max_duplicate_tick_rows"] == 5
     assert config["thresholds"]["max_integer_overflow_rows"] == 6
     assert config["thresholds"]["max_invalid_trade_rows"] == 7
+    assert config["thresholds"]["max_off_tick_price_rows"] == 0
 
 
 def test_data_readiness_rejects_loose_market_calendar_summary(tmp_path):
@@ -450,6 +459,47 @@ def test_data_readiness_fails_on_bad_tick_diagnostics():
     assert queue.loc["tick_crossed_quote_rows", "next_gate"] == "diagnose-ticks"
     assert queue.loc["tick_crossed_quote_rows", "next_gate_help_command"] == "python -m hft_cli diagnose-ticks --help"
     assert report.summary.loc[0, "next_gate"] == "diagnose-ticks"
+
+
+def test_data_readiness_gates_price_grid_rows_and_requires_validation_evidence():
+    off_grid = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(off_tick_price_rows=1),
+        thresholds=DataReadinessThresholds(max_off_tick_price_rows=0),
+    )
+    validation_missing = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(
+            price_grid_validation_enabled=False,
+            price_grid_tick_size=float("nan"),
+        ),
+        thresholds=DataReadinessThresholds(max_off_tick_price_rows=0),
+    )
+    chain_off_grid = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(off_tick_price_rows=1),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_off_tick_price_rows=0,
+        ),
+    )
+
+    assert not off_grid.ready
+    assert "tick_off_tick_price_rows" in set(
+        off_grid.checks.loc[~off_grid.checks["passed"].astype(bool), "check"]
+    )
+    assert not validation_missing.ready
+    assert "tick_price_grid_validation_enabled" in set(
+        validation_missing.checks.loc[
+            ~validation_missing.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not chain_off_grid.ready
+    assert "chain_off_tick_price_rows" in set(
+        chain_off_grid.checks.loc[
+            ~chain_off_grid.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
 
 
 def test_data_readiness_fails_on_filtered_mapped_data_quarantine():

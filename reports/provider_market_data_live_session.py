@@ -34,6 +34,7 @@ class ProviderMarketDataLiveSessionConfig:
     min_capture_rows: int = 1
     pipeline_min_rows: int = 1
     tick_size: float | None = None
+    max_off_tick_price_rows: int | None = None
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
     require_env_present: bool = False
@@ -556,6 +557,7 @@ def _session_packet(
             "min_capture_rows": int(config.min_capture_rows),
             "pipeline_min_rows": int(config.pipeline_min_rows),
             "tick_size": config.tick_size,
+            "max_off_tick_price_rows": config.max_off_tick_price_rows,
             "max_p99_gap_ns": config.max_p99_gap_ns,
             "max_median_spread_ticks": config.max_median_spread_ticks,
         },
@@ -720,6 +722,13 @@ def _batch_command(
     )
     if config.tick_size is not None:
         parts.extend(["--tick-size", str(config.tick_size)])
+    if config.max_off_tick_price_rows is not None:
+        parts.extend(
+            [
+                "--max-off-tick-price-rows",
+                str(config.max_off_tick_price_rows),
+            ]
+        )
     if config.max_p99_gap_ns is not None:
         parts.extend(["--max-p99-gap-ns", str(config.max_p99_gap_ns)])
     if config.max_median_spread_ticks is not None:
@@ -1116,6 +1125,15 @@ def _validate_config(config: ProviderMarketDataLiveSessionConfig) -> None:
         raise ValueError("min_capture_rows must be positive")
     if config.pipeline_min_rows <= 0:
         raise ValueError("pipeline_min_rows must be positive")
+    if config.max_off_tick_price_rows is not None and config.tick_size is None:
+        raise ValueError(
+            "tick_size is required when max_off_tick_price_rows is set"
+        )
+    if (
+        config.max_off_tick_price_rows is not None
+        and config.max_off_tick_price_rows < 0
+    ):
+        raise ValueError("max_off_tick_price_rows must be non-negative")
     for name in ("tick_size", "max_p99_gap_ns", "max_median_spread_ticks"):
         value = getattr(config, name)
         if value is not None and value <= 0:

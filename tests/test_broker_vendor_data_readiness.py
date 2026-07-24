@@ -170,6 +170,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
                 kind="ticks",
                 timestamp_unit="datetime",
                 tick_size=0.05,
+                max_off_tick_price_rows=0,
                 min_rows=2,
                 market_calendar_path=str(calendar_path),
             ),
@@ -227,6 +228,9 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert int(summary["dropped_nonmonotonic_rows"]) == 0
         assert int(summary["dropped_negative_depth_rows"]) == 0
         assert int(summary["dropped_invalid_trade_rows"]) == 0
+        assert bool(summary["price_grid_validation_enabled"])
+        assert summary["price_grid_tick_size"] == pytest.approx(0.05)
+        assert int(summary["off_tick_price_rows"]) == 0
         assert int(summary["unique_source_files"]) == 2
         assert int(summary["unique_header_fingerprints"]) == 1
         assert summary["source_file_fingerprint_coverage"] == 1.0
@@ -287,6 +291,9 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["vendor_market_data_batch"]["dropped_nonmonotonic_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_negative_depth_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_invalid_trade_rows"] == 0
+        assert config["vendor_market_data_batch"]["price_grid_validation_enabled"]
+        assert config["vendor_market_data_batch"]["price_grid_tick_size"] == pytest.approx(0.05)
+        assert config["vendor_market_data_batch"]["off_tick_price_rows"] == 0
         assert config["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
         assert config["vendor_market_data_batch"]["comparison"]["accepted"]

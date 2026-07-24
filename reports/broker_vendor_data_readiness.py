@@ -63,6 +63,7 @@ class BrokerVendorDataReadinessConfig:
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
+    max_off_tick_price_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
@@ -156,6 +157,7 @@ def write_broker_vendor_data_readiness_pipeline(
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
+        max_off_tick_price_rows=config.max_off_tick_price_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_unparseable_contract_expiry_rows=(
@@ -431,6 +433,15 @@ def _summary(
                 ),
                 "dropped_invalid_trade_rows": _int(
                     vendor_row.get("dropped_invalid_trade_rows", 0)
+                ),
+                "price_grid_validation_enabled": _bool(
+                    vendor_row.get("price_grid_validation_enabled", False)
+                ),
+                "price_grid_tick_size": _float(
+                    vendor_row.get("price_grid_tick_size", float("nan"))
+                ),
+                "off_tick_price_rows": _int(
+                    vendor_row.get("off_tick_price_rows", 0)
                 ),
                 "dropped_calendar_closed_rows": _int(
                     vendor_row.get("dropped_calendar_closed_rows", 0)
@@ -1098,6 +1109,9 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Nonmonotonic tick packets: {_int(row.get('dropped_nonmonotonic_rows', 0))}",
         f"- Nonpositive depth rows: {_int(row.get('dropped_negative_depth_rows', 0))}",
         f"- Invalid trade rows: {_int(row.get('dropped_invalid_trade_rows', 0))}",
+        f"- Price-grid validation: {'yes' if _bool(row.get('price_grid_validation_enabled', False)) else 'no'}",
+        f"- Price-grid tick size: {_float(row.get('price_grid_tick_size')) if _bool(row.get('price_grid_validation_enabled', False)) else 'n/a'}",
+        f"- Off-tick price rows: {_int(row.get('off_tick_price_rows', 0))}",
         f"- Calendar-closed rows: {_int(row.get('dropped_calendar_closed_rows', 0))}",
         f"- Calendar out-of-range rows: {_int(row.get('dropped_calendar_out_of_range_rows', 0))}",
         f"- Mapping source mode: {str(row.get('mapping_source_mode', ''))}",
@@ -1249,6 +1263,15 @@ def _config(
             ),
             "dropped_invalid_trade_rows": _int(
                 row.get("dropped_invalid_trade_rows", 0)
+            ),
+            "price_grid_validation_enabled": _bool(
+                row.get("price_grid_validation_enabled", False)
+            ),
+            "price_grid_tick_size": _float(
+                row.get("price_grid_tick_size", float("nan"))
+            ),
+            "off_tick_price_rows": _int(
+                row.get("off_tick_price_rows", 0)
             ),
             "dropped_calendar_closed_rows": _int(
                 row.get("dropped_calendar_closed_rows", 0)

@@ -67,6 +67,7 @@ def _write_live_plan(tmp_path):
             min_capture_rows=2,
             pipeline_min_rows=2,
             tick_size=0.05,
+            max_off_tick_price_rows=0,
             max_median_spread_ticks=2,
         ),
     )
@@ -158,6 +159,11 @@ def test_provider_market_data_live_ingest_runs_batch_from_session_packet(tmp_pat
 
     summary = report.summary.iloc[0]
     config = json.loads((out_dir / "provider_market_data_live_ingest_config.json").read_text(encoding="utf-8"))
+    batch_config = json.loads(
+        (tmp_path / "batch" / "provider_market_data_batch_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
     action_queue = pd.read_csv(out_dir / "provider_market_data_live_ingest_action_queue.csv")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
@@ -170,6 +176,8 @@ def test_provider_market_data_live_ingest_runs_batch_from_session_packet(tmp_pat
     assert action_queue.loc[0, "action"] == "feed_provider_market_data_batch_to_research"
     assert config["ready"]
     assert config["batch"]["ready"]
+    assert config["effective_batch_config"]["max_off_tick_price_rows"] == 0
+    assert batch_config["parameters"]["max_off_tick_price_rows"] == 0
     assert manifest["run_type"] == "provider_market_data_live_session_ingest"
     assert "captures" in manifest["inputs"]
     assert "batch_manifest" in manifest["inputs"]
@@ -577,11 +585,16 @@ def test_cli_provider_market_data_live_ingest_accepts_session_packet(tmp_path):
             str(live_packet),
             "--out",
             str(out_dir),
+            "--max-off-tick-price-rows",
+            "0",
             "--fail-on-breach",
         ]
     )
 
     summary = pd.read_csv(out_dir / "provider_market_data_live_ingest_summary.csv")
+    config = json.loads((out_dir / "provider_market_data_live_ingest_config.json").read_text(encoding="utf-8"))
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "batch_ready"])
+    assert config["parameters"]["max_off_tick_price_rows"] == 0
+    assert config["effective_batch_config"]["max_off_tick_price_rows"] == 0

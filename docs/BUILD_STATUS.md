@@ -7025,6 +7025,19 @@ mapped-data, readiness, vendor, broker-vendor, and provider regressions pass
 suite was not rerun because recent complete runs exceed 40 minutes. All
 outputs remain non-authorizing.
 
+Latest declared price-grid gate: tick diagnostics now check bid, ask, and
+supplied last-trade prices against an explicitly declared tick size, while
+option-chain diagnostics check call and put premiums without treating strike
+spacing as a quote-price rule. `off_tick_price_rows` is retained in row-level,
+summary, per-expiry, pipeline, batch, broker-vendor, and live provider-session
+evidence. The opt-in `--max-off-tick-price-rows` threshold requires
+`--tick-size`; a zero budget fails closed without rounding, rewriting, or
+repairing source prices. Diagnostics, readiness, vendor, broker-vendor,
+provider, live-session, chain coverage, expiry, lot-size, and contract-key
+regressions pass (`143` tests). Repository collection is healthy at
+`2598 tests`. The full suite was not rerun because recent complete runs exceed
+40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

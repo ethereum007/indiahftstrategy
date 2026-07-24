@@ -89,6 +89,7 @@ class DataReadinessThresholds:
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
+    max_off_tick_price_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
@@ -1612,6 +1613,28 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
         ),
         _threshold_check("tick_out_of_session_rows", _number(row, "out_of_session_rows"), "<=", thresholds.max_out_of_session_rows),
     ]
+    if thresholds.max_off_tick_price_rows is not None:
+        price_grid_enabled = _to_bool(
+            row.get("price_grid_validation_enabled", False)
+        )
+        checks.extend(
+            [
+                _check(
+                    "tick_price_grid_validation_enabled",
+                    price_grid_enabled,
+                    "is",
+                    True,
+                    price_grid_enabled,
+                    "tick diagnostics did not validate the declared price grid",
+                ),
+                _threshold_check(
+                    "tick_off_tick_price_rows",
+                    _number(row, "off_tick_price_rows"),
+                    "<=",
+                    thresholds.max_off_tick_price_rows,
+                ),
+            ]
+        )
     if thresholds.max_tick_p99_gap_ns is not None:
         checks.append(_threshold_check("tick_p99_gap_ns", _number(row, "p99_gap_ns"), "<=", thresholds.max_tick_p99_gap_ns))
     if thresholds.max_tick_median_spread_ticks is not None:
@@ -1707,6 +1730,28 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
             thresholds.max_conflicting_contract_key_rows,
         ),
     ]
+    if thresholds.max_off_tick_price_rows is not None:
+        price_grid_enabled = _to_bool(
+            row.get("price_grid_validation_enabled", False)
+        )
+        checks.extend(
+            [
+                _check(
+                    "chain_price_grid_validation_enabled",
+                    price_grid_enabled,
+                    "is",
+                    True,
+                    price_grid_enabled,
+                    "chain diagnostics did not validate the declared price grid",
+                ),
+                _threshold_check(
+                    "chain_off_tick_price_rows",
+                    _number(row, "off_tick_price_rows"),
+                    "<=",
+                    thresholds.max_off_tick_price_rows,
+                ),
+            ]
+        )
     expiry_validation_enabled = _to_bool(
         row.get("contract_expiry_validation_enabled", False)
     )
@@ -3160,6 +3205,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         if getattr(thresholds, name) < 0:
             raise ValueError(f"{name} must be non-negative")
     for name in (
+        "max_off_tick_price_rows",
         "max_tick_p99_gap_ns",
         "max_tick_median_spread_ticks",
         "max_chain_median_spread_ticks",

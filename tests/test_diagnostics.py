@@ -27,6 +27,9 @@ def test_tick_diagnostics_reports_quality_issues_and_spread_stats(tmp_path):
     assert summary["nonpositive_depth_rows"] == 1
     assert summary["out_of_session_rows"] == 1
     assert summary["median_spread_ticks"] == pytest.approx(1.0)
+    assert bool(summary["price_grid_validation_enabled"])
+    assert summary["price_grid_tick_size"] == pytest.approx(0.05)
+    assert int(summary["off_tick_price_rows"]) == 0
     assert set(result.issues["issue"]) == {"crossed_quote", "nonpositive_depth", "out_of_session"}
     assert (out.output_dir / "diagnostic_summary.csv").exists()
     assert (out.output_dir / "diagnostic_issues.csv").exists()
@@ -69,6 +72,70 @@ def test_tick_diagnostics_reports_invalid_supplied_trade_fields():
 
     assert int(result.summary.loc[0, "invalid_trade_rows"]) == 2
     assert list(result.issues["issue"]) == ["invalid_trade", "invalid_trade"]
+
+
+def test_tick_and_chain_diagnostics_report_off_tick_prices():
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist("2026-06-10 09:15:00"),
+                "bid": 100.0,
+                "ask": 100.05,
+                "bid_qty": 75,
+                "ask_qty": 150,
+                "last": 100.05,
+                "last_qty": 75,
+            },
+            {
+                "ts": ns_ist("2026-06-10 09:15:01"),
+                "bid": 100.05,
+                "ask": 100.07,
+                "bid_qty": 75,
+                "ask_qty": 150,
+                "last": 100.03,
+                "last_qty": 75,
+            },
+        ]
+    )
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist("2026-06-10 09:15:00"),
+                "expiry": "2026-06-25",
+                "strike": 22500.0,
+                "call_bid": 100.0,
+                "call_ask": 100.07,
+                "call_bid_qty": 75,
+                "call_ask_qty": 75,
+                "put_bid": 90.0,
+                "put_ask": 90.05,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+        ]
+    )
+
+    tick_result = tick_diagnostics(ticks, tick_size=0.05)
+    chain_result = chain_diagnostics(chain, tick_size=0.05)
+
+    tick_summary = tick_result.summary.iloc[0]
+    chain_overall = chain_result.summary.loc[
+        chain_result.summary["scope"] == "overall"
+    ].iloc[0]
+    chain_expiry = chain_result.summary.loc[
+        chain_result.summary["scope"] == "expiry"
+    ].iloc[0]
+    assert int(tick_summary["off_tick_price_rows"]) == 1
+    assert set(tick_result.issues.loc[tick_result.issues["row_index"] == 1, "issue"]) >= {
+        "off_tick_price"
+    }
+    assert bool(chain_overall["price_grid_validation_enabled"])
+    assert int(chain_overall["off_tick_price_rows"]) == 1
+    assert int(chain_expiry["off_tick_price_rows"]) == 1
+    assert "off_tick_price" in set(chain_result.issues["issue"])
+
+    with pytest.raises(ValueError, match="tick_size"):
+        tick_diagnostics(ticks, tick_size=0)
 
 
 def test_tick_and_chain_diagnostics_split_non_trading_day_from_intraday_issues():
@@ -167,6 +234,8 @@ def test_chain_diagnostics_reports_expiry_coverage_and_issues():
     assert overall["rows"] == 2
     assert overall["crossed_quote_rows"] == 1
     assert overall["nonpositive_quote_rows"] == 1
+    assert bool(overall["price_grid_validation_enabled"])
+    assert int(overall["off_tick_price_rows"]) == 0
     assert expiry["strikes"] == 2
     assert expiry["min_strike"] == 1000.0
     assert expiry["max_strike"] == 1010.0

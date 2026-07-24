@@ -46,6 +46,7 @@ class ProviderMarketDataPipelineConfig:
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
+    max_off_tick_price_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_p99_gap_ns: float | None = None
@@ -130,6 +131,7 @@ def write_provider_market_data_pipeline(
                 max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=config.max_invalid_trade_rows,
+                max_off_tick_price_rows=config.max_off_tick_price_rows,
                 max_non_trading_day_rows=config.max_non_trading_day_rows,
                 max_out_of_session_rows=config.max_out_of_session_rows,
                 max_p99_gap_ns=config.max_p99_gap_ns,

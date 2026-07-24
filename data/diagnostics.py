@@ -60,6 +60,7 @@ CONTRACT_STATE_COLUMNS = [
     "put_bid_qty",
     "put_ask_qty",
 ]
+PRICE_GRID_ATOL_TICKS = 1e-7
 
 
 @dataclass(frozen=True)
@@ -127,17 +128,23 @@ def tick_diagnostics(
     market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
     _require(ticks, TICK_REQUIRED, "ticks")
+    _validate_tick_size(tick_size)
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = ticks.copy()
     frame["spread"] = frame["ask"] - frame["bid"]
     frame["mid"] = 0.5 * (frame["bid"] + frame["ask"])
     frame["depth"] = frame["bid_qty"] + frame["ask_qty"]
-    if tick_size:
+    if tick_size is not None:
         frame["spread_ticks"] = frame["spread"] / tick_size
     else:
         frame["spread_ticks"] = np.nan
     gaps = frame["ts"].sort_values().diff().dropna()
     invalid_trade = _invalid_trade_mask(frame)
+    off_tick_price = _off_tick_price_mask(
+        frame,
+        ("bid", "ask", "last"),
+        tick_size=tick_size,
+    )
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
@@ -156,6 +163,9 @@ def tick_diagnostics(
                 "nonpositive_quote_rows": int(((frame["bid"] <= 0) | (frame["ask"] <= 0)).sum()),
                 "nonpositive_depth_rows": int(((frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0)).sum()),
                 "invalid_trade_rows": int(invalid_trade.sum()),
+                "price_grid_validation_enabled": tick_size is not None,
+                "price_grid_tick_size": float(tick_size) if tick_size is not None else np.nan,
+                "off_tick_price_rows": int(off_tick_price.sum()),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -177,6 +187,7 @@ def tick_diagnostics(
             calendar_out_of_range=calendar_out_of_range,
             out_of_session=out_of_session,
             invalid_trade=invalid_trade,
+            off_tick_price=off_tick_price,
         ),
     )
 
@@ -192,16 +203,22 @@ def chain_diagnostics(
     lot_size: int | None = None,
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
+    _validate_tick_size(tick_size)
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = chain.copy()
     frame["call_spread"] = frame["call_ask"] - frame["call_bid"]
     frame["put_spread"] = frame["put_ask"] - frame["put_bid"]
-    if tick_size:
+    if tick_size is not None:
         frame["call_spread_ticks"] = frame["call_spread"] / tick_size
         frame["put_spread_ticks"] = frame["put_spread"] / tick_size
     else:
         frame["call_spread_ticks"] = np.nan
         frame["put_spread_ticks"] = np.nan
+    frame["off_tick_price"] = _off_tick_price_mask(
+        frame,
+        ("call_bid", "call_ask", "put_bid", "put_ask"),
+        tick_size=tick_size,
+    )
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
@@ -258,6 +275,7 @@ def chain_diagnostics(
             median_put_spread=("put_spread", "median"),
             median_call_spread_ticks=("call_spread_ticks", "median"),
             median_put_spread_ticks=("put_spread_ticks", "median"),
+            off_tick_price_rows=("off_tick_price", "sum"),
             parseable_contract_expiry_rows=(
                 "contract_expiry_parseable",
                 "sum",
@@ -406,6 +424,9 @@ def chain_diagnostics(
                         | (frame["put_ask_qty"] <= 0)
                     ).sum()
                 ),
+                "price_grid_validation_enabled": tick_size is not None,
+                "price_grid_tick_size": float(tick_size) if tick_size is not None else np.nan,
+                "off_tick_price_rows": int(frame["off_tick_price"].sum()),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -440,6 +461,7 @@ def chain_diagnostics(
                 key_diagnostics.row_exact_duplicate
             ),
             conflicting_contract=key_diagnostics.row_conflicting,
+            off_tick_price=frame["off_tick_price"],
         ),
     )
 
@@ -460,6 +482,7 @@ def _tick_issues(
     calendar_out_of_range: pd.Series,
     out_of_session: pd.Series,
     invalid_trade: pd.Series,
+    off_tick_price: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -468,6 +491,7 @@ def _tick_issues(
         "nonpositive_quote": (frame["bid"] <= 0) | (frame["ask"] <= 0),
         "nonpositive_depth": (frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0),
         "invalid_trade": invalid_trade,
+        "off_tick_price": off_tick_price,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days
@@ -492,6 +516,44 @@ def _invalid_trade_mask(frame: pd.DataFrame) -> pd.Series:
     return invalid
 
 
+def _off_tick_price_mask(
+    frame: pd.DataFrame,
+    columns: tuple[str, ...],
+    *,
+    tick_size: float | None,
+) -> pd.Series:
+    off_tick = pd.Series(False, index=frame.index, dtype=bool)
+    if tick_size is None:
+        return off_tick
+    for column in columns:
+        if column not in frame.columns:
+            continue
+        values = pd.to_numeric(frame[column], errors="coerce")
+        finite = values.notna() & np.isfinite(values)
+        scaled = values / float(tick_size)
+        on_grid = pd.Series(
+            np.isclose(
+                scaled,
+                np.rint(scaled),
+                rtol=0.0,
+                atol=PRICE_GRID_ATOL_TICKS,
+                equal_nan=False,
+            ),
+            index=frame.index,
+            dtype=bool,
+        )
+        off_tick |= finite & ~on_grid
+    return off_tick
+
+
+def _validate_tick_size(tick_size: float | None) -> None:
+    if tick_size is None:
+        return
+    value = float(tick_size)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("tick_size must be positive and finite")
+
+
 def _chain_issues(
     frame: pd.DataFrame,
     *,
@@ -505,6 +567,7 @@ def _chain_issues(
     expired_contract: pd.Series,
     exact_duplicate_contract: pd.Series,
     conflicting_contract: pd.Series,
+    off_tick_price: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -517,6 +580,7 @@ def _chain_issues(
         | (frame["call_ask_qty"] <= 0)
         | (frame["put_bid_qty"] <= 0)
         | (frame["put_ask_qty"] <= 0),
+        "off_tick_price": off_tick_price,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days

@@ -66,6 +66,7 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
             min_capture_rows=2,
             pipeline_min_rows=2,
             tick_size=0.05,
+            max_off_tick_price_rows=0,
             max_median_spread_ticks=2,
         ),
     )
@@ -100,6 +101,7 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert summary["capture_command_transports"] == "websocket"
     assert "--capture" in summary["post_capture_batch_command"]
     assert "pipeline-provider-market-data-batch" in summary["post_capture_batch_command"]
+    assert "--max-off-tick-price-rows 0" in summary["post_capture_batch_command"]
     assert "--min-unique-source-files 2" in summary["post_capture_batch_command"]
     assert windows["label"].tolist() == ["open", "close"]
     assert windows["within_market_session"].astype(bool).all()
@@ -142,6 +144,7 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert packet["capture_windows"][0]["capture_command_provider"] == "arrow_money"
     assert packet["capture_windows"][0]["capture_command_transport"] == "websocket"
     assert "--output" in packet["capture_windows"][0]["capture_command_template"]
+    assert packet["post_capture_batch"]["max_off_tick_price_rows"] == 0
     assert config["ready"]
     assert config["exchange"] == "NFO"
     assert config["source_session"]["timezone"] == "Asia/Kolkata"
@@ -444,6 +447,8 @@ def test_cli_provider_market_data_live_session_accepts_rest_packet(tmp_path):
             "2",
             "--tick-size",
             "0.05",
+            "--max-off-tick-price-rows",
+            "0",
             "--fail-on-breach",
         ]
     )
@@ -456,3 +461,4 @@ def test_cli_provider_market_data_live_session_accepts_rest_packet(tmp_path):
     assert packet["template_kind"] == "rest_backfill_request"
     assert packet["capture_windows"][0]["capture_command_transport"] == "rest"
     assert packet["capture_windows"][0]["capture_command_endpoint"].startswith("https://")
+    assert packet["post_capture_batch"]["max_off_tick_price_rows"] == 0

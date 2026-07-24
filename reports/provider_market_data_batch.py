@@ -45,6 +45,7 @@ class ProviderMarketDataBatchConfig:
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
+    max_off_tick_price_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_p99_gap_ns: float | None = None
@@ -236,6 +237,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
+        max_off_tick_price_rows=config.max_off_tick_price_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_p99_gap_ns=config.max_p99_gap_ns,
@@ -613,6 +615,10 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         raise ValueError("min_capture_rows must be positive")
     if config.pipeline_min_rows <= 0:
         raise ValueError("pipeline_min_rows must be positive")
+    if config.max_off_tick_price_rows is not None and config.tick_size is None:
+        raise ValueError(
+            "tick_size is required when max_off_tick_price_rows is set"
+        )
     if not 0 <= config.min_ready_rate <= 1:
         raise ValueError("min_ready_rate must be between 0 and 1")
     for name in (
@@ -634,6 +640,11 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
     ):
         if getattr(config, name) < 0:
             raise ValueError(f"{name} must be non-negative")
+    if (
+        config.max_off_tick_price_rows is not None
+        and config.max_off_tick_price_rows < 0
+    ):
+        raise ValueError("max_off_tick_price_rows must be non-negative")
     for name in (
         "tick_size",
         "max_p99_gap_ns",
