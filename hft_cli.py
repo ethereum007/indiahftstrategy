@@ -3152,6 +3152,16 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=0,
     )
+    vendor_market_data.add_argument(
+        "--max-duplicate-contract-key-rows",
+        type=int,
+        default=0,
+    )
+    vendor_market_data.add_argument(
+        "--max-conflicting-contract-key-rows",
+        type=int,
+        default=0,
+    )
     vendor_market_data.add_argument("--max-p99-gap-ns", type=float, default=None)
     vendor_market_data.add_argument("--max-median-spread-ticks", type=float, default=None)
     vendor_market_data.add_argument("--fail-on-breach", action="store_true")
@@ -3220,6 +3230,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     vendor_market_data_batch.add_argument(
         "--max-expired-contract-rows",
+        type=int,
+        default=0,
+    )
+    vendor_market_data_batch.add_argument(
+        "--max-duplicate-contract-key-rows",
+        type=int,
+        default=0,
+    )
+    vendor_market_data_batch.add_argument(
+        "--max-conflicting-contract-key-rows",
         type=int,
         default=0,
     )
@@ -3297,6 +3317,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     broker_vendor_data_readiness.add_argument(
         "--max-expired-contract-rows",
+        type=int,
+        default=0,
+    )
+    broker_vendor_data_readiness.add_argument(
+        "--max-duplicate-contract-key-rows",
+        type=int,
+        default=0,
+    )
+    broker_vendor_data_readiness.add_argument(
+        "--max-conflicting-contract-key-rows",
         type=int,
         default=0,
     )
@@ -3429,6 +3459,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     data_readiness.add_argument(
         "--max-expired-contract-rows",
+        type=int,
+        default=0,
+    )
+    data_readiness.add_argument(
+        "--max-duplicate-contract-key-rows",
+        type=int,
+        default=0,
+    )
+    data_readiness.add_argument(
+        "--max-conflicting-contract-key-rows",
         type=int,
         default=0,
     )
@@ -7897,6 +7937,12 @@ def main(argv: list[str] | None = None) -> int:
                     args.max_unparseable_contract_expiry_rows
                 ),
                 max_expired_contract_rows=args.max_expired_contract_rows,
+                max_duplicate_contract_key_rows=(
+                    args.max_duplicate_contract_key_rows
+                ),
+                max_conflicting_contract_key_rows=(
+                    args.max_conflicting_contract_key_rows
+                ),
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
             ),
@@ -7948,6 +7994,12 @@ def main(argv: list[str] | None = None) -> int:
                     args.max_unparseable_contract_expiry_rows
                 ),
                 max_expired_contract_rows=args.max_expired_contract_rows,
+                max_duplicate_contract_key_rows=(
+                    args.max_duplicate_contract_key_rows
+                ),
+                max_conflicting_contract_key_rows=(
+                    args.max_conflicting_contract_key_rows
+                ),
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
             ),
@@ -8026,6 +8078,12 @@ def main(argv: list[str] | None = None) -> int:
                     args.max_unparseable_contract_expiry_rows
                 ),
                 max_expired_contract_rows=args.max_expired_contract_rows,
+                max_duplicate_contract_key_rows=(
+                    args.max_duplicate_contract_key_rows
+                ),
+                max_conflicting_contract_key_rows=(
+                    args.max_conflicting_contract_key_rows
+                ),
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
             ),
@@ -8170,6 +8228,12 @@ def main(argv: list[str] | None = None) -> int:
                     args.max_unparseable_contract_expiry_rows
                 ),
                 max_expired_contract_rows=args.max_expired_contract_rows,
+                max_duplicate_contract_key_rows=(
+                    args.max_duplicate_contract_key_rows
+                ),
+                max_conflicting_contract_key_rows=(
+                    args.max_conflicting_contract_key_rows
+                ),
                 max_invalid_contract_expiry_rows=(
                     args.max_invalid_contract_expiry_rows
                 ),

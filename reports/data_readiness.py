@@ -84,6 +84,8 @@ class DataReadinessThresholds:
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
     max_expired_contract_rows: int = 0
+    max_duplicate_contract_key_rows: int = 0
+    max_conflicting_contract_key_rows: int = 0
     max_invalid_contract_expiry_rows: int = 0
     max_uncovered_contract_expiry_rows: int = 0
     max_invalid_contract_lot_rows: int = 0
@@ -1650,6 +1652,26 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
             "<=",
             thresholds.max_expired_contract_rows,
         ),
+        _threshold_check(
+            "chain_duplicate_contract_key_rows",
+            _number(
+                row,
+                "duplicate_contract_key_rows",
+                fallback=0.0,
+            ),
+            "<=",
+            thresholds.max_duplicate_contract_key_rows,
+        ),
+        _threshold_check(
+            "chain_conflicting_contract_key_rows",
+            _number(
+                row,
+                "conflicting_contract_key_rows",
+                fallback=0.0,
+            ),
+            "<=",
+            thresholds.max_conflicting_contract_key_rows,
+        ),
     ]
     expiry_validation_enabled = _to_bool(
         row.get("contract_expiry_validation_enabled", False)
@@ -3032,6 +3054,8 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_out_of_session_rows",
         "max_unparseable_contract_expiry_rows",
         "max_expired_contract_rows",
+        "max_duplicate_contract_key_rows",
+        "max_conflicting_contract_key_rows",
         "max_invalid_contract_expiry_rows",
         "max_uncovered_contract_expiry_rows",
         "max_invalid_contract_lot_rows",

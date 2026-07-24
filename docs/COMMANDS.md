@@ -8893,6 +8893,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --tick-size 0.05 `
   --max-unparseable-contract-expiry-rows 0 `
   --max-expired-contract-rows 0 `
+  --max-duplicate-contract-key-rows 0 `
+  --max-conflicting-contract-key-rows 0 `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -8912,6 +8914,13 @@ all accept `--max-unparseable-contract-expiry-rows` and
 `--max-expired-contract-rows`; both default to `0`. A nonzero value is retained
 in data-readiness threshold evidence and should be treated as a reviewed data
 exception, not as contract repair.
+The same commands also default
+`--max-duplicate-contract-key-rows` and
+`--max-conflicting-contract-key-rows` to `0`. The contract key is
+`(ts, expiry, strike)`. Exact repeated states emit
+`duplicate_contract_observation`; multiple quote/depth states at one key emit
+`conflicting_contract_observation`. A later timestamp for the same contract is
+a normal update and is not a collision.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9356,6 +9365,10 @@ maximum calendar DTE, zero-DTE rows, malformed expiry rows, and observations
 after expiry. Expiry-day observations are valid at DTE `0`; negative DTE emits
 `expired_contract_observation`, while a malformed date emits
 `unparseable_contract_expiry`.
+The same summary reports all rows affected by repeated `(ts, expiry, strike)`
+keys, excess rows beyond one state per key, exact-repeat and conflicting-state
+groups, plus per-expiry counts. Diagnostics do not silently deduplicate or
+choose one contradictory quote.
 
 ## Data Readiness Gate
 
@@ -9397,6 +9410,8 @@ python -m hft_cli review-data-readiness `
   --max-chain-median-spread-ticks 20 `
   --max-unparseable-contract-expiry-rows 0 `
   --max-expired-contract-rows 0 `
+  --max-duplicate-contract-key-rows 0 `
+  --max-conflicting-contract-key-rows 0 `
   --max-invalid-contract-expiry-rows 0 `
   --max-uncovered-contract-expiry-rows 0 `
   --max-invalid-contract-lot-rows 0 `

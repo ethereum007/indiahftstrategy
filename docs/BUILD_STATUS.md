@@ -6892,6 +6892,21 @@ set exceeded five minutes and recent complete attempts require over 40
 minutes; each affected suite completed independently. All outputs remain
 non-authorizing.
 
+Latest option contract-key uniqueness gate: chain diagnostics now require one
+unambiguous market state per `(ts, expiry, strike)` key. Reports retain affected
+rows, excess rows, duplicate groups, exact-repeat groups, and contradictory
+quote/depth groups both overall and by expiry. Exact repeats and conflicting
+states emit separate row-level issues; later timestamps for the same contract
+remain valid updates. Data readiness fails closed on either class by default,
+while distinct override budgets are retained through Arrow.money/iRage
+single-day, batch, broker-vendor, and direct review CLI evidence. The pipeline
+does not silently deduplicate or choose one contradictory state. Diagnostics,
+contract-horizon, exchange-expiry, lot-size, readiness, vendor, broker-vendor,
+and provider-wrapper regressions pass (`85` tests). Repository collection is
+healthy at `2565 tests`. The full suite was not rerun because the affected
+wrappers already require several minutes independently and recent complete
+runs exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

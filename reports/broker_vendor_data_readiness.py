@@ -57,6 +57,8 @@ class BrokerVendorDataReadinessConfig:
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
     max_expired_contract_rows: int = 0
+    max_duplicate_contract_key_rows: int = 0
+    max_conflicting_contract_key_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
 
@@ -137,6 +139,12 @@ def write_broker_vendor_data_readiness_pipeline(
             config.max_unparseable_contract_expiry_rows
         ),
         max_expired_contract_rows=config.max_expired_contract_rows,
+        max_duplicate_contract_key_rows=(
+            config.max_duplicate_contract_key_rows
+        ),
+        max_conflicting_contract_key_rows=(
+            config.max_conflicting_contract_key_rows
+        ),
         max_p99_gap_ns=config.max_p99_gap_ns,
         max_median_spread_ticks=config.max_median_spread_ticks,
     )

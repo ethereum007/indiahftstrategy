@@ -66,6 +66,8 @@ class VendorMarketDataPipelineConfig:
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
     max_expired_contract_rows: int = 0
+    max_duplicate_contract_key_rows: int = 0
+    max_conflicting_contract_key_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
 
@@ -718,6 +720,12 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
             config.max_unparseable_contract_expiry_rows
         ),
         max_expired_contract_rows=config.max_expired_contract_rows,
+        max_duplicate_contract_key_rows=(
+            config.max_duplicate_contract_key_rows
+        ),
+        max_conflicting_contract_key_rows=(
+            config.max_conflicting_contract_key_rows
+        ),
         max_tick_p99_gap_ns=config.max_p99_gap_ns if config.kind == "ticks" else None,
         max_tick_median_spread_ticks=config.max_median_spread_ticks if config.kind == "ticks" else None,
         max_chain_median_spread_ticks=config.max_median_spread_ticks if config.kind == "chain" else None,
@@ -949,6 +957,54 @@ def _summary(
                     "max_calendar_dte_days",
                     fallback=float("nan"),
                 ),
+                "contract_key_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "contract_key_validation_enabled",
+                        False,
+                    )
+                ),
+                "duplicate_contract_key_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "duplicate_contract_key_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "duplicate_contract_key_excess_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "duplicate_contract_key_excess_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "duplicate_contract_key_groups": int(
+                    _number(
+                        diagnostic_row,
+                        "duplicate_contract_key_groups",
+                        fallback=0.0,
+                    )
+                ),
+                "exact_duplicate_contract_key_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "exact_duplicate_contract_key_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "conflicting_contract_key_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "conflicting_contract_key_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "conflicting_contract_key_groups": int(
+                    _number(
+                        diagnostic_row,
+                        "conflicting_contract_key_groups",
+                        fallback=0.0,
+                    )
+                ),
                 "contract_expiry_validation_enabled": _truthy(
                     diagnostic_row.get(
                         "contract_expiry_validation_enabled",
@@ -1167,6 +1223,10 @@ def _pipeline_runbook_markdown(
         f"- Unparseable contract-expiry rows: {int(_number_from_value(summary_row.get('unparseable_contract_expiry_rows', 0)))}",
         f"- Post-expiry observation rows: {int(_number_from_value(summary_row.get('expired_contract_rows', 0)))}",
         f"- Zero-DTE rows: {int(_number_from_value(summary_row.get('zero_dte_rows', 0)))}",
+        f"- Duplicate contract-key rows: {int(_number_from_value(summary_row.get('duplicate_contract_key_rows', 0)))}",
+        f"- Duplicate contract-key groups: {int(_number_from_value(summary_row.get('duplicate_contract_key_groups', 0)))}",
+        f"- Conflicting contract-key rows: {int(_number_from_value(summary_row.get('conflicting_contract_key_rows', 0)))}",
+        f"- Conflicting contract-key groups: {int(_number_from_value(summary_row.get('conflicting_contract_key_groups', 0)))}",
         f"- Contract expiry validation: {'yes' if _truthy(summary_row.get('contract_expiry_validation_enabled', False)) else 'no'}",
         f"- Contract expiry cycle: {_value_text(summary_row.get('contract_expiry_cycle')) or 'n/a'}",
         f"- Contract expiry rule: {_value_text(summary_row.get('contract_expiry_rule_id')) or 'n/a'}",
@@ -1832,6 +1892,8 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         "max_out_of_session_rows",
         "max_unparseable_contract_expiry_rows",
         "max_expired_contract_rows",
+        "max_duplicate_contract_key_rows",
+        "max_conflicting_contract_key_rows",
     ):
         if getattr(config, name) < 0:
             raise ValueError(f"{name} must be non-negative")
