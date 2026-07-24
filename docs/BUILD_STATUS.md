@@ -6875,6 +6875,23 @@ tests`. The full suite was not rerun because recent full attempts require well
 over the heartbeat window; the changed boundaries and their direct wrappers
 are covered. All outputs remain non-authorizing.
 
+Latest option contract-horizon gate: every chain observation is now compared
+with its declared expiry using the selected market profile's local date.
+Diagnostics retain strict expiry parse coverage, minimum/median/maximum
+calendar DTE, zero-DTE rows, post-expiry rows, and per-expiry breakdowns.
+Expiry-day observations remain valid; malformed dates and negative DTE emit
+separate row-level issues. Data readiness defaults both defect budgets to zero,
+and the same thresholds flow through Arrow.money/iRage single-day, multi-day,
+and broker-vendor pipelines plus their CLI surfaces and retained runbooks.
+Tests cover India and US timezone boundaries, zero-DTE acceptance,
+post-expiry and malformed-expiry rejection, explicit audited budgets, vendor
+onboarding, data-readiness manifests, and broker wrapper compatibility.
+Focused and downstream regressions pass (`82` tests). Repository collection is
+healthy at `2562 tests`. The full suite was not rerun because the broad wrapper
+set exceeded five minutes and recent complete attempts require over 40
+minutes; each affected suite completed independently. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

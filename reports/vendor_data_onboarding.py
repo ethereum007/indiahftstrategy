@@ -64,6 +64,8 @@ class VendorMarketDataPipelineConfig:
     max_nonpositive_depth_rows: int = 0
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
+    max_unparseable_contract_expiry_rows: int = 0
+    max_expired_contract_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
 
@@ -712,6 +714,10 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
+        max_unparseable_contract_expiry_rows=(
+            config.max_unparseable_contract_expiry_rows
+        ),
+        max_expired_contract_rows=config.max_expired_contract_rows,
         max_tick_p99_gap_ns=config.max_p99_gap_ns if config.kind == "ticks" else None,
         max_tick_median_spread_ticks=config.max_median_spread_ticks if config.kind == "ticks" else None,
         max_chain_median_spread_ticks=config.max_median_spread_ticks if config.kind == "chain" else None,
@@ -897,6 +903,52 @@ def _summary(
                     )
                 ),
                 "diagnostic_rows": int(_number(diagnostic_row, "rows", fallback=0.0)),
+                "contract_horizon_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "contract_horizon_validation_enabled",
+                        False,
+                    )
+                ),
+                "contract_horizon_market_timezone": _text(
+                    diagnostic_row,
+                    "contract_horizon_market_timezone",
+                ),
+                "unparseable_contract_expiry_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "unparseable_contract_expiry_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "expired_contract_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "expired_contract_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "zero_dte_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "zero_dte_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "min_calendar_dte_days": _number(
+                    diagnostic_row,
+                    "min_calendar_dte_days",
+                    fallback=float("nan"),
+                ),
+                "median_calendar_dte_days": _number(
+                    diagnostic_row,
+                    "median_calendar_dte_days",
+                    fallback=float("nan"),
+                ),
+                "max_calendar_dte_days": _number(
+                    diagnostic_row,
+                    "max_calendar_dte_days",
+                    fallback=float("nan"),
+                ),
                 "contract_expiry_validation_enabled": _truthy(
                     diagnostic_row.get(
                         "contract_expiry_validation_enabled",
@@ -1111,6 +1163,10 @@ def _pipeline_runbook_markdown(
         f"- Calendar SHA-256: {_value_text(summary_row.get('market_calendar_sha256'))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
+        f"- Contract horizon timezone: {_value_text(summary_row.get('contract_horizon_market_timezone')) or 'n/a'}",
+        f"- Unparseable contract-expiry rows: {int(_number_from_value(summary_row.get('unparseable_contract_expiry_rows', 0)))}",
+        f"- Post-expiry observation rows: {int(_number_from_value(summary_row.get('expired_contract_rows', 0)))}",
+        f"- Zero-DTE rows: {int(_number_from_value(summary_row.get('zero_dte_rows', 0)))}",
         f"- Contract expiry validation: {'yes' if _truthy(summary_row.get('contract_expiry_validation_enabled', False)) else 'no'}",
         f"- Contract expiry cycle: {_value_text(summary_row.get('contract_expiry_cycle')) or 'n/a'}",
         f"- Contract expiry rule: {_value_text(summary_row.get('contract_expiry_rule_id')) or 'n/a'}",
@@ -1774,6 +1830,8 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         "max_nonpositive_depth_rows",
         "max_non_trading_day_rows",
         "max_out_of_session_rows",
+        "max_unparseable_contract_expiry_rows",
+        "max_expired_contract_rows",
     ):
         if getattr(config, name) < 0:
             raise ValueError(f"{name} must be non-negative")

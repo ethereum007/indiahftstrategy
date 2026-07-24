@@ -8891,6 +8891,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --underlying NIFTY `
   --lot-size 65 `
   --tick-size 0.05 `
+  --max-unparseable-contract-expiry-rows 0 `
+  --max-expired-contract-rows 0 `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -8904,6 +8906,12 @@ economics against pinned NSE circular `NSE/FAOP/70616` and the retained
 BANKNIFTY `30`, FINNIFTY `60`, MIDCPNIFTY `120`, and NIFTYNXT50 `25`.
 The rule covers NIFTY weeklies from 6 January 2026 and monthly contracts from
 27 January 2026; unsupported cycles and earlier expiries fail closed.
+Contract-horizon checks run for every chain even when exchange-rule validation
+is not requested. The single-day, batch, and broker-vendor pipeline commands
+all accept `--max-unparseable-contract-expiry-rows` and
+`--max-expired-contract-rows`; both default to `0`. A nonzero value is retained
+in data-readiness threshold evidence and should be treated as a reviewed data
+exception, not as contract repair.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9341,6 +9349,14 @@ diagnostic_summary.csv
 diagnostic_issues.csv
 ```
 
+Chain diagnostics derive each observation date in the selected market
+profile's timezone and compare it with the strict `YYYY-MM-DD` contract
+expiry. The overall and per-expiry summaries retain minimum, median, and
+maximum calendar DTE, zero-DTE rows, malformed expiry rows, and observations
+after expiry. Expiry-day observations are valid at DTE `0`; negative DTE emits
+`expired_contract_observation`, while a malformed date emits
+`unparseable_contract_expiry`.
+
 ## Data Readiness Gate
 
 Combine vendor sample intake, adapter schema audit, mapped-data normalization,
@@ -9379,6 +9395,8 @@ python -m hft_cli review-data-readiness `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
+  --max-unparseable-contract-expiry-rows 0 `
+  --max-expired-contract-rows 0 `
   --max-invalid-contract-expiry-rows 0 `
   --max-uncovered-contract-expiry-rows 0 `
   --max-invalid-contract-lot-rows 0 `

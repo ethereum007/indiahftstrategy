@@ -82,6 +82,8 @@ class DataReadinessThresholds:
     max_nonpositive_depth_rows: int = 0
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
+    max_unparseable_contract_expiry_rows: int = 0
+    max_expired_contract_rows: int = 0
     max_invalid_contract_expiry_rows: int = 0
     max_uncovered_contract_expiry_rows: int = 0
     max_invalid_contract_lot_rows: int = 0
@@ -1632,6 +1634,22 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
             thresholds.max_non_trading_day_rows,
         ),
         _threshold_check("chain_out_of_session_rows", _number(row, "out_of_session_rows"), "<=", thresholds.max_out_of_session_rows),
+        _threshold_check(
+            "chain_unparseable_contract_expiry_rows",
+            _number(
+                row,
+                "unparseable_contract_expiry_rows",
+                fallback=0.0,
+            ),
+            "<=",
+            thresholds.max_unparseable_contract_expiry_rows,
+        ),
+        _threshold_check(
+            "chain_expired_contract_rows",
+            _number(row, "expired_contract_rows", fallback=0.0),
+            "<=",
+            thresholds.max_expired_contract_rows,
+        ),
     ]
     expiry_validation_enabled = _to_bool(
         row.get("contract_expiry_validation_enabled", False)
@@ -3012,6 +3030,8 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_nonpositive_depth_rows",
         "max_non_trading_day_rows",
         "max_out_of_session_rows",
+        "max_unparseable_contract_expiry_rows",
+        "max_expired_contract_rows",
         "max_invalid_contract_expiry_rows",
         "max_uncovered_contract_expiry_rows",
         "max_invalid_contract_lot_rows",

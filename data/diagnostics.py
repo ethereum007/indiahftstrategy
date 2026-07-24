@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -31,7 +32,7 @@ from markets.lot_sizes import (
     load_nse_index_lot_rule,
     validate_nse_index_lot_size,
 )
-from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES, get_market_profile
 
 
 TICK_REQUIRED = ["ts", "bid", "ask", "bid_qty", "ask_qty"]
@@ -77,6 +78,17 @@ class _ContractLotDiagnostics:
     validations: dict[str, NseIndexLotValidation]
     row_valid: pd.Series
     row_covered: pd.Series
+
+
+@dataclass(frozen=True)
+class _ContractHorizonDiagnostics:
+    market_timezone: str
+    observation_dates: pd.Series
+    expiry_dates: pd.Series
+    calendar_dte_days: pd.Series
+    row_parseable: pd.Series
+    row_expired: pd.Series
+    row_zero_dte: pd.Series
 
 
 def tick_diagnostics(
@@ -164,6 +176,16 @@ def chain_diagnostics(
         market=market,
         market_calendar=calendar,
     )
+    horizon_diagnostics = _contract_horizon_diagnostics(
+        frame["ts"],
+        frame["expiry"],
+        market=market,
+    )
+    frame["calendar_dte_days"] = horizon_diagnostics.calendar_dte_days
+    frame["contract_expiry_parseable"] = horizon_diagnostics.row_parseable
+    frame["unparseable_contract_expiry"] = ~horizon_diagnostics.row_parseable
+    frame["expired_contract"] = horizon_diagnostics.row_expired
+    frame["zero_dte_contract"] = horizon_diagnostics.row_zero_dte
     expiry_diagnostics = _contract_expiry_diagnostics(
         frame["expiry"],
         cycle=expiry_cycle,
@@ -186,6 +208,19 @@ def chain_diagnostics(
             median_put_spread=("put_spread", "median"),
             median_call_spread_ticks=("call_spread_ticks", "median"),
             median_put_spread_ticks=("put_spread_ticks", "median"),
+            parseable_contract_expiry_rows=(
+                "contract_expiry_parseable",
+                "sum",
+            ),
+            unparseable_contract_expiry_rows=(
+                "unparseable_contract_expiry",
+                "sum",
+            ),
+            expired_contract_rows=("expired_contract", "sum"),
+            zero_dte_rows=("zero_dte_contract", "sum"),
+            min_calendar_dte_days=("calendar_dte_days", "min"),
+            median_calendar_dte_days=("calendar_dte_days", "median"),
+            max_calendar_dte_days=("calendar_dte_days", "max"),
         )
         .reset_index()
     )
@@ -255,11 +290,13 @@ def chain_diagnostics(
         ]
     expiry_summary = _contract_expiry_summary(expiry_diagnostics)
     lot_summary = _contract_lot_summary(lot_diagnostics)
+    horizon_summary = _contract_horizon_summary(horizon_diagnostics)
     overall = pd.DataFrame(
         [
             {
                 "market": market,
                 **market_calendar_summary(calendar),
+                **horizon_summary,
                 **expiry_summary,
                 **lot_summary,
                 "rows": int(len(frame)),
@@ -310,6 +347,10 @@ def chain_diagnostics(
                 if lot_diagnostics.enabled
                 else pd.Series(False, index=frame.index, dtype=bool)
             ),
+            unparseable_contract_expiry=(
+                ~horizon_diagnostics.row_parseable
+            ),
+            expired_contract=horizon_diagnostics.row_expired,
         ),
     )
 
@@ -358,6 +399,8 @@ def _chain_issues(
     out_of_session: pd.Series,
     invalid_contract_expiry: pd.Series,
     invalid_contract_lot: pd.Series,
+    unparseable_contract_expiry: pd.Series,
+    expired_contract: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -376,6 +419,8 @@ def _chain_issues(
         & ~calendar_closed
         & ~calendar_out_of_range,
         "out_of_session": out_of_session,
+        "unparseable_contract_expiry": unparseable_contract_expiry,
+        "expired_contract_observation": expired_contract,
         "invalid_contract_expiry": invalid_contract_expiry,
         "invalid_contract_lot_size": invalid_contract_lot,
     }
@@ -480,6 +525,99 @@ def _contract_expiry_summary(
         "validated_contract_expiries": int(len(diagnostics.validations)),
         **expiry_rule_summary(diagnostics.rule),
     }
+
+
+def _contract_horizon_diagnostics(
+    ts_ns: pd.Series,
+    expiries: pd.Series,
+    *,
+    market: str,
+) -> _ContractHorizonDiagnostics:
+    timezone = get_market_profile(market).session.timezone
+    observation_dates = (
+        pd.to_datetime(ts_ns, unit="ns", utc=True, errors="coerce")
+        .dt.tz_convert(timezone)
+        .dt.date
+    )
+    expiry_dates = pd.Series(
+        [_parse_contract_expiry_date(value) for value in expiries],
+        index=expiries.index,
+        dtype=object,
+    )
+    calendar_dte_days = pd.Series(
+        [
+            (
+                float((expiry_date - observation_date).days)
+                if expiry_date is not None
+                and observation_date is not None
+                and not pd.isna(observation_date)
+                else np.nan
+            )
+            for observation_date, expiry_date in zip(
+                observation_dates,
+                expiry_dates,
+            )
+        ],
+        index=expiries.index,
+        dtype="float64",
+    )
+    row_parseable = expiry_dates.notna().astype(bool)
+    row_expired = calendar_dte_days.lt(0).fillna(False).astype(bool)
+    row_zero_dte = calendar_dte_days.eq(0).fillna(False).astype(bool)
+    return _ContractHorizonDiagnostics(
+        market_timezone=timezone,
+        observation_dates=observation_dates,
+        expiry_dates=expiry_dates,
+        calendar_dte_days=calendar_dte_days,
+        row_parseable=row_parseable,
+        row_expired=row_expired,
+        row_zero_dte=row_zero_dte,
+    )
+
+
+def _contract_horizon_summary(
+    diagnostics: _ContractHorizonDiagnostics,
+) -> dict[str, object]:
+    dte = diagnostics.calendar_dte_days.dropna()
+    return {
+        "contract_horizon_validation_enabled": True,
+        "contract_horizon_market_timezone": diagnostics.market_timezone,
+        "parseable_contract_expiry_rows": int(
+            diagnostics.row_parseable.sum()
+        ),
+        "unparseable_contract_expiry_rows": int(
+            (~diagnostics.row_parseable).sum()
+        ),
+        "expired_contract_rows": int(diagnostics.row_expired.sum()),
+        "zero_dte_rows": int(diagnostics.row_zero_dte.sum()),
+        "min_calendar_dte_days": float(dte.min()) if len(dte) else np.nan,
+        "median_calendar_dte_days": (
+            float(dte.median()) if len(dte) else np.nan
+        ),
+        "max_calendar_dte_days": float(dte.max()) if len(dte) else np.nan,
+    }
+
+
+def _parse_contract_expiry_date(value: object) -> date | None:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, np.datetime64):
+        return pd.Timestamp(value).date()
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    try:
+        parsed = date.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.isoformat() == text else None
 
 
 def _contract_lot_diagnostics(
