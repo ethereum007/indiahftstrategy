@@ -446,6 +446,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
     mapped.loc[0, "dropped_nonintegral_rows"] = 1
     mapped.loc[0, "dropped_duplicate_rows"] = 1
     mapped.loc[0, "dropped_integer_overflow_rows"] = 1
+    mapped.loc[0, "dropped_negative_depth_rows"] = 1
     mapped.loc[0, "dropped_non_trading_day_rows"] = 1
     mapped.loc[0, "dropped_out_of_session_rows"] = 1
 
@@ -462,6 +463,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
         "mapped_data_dropped_nonintegral_rows",
         "mapped_data_dropped_duplicate_tick_rows",
         "mapped_data_dropped_integer_overflow_rows",
+        "mapped_data_dropped_negative_depth_rows",
         "mapped_data_dropped_non_trading_day_rows",
         "mapped_data_dropped_out_of_session_rows",
     } <= failed

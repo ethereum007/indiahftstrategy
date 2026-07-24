@@ -2024,7 +2024,7 @@ def _mapped_quarantine_checks(
                 ),
             ]
         )
-    if kind == "chain":
+    if kind in {"ticks", "chain"}:
         checks.append(
             _threshold_check(
                 "mapped_data_dropped_negative_depth_rows",

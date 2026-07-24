@@ -8872,6 +8872,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-integer-overflow-rows 0 `
   --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
+  --max-nonpositive-depth-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8901,6 +8902,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
   --max-integer-overflow-rows 0 `
+  --max-nonpositive-depth-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -8968,6 +8970,11 @@ wrap into an apparently valid nanosecond timestamp. Violations are retained as
 `dropped_integer_overflow_rows` and fail the zero-default
 `--max-integer-overflow-rows` gate throughout direct, vendor, provider, batch,
 and broker-vendor readiness evidence.
+Top-of-book depth must also be strictly positive. Tick and option-chain rows
+with any zero or negative bid/ask quantity are quarantined before engine output;
+the compatibility evidence field is `dropped_negative_depth_rows`, and it
+counts zero depth as nonpositive too. The retained count fails the zero-default
+`--max-nonpositive-depth-rows` gate across direct and wrapped readiness paths.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9479,6 +9486,7 @@ python -m hft_cli review-data-readiness `
   --max-integer-overflow-rows 0 `
   --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
+  --max-nonpositive-depth-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

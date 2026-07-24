@@ -508,6 +508,9 @@ def write_vendor_market_data_batch_pipeline(
                 "dropped_nonmonotonic_rows": int(
                     _number(row, "dropped_nonmonotonic_rows", fallback=0.0)
                 ),
+                "dropped_negative_depth_rows": int(
+                    _number(row, "dropped_negative_depth_rows", fallback=0.0)
+                ),
                 "dropped_calendar_closed_rows": int(
                     _number(row, "dropped_calendar_closed_rows", fallback=0.0)
                 ),
@@ -968,6 +971,9 @@ def _summary(
                 "dropped_nonmonotonic_rows": int(
                     _number(mapped_row, "dropped_nonmonotonic_rows", fallback=0.0)
                 ),
+                "dropped_negative_depth_rows": int(
+                    _number(mapped_row, "dropped_negative_depth_rows", fallback=0.0)
+                ),
                 "dropped_non_trading_day_rows": int(
                     _number(
                         mapped_row,
@@ -1377,6 +1383,7 @@ def _pipeline_runbook_markdown(
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
         f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
         f"- Nonmonotonic tick packets: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
+        f"- Nonpositive depth rows: {int(_number_from_value(summary_row.get('dropped_negative_depth_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Contract horizon timezone: {_value_text(summary_row.get('contract_horizon_market_timezone')) or 'n/a'}",
@@ -1449,6 +1456,7 @@ def _batch_runbook_markdown(
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
         f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
         f"- Nonmonotonic tick packets: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
+        f"- Nonpositive depth rows: {int(_number_from_value(summary_row.get('dropped_negative_depth_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -1631,6 +1639,15 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "dropped_negative_depth_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "dropped_negative_depth_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "dropped_calendar_closed_rows": int(
                     pd.to_numeric(
                         datasets.get("dropped_calendar_closed_rows", pd.Series(dtype=float)),
@@ -1763,6 +1780,9 @@ def _pipeline_config(
             "dropped_nonmonotonic_rows": int(
                 _number(row, "dropped_nonmonotonic_rows", fallback=0.0)
             ),
+            "dropped_negative_depth_rows": int(
+                _number(row, "dropped_negative_depth_rows", fallback=0.0)
+            ),
             "dropped_non_trading_day_rows": int(
                 _number(row, "dropped_non_trading_day_rows", fallback=0.0)
             ),
@@ -1847,6 +1867,9 @@ def _batch_config(
             "dropped_nonmonotonic_rows": int(
                 _number_from_value(item.get("dropped_nonmonotonic_rows", 0))
             ),
+            "dropped_negative_depth_rows": int(
+                _number_from_value(item.get("dropped_negative_depth_rows", 0))
+            ),
             "dropped_calendar_closed_rows": int(
                 _number_from_value(item.get("dropped_calendar_closed_rows", 0))
             ),
@@ -1916,6 +1939,9 @@ def _batch_config(
         ),
         "dropped_nonmonotonic_rows": int(
             _number(row, "dropped_nonmonotonic_rows", fallback=0.0)
+        ),
+        "dropped_negative_depth_rows": int(
+            _number(row, "dropped_negative_depth_rows", fallback=0.0)
         ),
         "dropped_calendar_closed_rows": int(
             _number(row, "dropped_calendar_closed_rows", fallback=0.0)

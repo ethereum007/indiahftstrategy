@@ -37,6 +37,7 @@ class QuarantineReport:
     dropped_nonintegral_rows: int = 0
     dropped_duplicate_rows: int = 0
     dropped_integer_overflow_rows: int = 0
+    dropped_negative_depth_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -139,6 +140,9 @@ def normalize_ticks(
     )
     integer_overflow_count = int((~int64_mask).sum())
     out = out.loc[int64_mask].copy()
+    depth_mask = (out["bid_qty"] > 0) & (out["ask_qty"] > 0)
+    negative_depth_count = int((~depth_mask).sum())
+    out = out.loc[depth_mask].copy()
     out["ts"] = out["ts"].astype("int64")
     quote_positive_mask = (out["bid"] > 0) & (out["ask"] > 0)
     nonpositive_count = int((~quote_positive_mask).sum())
@@ -204,6 +208,7 @@ def normalize_ticks(
         dropped_nonintegral_rows=nonintegral_count,
         dropped_duplicate_rows=duplicate_count,
         dropped_integer_overflow_rows=integer_overflow_count,
+        dropped_negative_depth_rows=negative_depth_count,
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,

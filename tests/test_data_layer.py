@@ -192,6 +192,27 @@ def test_normalize_ticks_quarantines_every_packet_below_the_high_water_mark():
     assert normalized.quarantine.dropped_nonmonotonic_rows == 2
 
 
+def test_normalize_ticks_quarantines_nonpositive_top_of_book_depth():
+    valid = {
+        "ts": 1,
+        "bid": 100.0,
+        "ask": 100.05,
+        "bid_qty": 75,
+        "ask_qty": 150,
+    }
+    zero_bid_depth = {**valid, "ts": 2, "bid_qty": 0}
+    negative_ask_depth = {**valid, "ts": 3, "ask_qty": -1}
+
+    normalized = normalize_ticks(
+        pd.DataFrame([valid, zero_bid_depth, negative_ask_depth]),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert list(normalized.data["ts"]) == [1]
+    assert normalized.quarantine.dropped_negative_depth_rows == 2
+
+
 def test_normalize_ticks_quarantines_int64_overflow_before_scaling_or_casts():
     valid = {
         "ts": 1,

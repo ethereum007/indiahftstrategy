@@ -6999,6 +6999,18 @@ broker-vendor, and provider regressions pass (`95` tests). Repository
 collection is healthy at `2588 tests`. The full suite was not rerun because
 recent complete runs exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest normalized depth-integrity gate: tick normalization now matches the
+option-chain contract by quarantining rows with zero or negative top-of-book
+bid/ask quantity before engine output. The retained compatibility field is
+`dropped_negative_depth_rows`, including zero-depth rows; readiness fails
+closed at the existing zero-default `--max-nonpositive-depth-rows` budget
+across direct review, Arrow.money/iRage single-day and batch onboarding,
+broker-vendor proof, and provider wrappers. Normalization, mapped-data,
+readiness, vendor, broker-vendor, and provider regressions pass (`98` tests).
+Repository collection is healthy at `2591 tests`. The full suite was not rerun
+because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

@@ -424,6 +424,9 @@ def _summary(
                 "dropped_nonmonotonic_rows": _int(
                     vendor_row.get("dropped_nonmonotonic_rows", 0)
                 ),
+                "dropped_negative_depth_rows": _int(
+                    vendor_row.get("dropped_negative_depth_rows", 0)
+                ),
                 "dropped_calendar_closed_rows": _int(
                     vendor_row.get("dropped_calendar_closed_rows", 0)
                 ),
@@ -1088,6 +1091,7 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Duplicate tick packets: {_int(row.get('dropped_duplicate_rows', 0))}",
         f"- Integer-overflow rows: {_int(row.get('dropped_integer_overflow_rows', 0))}",
         f"- Nonmonotonic tick packets: {_int(row.get('dropped_nonmonotonic_rows', 0))}",
+        f"- Nonpositive depth rows: {_int(row.get('dropped_negative_depth_rows', 0))}",
         f"- Calendar-closed rows: {_int(row.get('dropped_calendar_closed_rows', 0))}",
         f"- Calendar out-of-range rows: {_int(row.get('dropped_calendar_out_of_range_rows', 0))}",
         f"- Mapping source mode: {str(row.get('mapping_source_mode', ''))}",
@@ -1233,6 +1237,9 @@ def _config(
             ),
             "dropped_nonmonotonic_rows": _int(
                 row.get("dropped_nonmonotonic_rows", 0)
+            ),
+            "dropped_negative_depth_rows": _int(
+                row.get("dropped_negative_depth_rows", 0)
             ),
             "dropped_calendar_closed_rows": _int(
                 row.get("dropped_calendar_closed_rows", 0)

@@ -220,6 +220,36 @@ def test_normalize_mapped_tick_data_preserves_high_water_quarantine_provenance()
     assert list(report.data["ts"]) == [100, 100, 125]
 
 
+def test_normalize_mapped_tick_data_preserves_nonpositive_depth_provenance():
+    valid = {
+        "exchange_ts": 1,
+        "best_bid": 100.0,
+        "best_ask": 100.05,
+        "bid_size": 75,
+        "ask_size": 150,
+        "last_px": 100.05,
+        "last_size": 75,
+    }
+    zero_bid_depth = {**valid, "exchange_ts": 2, "bid_size": 0}
+    negative_ask_depth = {**valid, "exchange_ts": 3, "ask_size": -1}
+
+    report = normalize_mapped_data(
+        pd.DataFrame([valid, zero_bid_depth, negative_ask_depth]),
+        tick_mapping(),
+        config=MappedDataConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            filter_session=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert int(summary["output_rows"]) == 1
+    assert int(summary["quarantined_rows"]) == 2
+    assert int(summary["dropped_negative_depth_rows"]) == 2
+
+
 def test_normalize_mapped_tick_data_preserves_integer_overflow_provenance():
     valid = {
         "exchange_ts": ns_ist("2026-06-10 09:15:00"),
