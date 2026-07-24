@@ -8866,6 +8866,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --timestamp-unit datetime `
   --tick-size 0.05 `
   --min-rows 100000 `
+  --max-null-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8891,6 +8892,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --underlying NIFTY `
   --lot-size 65 `
   --tick-size 0.05 `
+  --max-null-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -8933,6 +8935,12 @@ readiness commands accept `--min-chain-expiry-snapshots`,
 `--max-chain-snapshot-p99-gap-ns`. Defaults preserve structurally valid
 one-snapshot samples; production values must be set from the agreed vendor
 delivery mode. The values above are illustrative for a dense intraday file.
+Normalization also reports rows removed because any required timestamp,
+contract, quote, or depth field is null. Vendor and provider single-day/batch,
+broker-vendor, and direct readiness commands accept `--max-null-rows`, which
+defaults to `0`. The check uses the pre-normalization quarantine evidence, so
+a bad row cannot disappear before diagnostics and leave the file apparently
+ready. Any nonzero budget is retained as an explicit reviewed exception.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9425,6 +9433,7 @@ python -m hft_cli review-data-readiness `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
+  --max-null-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

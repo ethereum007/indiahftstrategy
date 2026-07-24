@@ -53,6 +53,7 @@ class BrokerVendorDataReadinessConfig:
     min_chain_expiry_snapshots: int = 1
     min_chain_snapshots_per_expiry: int = 1
     min_chain_snapshot_strikes: int = 1
+    max_null_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -139,6 +140,7 @@ def write_broker_vendor_data_readiness_pipeline(
             config.min_chain_snapshots_per_expiry
         ),
         min_chain_snapshot_strikes=config.min_chain_snapshot_strikes,
+        max_null_rows=config.max_null_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
@@ -394,6 +396,9 @@ def _summary(
                 "dataset_count": _int(vendor_row.get("dataset_count", 0)),
                 "ready_datasets": _int(vendor_row.get("ready_datasets", 0)),
                 "failed_datasets": _int(vendor_row.get("failed_datasets", 0)),
+                "dropped_null_rows": _int(
+                    vendor_row.get("dropped_null_rows", 0)
+                ),
                 "dropped_calendar_closed_rows": _int(
                     vendor_row.get("dropped_calendar_closed_rows", 0)
                 ),
@@ -1052,6 +1057,7 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Failed checks: {_int(row.get('failed_checks', 0))}",
         f"- Dataset count: {_int(row.get('dataset_count', 0))}",
         f"- Ready datasets: {_int(row.get('ready_datasets', 0))}",
+        f"- Null required-field rows: {_int(row.get('dropped_null_rows', 0))}",
         f"- Calendar-closed rows: {_int(row.get('dropped_calendar_closed_rows', 0))}",
         f"- Calendar out-of-range rows: {_int(row.get('dropped_calendar_out_of_range_rows', 0))}",
         f"- Mapping source mode: {str(row.get('mapping_source_mode', ''))}",
@@ -1180,6 +1186,9 @@ def _config(
             "dataset_count": _int(row.get("dataset_count", 0)),
             "ready_datasets": _int(row.get("ready_datasets", 0)),
             "failed_datasets": _int(row.get("failed_datasets", 0)),
+            "dropped_null_rows": _int(
+                row.get("dropped_null_rows", 0)
+            ),
             "dropped_calendar_closed_rows": _int(
                 row.get("dropped_calendar_closed_rows", 0)
             ),

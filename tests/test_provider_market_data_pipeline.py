@@ -141,6 +141,8 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
             "2",
             "--pipeline-min-rows",
             "2",
+            "--max-null-rows",
+            "2",
             "--tick-size",
             "0.05",
             "--max-median-spread-ticks",
@@ -153,7 +155,13 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
     vendor_summary = pd.read_csv(
         out_dir / "02_vendor_market_data_pipeline" / "vendor_market_data_pipeline_summary.csv"
     )
+    config = json.loads(
+        (out_dir / "provider_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "next_gate"] == "review-data-readiness"
     assert vendor_summary.loc[0, "adapter"] == "normalized"
+    assert config["parameters"]["max_null_rows"] == 2

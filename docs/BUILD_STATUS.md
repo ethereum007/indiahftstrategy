@@ -6922,6 +6922,19 @@ pass (`88` tests). Repository collection is healthy at `2568 tests`. The full
 suite was not rerun because recent complete runs exceed 40 minutes. All outputs
 remain non-authorizing.
 
+Latest required-field null quarantine gate: mapped-data readiness now consumes
+the normalization layer's `dropped_null_rows` evidence and fails closed at a
+default budget of zero. A row with a null required timestamp, contract, quote,
+or depth field can no longer disappear before diagnostics while leaving the
+vendor file apparently ready. `--max-null-rows` propagates through direct
+review, Arrow.money/iRage single-day and batch onboarding, broker-vendor proof,
+provider wrappers, manifests, configs, summaries, and runbooks; any nonzero
+budget remains an explicit retained exception. Data-readiness, mapped,
+review-bound, target-applied, comparison, vendor, broker-vendor, and provider
+regressions pass (`104` tests). Repository collection is healthy at `2569 tests`.
+The full suite was not rerun because recent complete runs exceed 40
+minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

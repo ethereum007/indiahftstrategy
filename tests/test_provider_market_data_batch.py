@@ -111,6 +111,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "2",
             "--pipeline-min-rows",
             "2",
+            "--max-null-rows",
+            "2",
             "--tick-size",
             "0.05",
             "--max-median-spread-ticks",
@@ -121,6 +123,14 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
         ]
     )
     assert ready_code == 0
+    cli_config = json.loads(
+        (
+            tmp_path
+            / "provider_batch_cli"
+            / "provider_market_data_batch_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert cli_config["parameters"]["max_null_rows"] == 2
 
 
 def test_provider_market_data_batch_blocks_reused_capture_file(tmp_path):

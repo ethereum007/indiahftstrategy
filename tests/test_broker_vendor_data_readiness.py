@@ -219,6 +219,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert bool(summary["placeholder_schema_allowed"])
         assert summary["placeholder_schema_warning"] == "placeholder adapter schema allowed for dry-run review only"
         assert int(summary["dataset_count"]) == 2
+        assert int(summary["dropped_null_rows"]) == 0
         assert int(summary["unique_source_files"]) == 2
         assert int(summary["unique_header_fingerprints"]) == 1
         assert summary["source_file_fingerprint_coverage"] == 1.0
@@ -247,6 +248,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(encoding="utf-8")
         assert "# Broker Vendor Data Readiness Runbook" in runbook
         assert "- Ready: yes" in runbook
+        assert "- Null required-field rows: 0" in runbook
         assert "- Placeholder schema allowed: yes" in runbook
         assert "placeholder adapter schema allowed for dry-run review only" in runbook
         assert "broker_data_proof_ready" in runbook
@@ -264,6 +266,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["market_calendar"]["provided"]
         assert config["market_calendar"]["sha256"] == file_sha256(calendar_path)
         assert config["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
+        assert config["vendor_market_data_batch"]["dropped_null_rows"] == 0
         assert config["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
         assert config["vendor_market_data_batch"]["comparison"]["accepted"]
@@ -625,6 +628,8 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
             "0.05",
             "--min-rows",
             "2",
+            "--max-null-rows",
+            "2",
             "--schema-audit",
             str(paths["schema"]),
             "--order-export",
@@ -644,6 +649,13 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     summary = pd.read_csv(out_dir / "broker_vendor_data_readiness_summary.csv")
     components = pd.read_csv(out_dir / "broker_vendor_data_readiness_components.csv")
     checks = pd.read_csv(out_dir / "broker_vendor_data_readiness_checks.csv")
+    vendor_config = json.loads(
+        (
+            out_dir
+            / "01_vendor_market_data_batch"
+            / "vendor_market_data_batch_config.json"
+        ).read_text(encoding="utf-8")
+    )
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "broker_vendor_data_ready"])
@@ -659,6 +671,7 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert vendor_component["source_file_fingerprint_coverage"] == 1.0
     assert vendor_component["min_mapping_coverage"] == 1.0
     assert int(vendor_component["unique_mapping_drafts"]) == 1
+    assert vendor_config["data_readiness_thresholds"]["max_null_rows"] == 2
     assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert bool(summary.loc[0, "placeholder_schema_allowed"])
 

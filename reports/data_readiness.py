@@ -79,6 +79,7 @@ class DataReadinessThresholds:
     min_chain_expiry_snapshots: int = 1
     min_chain_snapshots_per_expiry: int = 1
     min_chain_snapshot_strikes: int = 1
+    max_null_rows: int = 0
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
@@ -1936,6 +1937,7 @@ def _mapped_quarantine_checks(
     thresholds: DataReadinessThresholds,
 ) -> list[dict[str, Any]]:
     quarantine_fields = {
+        "dropped_null_rows",
         "dropped_crossed_quote_rows",
         "dropped_nonpositive_quote_rows",
         "dropped_nonmonotonic_rows",
@@ -1947,6 +1949,12 @@ def _mapped_quarantine_checks(
         return []
     row = _overall_row(summary)
     checks = [
+        _threshold_check(
+            "mapped_data_dropped_null_rows",
+            _number(row, "dropped_null_rows"),
+            "<=",
+            thresholds.max_null_rows,
+        ),
         _threshold_check(
             "mapped_data_dropped_crossed_quote_rows",
             _number(row, "dropped_crossed_quote_rows"),
@@ -3080,6 +3088,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "min_chain_expiry_snapshots",
         "min_chain_snapshots_per_expiry",
         "min_chain_snapshot_strikes",
+        "max_null_rows",
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
