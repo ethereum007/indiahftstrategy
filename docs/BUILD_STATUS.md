@@ -6810,12 +6810,34 @@ non-authorizing; the full repository suite was not rerun because the preceding
 full run reached only 55% after 40 minutes without a failure, while this slice
 is covered by focused and downstream suites.
 
+Latest authoritative NSE F&O calendar source: the repo now pins the official
+NSE trading-holiday API snapshot retrieved on 2026-07-23 and its deterministic
+2026 H1 F&O normalization. The ten weekday closures include the January 15
+Maharashtra municipal-election amendment that was absent from the original
+annual circular; two ordinary weekend holidays remain governed by the market
+profile. `build-market-calendar` can bind the raw snapshot under
+`nse_holiday_master_fo_json_v1`, re-derive the exact ordered sessions CSV, and
+retain both source fingerprints in calendar JSON, summary, runbook, and
+manifest evidence. Retained verification and downstream data-readiness re-run
+that normalization, so raw-source drift, a missing authority input, or a
+re-sealed CSV that omits the amendment fails closed. Coverage through the
+starred November 8 Muhurat date is rejected until authoritative open and close
+times are available. Calendar/compiler/readiness coverage passes (`57
+passed`); readiness comparison, vendor/onboarding, broker-vendor,
+provider-pipeline/batch, catalog, and manifest regressions pass (`124
+passed`). Repository collection is healthy at `2545 tests`. All outputs remain
+non-authorizing; the full repository suite was not rerun because the focused
+and downstream set covers the changed boundary and several individual wrapper
+suites already require multiple minutes.
+
 ## Next Build Targets
 
-1. Acquire and normalize the first authoritative NSE calendar source into the
-   `build-market-calendar` contract for the first real research period.
+1. Run the first real Arrow.money/iRage H1 export through the authority-bound
+   calendar and broker-vendor readiness pipeline once a sample is available.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
 4. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
+5. Extend the 2026 calendar beyond H1 after authoritative Muhurat Trading
+   timings are published and captured.

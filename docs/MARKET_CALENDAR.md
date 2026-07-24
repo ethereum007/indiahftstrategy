@@ -3,7 +3,8 @@
 Use a market-calendar JSON input whenever research or capture evidence spans
 dates whose exchange status matters. The platform fingerprints the source file
 and fails closed outside its declared coverage. It does not ship guessed NSE
-holiday dates.
+holiday dates. The first pinned exchange source is the NSE F&O trading-holiday
+API snapshot for 2026 H1 under `data/calendars/`.
 
 ## Contract
 
@@ -73,24 +74,38 @@ The compiler requires:
 The timezone is derived from the selected market profile, not accepted as a
 free-form CLI value. The untouched CSV is retained as a manifest-fingerprinted
 input, while its schema version, filename, and SHA-256 are embedded in the
-generated JSON provenance:
+generated JSON provenance.
+
+For a supported raw authority source, pass both `--authority-source` and
+`--authority-source-schema`. The compiler then fingerprints the raw source,
+re-runs its deterministic normalization, and rejects a sessions CSV that does
+not match. The first supported authority contract is
+`nse_holiday_master_fo_json_v1`:
 
 ```powershell
 python -m hft_cli build-market-calendar `
-  --sessions data\calendars\nse_fo_2026_sessions.csv `
-  --calendar-id nse-fo-2026-v1 `
+  --sessions data\calendars\nse_fo_2026_h1_sessions.csv `
+  --authority-source data\calendars\nse_holiday_master_trading_2026-07-23.json `
+  --authority-source-schema nse_holiday_master_fo_json_v1 `
+  --calendar-id nse-fo-2026-h1-api-20260723-v1 `
   --market india_nse_index_derivatives `
   --valid-from 2026-01-01 `
-  --valid-to 2026-12-31 `
-  --publisher "authoritative publisher" `
-  --source-url "https://authoritative.example/calendar" `
-  --published-date 2025-12-15 `
-  --out runs\market_calendar\nse_fo_2026
+  --valid-to 2026-06-30 `
+  --publisher "National Stock Exchange of India Limited" `
+  --source-url "https://www.nseindia.com/api/holiday-master?type=trading" `
+  --published-date 2026-01-12 `
+  --out runs\market_calendar\nse_fo_2026_h1
 ```
 
+The pinned snapshot includes the January 15 closure added by
+`NSE/FAOP/72262` after the annual `NSE/FAOP/71777` circular. Its H1
+normalization omits ordinary weekend holidays and produces ten explicit
+weekday closures. The parser rejects coverage through the starred November 8
+Muhurat date because the snapshot does not provide that special session's open
+and close times.
+
 The output includes `market_calendar.json`, report CSVs, a runbook, and a
-manifest. No exchange dates are bundled by the platform, and the resulting
-evidence remains non-authorizing.
+manifest. The resulting evidence remains non-authorizing.
 
 ## Verify Retained Evidence
 
@@ -109,8 +124,10 @@ the complete manifest-tracked artifact set, exact manifest parameters and
 metadata, deterministic report CSVs and runbook, and the explicit
 non-authorizing claim. For a compiled calendar it also regenerates the
 canonical JSON from the retained session CSV and compares it byte for byte.
-Editing an artifact and writing a fresh manifest does not make the report
-semantically valid.
+When authority evidence is bound, it independently re-normalizes the raw
+snapshot and requires exact ordered session rows. Editing an artifact or the
+normalized CSV and writing a fresh manifest does not make the report
+semantically valid while the authority snapshot remains unchanged.
 
 `review-data-readiness` invokes this verifier automatically whenever
 `--market-calendar-report` is supplied. Its own manifest separately
@@ -133,6 +150,8 @@ readiness lineage.
   mapped data or diagnostics use a different ID, fingerprint, or coverage.
 - A directory-backed data-readiness run fails closed unless the retained
   calendar report reconstructs from its current manifest-bound source.
+- An authority-bound compiled calendar requires both the normalized session
+  source and raw authority snapshot to remain current.
 - A multi-dataset comparison can require complete calendar evidence and one
   consistent calendar source across every daily readiness run.
 - Calendar reports and all downstream artifacts remain non-authorizing.

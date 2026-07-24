@@ -9,6 +9,11 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from adapters.nse_market_calendar import (
+    NSE_FO_HOLIDAY_SNAPSHOT_SCHEMA,
+    NseHolidayNormalization,
+    normalize_nse_fo_holiday_snapshot,
+)
 from markets.calendars import (
     MARKET_CALENDAR_POLICY,
     MarketCalendar,
@@ -73,6 +78,8 @@ class MarketCalendarReportVerification:
     output_dir: Path
     manifest_path: Path
     source_path: Path | None = None
+    authority_source_path: Path | None = None
+    authority_source_current: bool = False
     compiled_from_sessions: bool = False
     error: str = ""
 
@@ -84,6 +91,11 @@ class _CompiledCalendarDocument:
     source_rows: int
     market: str
     timezone: str
+    authority_source_schema: str = ""
+    authority_source_sha256: str = ""
+    authority_source_rows: int = 0
+    authority_selected_rows: int = 0
+    authority_skipped_weekend_rows: int = 0
 
 
 def build_market_calendar_report(
@@ -147,6 +159,8 @@ def write_market_calendar_from_sessions(
     publisher: str,
     source_url: str,
     published_date: str,
+    authority_source_path: str | Path | None = None,
+    authority_source_schema: str = "",
 ) -> MarketCalendarReport:
     source = Path(sessions_path).resolve()
     if not source.is_file():
@@ -162,6 +176,11 @@ def write_market_calendar_from_sessions(
         raise ValueError(
             "market calendar output must not contain the source sessions file"
         )
+    authority_source = _optional_authority_source(
+        authority_source_path,
+        authority_source_schema=authority_source_schema,
+        output_dir=out,
+    )
 
     document = _compiled_calendar_document(
         source,
@@ -172,6 +191,8 @@ def write_market_calendar_from_sessions(
         publisher=publisher,
         source_url=source_url,
         published_date=published_date,
+        authority_source=authority_source,
+        authority_source_schema=authority_source_schema,
     )
     with TemporaryDirectory(prefix="market-calendar-") as temp_dir:
         validation_path = Path(temp_dir) / MARKET_CALENDAR_FILE
@@ -194,6 +215,7 @@ def write_market_calendar_from_sessions(
         base_report,
         source=source,
         document=document,
+        authority_source=authority_source,
     )
     _write_report_artifacts(report, out)
     parameters = _compiled_parameters(
@@ -205,12 +227,18 @@ def write_market_calendar_from_sessions(
         publisher=publisher,
         source_url=source_url,
         published_date=published_date,
+        authority_source_schema=authority_source_schema,
     )
+    inputs: dict[str, Path] = {
+        "market_calendar_sessions_source": source,
+    }
+    if authority_source is not None:
+        inputs["market_calendar_authority_source"] = authority_source
     write_experiment_manifest(
         out,
         run_type=MARKET_CALENDAR_REPORT_RUN_TYPE,
         parameters=parameters,
-        inputs={"market_calendar_sessions_source": source},
+        inputs=inputs,
         extra=_compiled_manifest_extra(report, document),
     )
     return MarketCalendarReport(
@@ -229,6 +257,8 @@ def verify_market_calendar_report(
     root = root.resolve()
     manifest_path = root / MANIFEST_NAME
     source_path: Path | None = None
+    authority_source_path: Path | None = None
+    authority_source_current = False
     source_current = False
     compiled_from_sessions = False
     required_artifacts = MARKET_CALENDAR_REPORT_ARTIFACTS
@@ -263,6 +293,23 @@ def verify_market_calendar_report(
                 source_path,
             )
             expected_parameters = _compiled_parameters_from_manifest(parameters)
+            authority_source_schema = str(
+                expected_parameters.get("authority_source_schema", "")
+            )
+            if authority_source_schema:
+                source_current = False
+                authority_source_path = _manifest_file_input(
+                    inputs,
+                    "market_calendar_authority_source",
+                )
+                authority_source_current = _manifest_file_input_current(
+                    inputs,
+                    "market_calendar_authority_source",
+                    authority_source_path,
+                )
+                source_current = bool(
+                    source_current and authority_source_current
+                )
             document = _compiled_calendar_document(
                 source_path,
                 calendar_id=str(expected_parameters["calendar_id"]),
@@ -272,6 +319,8 @@ def verify_market_calendar_report(
                 publisher=str(expected_parameters["publisher"]),
                 source_url=str(expected_parameters["source_url"]),
                 published_date=str(expected_parameters["published_date"]),
+                authority_source=authority_source_path,
+                authority_source_schema=authority_source_schema,
             )
             calendar_path = root / MARKET_CALENDAR_FILE
             if calendar_path.read_text(encoding="utf-8") != document.text:
@@ -287,12 +336,25 @@ def verify_market_calendar_report(
                 _build_report(calendar),
                 source=source_path,
                 document=document,
+                authority_source=authority_source_path,
             )
             expected_extra = _compiled_manifest_extra(
                 expected_report,
                 document,
             )
             expected_input_name = "market_calendar_sessions_source"
+            expected_inputs = {
+                expected_input_name: source_path,
+                **(
+                    {
+                        "market_calendar_authority_source": (
+                            authority_source_path
+                        )
+                    }
+                    if authority_source_path is not None
+                    else {}
+                ),
+            }
         else:
             expected_parameters = _report_parameters_from_manifest(parameters)
             source_path = _manifest_file_input(inputs, "market_calendar")
@@ -308,6 +370,7 @@ def verify_market_calendar_report(
             )
             expected_extra = _report_manifest_extra(expected_report)
             expected_input_name = "market_calendar"
+            expected_inputs = {expected_input_name: source_path}
 
         integrity = verify_experiment_manifest(
             manifest_path,
@@ -315,20 +378,15 @@ def verify_market_calendar_report(
             required_artifacts=required_artifacts,
             require_input_fingerprints=True,
         )
-        source_current = _manifest_file_input_current(
-            inputs,
-            expected_input_name,
-            source_path,
+        source_current = all(
+            _manifest_file_input_current(inputs, name, path)
+            for name, path in expected_inputs.items()
         )
         artifacts_consistent = bool(
             _report_artifacts_consistent(root, expected_report)
             and _mapping(manifest.get("parameters")) == expected_parameters
             and _mapping(manifest.get("extra")) == expected_extra
-            and _manifest_input_contract_current(
-                inputs,
-                expected_input_name,
-                source_path,
-            )
+            and _manifest_input_contract_current(inputs, expected_inputs)
         )
         actual_summary = _read_csv_frame(
             root / MARKET_CALENDAR_SUMMARY_FILE,
@@ -356,6 +414,8 @@ def verify_market_calendar_report(
             output_dir=root,
             manifest_path=manifest_path,
             source_path=source_path,
+            authority_source_path=authority_source_path,
+            authority_source_current=authority_source_current,
             compiled_from_sessions=compiled_from_sessions,
             error=""
             if verified
@@ -382,6 +442,8 @@ def verify_market_calendar_report(
             output_dir=root,
             manifest_path=manifest_path,
             source_path=source_path,
+            authority_source_path=authority_source_path,
+            authority_source_current=authority_source_current,
             compiled_from_sessions=compiled_from_sessions,
             error=integrity.error or str(exc),
         )
@@ -397,10 +459,40 @@ def _compiled_calendar_document(
     publisher: str,
     source_url: str,
     published_date: str,
+    authority_source: Path | None = None,
+    authority_source_schema: str = "",
 ) -> _CompiledCalendarDocument:
     source_rows = _read_session_source(source)
     source_sha256 = file_sha256(source)
+    authority = _authority_normalization(
+        authority_source,
+        authority_source_schema=authority_source_schema,
+        valid_from=valid_from,
+        valid_to=valid_to,
+    )
+    if (
+        authority is not None
+        and source_rows != list(authority.sessions)
+    ):
+        raise ValueError(
+            "market calendar sessions CSV does not match the "
+            "authority source normalization"
+        )
     profile = get_market_profile(market)
+    authority_provenance: dict[str, object] = {}
+    authority_sha256 = ""
+    if authority_source is not None and authority is not None:
+        authority_sha256 = file_sha256(authority_source)
+        authority_provenance = {
+            "authority_source_schema": authority_source_schema,
+            "authority_source_file_name": authority_source.name,
+            "authority_source_file_sha256": authority_sha256,
+            "authority_source_rows": authority.source_rows,
+            "authority_selected_rows": authority.selected_rows,
+            "authority_skipped_weekend_rows": (
+                authority.skipped_weekend_rows
+            ),
+        }
     payload = {
         "schema_version": 1,
         "calendar_id": calendar_id,
@@ -415,6 +507,7 @@ def _compiled_calendar_document(
             "source_schema": MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
             "source_file_name": source.name,
             "source_file_sha256": source_sha256,
+            **authority_provenance,
         },
         "sessions": sorted(source_rows, key=lambda row: row["date"]),
     }
@@ -424,6 +517,19 @@ def _compiled_calendar_document(
         source_rows=len(source_rows),
         market=profile.name,
         timezone=profile.session.timezone,
+        authority_source_schema=authority_source_schema,
+        authority_source_sha256=authority_sha256,
+        authority_source_rows=(
+            authority.source_rows if authority is not None else 0
+        ),
+        authority_selected_rows=(
+            authority.selected_rows if authority is not None else 0
+        ),
+        authority_skipped_weekend_rows=(
+            authority.skipped_weekend_rows
+            if authority is not None
+            else 0
+        ),
     )
 
 
@@ -432,6 +538,7 @@ def _compiled_report(
     *,
     source: Path,
     document: _CompiledCalendarDocument,
+    authority_source: Path | None = None,
 ) -> MarketCalendarReport:
     summary = base_report.summary.assign(
         compiled_from_sessions=True,
@@ -440,6 +547,22 @@ def _compiled_report(
         session_source_sha256=document.source_sha256,
         session_source_rows=document.source_rows,
     )
+    if document.authority_source_schema:
+        if authority_source is None:
+            raise ValueError(
+                "compiled market calendar lacks its authority source"
+            )
+        summary = summary.assign(
+            authority_source_bound=True,
+            authority_source_schema=document.authority_source_schema,
+            authority_source_path=str(authority_source),
+            authority_source_sha256=document.authority_source_sha256,
+            authority_source_rows=document.authority_source_rows,
+            authority_selected_rows=document.authority_selected_rows,
+            authority_skipped_weekend_rows=(
+                document.authority_skipped_weekend_rows
+            ),
+        )
     return MarketCalendarReport(
         sessions=base_report.sessions,
         checks=base_report.checks,
@@ -457,8 +580,9 @@ def _compiled_parameters(
     publisher: str,
     source_url: str,
     published_date: str,
+    authority_source_schema: str = "",
 ) -> dict[str, object]:
-    return {
+    parameters: dict[str, object] = {
         "compiled_from_sessions": True,
         "session_source_schema": MARKET_CALENDAR_SESSION_SOURCE_SCHEMA,
         "calendar_id": calendar_id,
@@ -470,12 +594,20 @@ def _compiled_parameters(
         "source_url": source_url,
         "published_date": published_date,
     }
+    if authority_source_schema:
+        parameters.update(
+            {
+                "authority_source_bound": True,
+                "authority_source_schema": authority_source_schema,
+            }
+        )
+    return parameters
 
 
 def _compiled_parameters_from_manifest(
     parameters: Mapping[str, Any],
 ) -> dict[str, object]:
-    expected_fields = {
+    base_fields = {
         "compiled_from_sessions",
         "session_source_schema",
         "calendar_id",
@@ -487,7 +619,14 @@ def _compiled_parameters_from_manifest(
         "source_url",
         "published_date",
     }
-    if set(parameters) != expected_fields:
+    authority_fields = {
+        "authority_source_bound",
+        "authority_source_schema",
+    }
+    if set(parameters) not in {
+        frozenset(base_fields),
+        frozenset(base_fields | authority_fields),
+    }:
         raise ValueError(
             "compiled market-calendar manifest parameters are incomplete"
         )
@@ -502,6 +641,19 @@ def _compiled_parameters_from_manifest(
         raise ValueError(
             "compiled market-calendar session source schema is invalid"
         )
+    authority_source_schema = ""
+    if authority_fields <= set(parameters):
+        if parameters.get("authority_source_bound") is not True:
+            raise ValueError(
+                "compiled market-calendar authority source flag must be true"
+            )
+        authority_source_schema = str(
+            parameters.get("authority_source_schema", "")
+        )
+        if authority_source_schema != NSE_FO_HOLIDAY_SNAPSHOT_SCHEMA:
+            raise ValueError(
+                "compiled market-calendar authority source schema is invalid"
+            )
     expected = _compiled_parameters(
         calendar_id=str(parameters["calendar_id"]),
         market=str(parameters["market"]),
@@ -511,6 +663,7 @@ def _compiled_parameters_from_manifest(
         publisher=str(parameters["publisher"]),
         source_url=str(parameters["source_url"]),
         published_date=str(parameters["published_date"]),
+        authority_source_schema=authority_source_schema,
     )
     profile = get_market_profile(str(expected["market"]))
     if expected["market"] != profile.name:
@@ -555,7 +708,7 @@ def _compiled_manifest_extra(
     document: _CompiledCalendarDocument,
 ) -> dict[str, object]:
     row = report.summary.iloc[0]
-    return {
+    extra: dict[str, object] = {
         "ready": report.ready,
         "market": document.market,
         "calendar_id": str(row["market_calendar_id"]),
@@ -564,6 +717,19 @@ def _compiled_manifest_extra(
         "compiled_from_sessions": True,
         "non_authorizing": True,
     }
+    if document.authority_source_schema:
+        extra.update(
+            {
+                "authority_source_bound": True,
+                "authority_source_schema": (
+                    document.authority_source_schema
+                ),
+                "authority_source_sha256": (
+                    document.authority_source_sha256
+                ),
+            }
+        )
+    return extra
 
 
 def _report_artifacts_consistent(
@@ -661,12 +827,74 @@ def _manifest_file_input_current(
 
 def _manifest_input_contract_current(
     inputs: Mapping[str, Any],
-    name: str,
-    source: Path,
+    expected: Mapping[str, Path],
 ) -> bool:
     return bool(
-        set(inputs) == {name}
-        and _manifest_file_input_current(inputs, name, source)
+        set(inputs) == set(expected)
+        and all(
+            _manifest_file_input_current(inputs, name, source)
+            for name, source in expected.items()
+        )
+    )
+
+
+def _optional_authority_source(
+    value: str | Path | None,
+    *,
+    authority_source_schema: str,
+    output_dir: Path,
+) -> Path | None:
+    schema = authority_source_schema.strip()
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if schema:
+            raise ValueError(
+                "market calendar authority source is required when its "
+                "schema is supplied"
+            )
+        return None
+    if not schema:
+        raise ValueError(
+            "market calendar authority source schema is required"
+        )
+    if schema != NSE_FO_HOLIDAY_SNAPSHOT_SCHEMA:
+        raise ValueError(
+            "market calendar authority source schema is unsupported"
+        )
+    source = Path(value).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(
+            f"market calendar authority source not found: {source}"
+        )
+    try:
+        source.relative_to(output_dir)
+    except ValueError:
+        return source
+    raise ValueError(
+        "market calendar output must not contain the authority source"
+    )
+
+
+def _authority_normalization(
+    authority_source: Path | None,
+    *,
+    authority_source_schema: str,
+    valid_from: str,
+    valid_to: str,
+) -> NseHolidayNormalization | None:
+    if authority_source is None:
+        if authority_source_schema:
+            raise ValueError(
+                "market calendar authority source is required"
+            )
+        return None
+    if authority_source_schema != NSE_FO_HOLIDAY_SNAPSHOT_SCHEMA:
+        raise ValueError(
+            "market calendar authority source schema is unsupported"
+        )
+    return normalize_nse_fo_holiday_snapshot(
+        authority_source,
+        valid_from=valid_from,
+        valid_to=valid_to,
     )
 
 

@@ -9221,15 +9221,17 @@ versioned calendar contract:
 
 ```powershell
 python -m hft_cli build-market-calendar `
-  --sessions data\calendars\nse_fo_2026_sessions.csv `
-  --calendar-id nse-fo-2026-v1 `
+  --sessions data\calendars\nse_fo_2026_h1_sessions.csv `
+  --authority-source data\calendars\nse_holiday_master_trading_2026-07-23.json `
+  --authority-source-schema nse_holiday_master_fo_json_v1 `
+  --calendar-id nse-fo-2026-h1-api-20260723-v1 `
   --market india_nse_index_derivatives `
   --valid-from 2026-01-01 `
-  --valid-to 2026-12-31 `
-  --publisher "authoritative publisher" `
-  --source-url "https://authoritative.example/calendar" `
-  --published-date 2025-12-15 `
-  --out runs\market_calendar\nse_fo_2026
+  --valid-to 2026-06-30 `
+  --publisher "National Stock Exchange of India Limited" `
+  --source-url "https://www.nseindia.com/api/holiday-master?type=trading" `
+  --published-date 2026-01-12 `
+  --out runs\market_calendar\nse_fo_2026_h1
 ```
 
 The source CSV columns must be exactly
@@ -9252,6 +9254,14 @@ is an artifact. This command expects normalized operator input; it is not an
 exchange-site or vendor-format scraper. See `docs/MARKET_CALENDAR.md` for the
 full contract and provenance rules.
 
+When `--authority-source` and `--authority-source-schema` are present, the
+compiler also fingerprints the raw source and proves that the normalized CSV
+is its deterministic derivative. The bundled
+`nse_holiday_master_fo_json_v1` contract reads the `FO` array from a captured
+NSE holiday-master response, verifies dates and weekdays, skips ordinary
+weekend holidays, and emits weekday closures. It rejects session-level statuses
+and starred weekend special sessions without explicit open/close times.
+
 Verify either a compiled calendar or an ordinary `market-calendar-report`
 directory before handoff:
 
@@ -9263,9 +9273,11 @@ python -m hft_cli verify-market-calendar-report `
 
 The command reconstructs report artifacts from the current manifest-bound
 source. Compiled calendars also regenerate `market_calendar.json` from the
-retained session CSV. It returns exit code `2` under `--fail-on-breach` for
-source drift, manifest or artifact drift, semantic inconsistency, or authority
-widening, including artifact tampering followed by a fresh manifest.
+retained session CSV. Authority-bound calendars additionally re-normalize the
+raw exchange snapshot and require exact session rows. It returns exit code `2`
+under `--fail-on-breach` for source drift, manifest or artifact drift,
+semantic inconsistency, or authority widening, including artifact tampering
+followed by a fresh manifest.
 
 ## Data Diagnostics
 

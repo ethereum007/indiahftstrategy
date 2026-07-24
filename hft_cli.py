@@ -19,6 +19,7 @@ from adapters.reviewed_mapped_data import (
     write_reviewed_mapped_data_normalization,
 )
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
+from adapters.nse_market_calendar import NSE_FO_HOLIDAY_SNAPSHOT_SCHEMA
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
 from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
@@ -3416,6 +3417,22 @@ def main(argv: list[str] | None = None) -> int:
     market_calendar_build.add_argument("--publisher", required=True)
     market_calendar_build.add_argument("--source-url", required=True)
     market_calendar_build.add_argument("--published-date", required=True)
+    market_calendar_build.add_argument(
+        "--authority-source",
+        default=None,
+        help=(
+            "Optional raw authority snapshot used to prove the normalized "
+            "sessions CSV."
+        ),
+    )
+    market_calendar_build.add_argument(
+        "--authority-source-schema",
+        default="",
+        help=(
+            "Authority parser contract; currently supported: "
+            f"{NSE_FO_HOLIDAY_SNAPSHOT_SCHEMA}."
+        ),
+    )
     market_calendar_build.add_argument("--out", required=True)
 
     portability = sub.add_parser(
@@ -8137,6 +8154,14 @@ def main(argv: list[str] | None = None) -> int:
                         if result.source_path is None
                         else str(result.source_path)
                     ),
+                    "authority_source_path": (
+                        ""
+                        if result.authority_source_path is None
+                        else str(result.authority_source_path)
+                    ),
+                    "authority_source_current": (
+                        result.authority_source_current
+                    ),
                     "error": result.error,
                 },
                 sort_keys=True,
@@ -8159,6 +8184,8 @@ def main(argv: list[str] | None = None) -> int:
             publisher=args.publisher,
             source_url=args.source_url,
             published_date=args.published_date,
+            authority_source_path=args.authority_source,
+            authority_source_schema=args.authority_source_schema,
         )
         print(result.summary.to_string(index=False))
         return 0
