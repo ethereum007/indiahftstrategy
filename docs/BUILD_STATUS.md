@@ -6907,6 +6907,21 @@ healthy at `2565 tests`. The full suite was not rerun because the affected
 wrappers already require several minutes independently and recent complete
 runs exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest option-chain snapshot coverage gate: diagnostics now treat each
+`(ts, expiry)` pair as one expiry surface and report distinct observation
+timestamps, total expiry snapshots, snapshot counts per expiry, distinct-strike
+breadth per snapshot, and within-expiry timestamp gaps. Duplicate rows cannot
+inflate strike breadth. Readiness can require total expiry snapshots, minimum
+snapshots per expiry, minimum strikes per snapshot, and an optional p99 cadence
+ceiling. The thresholds propagate through Arrow.money/iRage single-day, batch,
+broker-vendor, and direct review CLI evidence; defaults retain one-snapshot
+contract samples while production cadence remains an explicit vendor-specific
+decision. Diagnostics, contract-horizon, contract-key, exchange-expiry,
+lot-size, readiness, vendor, broker-vendor, and provider-wrapper regressions
+pass (`88` tests). Repository collection is healthy at `2568 tests`. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All outputs
+remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

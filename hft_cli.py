@@ -3137,6 +3137,9 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--tick-size", type=float, default=None)
     vendor_market_data.add_argument("--allow-missing-required", action="store_true")
     vendor_market_data.add_argument("--min-rows", type=int, default=1)
+    vendor_market_data.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
+    vendor_market_data.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
+    vendor_market_data.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     vendor_market_data.add_argument("--max-crossed-quote-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
@@ -3164,6 +3167,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     vendor_market_data.add_argument("--max-p99-gap-ns", type=float, default=None)
     vendor_market_data.add_argument("--max-median-spread-ticks", type=float, default=None)
+    vendor_market_data.add_argument("--max-chain-snapshot-p99-gap-ns", type=float, default=None)
     vendor_market_data.add_argument("--fail-on-breach", action="store_true")
     vendor_market_data.add_argument("--fail-on-blocked-actions", action="store_true")
     vendor_market_data.add_argument("--fail-on-actions", action="store_true")
@@ -3218,6 +3222,9 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--tick-size", type=float, default=None)
     vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
     vendor_market_data_batch.add_argument("--min-rows", type=int, default=1)
+    vendor_market_data_batch.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
+    vendor_market_data_batch.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
+    vendor_market_data_batch.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     vendor_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
@@ -3245,6 +3252,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     vendor_market_data_batch.add_argument("--max-p99-gap-ns", type=float, default=None)
     vendor_market_data_batch.add_argument("--max-median-spread-ticks", type=float, default=None)
+    vendor_market_data_batch.add_argument("--max-chain-snapshot-p99-gap-ns", type=float, default=None)
     vendor_market_data_batch.add_argument("--min-datasets", type=int, default=None)
     vendor_market_data_batch.add_argument("--min-ready-datasets", type=int, default=None)
     vendor_market_data_batch.add_argument("--min-ready-rate", type=float, default=1.0)
@@ -3305,6 +3313,9 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--tick-size", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--allow-missing-required", action="store_true")
     broker_vendor_data_readiness.add_argument("--min-rows", type=int, default=1)
+    broker_vendor_data_readiness.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
+    broker_vendor_data_readiness.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
+    broker_vendor_data_readiness.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     broker_vendor_data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
@@ -3332,6 +3343,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     broker_vendor_data_readiness.add_argument("--max-p99-gap-ns", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--max-median-spread-ticks", type=float, default=None)
+    broker_vendor_data_readiness.add_argument("--max-chain-snapshot-p99-gap-ns", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--min-datasets", type=int, default=None)
     broker_vendor_data_readiness.add_argument("--min-ready-datasets", type=int, default=None)
     broker_vendor_data_readiness.add_argument("--min-ready-rate", type=float, default=1.0)
@@ -3446,6 +3458,9 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--min-chain-rows", type=int, default=1)
     data_readiness.add_argument("--min-chain-expiries", type=int, default=1)
     data_readiness.add_argument("--min-chain-strikes", type=int, default=1)
+    data_readiness.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
+    data_readiness.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
+    data_readiness.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     data_readiness.add_argument("--max-nonmonotonic-rows", type=int, default=0)
     data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
@@ -3495,6 +3510,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-tick-p99-gap-ns", type=float, default=None)
     data_readiness.add_argument("--max-tick-median-spread-ticks", type=float, default=None)
     data_readiness.add_argument("--max-chain-median-spread-ticks", type=float, default=None)
+    data_readiness.add_argument("--max-chain-snapshot-p99-gap-ns", type=float, default=None)
     data_readiness.add_argument("--fail-on-breach", action="store_true")
     data_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
     data_readiness.add_argument("--fail-on-actions", action="store_true")
@@ -7928,6 +7944,11 @@ def main(argv: list[str] | None = None) -> int:
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
+                min_chain_expiry_snapshots=args.min_chain_expiry_snapshots,
+                min_chain_snapshots_per_expiry=(
+                    args.min_chain_snapshots_per_expiry
+                ),
+                min_chain_snapshot_strikes=args.min_chain_snapshot_strikes,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
@@ -7945,6 +7966,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
+                max_chain_snapshot_p99_gap_ns=(
+                    args.max_chain_snapshot_p99_gap_ns
+                ),
             ),
         )
         print(result.summary.to_string(index=False))
@@ -7985,6 +8009,11 @@ def main(argv: list[str] | None = None) -> int:
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
+                min_chain_expiry_snapshots=args.min_chain_expiry_snapshots,
+                min_chain_snapshots_per_expiry=(
+                    args.min_chain_snapshots_per_expiry
+                ),
+                min_chain_snapshot_strikes=args.min_chain_snapshot_strikes,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
@@ -8002,6 +8031,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
+                max_chain_snapshot_p99_gap_ns=(
+                    args.max_chain_snapshot_p99_gap_ns
+                ),
             ),
             comparison_thresholds=DataReadinessComparisonThresholds(
                 min_datasets=args.min_datasets if args.min_datasets is not None else input_count,
@@ -8069,6 +8101,11 @@ def main(argv: list[str] | None = None) -> int:
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
+                min_chain_expiry_snapshots=args.min_chain_expiry_snapshots,
+                min_chain_snapshots_per_expiry=(
+                    args.min_chain_snapshots_per_expiry
+                ),
+                min_chain_snapshot_strikes=args.min_chain_snapshot_strikes,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
@@ -8086,6 +8123,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
+                max_chain_snapshot_p99_gap_ns=(
+                    args.max_chain_snapshot_p99_gap_ns
+                ),
             ),
             comparison_thresholds=DataReadinessComparisonThresholds(
                 min_datasets=args.min_datasets if args.min_datasets is not None else input_count,
@@ -8218,6 +8258,15 @@ def main(argv: list[str] | None = None) -> int:
                 min_chain_rows=args.min_chain_rows,
                 min_chain_expiries=args.min_chain_expiries,
                 min_chain_strikes=args.min_chain_strikes,
+                min_chain_expiry_snapshots=(
+                    args.min_chain_expiry_snapshots
+                ),
+                min_chain_snapshots_per_expiry=(
+                    args.min_chain_snapshots_per_expiry
+                ),
+                min_chain_snapshot_strikes=(
+                    args.min_chain_snapshot_strikes
+                ),
                 max_nonmonotonic_rows=args.max_nonmonotonic_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
@@ -8249,6 +8298,9 @@ def main(argv: list[str] | None = None) -> int:
                 max_tick_p99_gap_ns=args.max_tick_p99_gap_ns,
                 max_tick_median_spread_ticks=args.max_tick_median_spread_ticks,
                 max_chain_median_spread_ticks=args.max_chain_median_spread_ticks,
+                max_chain_snapshot_p99_gap_ns=(
+                    args.max_chain_snapshot_p99_gap_ns
+                ),
             ),
         )
         print(result.summary.to_string(index=False))

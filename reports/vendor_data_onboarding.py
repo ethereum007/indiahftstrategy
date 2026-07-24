@@ -59,6 +59,9 @@ class VendorMarketDataPipelineConfig:
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
+    min_chain_expiry_snapshots: int = 1
+    min_chain_snapshots_per_expiry: int = 1
+    min_chain_snapshot_strikes: int = 1
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -70,6 +73,7 @@ class VendorMarketDataPipelineConfig:
     max_conflicting_contract_key_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
+    max_chain_snapshot_p99_gap_ns: float | None = None
 
 
 @dataclass(frozen=True)
@@ -711,6 +715,11 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         expected_vendor_data_kind=config.kind,
         min_tick_rows=config.min_rows,
         min_chain_rows=config.min_rows,
+        min_chain_expiry_snapshots=config.min_chain_expiry_snapshots,
+        min_chain_snapshots_per_expiry=(
+            config.min_chain_snapshots_per_expiry
+        ),
+        min_chain_snapshot_strikes=config.min_chain_snapshot_strikes,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
@@ -729,6 +738,11 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_tick_p99_gap_ns=config.max_p99_gap_ns if config.kind == "ticks" else None,
         max_tick_median_spread_ticks=config.max_median_spread_ticks if config.kind == "ticks" else None,
         max_chain_median_spread_ticks=config.max_median_spread_ticks if config.kind == "chain" else None,
+        max_chain_snapshot_p99_gap_ns=(
+            config.max_chain_snapshot_p99_gap_ns
+            if config.kind == "chain"
+            else None
+        ),
     )
 
 
@@ -1005,6 +1019,74 @@ def _summary(
                         fallback=0.0,
                     )
                 ),
+                "chain_snapshot_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "chain_snapshot_validation_enabled",
+                        False,
+                    )
+                ),
+                "observation_timestamps": int(
+                    _number(
+                        diagnostic_row,
+                        "observation_timestamps",
+                        fallback=0.0,
+                    )
+                ),
+                "expiry_snapshots": int(
+                    _number(
+                        diagnostic_row,
+                        "expiry_snapshots",
+                        fallback=0.0,
+                    )
+                ),
+                "min_snapshots_per_expiry": int(
+                    _number(
+                        diagnostic_row,
+                        "min_snapshots_per_expiry",
+                        fallback=0.0,
+                    )
+                ),
+                "min_snapshot_strikes": int(
+                    _number(
+                        diagnostic_row,
+                        "min_snapshot_strikes",
+                        fallback=0.0,
+                    )
+                ),
+                "median_snapshot_strikes": _number(
+                    diagnostic_row,
+                    "median_snapshot_strikes",
+                    fallback=0.0,
+                ),
+                "max_snapshot_strikes": int(
+                    _number(
+                        diagnostic_row,
+                        "max_snapshot_strikes",
+                        fallback=0.0,
+                    )
+                ),
+                "snapshot_gap_observations": int(
+                    _number(
+                        diagnostic_row,
+                        "snapshot_gap_observations",
+                        fallback=0.0,
+                    )
+                ),
+                "median_snapshot_gap_ns": _number(
+                    diagnostic_row,
+                    "median_snapshot_gap_ns",
+                    fallback=0.0,
+                ),
+                "p99_snapshot_gap_ns": _number(
+                    diagnostic_row,
+                    "p99_snapshot_gap_ns",
+                    fallback=0.0,
+                ),
+                "max_snapshot_gap_ns": _number(
+                    diagnostic_row,
+                    "max_snapshot_gap_ns",
+                    fallback=0.0,
+                ),
                 "contract_expiry_validation_enabled": _truthy(
                     diagnostic_row.get(
                         "contract_expiry_validation_enabled",
@@ -1227,6 +1309,10 @@ def _pipeline_runbook_markdown(
         f"- Duplicate contract-key groups: {int(_number_from_value(summary_row.get('duplicate_contract_key_groups', 0)))}",
         f"- Conflicting contract-key rows: {int(_number_from_value(summary_row.get('conflicting_contract_key_rows', 0)))}",
         f"- Conflicting contract-key groups: {int(_number_from_value(summary_row.get('conflicting_contract_key_groups', 0)))}",
+        f"- Expiry snapshots: {int(_number_from_value(summary_row.get('expiry_snapshots', 0)))}",
+        f"- Minimum snapshots per expiry: {int(_number_from_value(summary_row.get('min_snapshots_per_expiry', 0)))}",
+        f"- Minimum strikes per snapshot: {int(_number_from_value(summary_row.get('min_snapshot_strikes', 0)))}",
+        f"- Snapshot p99 gap (ns): {_number_from_value(summary_row.get('p99_snapshot_gap_ns', 0))}",
         f"- Contract expiry validation: {'yes' if _truthy(summary_row.get('contract_expiry_validation_enabled', False)) else 'no'}",
         f"- Contract expiry cycle: {_value_text(summary_row.get('contract_expiry_cycle')) or 'n/a'}",
         f"- Contract expiry rule: {_value_text(summary_row.get('contract_expiry_rule_id')) or 'n/a'}",
@@ -1849,6 +1935,13 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         raise ValueError("min_mapping_coverage must be between 0 and 1")
     if config.min_rows <= 0:
         raise ValueError("min_rows must be positive")
+    for name in (
+        "min_chain_expiry_snapshots",
+        "min_chain_snapshots_per_expiry",
+        "min_chain_snapshot_strikes",
+    ):
+        if getattr(config, name) <= 0:
+            raise ValueError(f"{name} must be positive")
     resolve_market_calendar(config.market_calendar_path, market=config.market)
     if config.expiry_cycle is not None:
         expiry_cycle = str(config.expiry_cycle).strip().lower()
@@ -1897,7 +1990,12 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
     ):
         if getattr(config, name) < 0:
             raise ValueError(f"{name} must be non-negative")
-    for name in ("tick_size", "max_p99_gap_ns", "max_median_spread_ticks"):
+    for name in (
+        "tick_size",
+        "max_p99_gap_ns",
+        "max_median_spread_ticks",
+        "max_chain_snapshot_p99_gap_ns",
+    ):
         value = getattr(config, name)
         if value is not None and value <= 0:
             raise ValueError(f"{name} must be positive")

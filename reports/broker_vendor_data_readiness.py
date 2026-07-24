@@ -50,6 +50,9 @@ class BrokerVendorDataReadinessConfig:
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
+    min_chain_expiry_snapshots: int = 1
+    min_chain_snapshots_per_expiry: int = 1
+    min_chain_snapshot_strikes: int = 1
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -61,6 +64,7 @@ class BrokerVendorDataReadinessConfig:
     max_conflicting_contract_key_rows: int = 0
     max_p99_gap_ns: float | None = None
     max_median_spread_ticks: float | None = None
+    max_chain_snapshot_p99_gap_ns: float | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +134,11 @@ def write_broker_vendor_data_readiness_pipeline(
         tick_size=config.tick_size,
         require_all_mapped=config.require_all_mapped,
         min_rows=config.min_rows,
+        min_chain_expiry_snapshots=config.min_chain_expiry_snapshots,
+        min_chain_snapshots_per_expiry=(
+            config.min_chain_snapshots_per_expiry
+        ),
+        min_chain_snapshot_strikes=config.min_chain_snapshot_strikes,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
@@ -147,6 +156,9 @@ def write_broker_vendor_data_readiness_pipeline(
         ),
         max_p99_gap_ns=config.max_p99_gap_ns,
         max_median_spread_ticks=config.max_median_spread_ticks,
+        max_chain_snapshot_p99_gap_ns=(
+            config.max_chain_snapshot_p99_gap_ns
+        ),
     )
     vendor_batch = write_vendor_market_data_batch_pipeline(
         input_paths,

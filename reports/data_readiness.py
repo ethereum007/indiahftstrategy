@@ -76,6 +76,9 @@ class DataReadinessThresholds:
     min_chain_rows: int = 1
     min_chain_expiries: int = 1
     min_chain_strikes: int = 1
+    min_chain_expiry_snapshots: int = 1
+    min_chain_snapshots_per_expiry: int = 1
+    min_chain_snapshot_strikes: int = 1
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
@@ -93,6 +96,7 @@ class DataReadinessThresholds:
     max_tick_p99_gap_ns: float | None = None
     max_tick_median_spread_ticks: float | None = None
     max_chain_median_spread_ticks: float | None = None
+    max_chain_snapshot_p99_gap_ns: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1616,6 +1620,24 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
         _threshold_check("chain_rows", _number(row, "rows"), ">=", thresholds.min_chain_rows),
         _threshold_check("chain_expiries", _number(row, "expiries"), ">=", thresholds.min_chain_expiries),
         _threshold_check("chain_strikes", _number(row, "strikes"), ">=", thresholds.min_chain_strikes),
+        _threshold_check(
+            "chain_expiry_snapshots",
+            _number(row, "expiry_snapshots", fallback=0.0),
+            ">=",
+            thresholds.min_chain_expiry_snapshots,
+        ),
+        _threshold_check(
+            "chain_snapshots_per_expiry",
+            _number(row, "min_snapshots_per_expiry", fallback=0.0),
+            ">=",
+            thresholds.min_chain_snapshots_per_expiry,
+        ),
+        _threshold_check(
+            "chain_snapshot_strikes",
+            _number(row, "min_snapshot_strikes", fallback=0.0),
+            ">=",
+            thresholds.min_chain_snapshot_strikes,
+        ),
         _threshold_check("chain_crossed_quote_rows", _number(row, "crossed_quote_rows"), "<=", thresholds.max_crossed_quote_rows),
         _threshold_check(
             "chain_nonpositive_quote_rows",
@@ -1895,6 +1917,15 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 max(call_spread, put_spread),
                 "<=",
                 thresholds.max_chain_median_spread_ticks,
+            )
+        )
+    if thresholds.max_chain_snapshot_p99_gap_ns is not None:
+        checks.append(
+            _threshold_check(
+                "chain_snapshot_p99_gap_ns",
+                _number(row, "p99_snapshot_gap_ns", fallback=0.0),
+                "<=",
+                thresholds.max_chain_snapshot_p99_gap_ns,
             )
         )
     return checks
@@ -3046,6 +3077,9 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "min_chain_rows",
         "min_chain_expiries",
         "min_chain_strikes",
+        "min_chain_expiry_snapshots",
+        "min_chain_snapshots_per_expiry",
+        "min_chain_snapshot_strikes",
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
@@ -3063,7 +3097,12 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
     ):
         if getattr(thresholds, name) < 0:
             raise ValueError(f"{name} must be non-negative")
-    for name in ("max_tick_p99_gap_ns", "max_tick_median_spread_ticks", "max_chain_median_spread_ticks"):
+    for name in (
+        "max_tick_p99_gap_ns",
+        "max_tick_median_spread_ticks",
+        "max_chain_median_spread_ticks",
+        "max_chain_snapshot_p99_gap_ns",
+    ):
         value = getattr(thresholds, name)
         if value is not None and value < 0:
             raise ValueError(f"{name} must be non-negative")

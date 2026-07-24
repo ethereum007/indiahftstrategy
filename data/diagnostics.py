@@ -113,6 +113,12 @@ class _ContractKeyDiagnostics:
     conflicting_group_head: pd.Series
 
 
+@dataclass(frozen=True)
+class _ChainSnapshotDiagnostics:
+    snapshots: pd.DataFrame
+    by_expiry: pd.DataFrame
+
+
 def tick_diagnostics(
     ticks: pd.DataFrame,
     *,
@@ -226,6 +232,7 @@ def chain_diagnostics(
     frame["conflicting_contract_key_group_head"] = (
         key_diagnostics.conflicting_group_head
     )
+    snapshot_diagnostics = _chain_snapshot_diagnostics(frame)
     expiry_diagnostics = _contract_expiry_diagnostics(
         frame["expiry"],
         cycle=expiry_cycle,
@@ -288,6 +295,12 @@ def chain_diagnostics(
             ),
         )
         .reset_index()
+    )
+    by_expiry = by_expiry.merge(
+        snapshot_diagnostics.by_expiry,
+        on="expiry",
+        how="left",
+        validate="one_to_one",
     )
     if expiry_diagnostics.enabled:
         validations = [
@@ -357,6 +370,7 @@ def chain_diagnostics(
     lot_summary = _contract_lot_summary(lot_diagnostics)
     horizon_summary = _contract_horizon_summary(horizon_diagnostics)
     key_summary = _contract_key_summary(key_diagnostics)
+    snapshot_summary = _chain_snapshot_summary(snapshot_diagnostics)
     overall = pd.DataFrame(
         [
             {
@@ -364,6 +378,7 @@ def chain_diagnostics(
                 **market_calendar_summary(calendar),
                 **horizon_summary,
                 **key_summary,
+                **snapshot_summary,
                 **expiry_summary,
                 **lot_summary,
                 "rows": int(len(frame)),
@@ -750,6 +765,127 @@ def _contract_key_summary(
         ),
         "conflicting_contract_key_groups": int(
             diagnostics.conflicting_group_head.sum()
+        ),
+    }
+
+
+def _chain_snapshot_diagnostics(
+    frame: pd.DataFrame,
+) -> _ChainSnapshotDiagnostics:
+    snapshots = (
+        frame.groupby(
+            ["ts", "expiry"],
+            dropna=False,
+            sort=False,
+        )
+        .agg(
+            snapshot_rows=("strike", "size"),
+            snapshot_strikes=("strike", "nunique"),
+        )
+        .reset_index()
+        .sort_values(["expiry", "ts"], kind="mergesort")
+        .reset_index(drop=True)
+    )
+    if snapshots.empty:
+        snapshots["snapshot_gap_ns"] = pd.Series(dtype="float64")
+    else:
+        snapshots["snapshot_gap_ns"] = snapshots.groupby(
+            "expiry",
+            dropna=False,
+            sort=False,
+        )["ts"].diff()
+    rows: list[dict[str, object]] = []
+    for expiry, group in snapshots.groupby(
+        "expiry",
+        dropna=False,
+        sort=False,
+    ):
+        strikes = group["snapshot_strikes"]
+        gaps = group["snapshot_gap_ns"].dropna()
+        rows.append(
+            {
+                "expiry": expiry,
+                "expiry_snapshots": int(len(group)),
+                "min_snapshot_strikes": int(strikes.min()),
+                "median_snapshot_strikes": float(strikes.median()),
+                "max_snapshot_strikes": int(strikes.max()),
+                "snapshot_gap_observations": int(len(gaps)),
+                "median_snapshot_gap_ns": (
+                    float(gaps.median()) if len(gaps) else 0.0
+                ),
+                "p99_snapshot_gap_ns": (
+                    float(gaps.quantile(0.99)) if len(gaps) else 0.0
+                ),
+                "max_snapshot_gap_ns": (
+                    float(gaps.max()) if len(gaps) else 0.0
+                ),
+            }
+        )
+    by_expiry = pd.DataFrame(
+        rows,
+        columns=[
+            "expiry",
+            "expiry_snapshots",
+            "min_snapshot_strikes",
+            "median_snapshot_strikes",
+            "max_snapshot_strikes",
+            "snapshot_gap_observations",
+            "median_snapshot_gap_ns",
+            "p99_snapshot_gap_ns",
+            "max_snapshot_gap_ns",
+        ],
+    )
+    return _ChainSnapshotDiagnostics(
+        snapshots=snapshots,
+        by_expiry=by_expiry,
+    )
+
+
+def _chain_snapshot_summary(
+    diagnostics: _ChainSnapshotDiagnostics,
+) -> dict[str, object]:
+    snapshots = diagnostics.snapshots
+    by_expiry = diagnostics.by_expiry
+    strikes = snapshots["snapshot_strikes"]
+    gaps = snapshots["snapshot_gap_ns"].dropna()
+    expiry_snapshot_counts = by_expiry["expiry_snapshots"]
+    return {
+        "chain_snapshot_validation_enabled": True,
+        "observation_timestamps": int(snapshots["ts"].nunique()),
+        "expiry_snapshots": int(len(snapshots)),
+        "min_snapshots_per_expiry": (
+            int(expiry_snapshot_counts.min())
+            if len(expiry_snapshot_counts)
+            else 0
+        ),
+        "median_snapshots_per_expiry": (
+            float(expiry_snapshot_counts.median())
+            if len(expiry_snapshot_counts)
+            else 0.0
+        ),
+        "max_snapshots_per_expiry": (
+            int(expiry_snapshot_counts.max())
+            if len(expiry_snapshot_counts)
+            else 0
+        ),
+        "min_snapshot_strikes": (
+            int(strikes.min()) if len(strikes) else 0
+        ),
+        "median_snapshot_strikes": (
+            float(strikes.median()) if len(strikes) else 0.0
+        ),
+        "max_snapshot_strikes": (
+            int(strikes.max()) if len(strikes) else 0
+        ),
+        "snapshot_gap_observations": int(len(gaps)),
+        "median_snapshot_gap_ns": (
+            float(gaps.median()) if len(gaps) else 0.0
+        ),
+        "p99_snapshot_gap_ns": (
+            float(gaps.quantile(0.99)) if len(gaps) else 0.0
+        ),
+        "max_snapshot_gap_ns": (
+            float(gaps.max()) if len(gaps) else 0.0
         ),
     }
 

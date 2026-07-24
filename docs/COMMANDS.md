@@ -8891,6 +8891,10 @@ python -m hft_cli pipeline-vendor-market-data `
   --underlying NIFTY `
   --lot-size 65 `
   --tick-size 0.05 `
+  --min-chain-expiry-snapshots 1000 `
+  --min-chain-snapshots-per-expiry 1000 `
+  --min-chain-snapshot-strikes 20 `
+  --max-chain-snapshot-p99-gap-ns 1000000000 `
   --max-unparseable-contract-expiry-rows 0 `
   --max-expired-contract-rows 0 `
   --max-duplicate-contract-key-rows 0 `
@@ -8921,6 +8925,14 @@ The same commands also default
 `duplicate_contract_observation`; multiple quote/depth states at one key emit
 `conflicting_contract_observation`. A later timestamp for the same contract is
 a normal update and is not a collision.
+An expiry-snapshot is one `(ts, expiry)` surface. Chain reports count distinct
+strikes per snapshot, the minimum snapshot count across expiries, and
+within-expiry timestamp gaps. The vendor, batch, broker-vendor, and direct
+readiness commands accept `--min-chain-expiry-snapshots`,
+`--min-chain-snapshots-per-expiry`, `--min-chain-snapshot-strikes`, and
+`--max-chain-snapshot-p99-gap-ns`. Defaults preserve structurally valid
+one-snapshot samples; production values must be set from the agreed vendor
+delivery mode. The values above are illustrative for a dense intraday file.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9369,6 +9381,11 @@ The same summary reports all rows affected by repeated `(ts, expiry, strike)`
 keys, excess rows beyond one state per key, exact-repeat and conflicting-state
 groups, plus per-expiry counts. Diagnostics do not silently deduplicate or
 choose one contradictory quote.
+Snapshot evidence separately reports distinct observation timestamps, total
+`(ts, expiry)` surfaces, minimum/median/maximum snapshots per expiry,
+minimum/median/maximum distinct strikes per surface, and
+median/p99/maximum within-expiry gaps. Duplicate rows cannot inflate strike
+breadth.
 
 ## Data Readiness Gate
 
@@ -9408,6 +9425,10 @@ python -m hft_cli review-data-readiness `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
+  --min-chain-expiry-snapshots 1000 `
+  --min-chain-snapshots-per-expiry 1000 `
+  --min-chain-snapshot-strikes 20 `
+  --max-chain-snapshot-p99-gap-ns 1000000000 `
   --max-unparseable-contract-expiry-rows 0 `
   --max-expired-contract-rows 0 `
   --max-duplicate-contract-key-rows 0 `
