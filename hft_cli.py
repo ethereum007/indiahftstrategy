@@ -3122,6 +3122,17 @@ def main(argv: list[str] | None = None) -> int:
             "and supplied market calendar."
         ),
     )
+    vendor_market_data.add_argument(
+        "--underlying",
+        default=None,
+        help="NSE index symbol for authority-backed contract lot-size validation.",
+    )
+    vendor_market_data.add_argument(
+        "--lot-size",
+        type=int,
+        default=None,
+        help="Declared contract lot size to validate for every chain expiry.",
+    )
     vendor_market_data.add_argument("--no-filter-session", action="store_true")
     vendor_market_data.add_argument("--tick-size", type=float, default=None)
     vendor_market_data.add_argument("--allow-missing-required", action="store_true")
@@ -3172,6 +3183,17 @@ def main(argv: list[str] | None = None) -> int:
             "and supplied market calendar."
         ),
     )
+    vendor_market_data_batch.add_argument(
+        "--underlying",
+        default=None,
+        help="NSE index symbol for authority-backed contract lot-size validation.",
+    )
+    vendor_market_data_batch.add_argument(
+        "--lot-size",
+        type=int,
+        default=None,
+        help="Declared contract lot size to validate for every chain expiry.",
+    )
     vendor_market_data_batch.add_argument("--no-filter-session", action="store_true")
     vendor_market_data_batch.add_argument("--tick-size", type=float, default=None)
     vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
@@ -3219,6 +3241,26 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--timestamp-tz", default=None)
     broker_vendor_data_readiness.add_argument("--market", default="india_nse_index_derivatives")
     _add_market_calendar_arg(broker_vendor_data_readiness)
+    broker_vendor_data_readiness.add_argument(
+        "--expiry-cycle",
+        choices=["weekly", "monthly"],
+        default=None,
+        help=(
+            "For chain data, validate expiries and declared lot size "
+            "against pinned NSE authorities."
+        ),
+    )
+    broker_vendor_data_readiness.add_argument(
+        "--underlying",
+        default=None,
+        help="NSE index symbol for authority-backed contract lot-size validation.",
+    )
+    broker_vendor_data_readiness.add_argument(
+        "--lot-size",
+        type=int,
+        default=None,
+        help="Declared contract lot size to validate for every chain expiry.",
+    )
     broker_vendor_data_readiness.add_argument("--no-filter-session", action="store_true")
     broker_vendor_data_readiness.add_argument("--tick-size", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--allow-missing-required", action="store_true")
@@ -3286,6 +3328,17 @@ def main(argv: list[str] | None = None) -> int:
             "supplied market calendar."
         ),
     )
+    diag_chain.add_argument(
+        "--underlying",
+        default=None,
+        help="NSE index symbol for authority-backed contract lot-size validation.",
+    )
+    diag_chain.add_argument(
+        "--lot-size",
+        type=int,
+        default=None,
+        help="Declared contract lot size to validate for every chain expiry.",
+    )
     diag_chain.add_argument("--no-filter-session", action="store_true")
 
     data_readiness = sub.add_parser("review-data-readiness", help="Gate vendor/normalized market data before research runs.")
@@ -3317,6 +3370,10 @@ def main(argv: list[str] | None = None) -> int:
         "--require-contract-expiry-validation",
         action="store_true",
     )
+    data_readiness.add_argument(
+        "--require-contract-lot-validation",
+        action="store_true",
+    )
     data_readiness.add_argument("--require-market-profile", action="store_true")
     data_readiness.add_argument("--require-explicit-fee-model", action="store_true")
     data_readiness.add_argument("--require-market-portability", action="store_true")
@@ -3342,6 +3399,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     data_readiness.add_argument(
         "--max-uncovered-contract-expiry-rows",
+        type=int,
+        default=0,
+    )
+    data_readiness.add_argument(
+        "--max-invalid-contract-lot-rows",
+        type=int,
+        default=0,
+    )
+    data_readiness.add_argument(
+        "--max-uncovered-contract-lot-rows",
         type=int,
         default=0,
     )
@@ -7776,6 +7843,8 @@ def main(argv: list[str] | None = None) -> int:
                 market=args.market,
                 market_calendar_path=args.market_calendar,
                 expiry_cycle=args.expiry_cycle,
+                underlying=args.underlying,
+                lot_size=args.lot_size,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7821,6 +7890,8 @@ def main(argv: list[str] | None = None) -> int:
                 market=args.market,
                 market_calendar_path=args.market_calendar,
                 expiry_cycle=args.expiry_cycle,
+                underlying=args.underlying,
+                lot_size=args.lot_size,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7892,6 +7963,9 @@ def main(argv: list[str] | None = None) -> int:
                 filter_session=not args.no_filter_session,
                 market=args.market,
                 market_calendar_path=args.market_calendar,
+                expiry_cycle=args.expiry_cycle,
+                underlying=args.underlying,
+                lot_size=args.lot_size,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7984,6 +8058,8 @@ def main(argv: list[str] | None = None) -> int:
                 market=args.market,
                 market_calendar=args.market_calendar,
                 expiry_cycle=args.expiry_cycle,
+                underlying=args.underlying,
+                lot_size=args.lot_size,
             ),
             args.out,
         )
@@ -8017,6 +8093,9 @@ def main(argv: list[str] | None = None) -> int:
                 require_contract_expiry_validation=(
                     args.require_contract_expiry_validation
                 ),
+                require_contract_lot_validation=(
+                    args.require_contract_lot_validation
+                ),
                 require_market_profile=args.require_market_profile,
                 require_explicit_fee_model=args.require_explicit_fee_model,
                 require_market_portability=args.require_market_portability,
@@ -8040,6 +8119,12 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 max_uncovered_contract_expiry_rows=(
                     args.max_uncovered_contract_expiry_rows
+                ),
+                max_invalid_contract_lot_rows=(
+                    args.max_invalid_contract_lot_rows
+                ),
+                max_uncovered_contract_lot_rows=(
+                    args.max_uncovered_contract_lot_rows
                 ),
                 max_tick_p99_gap_ns=args.max_tick_p99_gap_ns,
                 max_tick_median_spread_ticks=args.max_tick_median_spread_ticks,

@@ -8888,6 +8888,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --timestamp-unit datetime `
   --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
   --expiry-cycle monthly `
+  --underlying NIFTY `
+  --lot-size 65 `
   --tick-size 0.05 `
   --fail-on-blocked-actions `
   --fail-on-breach
@@ -8896,6 +8898,12 @@ python -m hft_cli pipeline-vendor-market-data `
 Use `--expiry-cycle weekly` for a weekly NIFTY chain. The pinned rule covers
 the Tuesday regime from September 2025 onward; historical chains outside that
 regime require a separately versioned rule rather than a permissive fallback.
+Add `--underlying` and `--lot-size` together to validate the declared contract
+economics against pinned NSE circular `NSE/FAOP/70616` and the retained
+2026-07-24 permitted-lot snapshot. Current covered lots are NIFTY `65`,
+BANKNIFTY `30`, FINNIFTY `60`, MIDCPNIFTY `120`, and NIFTYNXT50 `25`.
+The rule covers NIFTY weeklies from 6 January 2026 and monthly contracts from
+27 January 2026; unsupported cycles and earlier expiries fail closed.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9125,7 +9133,11 @@ This writes `01_vendor_market_data_batch`, `02_broker_readiness`,
 `broker_vendor_data_readiness_config.json`,
 `broker_vendor_data_readiness_runbook.md`, and a root manifest. It is the
 current one-command Arrow.money/iRage data proof path before broker dry-run
-handoff. The root summary/config also surfaces source-file fingerprint
+execution handoff. For chain inputs, the wrapper accepts the same
+`--market-calendar`, `--expiry-cycle`, `--underlying`, and `--lot-size`
+declaration as the vendor pipeline and carries both expiry and lot-size
+authority gates into every nested dataset. The root summary/config also
+surfaces source-file fingerprint
 coverage, minimum mapping coverage, and mapping-draft provenance, so operators
 can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
@@ -9317,7 +9329,9 @@ python -m hft_cli diagnose-chain `
   --tick-size 0.05 `
   --market india_nse_index_derivatives `
   --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
-  --expiry-cycle monthly
+  --expiry-cycle monthly `
+  --underlying NIFTY `
+  --lot-size 65
 ```
 
 Outputs:
@@ -9353,6 +9367,7 @@ python -m hft_cli review-data-readiness `
   --require-reviewed-mapping-normalization `
   --require-chain-diagnostics `
   --require-contract-expiry-validation `
+  --require-contract-lot-validation `
   --require-market-profile `
   --require-explicit-fee-model `
   --require-market-portability `
@@ -9366,6 +9381,8 @@ python -m hft_cli review-data-readiness `
   --max-chain-median-spread-ticks 20 `
   --max-invalid-contract-expiry-rows 0 `
   --max-uncovered-contract-expiry-rows 0 `
+  --max-invalid-contract-lot-rows 0 `
+  --max-uncovered-contract-lot-rows 0 `
   --fail-on-breach `
   --fail-on-blocked-actions
 ```

@@ -24,6 +24,13 @@ from markets.expiries import (
     load_nse_fo_expiry_rule,
     validate_nse_fo_expiry,
 )
+from markets.lot_sizes import (
+    NseIndexLotRule,
+    NseIndexLotValidation,
+    index_lot_rule_summary,
+    load_nse_index_lot_rule,
+    validate_nse_index_lot_size,
+)
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -56,6 +63,18 @@ class _ContractExpiryDiagnostics:
     cycle: str
     rule: NseFoExpiryRule | None
     validations: dict[str, NseFoExpiryValidation]
+    row_valid: pd.Series
+    row_covered: pd.Series
+
+
+@dataclass(frozen=True)
+class _ContractLotDiagnostics:
+    enabled: bool
+    underlying: str
+    lot_size: object
+    cycle: str
+    rule: NseIndexLotRule | None
+    validations: dict[str, NseIndexLotValidation]
     row_valid: pd.Series
     row_covered: pd.Series
 
@@ -126,6 +145,8 @@ def chain_diagnostics(
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
     expiry_cycle: str | None = None,
+    underlying: str | None = None,
+    lot_size: int | None = None,
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
     calendar = resolve_market_calendar(market_calendar, market=market)
@@ -147,6 +168,12 @@ def chain_diagnostics(
         frame["expiry"],
         cycle=expiry_cycle,
         market_calendar=calendar,
+    )
+    lot_diagnostics = _contract_lot_diagnostics(
+        frame["expiry"],
+        underlying=underlying,
+        lot_size=lot_size,
+        cycle=expiry_cycle,
     )
     by_expiry = (
         frame.groupby("expiry", dropna=False)
@@ -196,13 +223,45 @@ def chain_diagnostics(
         by_expiry["contract_expiry_reason"] = [
             validation.reason for validation in validations
         ]
+    if lot_diagnostics.enabled:
+        lot_validations = [
+            lot_diagnostics.validations[_expiry_key(value)]
+            for value in by_expiry["expiry"]
+        ]
+        by_expiry["contract_lot_valid"] = [
+            validation.valid for validation in lot_validations
+        ]
+        by_expiry["contract_lot_covered"] = [
+            validation.covered for validation in lot_validations
+        ]
+        by_expiry["contract_lot_expected"] = [
+            (
+                int(validation.expected_lot_size)
+                if validation.expected_lot_size is not None
+                else np.nan
+            )
+            for validation in lot_validations
+        ]
+        by_expiry["contract_lot_first_expiry"] = [
+            (
+                validation.decision.first_expiry.isoformat()
+                if validation.decision is not None
+                else ""
+            )
+            for validation in lot_validations
+        ]
+        by_expiry["contract_lot_reason"] = [
+            validation.reason for validation in lot_validations
+        ]
     expiry_summary = _contract_expiry_summary(expiry_diagnostics)
+    lot_summary = _contract_lot_summary(lot_diagnostics)
     overall = pd.DataFrame(
         [
             {
                 "market": market,
                 **market_calendar_summary(calendar),
                 **expiry_summary,
+                **lot_summary,
                 "rows": int(len(frame)),
                 "expiries": int(frame["expiry"].nunique()),
                 "strikes": int(frame["strike"].nunique()),
@@ -244,6 +303,11 @@ def chain_diagnostics(
             invalid_contract_expiry=(
                 ~expiry_diagnostics.row_valid
                 if expiry_diagnostics.enabled
+                else pd.Series(False, index=frame.index, dtype=bool)
+            ),
+            invalid_contract_lot=(
+                ~lot_diagnostics.row_valid
+                if lot_diagnostics.enabled
                 else pd.Series(False, index=frame.index, dtype=bool)
             ),
         ),
@@ -293,6 +357,7 @@ def _chain_issues(
     calendar_out_of_range: pd.Series,
     out_of_session: pd.Series,
     invalid_contract_expiry: pd.Series,
+    invalid_contract_lot: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -312,6 +377,7 @@ def _chain_issues(
         & ~calendar_out_of_range,
         "out_of_session": out_of_session,
         "invalid_contract_expiry": invalid_contract_expiry,
+        "invalid_contract_lot_size": invalid_contract_lot,
     }
     for issue, mask in checks.items():
         for idx in frame.index[mask]:
@@ -413,6 +479,118 @@ def _contract_expiry_summary(
         ),
         "validated_contract_expiries": int(len(diagnostics.validations)),
         **expiry_rule_summary(diagnostics.rule),
+    }
+
+
+def _contract_lot_diagnostics(
+    expiries: pd.Series,
+    *,
+    underlying: str | None,
+    lot_size: int | None,
+    cycle: str | None,
+) -> _ContractLotDiagnostics:
+    if underlying is None and lot_size is None:
+        return _ContractLotDiagnostics(
+            enabled=False,
+            underlying="",
+            lot_size="",
+            cycle="",
+            rule=None,
+            validations={},
+            row_valid=pd.Series(True, index=expiries.index, dtype=bool),
+            row_covered=pd.Series(True, index=expiries.index, dtype=bool),
+        )
+    if underlying is None or not str(underlying).strip():
+        raise ValueError(
+            "underlying is required when contract lot-size validation is enabled"
+        )
+    if lot_size is None:
+        raise ValueError(
+            "lot_size is required when contract lot-size validation is enabled"
+        )
+    if cycle is None or not str(cycle).strip():
+        raise ValueError(
+            "expiry_cycle is required when contract lot-size validation is enabled"
+        )
+    rule = load_nse_index_lot_rule()
+    validations: dict[str, NseIndexLotValidation] = {}
+    row_valid: list[bool] = []
+    row_covered: list[bool] = []
+    for value in expiries:
+        key = _expiry_key(value)
+        if key not in validations:
+            validations[key] = validate_nse_index_lot_size(
+                underlying,
+                value,
+                lot_size,
+                cycle=str(cycle),
+                rule=rule,
+            )
+        validation = validations[key]
+        row_valid.append(validation.valid)
+        row_covered.append(validation.covered)
+    return _ContractLotDiagnostics(
+        enabled=True,
+        underlying=str(underlying).strip().upper(),
+        lot_size=lot_size,
+        cycle=str(cycle).strip().lower(),
+        rule=rule,
+        validations=validations,
+        row_valid=pd.Series(row_valid, index=expiries.index, dtype=bool),
+        row_covered=pd.Series(
+            row_covered,
+            index=expiries.index,
+            dtype=bool,
+        ),
+    )
+
+
+def _contract_lot_summary(
+    diagnostics: _ContractLotDiagnostics,
+) -> dict[str, object]:
+    if not diagnostics.enabled or diagnostics.rule is None:
+        return {
+            "contract_lot_validation_enabled": False,
+            "contract_lot_underlying": "",
+            "contract_lot_size": 0,
+            "contract_lot_cycle": "",
+            "invalid_contract_lot_rows": 0,
+            "uncovered_contract_lot_rows": 0,
+            "invalid_contract_lot_expiries": 0,
+            "validated_contract_lot_expiries": 0,
+            "contract_lot_rule_id": "",
+            "contract_lot_rule_publisher": "",
+            "contract_lot_rule_source_url": "",
+            "contract_lot_rule_circular_id": "",
+            "contract_lot_rule_circular_date": "",
+            "contract_lot_rule_path": "",
+            "contract_lot_rule_sha256": "",
+            "contract_lot_authority_source_path": "",
+            "contract_lot_authority_source_sha256": "",
+            "contract_lot_snapshot_source_url": "",
+            "contract_lot_snapshot_as_of": "",
+            "contract_lot_snapshot_path": "",
+            "contract_lot_snapshot_sha256": "",
+        }
+    return {
+        "contract_lot_validation_enabled": True,
+        "contract_lot_underlying": diagnostics.underlying,
+        "contract_lot_size": diagnostics.lot_size,
+        "contract_lot_cycle": diagnostics.cycle,
+        "invalid_contract_lot_rows": int((~diagnostics.row_valid).sum()),
+        "uncovered_contract_lot_rows": int(
+            (~diagnostics.row_covered).sum()
+        ),
+        "invalid_contract_lot_expiries": int(
+            sum(
+                not validation.valid
+                for validation in diagnostics.validations.values()
+            )
+        ),
+        "validated_contract_lot_expiries": int(
+            len(diagnostics.validations)
+        ),
+        **index_lot_rule_summary(diagnostics.rule),
     }
 
 

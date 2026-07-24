@@ -176,8 +176,11 @@ INDIA_NSE_INDEX_DERIVATIVES = MarketProfile(
         "15:30:00",
     ),
     default_tick=0.05,
-    default_lot_size=75,
-    notes="India-first default for Nifty/Sensex index derivatives research.",
+    default_lot_size=65,
+    notes=(
+        "Current NIFTY research baseline; declare and validate the "
+        "underlying-specific NSE lot size for contract evidence."
+    ),
 )
 
 US_EQUITIES_REGULAR = MarketProfile(

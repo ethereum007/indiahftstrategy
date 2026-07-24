@@ -29,6 +29,7 @@ from adapters.vendor_mapping_application import (
 from data.diagnostics import DiagnosticResult, chain_diagnostics, tick_diagnostics, write_diagnostics
 from markets.calendars import market_calendar_summary, resolve_market_calendar
 from markets.expiries import load_nse_fo_expiry_rule
+from markets.lot_sizes import load_nse_index_lot_rule
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.data_readiness import DataReadinessReport, DataReadinessThresholds, write_data_readiness_report
 from reports.data_readiness_comparison import (
@@ -53,6 +54,8 @@ class VendorMarketDataPipelineConfig:
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
     market_calendar_path: str | None = None
     expiry_cycle: str | None = None
+    underlying: str | None = None
+    lot_size: int | None = None
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
@@ -653,6 +656,8 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
                 market=config.market,
                 market_calendar=config.market_calendar_path,
                 expiry_cycle=config.expiry_cycle,
+                underlying=config.underlying,
+                lot_size=config.lot_size,
             ),
             output_dir,
         )
@@ -662,13 +667,29 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
 def _contract_expiry_inputs(
     config: VendorMarketDataPipelineConfig,
 ) -> dict[str, Path]:
-    if not config.expiry_cycle:
-        return {}
-    rule = load_nse_fo_expiry_rule()
-    return {
-        "contract_expiry_rule": rule.config_path,
-        "contract_expiry_authority_source": rule.authority_source_path,
-    }
+    inputs: dict[str, Path] = {}
+    if config.expiry_cycle:
+        expiry_rule = load_nse_fo_expiry_rule()
+        inputs.update(
+            {
+                "contract_expiry_rule": expiry_rule.config_path,
+                "contract_expiry_authority_source": (
+                    expiry_rule.authority_source_path
+                ),
+            }
+        )
+    if config.underlying is not None or config.lot_size is not None:
+        lot_rule = load_nse_index_lot_rule()
+        inputs.update(
+            {
+                "contract_lot_rule": lot_rule.config_path,
+                "contract_lot_authority_source": (
+                    lot_rule.authority_source_path
+                ),
+                "contract_lot_snapshot": lot_rule.snapshot_path,
+            }
+        )
+    return inputs
 
 
 def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadinessThresholds:
@@ -679,6 +700,9 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         require_tick_diagnostics=config.kind == "ticks",
         require_chain_diagnostics=config.kind == "chain",
         require_contract_expiry_validation=bool(config.expiry_cycle),
+        require_contract_lot_validation=bool(
+            config.underlying is not None and config.lot_size is not None
+        ),
         expected_adapter=config.adapter,
         expected_vendor_data_kind=config.kind,
         min_tick_rows=config.min_rows,
@@ -909,6 +933,53 @@ def _summary(
                         fallback=0.0,
                     )
                 ),
+                "contract_lot_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "contract_lot_validation_enabled",
+                        False,
+                    )
+                ),
+                "contract_lot_underlying": _text(
+                    diagnostic_row,
+                    "contract_lot_underlying",
+                ),
+                "contract_lot_size": int(
+                    _number(
+                        diagnostic_row,
+                        "contract_lot_size",
+                        fallback=0.0,
+                    )
+                ),
+                "contract_lot_rule_id": _text(
+                    diagnostic_row,
+                    "contract_lot_rule_id",
+                ),
+                "contract_lot_rule_sha256": _text(
+                    diagnostic_row,
+                    "contract_lot_rule_sha256",
+                ),
+                "contract_lot_authority_source_sha256": _text(
+                    diagnostic_row,
+                    "contract_lot_authority_source_sha256",
+                ),
+                "contract_lot_snapshot_sha256": _text(
+                    diagnostic_row,
+                    "contract_lot_snapshot_sha256",
+                ),
+                "invalid_contract_lot_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "invalid_contract_lot_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "uncovered_contract_lot_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "uncovered_contract_lot_rows",
+                        fallback=0.0,
+                    )
+                ),
                 "failed_components": failed,
                 "data_readiness_ready": bool(readiness.ready),
                 "vendor_intake_manifest_path": _manifest_path(intake_dir),
@@ -1045,6 +1116,12 @@ def _pipeline_runbook_markdown(
         f"- Contract expiry rule: {_value_text(summary_row.get('contract_expiry_rule_id')) or 'n/a'}",
         f"- Invalid contract-expiry rows: {int(_number_from_value(summary_row.get('invalid_contract_expiry_rows', 0)))}",
         f"- Uncovered contract-expiry rows: {int(_number_from_value(summary_row.get('uncovered_contract_expiry_rows', 0)))}",
+        f"- Contract lot-size validation: {'yes' if _truthy(summary_row.get('contract_lot_validation_enabled', False)) else 'no'}",
+        f"- Contract lot-size underlying: {_value_text(summary_row.get('contract_lot_underlying')) or 'n/a'}",
+        f"- Declared contract lot size: {_value_text(summary_row.get('contract_lot_size')) or 'n/a'}",
+        f"- Contract lot-size rule: {_value_text(summary_row.get('contract_lot_rule_id')) or 'n/a'}",
+        f"- Invalid contract-lot rows: {int(_number_from_value(summary_row.get('invalid_contract_lot_rows', 0)))}",
+        f"- Uncovered contract-lot rows: {int(_number_from_value(summary_row.get('uncovered_contract_lot_rows', 0)))}",
         f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
         f"- Failed components: {int(_number_from_value(summary_row.get('failed_components', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -1666,6 +1743,30 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         if not config.market_calendar_path:
             raise ValueError(
                 "market_calendar_path is required when expiry_cycle is set"
+            )
+    lot_validation_requested = (
+        config.underlying is not None or config.lot_size is not None
+    )
+    if lot_validation_requested:
+        if config.kind != "chain":
+            raise ValueError(
+                "underlying and lot_size are only valid for chain data"
+            )
+        if config.underlying is None or not str(config.underlying).strip():
+            raise ValueError(
+                "underlying is required when lot_size is provided"
+            )
+        if (
+            isinstance(config.lot_size, bool)
+            or not isinstance(config.lot_size, int)
+            or config.lot_size <= 0
+        ):
+            raise ValueError(
+                "lot_size must be a positive integer when underlying is provided"
+            )
+        if config.expiry_cycle is None:
+            raise ValueError(
+                "expiry_cycle is required when contract lot-size validation is enabled"
             )
     for name in (
         "max_crossed_quote_rows",

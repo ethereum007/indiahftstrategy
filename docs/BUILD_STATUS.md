@@ -6852,11 +6852,34 @@ tests`. All outputs remain non-authorizing; the full repository suite was not
 rerun because the affected boundary is covered by focused and downstream
 suites and several broker/provider wrappers require multiple minutes each.
 
+Latest NSE index contract-lot truth gate: the repo now pins NSE circular
+`NSE/FAOP/70616`, the official permitted-lot CSV captured on 2026-07-24, and a
+normalized weekly/monthly transition rule. It covers NIFTY weekly expiries
+from January 6, 2026 and NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY, and
+NIFTYNXT50 monthly expiries from January 27, 2026 at lots `65`, `30`, `60`,
+`120`, and `25` respectively. The loader verifies both authority
+fingerprints, cross-checks the normalized values against the current exchange
+snapshot, and fails closed for earlier expiries or unsupported
+underlying/cycle pairs. The generic NSE market profile now uses the current
+NIFTY `65` baseline while directing other indices to the authority rule.
+Chain diagnostics accept an explicit underlying and lot size, retain expected
+lots and full authority provenance, and report mismatch and uncovered rows.
+Vendor single-day, batch, and broker-vendor
+pipelines carry the declaration and bind all three lot-rule inputs; data
+readiness re-hashes each source and blocks stale, mismatched, or uncovered
+evidence. The broker wrapper also now carries the existing expiry-cycle gate.
+Authority, resolver, diagnostics, readiness, vendor, broker-wrapper,
+provider-wrapper, market-profile, catalog, manifest, and CLI regressions pass
+(`188` distinct focused tests). Repository collection is healthy at `2558
+tests`. The full suite was not rerun because recent full attempts require well
+over the heartbeat window; the changed boundaries and their direct wrappers
+are covered. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound
-   calendar, declared contract-expiry cycle, and broker-vendor readiness
-   pipeline once a sample is available.
+   calendar, declared contract-expiry cycle, declared index lot size, and
+   broker-vendor readiness pipeline once a sample is available.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

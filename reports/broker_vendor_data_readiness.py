@@ -44,6 +44,9 @@ class BrokerVendorDataReadinessConfig:
     filter_session: bool = True
     market: str = "india_nse_index_derivatives"
     market_calendar_path: str | None = None
+    expiry_cycle: str | None = None
+    underlying: str | None = None
+    lot_size: int | None = None
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
@@ -117,6 +120,9 @@ def write_broker_vendor_data_readiness_pipeline(
         filter_session=config.filter_session,
         market=config.market,
         market_calendar_path=config.market_calendar_path,
+        expiry_cycle=config.expiry_cycle,
+        underlying=config.underlying,
+        lot_size=config.lot_size,
         tick_size=config.tick_size,
         require_all_mapped=config.require_all_mapped,
         min_rows=config.min_rows,

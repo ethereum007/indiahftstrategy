@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "market": "india_nse_index_derivatives",
+  "publisher": "National Stock Exchange of India Limited",
+  "source_url": "https://nsearchives.nseindia.com/content/circulars/FAOP70616.pdf",
+  "circular_id": "NSE/FAOP/70616",
+  "circular_date": "2025-10-03",
+  "authority_sources": {
+    "circular": {
+      "path": "NSE_FAOP_70616_2025-10-03.pdf",
+      "sha256": "0718cf0cc7e6c74105dc946497369270fca807f59912586560c9552cad8050ef"
+    },
+    "permitted_lot_snapshot": {
+      "path": "nse_fo_permitted_lot_sizes_2026-07-24.csv",
+      "sha256": "3f3d885902d1ac5290dbe18393e68d05f6843592677bf79110b6f00591968f8b",
+      "source_url": "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv",
+      "as_of": "2026-07-24"
+    }
+  },
+  "rule": {
+    "rule_id": "nse_fo_index_lot_sizes_from_2026-01_v1",
+    "entries": [
+      {
+        "underlying": "NIFTY",
+        "cycle": "weekly",
+        "last_existing_expiry": "2025-12-23",
+        "first_expiry": "2026-01-06",
+        "lot_size": 65
+      },
+      {
+        "underlying": "NIFTY",
+        "cycle": "monthly",
+        "last_existing_expiry": "2025-12-30",
+        "first_expiry": "2026-01-27",
+        "lot_size": 65
+      },
+      {
+        "underlying": "BANKNIFTY",
+        "cycle": "monthly",
+        "last_existing_expiry": "2025-12-30",
+        "first_expiry": "2026-01-27",
+        "lot_size": 30
+      },
+      {
+        "underlying": "FINNIFTY",
+        "cycle": "monthly",
+        "last_existing_expiry": "2025-12-30",
+        "first_expiry": "2026-01-27",
+        "lot_size": 60
+      },
+      {
+        "underlying": "MIDCPNIFTY",
+        "cycle": "monthly",
+        "last_existing_expiry": "2025-12-30",
+        "first_expiry": "2026-01-27",
+        "lot_size": 120
+      },
+      {
+        "underlying": "NIFTYNXT50",
+        "cycle": "monthly",
+        "first_expiry": "2026-01-27",
+        "lot_size": 25
+      }
+    ]
+  }
+}

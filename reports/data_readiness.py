@@ -63,6 +63,7 @@ class DataReadinessThresholds:
     require_tick_diagnostics: bool = True
     require_chain_diagnostics: bool = False
     require_contract_expiry_validation: bool = False
+    require_contract_lot_validation: bool = False
     require_market_profile: bool = False
     require_explicit_fee_model: bool = False
     require_market_portability: bool = False
@@ -83,6 +84,8 @@ class DataReadinessThresholds:
     max_out_of_session_rows: int = 0
     max_invalid_contract_expiry_rows: int = 0
     max_uncovered_contract_expiry_rows: int = 0
+    max_invalid_contract_lot_rows: int = 0
+    max_uncovered_contract_lot_rows: int = 0
     max_tick_p99_gap_ns: float | None = None
     max_tick_median_spread_ticks: float | None = None
     max_chain_median_spread_ticks: float | None = None
@@ -1715,6 +1718,133 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 ),
             ]
         )
+    lot_validation_enabled = _to_bool(
+        row.get("contract_lot_validation_enabled", False)
+    )
+    if thresholds.require_contract_lot_validation:
+        checks.append(
+            _check(
+                "chain_contract_lot_validation_enabled",
+                lot_validation_enabled,
+                "is",
+                True,
+                lot_validation_enabled,
+                "chain diagnostics did not validate the declared contract lot size",
+            )
+        )
+    if thresholds.require_contract_lot_validation or lot_validation_enabled:
+        underlying = _text(row, "contract_lot_underlying")
+        declared_lot_size = _number(row, "contract_lot_size")
+        rule_id = _text(row, "contract_lot_rule_id")
+        rule_sha256 = _text(row, "contract_lot_rule_sha256")
+        authority_sha256 = _text(
+            row,
+            "contract_lot_authority_source_sha256",
+        )
+        snapshot_sha256 = _text(
+            row,
+            "contract_lot_snapshot_sha256",
+        )
+        rule_path = _text(row, "contract_lot_rule_path")
+        authority_path = _text(
+            row,
+            "contract_lot_authority_source_path",
+        )
+        snapshot_path = _text(row, "contract_lot_snapshot_path")
+        checks.extend(
+            [
+                _check(
+                    "chain_contract_lot_underlying_present",
+                    underlying,
+                    "nonempty",
+                    True,
+                    bool(underlying),
+                    "chain diagnostics did not retain the declared index underlying",
+                ),
+                _check(
+                    "chain_contract_lot_size_positive",
+                    declared_lot_size,
+                    ">",
+                    0,
+                    declared_lot_size > 0,
+                    "chain diagnostics did not retain a positive declared lot size",
+                ),
+                _check(
+                    "chain_contract_lot_rule_id_present",
+                    rule_id,
+                    "nonempty",
+                    True,
+                    bool(rule_id),
+                    "chain diagnostics did not retain a contract-lot rule identity",
+                ),
+                _check(
+                    "chain_contract_lot_rule_sha256_present",
+                    rule_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(rule_sha256),
+                    "chain diagnostics did not retain the contract-lot rule fingerprint",
+                ),
+                _check(
+                    "chain_contract_lot_authority_sha256_present",
+                    authority_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(authority_sha256),
+                    "chain diagnostics did not retain the NSE lot-size circular fingerprint",
+                ),
+                _check(
+                    "chain_contract_lot_snapshot_sha256_present",
+                    snapshot_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(snapshot_sha256),
+                    "chain diagnostics did not retain the NSE permitted-lot snapshot fingerprint",
+                ),
+                _check(
+                    "chain_contract_lot_rule_current",
+                    rule_path,
+                    "sha256_matches",
+                    rule_sha256,
+                    _file_fingerprint_current(rule_path, rule_sha256),
+                    "chain diagnostics contract-lot rule source is missing or stale",
+                ),
+                _check(
+                    "chain_contract_lot_authority_current",
+                    authority_path,
+                    "sha256_matches",
+                    authority_sha256,
+                    _file_fingerprint_current(
+                        authority_path,
+                        authority_sha256,
+                    ),
+                    "chain diagnostics NSE lot-size circular is missing or stale",
+                ),
+                _check(
+                    "chain_contract_lot_snapshot_current",
+                    snapshot_path,
+                    "sha256_matches",
+                    snapshot_sha256,
+                    _file_fingerprint_current(
+                        snapshot_path,
+                        snapshot_sha256,
+                    ),
+                    "chain diagnostics NSE permitted-lot snapshot is missing or stale",
+                ),
+                _threshold_check(
+                    "chain_invalid_contract_lot_rows",
+                    _number(row, "invalid_contract_lot_rows"),
+                    "<=",
+                    thresholds.max_invalid_contract_lot_rows,
+                ),
+                _threshold_check(
+                    "chain_uncovered_contract_lot_rows",
+                    _number(row, "uncovered_contract_lot_rows"),
+                    "<=",
+                    thresholds.max_uncovered_contract_lot_rows,
+                ),
+            ]
+        )
     if thresholds.max_chain_median_spread_ticks is not None:
         expiry_rows = summary.loc[summary.get("scope", "") == "expiry"] if "scope" in summary.columns else pd.DataFrame()
         call_spread = _max_number(expiry_rows, "median_call_spread_ticks")
@@ -2474,6 +2604,7 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
             "chain_diagnostics": (
                 thresholds.require_chain_diagnostics
                 or thresholds.require_contract_expiry_validation
+                or thresholds.require_contract_lot_validation
             ),
             "market_profile": thresholds.require_market_profile,
             "market_portability": thresholds.require_market_portability,
@@ -2883,6 +3014,8 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_out_of_session_rows",
         "max_invalid_contract_expiry_rows",
         "max_uncovered_contract_expiry_rows",
+        "max_invalid_contract_lot_rows",
+        "max_uncovered_contract_lot_rows",
     ):
         if getattr(thresholds, name) < 0:
             raise ValueError(f"{name} must be non-negative")
