@@ -6987,6 +6987,18 @@ mapped-data, readiness, vendor, broker-vendor, and provider regressions pass
 was not rerun because recent complete runs exceed 40 minutes. All outputs
 remain non-authorizing.
 
+Latest tick timestamp high-water gate: normalization now quarantines every
+packet below the greatest earlier valid timestamp in input order, rather than
+only comparing adjacent packets and then sorting a stale packet back into
+history. Equal-timestamp quote/depth state changes remain valid. The corrected
+count is retained as `dropped_nonmonotonic_rows`; readiness fails closed at the
+zero-default `--max-nonmonotonic-rows` budget across direct review,
+Arrow.money/iRage single-day and batch onboarding, broker-vendor proof, and
+provider wrappers. Normalization, mapped-data, readiness, vendor,
+broker-vendor, and provider regressions pass (`95` tests). Repository
+collection is healthy at `2588 tests`. The full suite was not rerun because
+recent complete runs exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

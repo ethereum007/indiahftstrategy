@@ -8870,6 +8870,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
   --max-integer-overflow-rows 0 `
+  --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
@@ -8973,6 +8974,13 @@ different quote, depth, last price, or last quantity remain distinct. The
 removed excess count is retained as `dropped_duplicate_rows` and fails the
 zero-default `--max-duplicate-tick-rows` gate, preventing capture retries or
 file concatenation errors from inflating replay events and backtest trades.
+Tick timestamps are also checked against the running high-water mark in input
+order. Every packet below any earlier valid timestamp is quarantined; the
+normalizer does not sort a stale packet back into replay history merely because
+it is newer than the immediately preceding stale packet. Equal-timestamp state
+changes remain valid. The retained `dropped_nonmonotonic_rows` count fails the
+zero-default `--max-nonmonotonic-rows` gate across direct, vendor, provider,
+batch, and broker-vendor readiness evidence.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9469,6 +9477,7 @@ python -m hft_cli review-data-readiness `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
   --max-integer-overflow-rows 0 `
+  --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `

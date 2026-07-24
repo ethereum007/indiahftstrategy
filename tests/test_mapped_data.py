@@ -187,6 +187,39 @@ def test_normalize_mapped_tick_data_preserves_duplicate_quarantine_provenance():
     assert int(summary["dropped_duplicate_rows"]) == 1
 
 
+def test_normalize_mapped_tick_data_preserves_high_water_quarantine_provenance():
+    rows = []
+    for offset, timestamp in enumerate([100, 50, 75, 100, 125]):
+        rows.append(
+            {
+                "exchange_ts": timestamp,
+                "best_bid": 100.0 + offset * 0.05,
+                "best_ask": 100.05 + offset * 0.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05 + offset * 0.05,
+                "last_size": 75,
+            }
+        )
+
+    report = normalize_mapped_data(
+        pd.DataFrame(rows),
+        tick_mapping(),
+        config=MappedDataConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            filter_session=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert int(summary["output_rows"]) == 3
+    assert int(summary["quarantined_rows"]) == 2
+    assert int(summary["dropped_nonmonotonic_rows"]) == 2
+    assert list(report.data["ts"]) == [100, 100, 125]
+
+
 def test_normalize_mapped_tick_data_preserves_integer_overflow_provenance():
     valid = {
         "exchange_ts": ns_ist("2026-06-10 09:15:00"),

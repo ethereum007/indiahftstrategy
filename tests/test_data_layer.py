@@ -169,6 +169,29 @@ def test_normalize_ticks_quarantines_only_exact_duplicate_packets():
     assert normalized.quarantine.dropped_nonmonotonic_rows == 0
 
 
+def test_normalize_ticks_quarantines_every_packet_below_the_high_water_mark():
+    rows = []
+    for offset, timestamp in enumerate([100, 50, 75, 100, 125]):
+        rows.append(
+            {
+                "ts": timestamp,
+                "bid": 100.0 + offset * 0.05,
+                "ask": 100.05 + offset * 0.05,
+                "bid_qty": 75,
+                "ask_qty": 150,
+            }
+        )
+
+    normalized = normalize_ticks(
+        pd.DataFrame(rows),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert list(normalized.data["ts"]) == [100, 100, 125]
+    assert normalized.quarantine.dropped_nonmonotonic_rows == 2
+
+
 def test_normalize_ticks_quarantines_int64_overflow_before_scaling_or_casts():
     valid = {
         "ts": 1,

@@ -146,7 +146,7 @@ def normalize_ticks(
     crossed_mask = out["ask"] >= out["bid"]
     crossed_count = int((~crossed_mask).sum())
     out = out.loc[crossed_mask].copy()
-    monotonic_mask = out["ts"].diff().fillna(0) >= 0
+    monotonic_mask = out["ts"].eq(out["ts"].cummax())
     nonmonotonic_count = int((~monotonic_mask).sum())
     out = out.loc[monotonic_mask].copy()
     out = out.sort_values("ts", kind="mergesort").reset_index(drop=True)
