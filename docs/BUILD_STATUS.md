@@ -8,6 +8,9 @@
   per-instrument routing, portfolio limits, and shared equity.
 - Data normalization for top-of-book ticks and option-chain snapshots,
   including IST session filtering, quarantine reports, and regime tags.
+- NSE F&O chain diagnostics can validate declared weekly or monthly contract
+  expiries against a fingerprinted exchange rule and the versioned market
+  calendar, including previous-trading-day holiday rollback.
 - Synthetic futures/options generator with planted lag relationships.
 - Executable put-call parity and box scanner using touch prices, depth
   fractions, explicit as-of latency, and full leg costs.
@@ -6830,10 +6833,30 @@ non-authorizing; the full repository suite was not rerun because the focused
 and downstream set covers the changed boundary and several individual wrapper
 suites already require multiple minutes.
 
+Latest NSE contract-expiry truth gate: the repo now pins NSE circular
+`NSE/FAOP/68747` and a normalized current-regime rule that applies Tuesday
+weekly/monthly expiries from September 2025, with expiry moved to the previous
+trading day when Tuesday is closed. The resolver requires a versioned
+`india_nse_index_derivatives` calendar, fails outside the rule/calendar
+coverage, and correctly derives the March 2 and March 30, 2026 holiday-adjusted
+expiries. `diagnose-chain`, `pipeline-vendor-market-data`, and the multi-day
+vendor pipeline accept an explicit `--expiry-cycle`; diagnostics retain the
+rule/circular paths and fingerprints, invalid and uncovered row counts,
+expected/nominal dates, adjustment state, and rollback days. Data readiness
+requires the chain and calendar together, re-hashes both expiry authority
+sources, and blocks wrong-day, stale-rule, stale-circular, or uncovered
+evidence. Vendor manifests bind both files. Contract, diagnostics, calendar,
+readiness, vendor, comparison, provider, broker-vendor, and manifest
+regressions pass (`120 passed`). Repository collection is healthy at `2551
+tests`. All outputs remain non-authorizing; the full repository suite was not
+rerun because the affected boundary is covered by focused and downstream
+suites and several broker/provider wrappers require multiple minutes each.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound
-   calendar and broker-vendor readiness pipeline once a sample is available.
+   calendar, declared contract-expiry cycle, and broker-vendor readiness
+   pipeline once a sample is available.
 2. Add data adapters for the first real vendor export once files are available.
 3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

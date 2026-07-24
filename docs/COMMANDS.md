@@ -8875,6 +8875,27 @@ python -m hft_cli pipeline-vendor-market-data `
 Use `--kind chain` for option-chain snapshots. If `--mapping` is not supplied,
 the pipeline uses the intake-generated `vendor_mapping_draft.csv`; review and
 edit that mapping before treating the run as broker/vendor-approved evidence.
+For a current-regime NSE chain, declare its cycle and supply the authoritative
+calendar. The pipeline then rejects wrong-day or calendar-uncovered expiries
+and binds the normalized rule plus NSE circular in its manifest:
+
+```powershell
+python -m hft_cli pipeline-vendor-market-data `
+  --input vendor\arrow_nifty_chain_2026_06_10.csv `
+  --out runs\vendor_data\arrow_nifty_chain_2026_06_10 `
+  --adapter arrow_money `
+  --kind chain `
+  --timestamp-unit datetime `
+  --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
+  --expiry-cycle monthly `
+  --tick-size 0.05 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+Use `--expiry-cycle weekly` for a weekly NIFTY chain. The pinned rule covers
+the Tuesday regime from September 2025 onward; historical chains outside that
+regime require a separately versioned rule rather than a permissive fallback.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9294,7 +9315,9 @@ python -m hft_cli diagnose-chain `
   --chain data\chain.csv `
   --out runs\diagnostics\chain `
   --tick-size 0.05 `
-  --market india_nse_index_derivatives
+  --market india_nse_index_derivatives `
+  --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
+  --expiry-cycle monthly
 ```
 
 Outputs:
@@ -9329,6 +9352,7 @@ python -m hft_cli review-data-readiness `
   --require-mapped-data `
   --require-reviewed-mapping-normalization `
   --require-chain-diagnostics `
+  --require-contract-expiry-validation `
   --require-market-profile `
   --require-explicit-fee-model `
   --require-market-portability `
@@ -9340,6 +9364,8 @@ python -m hft_cli review-data-readiness `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
+  --max-invalid-contract-expiry-rows 0 `
+  --max-uncovered-contract-expiry-rows 0 `
   --fail-on-breach `
   --fail-on-blocked-actions
 ```

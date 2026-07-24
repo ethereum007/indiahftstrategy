@@ -18,6 +18,7 @@ from reports.market_calendar import (
 )
 from reports.manifest import (
     MANIFEST_NAME,
+    file_sha256,
     verify_experiment_manifest,
     write_experiment_manifest,
 )
@@ -61,6 +62,7 @@ class DataReadinessThresholds:
     require_target_application_normalization: bool = False
     require_tick_diagnostics: bool = True
     require_chain_diagnostics: bool = False
+    require_contract_expiry_validation: bool = False
     require_market_profile: bool = False
     require_explicit_fee_model: bool = False
     require_market_portability: bool = False
@@ -79,6 +81,8 @@ class DataReadinessThresholds:
     max_nonpositive_depth_rows: int = 0
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
+    max_invalid_contract_expiry_rows: int = 0
+    max_uncovered_contract_expiry_rows: int = 0
     max_tick_p99_gap_ns: float | None = None
     max_tick_median_spread_ticks: float | None = None
     max_chain_median_spread_ticks: float | None = None
@@ -1467,6 +1471,18 @@ def _is_sha256(value: object) -> bool:
     return len(text) == 64 and all(char in "0123456789abcdef" for char in text)
 
 
+def _file_fingerprint_current(path_value: object, sha256_value: object) -> bool:
+    path_text = str(path_value or "").strip()
+    sha256_text = str(sha256_value or "").strip().lower()
+    if not path_text or not _is_sha256(sha256_text):
+        return False
+    try:
+        path = Path(path_text).resolve()
+        return bool(path.is_file() and file_sha256(path) == sha256_text)
+    except OSError:
+        return False
+
+
 def _data_kind_checks(
     summaries: dict[str, pd.DataFrame],
     thresholds: DataReadinessThresholds,
@@ -1614,6 +1630,91 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
         ),
         _threshold_check("chain_out_of_session_rows", _number(row, "out_of_session_rows"), "<=", thresholds.max_out_of_session_rows),
     ]
+    expiry_validation_enabled = _to_bool(
+        row.get("contract_expiry_validation_enabled", False)
+    )
+    if thresholds.require_contract_expiry_validation:
+        checks.append(
+            _check(
+                "chain_contract_expiry_validation_enabled",
+                expiry_validation_enabled,
+                "is",
+                True,
+                expiry_validation_enabled,
+                "chain diagnostics did not validate exchange contract expiries",
+            )
+        )
+    if thresholds.require_contract_expiry_validation or expiry_validation_enabled:
+        rule_id = _text(row, "contract_expiry_rule_id")
+        rule_sha256 = _text(row, "contract_expiry_rule_sha256")
+        authority_sha256 = _text(
+            row,
+            "contract_expiry_authority_source_sha256",
+        )
+        rule_path = _text(row, "contract_expiry_rule_path")
+        authority_path = _text(
+            row,
+            "contract_expiry_authority_source_path",
+        )
+        checks.extend(
+            [
+                _check(
+                    "chain_contract_expiry_rule_id_present",
+                    rule_id,
+                    "nonempty",
+                    True,
+                    bool(rule_id),
+                    "chain diagnostics did not retain an expiry-rule identity",
+                ),
+                _check(
+                    "chain_contract_expiry_rule_sha256_present",
+                    rule_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(rule_sha256),
+                    "chain diagnostics did not retain the expiry-rule fingerprint",
+                ),
+                _check(
+                    "chain_contract_expiry_authority_sha256_present",
+                    authority_sha256,
+                    "is_sha256",
+                    "64 lowercase hexadecimal characters",
+                    _is_sha256(authority_sha256),
+                    "chain diagnostics did not retain the NSE circular fingerprint",
+                ),
+                _check(
+                    "chain_contract_expiry_rule_current",
+                    rule_path,
+                    "sha256_matches",
+                    rule_sha256,
+                    _file_fingerprint_current(rule_path, rule_sha256),
+                    "chain diagnostics expiry-rule source is missing or stale",
+                ),
+                _check(
+                    "chain_contract_expiry_authority_current",
+                    authority_path,
+                    "sha256_matches",
+                    authority_sha256,
+                    _file_fingerprint_current(
+                        authority_path,
+                        authority_sha256,
+                    ),
+                    "chain diagnostics NSE circular source is missing or stale",
+                ),
+                _threshold_check(
+                    "chain_invalid_contract_expiry_rows",
+                    _number(row, "invalid_contract_expiry_rows"),
+                    "<=",
+                    thresholds.max_invalid_contract_expiry_rows,
+                ),
+                _threshold_check(
+                    "chain_uncovered_contract_expiry_rows",
+                    _number(row, "uncovered_contract_expiry_rows"),
+                    "<=",
+                    thresholds.max_uncovered_contract_expiry_rows,
+                ),
+            ]
+        )
     if thresholds.max_chain_median_spread_ticks is not None:
         expiry_rows = summary.loc[summary.get("scope", "") == "expiry"] if "scope" in summary.columns else pd.DataFrame()
         call_spread = _max_number(expiry_rows, "median_call_spread_ticks")
@@ -2358,7 +2459,10 @@ def _yes_no(value: bool) -> str:
 def _component_required(component: str, thresholds: DataReadinessThresholds) -> bool:
     return bool(
         {
-            "market_calendar": thresholds.require_market_calendar,
+            "market_calendar": (
+                thresholds.require_market_calendar
+                or thresholds.require_contract_expiry_validation
+            ),
             "vendor_intake": thresholds.require_vendor_intake,
             "schema_audit": thresholds.require_schema_audit,
             "mapped_data": (
@@ -2367,7 +2471,10 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
                 or thresholds.require_target_application_normalization
             ),
             "tick_diagnostics": thresholds.require_tick_diagnostics,
-            "chain_diagnostics": thresholds.require_chain_diagnostics,
+            "chain_diagnostics": (
+                thresholds.require_chain_diagnostics
+                or thresholds.require_contract_expiry_validation
+            ),
             "market_profile": thresholds.require_market_profile,
             "market_portability": thresholds.require_market_portability,
             "instrument_metadata": thresholds.require_instrument_metadata,
@@ -2774,6 +2881,8 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_nonpositive_depth_rows",
         "max_non_trading_day_rows",
         "max_out_of_session_rows",
+        "max_invalid_contract_expiry_rows",
+        "max_uncovered_contract_expiry_rows",
     ):
         if getattr(thresholds, name) < 0:
             raise ValueError(f"{name} must be non-negative")

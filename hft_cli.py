@@ -3113,6 +3113,15 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--timestamp-tz", default=None)
     vendor_market_data.add_argument("--market", default="india_nse_index_derivatives")
     _add_market_calendar_arg(vendor_market_data)
+    vendor_market_data.add_argument(
+        "--expiry-cycle",
+        choices=["weekly", "monthly"],
+        default=None,
+        help=(
+            "For chain data, validate expiries against the current NSE rule "
+            "and supplied market calendar."
+        ),
+    )
     vendor_market_data.add_argument("--no-filter-session", action="store_true")
     vendor_market_data.add_argument("--tick-size", type=float, default=None)
     vendor_market_data.add_argument("--allow-missing-required", action="store_true")
@@ -3154,6 +3163,15 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--timestamp-tz", default=None)
     vendor_market_data_batch.add_argument("--market", default="india_nse_index_derivatives")
     _add_market_calendar_arg(vendor_market_data_batch)
+    vendor_market_data_batch.add_argument(
+        "--expiry-cycle",
+        choices=["weekly", "monthly"],
+        default=None,
+        help=(
+            "For chain data, validate expiries against the current NSE rule "
+            "and supplied market calendar."
+        ),
+    )
     vendor_market_data_batch.add_argument("--no-filter-session", action="store_true")
     vendor_market_data_batch.add_argument("--tick-size", type=float, default=None)
     vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
@@ -3259,6 +3277,15 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     _add_market_calendar_arg(diag_chain)
+    diag_chain.add_argument(
+        "--expiry-cycle",
+        choices=["weekly", "monthly"],
+        default=None,
+        help=(
+            "Validate chain expiries against the current NSE rule and "
+            "supplied market calendar."
+        ),
+    )
     diag_chain.add_argument("--no-filter-session", action="store_true")
 
     data_readiness = sub.add_parser("review-data-readiness", help="Gate vendor/normalized market data before research runs.")
@@ -3286,6 +3313,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     data_readiness.add_argument("--skip-tick-diagnostics", action="store_true")
     data_readiness.add_argument("--require-chain-diagnostics", action="store_true")
+    data_readiness.add_argument(
+        "--require-contract-expiry-validation",
+        action="store_true",
+    )
     data_readiness.add_argument("--require-market-profile", action="store_true")
     data_readiness.add_argument("--require-explicit-fee-model", action="store_true")
     data_readiness.add_argument("--require-market-portability", action="store_true")
@@ -3304,6 +3335,16 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     data_readiness.add_argument("--max-non-trading-day-rows", type=int, default=0)
     data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
+    data_readiness.add_argument(
+        "--max-invalid-contract-expiry-rows",
+        type=int,
+        default=0,
+    )
+    data_readiness.add_argument(
+        "--max-uncovered-contract-expiry-rows",
+        type=int,
+        default=0,
+    )
     data_readiness.add_argument("--max-tick-p99-gap-ns", type=float, default=None)
     data_readiness.add_argument("--max-tick-median-spread-ticks", type=float, default=None)
     data_readiness.add_argument("--max-chain-median-spread-ticks", type=float, default=None)
@@ -7734,6 +7775,7 @@ def main(argv: list[str] | None = None) -> int:
                 filter_session=not args.no_filter_session,
                 market=args.market,
                 market_calendar_path=args.market_calendar,
+                expiry_cycle=args.expiry_cycle,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7778,6 +7820,7 @@ def main(argv: list[str] | None = None) -> int:
                 filter_session=not args.no_filter_session,
                 market=args.market,
                 market_calendar_path=args.market_calendar,
+                expiry_cycle=args.expiry_cycle,
                 tick_size=args.tick_size,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -7940,6 +7983,7 @@ def main(argv: list[str] | None = None) -> int:
                 tick_size=args.tick_size,
                 market=args.market,
                 market_calendar=args.market_calendar,
+                expiry_cycle=args.expiry_cycle,
             ),
             args.out,
         )
@@ -7970,6 +8014,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 require_tick_diagnostics=not args.skip_tick_diagnostics,
                 require_chain_diagnostics=args.require_chain_diagnostics,
+                require_contract_expiry_validation=(
+                    args.require_contract_expiry_validation
+                ),
                 require_market_profile=args.require_market_profile,
                 require_explicit_fee_model=args.require_explicit_fee_model,
                 require_market_portability=args.require_market_portability,
@@ -7988,6 +8035,12 @@ def main(argv: list[str] | None = None) -> int:
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
+                max_invalid_contract_expiry_rows=(
+                    args.max_invalid_contract_expiry_rows
+                ),
+                max_uncovered_contract_expiry_rows=(
+                    args.max_uncovered_contract_expiry_rows
+                ),
                 max_tick_p99_gap_ns=args.max_tick_p99_gap_ns,
                 max_tick_median_spread_ticks=args.max_tick_median_spread_ticks,
                 max_chain_median_spread_ticks=args.max_chain_median_spread_ticks,

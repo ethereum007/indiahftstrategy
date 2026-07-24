@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "market": "india_nse_index_derivatives",
+  "publisher": "National Stock Exchange of India Limited",
+  "source_url": "https://nsearchives.nseindia.com/web/sites/default/files/inline-files/FAOP68747.pdf",
+  "circular_id": "NSE/FAOP/68747",
+  "circular_date": "2025-06-25",
+  "authority_source": {
+    "path": "NSE_FAOP_68747_2025-06-25.pdf",
+    "sha256": "e1b56024a511135ffd5c6c3c097881dd0ac2c37b15b5f61e94fe84e51cf66762"
+  },
+  "rule": {
+    "rule_id": "nse_fo_tuesday_expiry_from_2025-09-01_v1",
+    "effective_from": "2025-09-01",
+    "expiry_weekday": 1,
+    "cycles": [
+      "weekly",
+      "monthly"
+    ],
+    "adjustment": "previous_trading_day"
+  }
+}

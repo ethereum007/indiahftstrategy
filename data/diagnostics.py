@@ -17,6 +17,13 @@ from markets.calendars import (
     market_calendar_summary,
     resolve_market_calendar,
 )
+from markets.expiries import (
+    NseFoExpiryRule,
+    NseFoExpiryValidation,
+    expiry_rule_summary,
+    load_nse_fo_expiry_rule,
+    validate_nse_fo_expiry,
+)
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
@@ -41,6 +48,16 @@ class DiagnosticResult:
     summary: pd.DataFrame
     issues: pd.DataFrame
     output_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class _ContractExpiryDiagnostics:
+    enabled: bool
+    cycle: str
+    rule: NseFoExpiryRule | None
+    validations: dict[str, NseFoExpiryValidation]
+    row_valid: pd.Series
+    row_covered: pd.Series
 
 
 def tick_diagnostics(
@@ -108,6 +125,7 @@ def chain_diagnostics(
     tick_size: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
+    expiry_cycle: str | None = None,
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
     calendar = resolve_market_calendar(market_calendar, market=market)
@@ -125,6 +143,11 @@ def chain_diagnostics(
         market=market,
         market_calendar=calendar,
     )
+    expiry_diagnostics = _contract_expiry_diagnostics(
+        frame["expiry"],
+        cycle=expiry_cycle,
+        market_calendar=calendar,
+    )
     by_expiry = (
         frame.groupby("expiry", dropna=False)
         .agg(
@@ -139,11 +162,47 @@ def chain_diagnostics(
         )
         .reset_index()
     )
+    if expiry_diagnostics.enabled:
+        validations = [
+            expiry_diagnostics.validations[_expiry_key(value)]
+            for value in by_expiry["expiry"]
+        ]
+        by_expiry["contract_expiry_valid"] = [
+            validation.valid for validation in validations
+        ]
+        by_expiry["contract_expiry_covered"] = [
+            validation.covered for validation in validations
+        ]
+        by_expiry["contract_expiry_expected"] = [
+            _optional_date(validation.expected_expiry)
+            for validation in validations
+        ]
+        by_expiry["contract_expiry_nominal"] = [
+            _optional_date(validation.nominal_expiry)
+            for validation in validations
+        ]
+        by_expiry["contract_expiry_adjusted"] = [
+            bool(validation.decision and validation.decision.adjusted)
+            for validation in validations
+        ]
+        by_expiry["contract_expiry_rollback_days"] = [
+            (
+                int(validation.decision.rollback_days)
+                if validation.decision is not None
+                else np.nan
+            )
+            for validation in validations
+        ]
+        by_expiry["contract_expiry_reason"] = [
+            validation.reason for validation in validations
+        ]
+    expiry_summary = _contract_expiry_summary(expiry_diagnostics)
     overall = pd.DataFrame(
         [
             {
                 "market": market,
                 **market_calendar_summary(calendar),
+                **expiry_summary,
                 "rows": int(len(frame)),
                 "expiries": int(frame["expiry"].nunique()),
                 "strikes": int(frame["strike"].nunique()),
@@ -182,6 +241,11 @@ def chain_diagnostics(
             calendar_closed=calendar_closed,
             calendar_out_of_range=calendar_out_of_range,
             out_of_session=out_of_session,
+            invalid_contract_expiry=(
+                ~expiry_diagnostics.row_valid
+                if expiry_diagnostics.enabled
+                else pd.Series(False, index=frame.index, dtype=bool)
+            ),
         ),
     )
 
@@ -228,6 +292,7 @@ def _chain_issues(
     calendar_closed: pd.Series,
     calendar_out_of_range: pd.Series,
     out_of_session: pd.Series,
+    invalid_contract_expiry: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -246,6 +311,7 @@ def _chain_issues(
         & ~calendar_closed
         & ~calendar_out_of_range,
         "out_of_session": out_of_session,
+        "invalid_contract_expiry": invalid_contract_expiry,
     }
     for issue, mask in checks.items():
         for idx in frame.index[mask]:
@@ -259,6 +325,110 @@ def _chain_issues(
                 }
             )
     return pd.DataFrame(rows, columns=["row_index", "ts", "expiry", "strike", "issue"])
+
+
+def _contract_expiry_diagnostics(
+    expiries: pd.Series,
+    *,
+    cycle: str | None,
+    market_calendar: MarketCalendar | None,
+) -> _ContractExpiryDiagnostics:
+    if cycle is None or not str(cycle).strip():
+        return _ContractExpiryDiagnostics(
+            enabled=False,
+            cycle="",
+            rule=None,
+            validations={},
+            row_valid=pd.Series(True, index=expiries.index, dtype=bool),
+            row_covered=pd.Series(True, index=expiries.index, dtype=bool),
+        )
+    if market_calendar is None:
+        raise ValueError(
+            "market_calendar is required when contract expiry validation is enabled"
+        )
+    rule = load_nse_fo_expiry_rule()
+    validations: dict[str, NseFoExpiryValidation] = {}
+    row_valid: list[bool] = []
+    row_covered: list[bool] = []
+    for value in expiries:
+        key = _expiry_key(value)
+        if key not in validations:
+            validations[key] = validate_nse_fo_expiry(
+                value,
+                cycle=str(cycle),
+                market_calendar=market_calendar,
+                rule=rule,
+            )
+        validation = validations[key]
+        row_valid.append(validation.valid)
+        row_covered.append(validation.covered)
+    return _ContractExpiryDiagnostics(
+        enabled=True,
+        cycle=str(cycle).strip().lower(),
+        rule=rule,
+        validations=validations,
+        row_valid=pd.Series(row_valid, index=expiries.index, dtype=bool),
+        row_covered=pd.Series(
+            row_covered,
+            index=expiries.index,
+            dtype=bool,
+        ),
+    )
+
+
+def _contract_expiry_summary(
+    diagnostics: _ContractExpiryDiagnostics,
+) -> dict[str, object]:
+    if not diagnostics.enabled or diagnostics.rule is None:
+        return {
+            "contract_expiry_validation_enabled": False,
+            "contract_expiry_cycle": "",
+            "invalid_contract_expiry_rows": 0,
+            "uncovered_contract_expiry_rows": 0,
+            "invalid_contract_expiries": 0,
+            "validated_contract_expiries": 0,
+            "contract_expiry_rule_id": "",
+            "contract_expiry_rule_effective_from": "",
+            "contract_expiry_rule_publisher": "",
+            "contract_expiry_rule_source_url": "",
+            "contract_expiry_rule_circular_id": "",
+            "contract_expiry_rule_circular_date": "",
+            "contract_expiry_rule_path": "",
+            "contract_expiry_rule_sha256": "",
+            "contract_expiry_authority_source_path": "",
+            "contract_expiry_authority_source_sha256": "",
+        }
+    return {
+        "contract_expiry_validation_enabled": True,
+        "contract_expiry_cycle": diagnostics.cycle,
+        "invalid_contract_expiry_rows": int((~diagnostics.row_valid).sum()),
+        "uncovered_contract_expiry_rows": int(
+            (~diagnostics.row_covered).sum()
+        ),
+        "invalid_contract_expiries": int(
+            sum(
+                not validation.valid
+                for validation in diagnostics.validations.values()
+            )
+        ),
+        "validated_contract_expiries": int(len(diagnostics.validations)),
+        **expiry_rule_summary(diagnostics.rule),
+    }
+
+
+def _expiry_key(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return "<null>"
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, pd.Timestamp):
+        return value.date().isoformat()
+    return str(value).strip()
+
+
+def _optional_date(value) -> str:
+    return "" if value is None else value.isoformat()
 
 
 def _session_issue_masks(

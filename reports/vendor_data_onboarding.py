@@ -28,6 +28,7 @@ from adapters.vendor_mapping_application import (
 )
 from data.diagnostics import DiagnosticResult, chain_diagnostics, tick_diagnostics, write_diagnostics
 from markets.calendars import market_calendar_summary, resolve_market_calendar
+from markets.expiries import load_nse_fo_expiry_rule
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.data_readiness import DataReadinessReport, DataReadinessThresholds, write_data_readiness_report
 from reports.data_readiness_comparison import (
@@ -51,6 +52,7 @@ class VendorMarketDataPipelineConfig:
     filter_session: bool = True
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
     market_calendar_path: str | None = None
+    expiry_cycle: str | None = None
     tick_size: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
@@ -292,6 +294,7 @@ def write_vendor_market_data_pipeline(
     }
     if config.market_calendar_path:
         inputs["market_calendar"] = Path(config.market_calendar_path)
+    inputs.update(_contract_expiry_inputs(config))
     if approved_review is not None:
         inputs.update(
             {
@@ -573,6 +576,7 @@ def write_vendor_market_data_batch_pipeline(
     inputs: dict[str, Any] = {"inputs": paths}
     if config.market_calendar_path:
         inputs["market_calendar"] = Path(config.market_calendar_path)
+    inputs.update(_contract_expiry_inputs(config))
     if mapping_path is not None:
         inputs["mapping"] = mapping_path
     if approved_applications:
@@ -648,10 +652,23 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
                 tick_size=config.tick_size,
                 market=config.market,
                 market_calendar=config.market_calendar_path,
+                expiry_cycle=config.expiry_cycle,
             ),
             output_dir,
         )
     raise ValueError("vendor market-data pipeline kind must be ticks or chain")
+
+
+def _contract_expiry_inputs(
+    config: VendorMarketDataPipelineConfig,
+) -> dict[str, Path]:
+    if not config.expiry_cycle:
+        return {}
+    rule = load_nse_fo_expiry_rule()
+    return {
+        "contract_expiry_rule": rule.config_path,
+        "contract_expiry_authority_source": rule.authority_source_path,
+    }
 
 
 def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadinessThresholds:
@@ -661,6 +678,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         require_mapped_data=True,
         require_tick_diagnostics=config.kind == "ticks",
         require_chain_diagnostics=config.kind == "chain",
+        require_contract_expiry_validation=bool(config.expiry_cycle),
         expected_adapter=config.adapter,
         expected_vendor_data_kind=config.kind,
         min_tick_rows=config.min_rows,
@@ -855,6 +873,42 @@ def _summary(
                     )
                 ),
                 "diagnostic_rows": int(_number(diagnostic_row, "rows", fallback=0.0)),
+                "contract_expiry_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "contract_expiry_validation_enabled",
+                        False,
+                    )
+                ),
+                "contract_expiry_cycle": _text(
+                    diagnostic_row,
+                    "contract_expiry_cycle",
+                ),
+                "contract_expiry_rule_id": _text(
+                    diagnostic_row,
+                    "contract_expiry_rule_id",
+                ),
+                "contract_expiry_rule_sha256": _text(
+                    diagnostic_row,
+                    "contract_expiry_rule_sha256",
+                ),
+                "contract_expiry_authority_source_sha256": _text(
+                    diagnostic_row,
+                    "contract_expiry_authority_source_sha256",
+                ),
+                "invalid_contract_expiry_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "invalid_contract_expiry_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "uncovered_contract_expiry_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "uncovered_contract_expiry_rows",
+                        fallback=0.0,
+                    )
+                ),
                 "failed_components": failed,
                 "data_readiness_ready": bool(readiness.ready),
                 "vendor_intake_manifest_path": _manifest_path(intake_dir),
@@ -986,6 +1040,11 @@ def _pipeline_runbook_markdown(
         f"- Calendar SHA-256: {_value_text(summary_row.get('market_calendar_sha256'))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
+        f"- Contract expiry validation: {'yes' if _truthy(summary_row.get('contract_expiry_validation_enabled', False)) else 'no'}",
+        f"- Contract expiry cycle: {_value_text(summary_row.get('contract_expiry_cycle')) or 'n/a'}",
+        f"- Contract expiry rule: {_value_text(summary_row.get('contract_expiry_rule_id')) or 'n/a'}",
+        f"- Invalid contract-expiry rows: {int(_number_from_value(summary_row.get('invalid_contract_expiry_rows', 0)))}",
+        f"- Uncovered contract-expiry rows: {int(_number_from_value(summary_row.get('uncovered_contract_expiry_rows', 0)))}",
         f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
         f"- Failed components: {int(_number_from_value(summary_row.get('failed_components', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -1598,6 +1657,16 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
     if config.min_rows <= 0:
         raise ValueError("min_rows must be positive")
     resolve_market_calendar(config.market_calendar_path, market=config.market)
+    if config.expiry_cycle is not None:
+        expiry_cycle = str(config.expiry_cycle).strip().lower()
+        if expiry_cycle not in {"weekly", "monthly"}:
+            raise ValueError("expiry_cycle must be weekly or monthly")
+        if config.kind != "chain":
+            raise ValueError("expiry_cycle is only valid for chain data")
+        if not config.market_calendar_path:
+            raise ValueError(
+                "market_calendar_path is required when expiry_cycle is set"
+            )
     for name in (
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
