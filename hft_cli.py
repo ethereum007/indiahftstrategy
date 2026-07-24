@@ -3040,6 +3040,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--max-null-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonfinite-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonintegral-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-duplicate-tick-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-crossed-quote-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
@@ -3074,6 +3075,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--max-null-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonfinite-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonintegral-rows", type=int, default=0)
+    provider_market_data_batch.add_argument("--max-duplicate-tick-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
@@ -3146,6 +3148,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--max-null-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonfinite-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonintegral-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-duplicate-tick-rows", type=int, default=0)
     vendor_market_data.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
     vendor_market_data.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
     vendor_market_data.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
@@ -3234,6 +3237,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--max-null-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonfinite-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonintegral-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-duplicate-tick-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
     vendor_market_data_batch.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
     vendor_market_data_batch.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
@@ -3328,6 +3332,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--max-null-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonfinite-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonintegral-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-duplicate-tick-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
     broker_vendor_data_readiness.add_argument("--min-chain-snapshots-per-expiry", type=int, default=1)
     broker_vendor_data_readiness.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
@@ -3479,6 +3484,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-null-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonfinite-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonintegral-rows", type=int, default=0)
+    data_readiness.add_argument("--max-duplicate-tick-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonmonotonic-rows", type=int, default=0)
     data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
@@ -7871,6 +7877,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
+                max_duplicate_tick_rows=args.max_duplicate_tick_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
@@ -7915,6 +7922,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
+                max_duplicate_tick_rows=args.max_duplicate_tick_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
@@ -7971,6 +7979,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
+                max_duplicate_tick_rows=args.max_duplicate_tick_rows,
                 min_chain_expiry_snapshots=args.min_chain_expiry_snapshots,
                 min_chain_snapshots_per_expiry=(
                     args.min_chain_snapshots_per_expiry
@@ -8039,6 +8048,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
+                max_duplicate_tick_rows=args.max_duplicate_tick_rows,
                 min_chain_expiry_snapshots=args.min_chain_expiry_snapshots,
                 min_chain_snapshots_per_expiry=(
                     args.min_chain_snapshots_per_expiry
@@ -8134,6 +8144,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
+                max_duplicate_tick_rows=args.max_duplicate_tick_rows,
                 min_chain_expiry_snapshots=args.min_chain_expiry_snapshots,
                 min_chain_snapshots_per_expiry=(
                     args.min_chain_snapshots_per_expiry
@@ -8303,6 +8314,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
+                max_duplicate_tick_rows=args.max_duplicate_tick_rows,
                 max_nonmonotonic_rows=args.max_nonmonotonic_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,

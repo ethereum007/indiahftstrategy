@@ -6961,6 +6961,18 @@ regressions pass (`84` tests). Repository collection is healthy at `2577 tests`.
 The full suite was not rerun because recent complete runs exceed 40 minutes.
 All outputs remain non-authorizing.
 
+Latest tick replay-integrity gate: normalization now removes exact repeated
+engine packets after validity and session filtering, retains the first packet
+stably, and preserves same-timestamp state changes. The excess count is
+retained as `dropped_duplicate_rows`; readiness fails closed at the
+zero-default `--max-duplicate-tick-rows` budget across direct review,
+Arrow.money/iRage single-day and batch onboarding, broker-vendor proof, and
+provider wrappers. Duplicate capture packets can no longer inflate replay
+events, fills, or strategy evidence. Normalization, mapped-data, readiness,
+vendor, broker-vendor, and provider regressions pass (`87` tests). Repository
+collection is healthy at `2580 tests`. The full suite was not rerun because
+recent complete runs exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

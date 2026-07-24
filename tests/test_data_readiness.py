@@ -95,6 +95,7 @@ def mapped_data_summary(ready=True):
                 "dropped_null_rows": 0,
                 "dropped_nonfinite_rows": 0,
                 "dropped_nonintegral_rows": 0,
+                "dropped_duplicate_rows": 0,
                 "dropped_crossed_quote_rows": 0,
                 "dropped_nonpositive_quote_rows": 0,
                 "dropped_nonmonotonic_rows": 0,
@@ -366,6 +367,8 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
             "3",
             "--max-nonintegral-rows",
             "4",
+            "--max-duplicate-tick-rows",
+            "5",
             "--fail-on-breach",
         ]
     )
@@ -380,6 +383,7 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
     assert config["thresholds"]["max_null_rows"] == 2
     assert config["thresholds"]["max_nonfinite_rows"] == 3
     assert config["thresholds"]["max_nonintegral_rows"] == 4
+    assert config["thresholds"]["max_duplicate_tick_rows"] == 5
 
 
 def test_data_readiness_rejects_loose_market_calendar_summary(tmp_path):
@@ -436,6 +440,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
     mapped.loc[0, "dropped_null_rows"] = 1
     mapped.loc[0, "dropped_nonfinite_rows"] = 1
     mapped.loc[0, "dropped_nonintegral_rows"] = 1
+    mapped.loc[0, "dropped_duplicate_rows"] = 1
     mapped.loc[0, "dropped_non_trading_day_rows"] = 1
     mapped.loc[0, "dropped_out_of_session_rows"] = 1
 
@@ -450,6 +455,7 @@ def test_data_readiness_fails_on_filtered_mapped_data_quarantine():
         "mapped_data_dropped_null_rows",
         "mapped_data_dropped_nonfinite_rows",
         "mapped_data_dropped_nonintegral_rows",
+        "mapped_data_dropped_duplicate_tick_rows",
         "mapped_data_dropped_non_trading_day_rows",
         "mapped_data_dropped_out_of_session_rows",
     } <= failed

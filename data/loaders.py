@@ -32,6 +32,7 @@ class QuarantineReport:
     dropped_null_rows: int = 0
     dropped_nonfinite_rows: int = 0
     dropped_nonintegral_rows: int = 0
+    dropped_duplicate_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -169,6 +170,10 @@ def normalize_ticks(
         session_count = int((trading_days & ~session_times).sum())
         out = out.loc[trading_days & session_times].copy()
 
+    duplicate_mask = out.duplicated(subset=ENGINE_COLUMNS, keep="first")
+    duplicate_count = int(duplicate_mask.sum())
+    out = out.loc[~duplicate_mask].copy()
+
     if add_regime:
         out["regime"] = tag_regime(out["ts"], market=market)
 
@@ -183,6 +188,7 @@ def normalize_ticks(
         dropped_null_rows=int(null_mask.sum()),
         dropped_nonfinite_rows=nonfinite_count,
         dropped_nonintegral_rows=nonintegral_count,
+        dropped_duplicate_rows=duplicate_count,
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,

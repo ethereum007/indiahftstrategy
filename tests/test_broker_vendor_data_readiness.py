@@ -222,6 +222,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert int(summary["dropped_null_rows"]) == 0
         assert int(summary["dropped_nonfinite_rows"]) == 0
         assert int(summary["dropped_nonintegral_rows"]) == 0
+        assert int(summary["dropped_duplicate_rows"]) == 0
         assert int(summary["unique_source_files"]) == 2
         assert int(summary["unique_header_fingerprints"]) == 1
         assert summary["source_file_fingerprint_coverage"] == 1.0
@@ -253,6 +254,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert "- Null required-field rows: 0" in runbook
         assert "- Non-finite numeric rows: 0" in runbook
         assert "- Non-integral integer-field rows: 0" in runbook
+        assert "- Duplicate tick packets: 0" in runbook
         assert "- Placeholder schema allowed: yes" in runbook
         assert "placeholder adapter schema allowed for dry-run review only" in runbook
         assert "broker_data_proof_ready" in runbook
@@ -273,6 +275,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["vendor_market_data_batch"]["dropped_null_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_nonfinite_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_nonintegral_rows"] == 0
+        assert config["vendor_market_data_batch"]["dropped_duplicate_rows"] == 0
         assert config["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
         assert config["vendor_market_data_batch"]["comparison"]["accepted"]
@@ -640,6 +643,8 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
             "3",
             "--max-nonintegral-rows",
             "4",
+            "--max-duplicate-tick-rows",
+            "5",
             "--schema-audit",
             str(paths["schema"]),
             "--order-export",
@@ -684,6 +689,7 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert vendor_config["data_readiness_thresholds"]["max_null_rows"] == 2
     assert vendor_config["data_readiness_thresholds"]["max_nonfinite_rows"] == 3
     assert vendor_config["data_readiness_thresholds"]["max_nonintegral_rows"] == 4
+    assert vendor_config["data_readiness_thresholds"]["max_duplicate_tick_rows"] == 5
     assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert bool(summary.loc[0, "placeholder_schema_allowed"])
 

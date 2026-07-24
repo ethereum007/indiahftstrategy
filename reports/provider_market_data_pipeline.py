@@ -39,6 +39,7 @@ class ProviderMarketDataPipelineConfig:
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
+    max_duplicate_tick_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -119,6 +120,7 @@ def write_provider_market_data_pipeline(
                 max_null_rows=config.max_null_rows,
                 max_nonfinite_rows=config.max_nonfinite_rows,
                 max_nonintegral_rows=config.max_nonintegral_rows,
+                max_duplicate_tick_rows=config.max_duplicate_tick_rows,
                 max_crossed_quote_rows=config.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
                 max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,

@@ -147,6 +147,8 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
             "3",
             "--max-nonintegral-rows",
             "4",
+            "--max-duplicate-tick-rows",
+            "5",
             "--tick-size",
             "0.05",
             "--max-median-spread-ticks",
@@ -171,3 +173,4 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
     assert config["parameters"]["max_null_rows"] == 2
     assert config["parameters"]["max_nonfinite_rows"] == 3
     assert config["parameters"]["max_nonintegral_rows"] == 4
+    assert config["parameters"]["max_duplicate_tick_rows"] == 5

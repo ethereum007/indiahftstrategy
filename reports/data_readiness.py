@@ -82,6 +82,7 @@ class DataReadinessThresholds:
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
+    max_duplicate_tick_rows: int = 0
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
@@ -1942,6 +1943,7 @@ def _mapped_quarantine_checks(
         "dropped_null_rows",
         "dropped_nonfinite_rows",
         "dropped_nonintegral_rows",
+        "dropped_duplicate_rows",
         "dropped_crossed_quote_rows",
         "dropped_nonpositive_quote_rows",
         "dropped_nonmonotonic_rows",
@@ -1998,13 +2000,21 @@ def _mapped_quarantine_checks(
     ]
     kind = _vendor_data_kind(_text(row, "kind"))
     if kind == "ticks":
-        checks.append(
-            _threshold_check(
-                "mapped_data_dropped_nonmonotonic_rows",
-                _number(row, "dropped_nonmonotonic_rows"),
-                "<=",
-                thresholds.max_nonmonotonic_rows,
-            )
+        checks.extend(
+            [
+                _threshold_check(
+                    "mapped_data_dropped_nonmonotonic_rows",
+                    _number(row, "dropped_nonmonotonic_rows"),
+                    "<=",
+                    thresholds.max_nonmonotonic_rows,
+                ),
+                _threshold_check(
+                    "mapped_data_dropped_duplicate_tick_rows",
+                    _number(row, "dropped_duplicate_rows"),
+                    "<=",
+                    thresholds.max_duplicate_tick_rows,
+                ),
+            ]
         )
     if kind == "chain":
         checks.append(
@@ -3107,6 +3117,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_null_rows",
         "max_nonfinite_rows",
         "max_nonintegral_rows",
+        "max_duplicate_tick_rows",
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",

@@ -8869,6 +8869,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
+  --max-duplicate-tick-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8957,6 +8958,12 @@ chain depth columns must resolve to whole numbers; fractional seconds remain
 valid when their conversion produces integral nanoseconds. Violations are
 retained as `dropped_nonintegral_rows` and fail the zero-default
 `--max-nonintegral-rows` gate instead of being silently truncated.
+For ticks, normalization also removes exact repeated engine packets while
+retaining the first occurrence in input order. Same-timestamp packets with a
+different quote, depth, last price, or last quantity remain distinct. The
+removed excess count is retained as `dropped_duplicate_rows` and fails the
+zero-default `--max-duplicate-tick-rows` gate, preventing capture retries or
+file concatenation errors from inflating replay events and backtest trades.
 
 For an exact source that already has a verified approved mapping review, use
 the review-bound path instead of `--mapping`:
@@ -9452,6 +9459,7 @@ python -m hft_cli review-data-readiness `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
+  --max-duplicate-tick-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

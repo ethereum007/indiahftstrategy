@@ -144,6 +144,31 @@ def test_normalize_ticks_quarantines_nonintegral_integer_fields_before_casts():
     assert normalized.quarantine.dropped_nonpositive_quote_rows == 0
 
 
+def test_normalize_ticks_quarantines_only_exact_duplicate_packets():
+    packet = {
+        "ts": 1,
+        "bid": 100.0,
+        "ask": 100.05,
+        "bid_qty": 75,
+        "ask_qty": 150,
+        "last": 100.05,
+        "last_qty": 75,
+    }
+    changed_state = packet.copy()
+    changed_state["ask_qty"] = 225
+
+    normalized = normalize_ticks(
+        pd.DataFrame([packet, packet.copy(), changed_state]),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert len(normalized.data) == 2
+    assert list(normalized.data["ask_qty"]) == [150, 225]
+    assert normalized.quarantine.dropped_duplicate_rows == 1
+    assert normalized.quarantine.dropped_nonmonotonic_rows == 0
+
+
 def test_session_mask_and_regime_boundaries():
     timestamps = pd.Series(
         [
