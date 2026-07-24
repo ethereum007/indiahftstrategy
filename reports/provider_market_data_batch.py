@@ -39,6 +39,7 @@ class ProviderMarketDataBatchConfig:
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
     max_duplicate_tick_rows: int = 0
+    max_integer_overflow_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -227,6 +228,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_nonfinite_rows=config.max_nonfinite_rows,
         max_nonintegral_rows=config.max_nonintegral_rows,
         max_duplicate_tick_rows=config.max_duplicate_tick_rows,
+        max_integer_overflow_rows=config.max_integer_overflow_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
@@ -616,6 +618,7 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         "max_nonfinite_rows",
         "max_nonintegral_rows",
         "max_duplicate_tick_rows",
+        "max_integer_overflow_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
         "max_nonpositive_depth_rows",

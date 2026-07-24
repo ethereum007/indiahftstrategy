@@ -6973,6 +6973,20 @@ vendor, broker-vendor, and provider regressions pass (`87` tests). Repository
 collection is healthy at `2580 tests`. The full suite was not rerun because
 recent complete runs exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest integer-overflow quarantine gate: tick and option-chain normalization
+now checks whole-number timestamps and depth fields against signed 64-bit
+bounds before casting. Numeric timestamp unit conversion uses overflow-safe
+scaling, so values such as `10000000000` seconds cannot wrap during nanosecond
+conversion into a plausible replay timestamp. Violations are retained as
+`dropped_integer_overflow_rows`; readiness fails closed at the zero-default
+`--max-integer-overflow-rows` budget across direct review, Arrow.money/iRage
+single-day and batch onboarding, broker-vendor proof, and provider wrappers.
+No out-of-range timestamp or quantity is silently repaired. Normalization,
+mapped-data, readiness, vendor, broker-vendor, and provider regressions pass
+(`92` tests). Repository collection is healthy at `2585 tests`. The full suite
+was not rerun because recent complete runs exceed 40 minutes. All outputs
+remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

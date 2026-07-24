@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, DecimalException
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -23,6 +24,8 @@ from markets.profiles import (
 ENGINE_COLUMNS = ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
 REQUIRED_COLUMNS = ["ts", "bid", "ask", "bid_qty", "ask_qty"]
 IST = ZoneInfo("Asia/Kolkata")
+INT64_MIN = int(np.iinfo(np.int64).min)
+INT64_MAX = int(np.iinfo(np.int64).max)
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,7 @@ class QuarantineReport:
     dropped_nonfinite_rows: int = 0
     dropped_nonintegral_rows: int = 0
     dropped_duplicate_rows: int = 0
+    dropped_integer_overflow_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -105,8 +109,11 @@ def normalize_ticks(
     optional_columns = ["last", "last_qty"]
     optional_values_present = out[optional_columns].notna()
     out["ts"] = _to_ns(out["ts"], unit=timestamp_unit, timestamp_tz=timestamp_tz)
-    numeric_columns = [col for col in ENGINE_COLUMNS if col != "ts"]
-    out[numeric_columns] = out[numeric_columns].apply(pd.to_numeric, errors="coerce")
+    integer_values = out[["ts", "bid_qty", "ask_qty", "last_qty"]].copy()
+    integer_columns = ["bid_qty", "ask_qty", "last_qty"]
+    real_columns = ["bid", "ask", "last"]
+    out[integer_columns] = out[integer_columns].apply(_coerce_integer_numeric)
+    out[real_columns] = out[real_columns].apply(pd.to_numeric, errors="coerce")
     optional_parse_failed = optional_values_present & out[optional_columns].isna()
     null_mask = out[REQUIRED_COLUMNS].isna().any(axis=1)
     out = out.loc[~null_mask].copy()
@@ -125,6 +132,13 @@ def normalize_ticks(
     )
     nonintegral_count = int((~integral_mask).sum())
     out = out.loc[integral_mask].copy()
+    int64_mask = _int64_range_mask(
+        integer_values.loc[out.index],
+        ["ts", "bid_qty", "ask_qty", "last_qty"],
+        nullable_columns=["last_qty"],
+    )
+    integer_overflow_count = int((~int64_mask).sum())
+    out = out.loc[int64_mask].copy()
     out["ts"] = out["ts"].astype("int64")
     quote_positive_mask = (out["bid"] > 0) & (out["ask"] > 0)
     nonpositive_count = int((~quote_positive_mask).sum())
@@ -189,6 +203,7 @@ def normalize_ticks(
         dropped_nonfinite_rows=nonfinite_count,
         dropped_nonintegral_rows=nonintegral_count,
         dropped_duplicate_rows=duplicate_count,
+        dropped_integer_overflow_rows=integer_overflow_count,
         dropped_nonpositive_quote_rows=nonpositive_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,
@@ -230,7 +245,12 @@ def _to_ns(
     elif unit == "datetime":
         dt = pd.to_datetime(values, errors="coerce")
     else:
-        return pd.to_numeric(values, errors="coerce") * _unit_multiplier(unit)
+        numeric = _coerce_integer_numeric(values)
+        return _scale_numeric_timestamp(
+            numeric,
+            _unit_multiplier(unit),
+            source_values=values,
+        )
 
     if dt.dt.tz is None:
         if timestamp_tz:
@@ -252,12 +272,17 @@ def _finite_numeric_mask(
     nullable = set(nullable_columns)
     mask = pd.Series(True, index=frame.index, dtype=bool)
     for column in columns:
-        values = pd.to_numeric(frame[column], errors="coerce")
-        finite = pd.Series(
-            np.isfinite(values.astype("float64").to_numpy()),
-            index=frame.index,
-            dtype=bool,
-        )
+        source_values = frame[column]
+        if pd.api.types.is_numeric_dtype(source_values.dtype):
+            values = pd.to_numeric(source_values, errors="coerce")
+            finite = pd.Series(
+                np.isfinite(values.astype("float64").to_numpy()),
+                index=frame.index,
+                dtype=bool,
+            )
+        else:
+            values = source_values
+            finite = source_values.map(_object_numeric_value_is_finite)
         if column in nullable:
             finite |= values.isna()
         mask &= finite
@@ -273,12 +298,170 @@ def _integral_numeric_mask(
     nullable = set(nullable_columns)
     mask = pd.Series(True, index=frame.index, dtype=bool)
     for column in columns:
-        values = pd.to_numeric(frame[column], errors="coerce")
-        integral = values.mod(1).eq(0).fillna(False)
+        source_values = frame[column]
+        if pd.api.types.is_numeric_dtype(source_values.dtype):
+            values = pd.to_numeric(source_values, errors="coerce")
+            integral = values.mod(1).eq(0).fillna(False)
+        else:
+            values = source_values
+            integral = source_values.map(_object_numeric_value_is_integral)
         if column in nullable:
             integral |= values.isna()
         mask &= integral.astype(bool)
     return mask
+
+
+def _int64_range_mask(
+    frame: pd.DataFrame,
+    columns: list[str],
+    *,
+    nullable_columns: list[str] | tuple[str, ...] = (),
+) -> pd.Series:
+    nullable = set(nullable_columns)
+    mask = pd.Series(True, index=frame.index, dtype=bool)
+    for column in columns:
+        source_values = frame[column]
+        if not pd.api.types.is_numeric_dtype(source_values.dtype):
+            in_range = source_values.map(_object_int64_value_in_range)
+            values = source_values
+        else:
+            values = pd.to_numeric(source_values, errors="coerce")
+            if pd.api.types.is_float_dtype(values.dtype):
+                in_range = values.ge(float(INT64_MIN)) & values.lt(
+                    float(INT64_MAX) + 1.0
+                )
+            else:
+                in_range = values.ge(INT64_MIN) & values.le(INT64_MAX)
+        if column in nullable:
+            in_range |= values.isna()
+        mask &= in_range.fillna(False).astype(bool)
+    return mask
+
+
+def _object_int64_value_in_range(value: object) -> bool:
+    if pd.isna(value):
+        return False
+    if isinstance(value, (int, np.integer)):
+        return INT64_MIN <= int(value) <= INT64_MAX
+    if isinstance(value, (float, np.floating)):
+        numeric = float(value)
+        return (
+            np.isfinite(numeric)
+            and numeric.is_integer()
+            and numeric >= float(INT64_MIN)
+            and numeric < float(INT64_MAX) + 1.0
+        )
+    try:
+        numeric = Decimal(str(value).strip())
+    except (DecimalException, ValueError):
+        return False
+    return (
+        numeric.is_finite()
+        and numeric == numeric.to_integral_value()
+        and Decimal(INT64_MIN) <= numeric <= Decimal(INT64_MAX)
+    )
+
+
+def _scale_numeric_timestamp(
+    values: pd.Series,
+    multiplier: int,
+    *,
+    source_values: pd.Series,
+) -> pd.Series:
+    if (
+        not pd.api.types.is_numeric_dtype(source_values.dtype)
+        and pd.api.types.is_float_dtype(values.dtype)
+    ):
+        return _map_object_series(
+            source_values,
+            lambda value: _scale_object_timestamp_value(value, multiplier),
+        )
+    if multiplier == 1 or not pd.api.types.is_integer_dtype(values.dtype):
+        return values * multiplier
+
+    min_source = -((-INT64_MIN) // multiplier)
+    max_source = INT64_MAX // multiplier
+    within_range = values.isna() | values.between(min_source, max_source).fillna(False)
+    if bool(within_range.all()):
+        return values * multiplier
+
+    return _map_object_series(
+        values,
+        lambda value: value if pd.isna(value) else int(value) * multiplier,
+    )
+
+
+def _scale_object_timestamp_value(value: object, multiplier: int) -> object:
+    if pd.isna(value):
+        return np.nan
+    if isinstance(value, (int, np.integer)):
+        return int(value) * multiplier
+    if isinstance(value, (float, np.floating)):
+        return float(value) * multiplier
+    try:
+        return Decimal(str(value).strip()) * multiplier
+    except (DecimalException, ValueError):
+        return np.nan
+
+
+def _coerce_integer_numeric(values: pd.Series) -> pd.Series:
+    try:
+        numeric = pd.to_numeric(values, errors="coerce")
+    except OverflowError:
+        return _map_object_series(values, _object_numeric_value)
+    if (
+        not pd.api.types.is_numeric_dtype(values.dtype)
+        and pd.api.types.is_float_dtype(numeric.dtype)
+    ):
+        return _map_object_series(values, _object_numeric_value)
+    return numeric
+
+
+def _map_object_series(
+    values: pd.Series,
+    function: Callable[[object], object],
+) -> pd.Series:
+    return pd.Series(
+        [function(value) for value in values.array],
+        index=values.index,
+        dtype="object",
+        name=values.name,
+    )
+
+
+def _object_numeric_value(value: object) -> object:
+    if pd.isna(value):
+        return np.nan
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return float(value)
+    try:
+        return Decimal(str(value).strip())
+    except (DecimalException, ValueError):
+        return np.nan
+
+
+def _object_numeric_value_is_finite(value: object) -> bool:
+    numeric = _object_numeric_value(value)
+    if isinstance(numeric, Decimal):
+        return numeric.is_finite()
+    if isinstance(numeric, int):
+        return True
+    if pd.isna(numeric):
+        return False
+    return bool(np.isfinite(numeric))
+
+
+def _object_numeric_value_is_integral(value: object) -> bool:
+    numeric = _object_numeric_value(value)
+    if isinstance(numeric, Decimal):
+        return numeric.is_finite() and numeric == numeric.to_integral_value()
+    if isinstance(numeric, int):
+        return True
+    if pd.isna(numeric) or not np.isfinite(numeric):
+        return False
+    return float(numeric).is_integer()
 
 
 def _unit_multiplier(unit: str) -> int:

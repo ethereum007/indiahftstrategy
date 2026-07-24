@@ -66,6 +66,7 @@ class VendorMarketDataPipelineConfig:
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
     max_duplicate_tick_rows: int = 0
+    max_integer_overflow_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
     max_nonpositive_depth_rows: int = 0
@@ -496,6 +497,13 @@ def write_vendor_market_data_batch_pipeline(
                 "dropped_duplicate_rows": int(
                     _number(row, "dropped_duplicate_rows", fallback=0.0)
                 ),
+                "dropped_integer_overflow_rows": int(
+                    _number(
+                        row,
+                        "dropped_integer_overflow_rows",
+                        fallback=0.0,
+                    )
+                ),
                 "dropped_calendar_closed_rows": int(
                     _number(row, "dropped_calendar_closed_rows", fallback=0.0)
                 ),
@@ -740,6 +748,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_nonfinite_rows=config.max_nonfinite_rows,
         max_nonintegral_rows=config.max_nonintegral_rows,
         max_duplicate_tick_rows=config.max_duplicate_tick_rows,
+        max_integer_overflow_rows=config.max_integer_overflow_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
@@ -941,6 +950,13 @@ def _summary(
                     _number(
                         mapped_row,
                         "dropped_duplicate_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "dropped_integer_overflow_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_integer_overflow_rows",
                         fallback=0.0,
                     )
                 ),
@@ -1351,6 +1367,7 @@ def _pipeline_runbook_markdown(
         f"- Non-finite numeric rows: {int(_number_from_value(summary_row.get('dropped_nonfinite_rows', 0)))}",
         f"- Non-integral integer-field rows: {int(_number_from_value(summary_row.get('dropped_nonintegral_rows', 0)))}",
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
+        f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Contract horizon timezone: {_value_text(summary_row.get('contract_horizon_market_timezone')) or 'n/a'}",
@@ -1421,6 +1438,7 @@ def _batch_runbook_markdown(
         f"- Non-finite numeric rows: {int(_number_from_value(summary_row.get('dropped_nonfinite_rows', 0)))}",
         f"- Non-integral integer-field rows: {int(_number_from_value(summary_row.get('dropped_nonintegral_rows', 0)))}",
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
+        f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -1585,6 +1603,15 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "dropped_integer_overflow_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "dropped_integer_overflow_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "dropped_calendar_closed_rows": int(
                     pd.to_numeric(
                         datasets.get("dropped_calendar_closed_rows", pd.Series(dtype=float)),
@@ -1711,6 +1738,9 @@ def _pipeline_config(
             "dropped_duplicate_rows": int(
                 _number(row, "dropped_duplicate_rows", fallback=0.0)
             ),
+            "dropped_integer_overflow_rows": int(
+                _number(row, "dropped_integer_overflow_rows", fallback=0.0)
+            ),
             "dropped_non_trading_day_rows": int(
                 _number(row, "dropped_non_trading_day_rows", fallback=0.0)
             ),
@@ -1789,6 +1819,9 @@ def _batch_config(
             "dropped_duplicate_rows": int(
                 _number_from_value(item.get("dropped_duplicate_rows", 0))
             ),
+            "dropped_integer_overflow_rows": int(
+                _number_from_value(item.get("dropped_integer_overflow_rows", 0))
+            ),
             "dropped_calendar_closed_rows": int(
                 _number_from_value(item.get("dropped_calendar_closed_rows", 0))
             ),
@@ -1852,6 +1885,9 @@ def _batch_config(
         ),
         "dropped_duplicate_rows": int(
             _number(row, "dropped_duplicate_rows", fallback=0.0)
+        ),
+        "dropped_integer_overflow_rows": int(
+            _number(row, "dropped_integer_overflow_rows", fallback=0.0)
         ),
         "dropped_calendar_closed_rows": int(
             _number(row, "dropped_calendar_closed_rows", fallback=0.0)
@@ -2110,6 +2146,7 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         "max_nonfinite_rows",
         "max_nonintegral_rows",
         "max_duplicate_tick_rows",
+        "max_integer_overflow_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
         "max_nonpositive_depth_rows",

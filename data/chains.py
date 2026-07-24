@@ -9,7 +9,9 @@ import pandas as pd
 
 from data.loaders import (
     _apply_column_map,
+    _coerce_integer_numeric,
     _finite_numeric_mask,
+    _int64_range_mask,
     _integral_numeric_mask,
     _to_ns,
     calendar_closed_mask,
@@ -46,6 +48,7 @@ class ChainQuarantineReport:
     dropped_null_rows: int = 0
     dropped_nonfinite_rows: int = 0
     dropped_nonintegral_rows: int = 0
+    dropped_integer_overflow_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_negative_depth_rows: int = 0
@@ -110,7 +113,10 @@ def normalize_option_chain(
         column for column in REQUIRED_CHAIN_COLUMNS if column not in {"ts", "expiry"}
     ]
     depth_cols = ["call_bid_qty", "call_ask_qty", "put_bid_qty", "put_ask_qty"]
-    out[numeric_columns] = out[numeric_columns].apply(pd.to_numeric, errors="coerce")
+    integer_values = out[["ts", *depth_cols]].copy()
+    real_columns = [column for column in numeric_columns if column not in depth_cols]
+    out[depth_cols] = out[depth_cols].apply(_coerce_integer_numeric)
+    out[real_columns] = out[real_columns].apply(pd.to_numeric, errors="coerce")
 
     null_mask = out[REQUIRED_CHAIN_COLUMNS].isna().any(axis=1)
     out = out.loc[~null_mask].copy()
@@ -120,6 +126,12 @@ def normalize_option_chain(
     integral_mask = _integral_numeric_mask(out, ["ts", *depth_cols])
     nonintegral_count = int((~integral_mask).sum())
     out = out.loc[integral_mask].copy()
+    int64_mask = _int64_range_mask(
+        integer_values.loc[out.index],
+        ["ts", *depth_cols],
+    )
+    integer_overflow_count = int((~int64_mask).sum())
+    out = out.loc[int64_mask].copy()
     out["ts"] = out["ts"].astype("int64")
     out["strike"] = out["strike"].astype("float64")
 
@@ -186,6 +198,7 @@ def normalize_option_chain(
         dropped_null_rows=int(null_mask.sum()),
         dropped_nonfinite_rows=nonfinite_count,
         dropped_nonintegral_rows=nonintegral_count,
+        dropped_integer_overflow_rows=integer_overflow_count,
         dropped_nonpositive_quote_rows=nonpositive_quote_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_negative_depth_rows=negative_depth_count,

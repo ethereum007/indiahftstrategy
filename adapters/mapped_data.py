@@ -38,6 +38,7 @@ QUARANTINE_SUMMARY_FIELDS = (
     "dropped_nonfinite_rows",
     "dropped_nonintegral_rows",
     "dropped_duplicate_rows",
+    "dropped_integer_overflow_rows",
     "dropped_nonpositive_quote_rows",
     "dropped_crossed_quote_rows",
     "dropped_nonmonotonic_rows",

@@ -169,6 +169,75 @@ def test_normalize_ticks_quarantines_only_exact_duplicate_packets():
     assert normalized.quarantine.dropped_nonmonotonic_rows == 0
 
 
+def test_normalize_ticks_quarantines_int64_overflow_before_scaling_or_casts():
+    valid = {
+        "ts": 1,
+        "bid": 100.0,
+        "ask": 100.05,
+        "bid_qty": 75,
+        "ask_qty": 150,
+        "last": 100.05,
+        "last_qty": 75,
+    }
+    timestamp_overflow = valid.copy()
+    timestamp_overflow["ts"] = 10_000_000_000
+    depth_overflow = valid.copy()
+    depth_overflow["bid_qty"] = 10**1000
+    last_qty_overflow = valid.copy()
+    last_qty_overflow["last_qty"] = 10**30
+    rounded_lower_boundary_overflow = valid.copy()
+    rounded_lower_boundary_overflow["bid_qty"] = str(-(2**63) - 1)
+
+    raw = pd.DataFrame(
+        [
+            valid,
+            timestamp_overflow,
+            valid,
+            last_qty_overflow,
+            rounded_lower_boundary_overflow,
+        ]
+    )
+    raw["bid_qty"] = raw["bid_qty"].astype("object")
+    raw.loc[2, "bid_qty"] = depth_overflow["bid_qty"]
+
+    normalized = normalize_ticks(
+        raw,
+        timestamp_unit="s",
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert len(normalized.data) == 1
+    assert normalized.data.loc[0, "ts"] == 1_000_000_000
+    assert normalized.quarantine.dropped_integer_overflow_rows == 4
+    assert normalized.quarantine.dropped_nonfinite_rows == 0
+    assert normalized.quarantine.dropped_nonintegral_rows == 0
+
+
+def test_normalize_ticks_preserves_exact_text_timestamp_bounds():
+    base = {
+        "bid": 100.0,
+        "ask": 100.05,
+        "bid_qty": 75,
+        "ask_qty": 150,
+    }
+    zero = {**base, "ts": "0"}
+    maximum = {**base, "ts": str(2**63 - 1)}
+    rounded_lower_overflow = {**base, "ts": str(-(2**63) - 1)}
+
+    normalized = normalize_ticks(
+        pd.DataFrame([zero, maximum, rounded_lower_overflow]),
+        timestamp_unit="ns",
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert list(normalized.data["ts"]) == [0, 2**63 - 1]
+    assert normalized.quarantine.dropped_integer_overflow_rows == 1
+    assert normalized.quarantine.dropped_nonfinite_rows == 0
+    assert normalized.quarantine.dropped_nonintegral_rows == 0
+
+
 def test_session_mask_and_regime_boundaries():
     timestamps = pd.Series(
         [

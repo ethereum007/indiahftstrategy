@@ -83,6 +83,7 @@ class DataReadinessThresholds:
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
     max_duplicate_tick_rows: int = 0
+    max_integer_overflow_rows: int = 0
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
@@ -1944,6 +1945,7 @@ def _mapped_quarantine_checks(
         "dropped_nonfinite_rows",
         "dropped_nonintegral_rows",
         "dropped_duplicate_rows",
+        "dropped_integer_overflow_rows",
         "dropped_crossed_quote_rows",
         "dropped_nonpositive_quote_rows",
         "dropped_nonmonotonic_rows",
@@ -1972,6 +1974,12 @@ def _mapped_quarantine_checks(
             _number(row, "dropped_nonintegral_rows"),
             "<=",
             thresholds.max_nonintegral_rows,
+        ),
+        _threshold_check(
+            "mapped_data_dropped_integer_overflow_rows",
+            _number(row, "dropped_integer_overflow_rows"),
+            "<=",
+            thresholds.max_integer_overflow_rows,
         ),
         _threshold_check(
             "mapped_data_dropped_crossed_quote_rows",
@@ -3118,6 +3126,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_nonfinite_rows",
         "max_nonintegral_rows",
         "max_duplicate_tick_rows",
+        "max_integer_overflow_rows",
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",

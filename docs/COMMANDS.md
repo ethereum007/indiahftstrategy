@@ -8869,6 +8869,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
+  --max-integer-overflow-rows 0 `
   --max-duplicate-tick-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
@@ -8898,6 +8899,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
+  --max-integer-overflow-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -8958,6 +8960,13 @@ chain depth columns must resolve to whole numbers; fractional seconds remain
 valid when their conversion produces integral nanoseconds. Violations are
 retained as `dropped_nonintegral_rows` and fail the zero-default
 `--max-nonintegral-rows` gate instead of being silently truncated.
+Whole-number timestamps and depth values are then checked against signed
+64-bit bounds before casting. Numeric timestamp unit conversion uses
+overflow-safe scaling, so an out-of-range seconds or milliseconds value cannot
+wrap into an apparently valid nanosecond timestamp. Violations are retained as
+`dropped_integer_overflow_rows` and fail the zero-default
+`--max-integer-overflow-rows` gate throughout direct, vendor, provider, batch,
+and broker-vendor readiness evidence.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9459,6 +9468,7 @@ python -m hft_cli review-data-readiness `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
+  --max-integer-overflow-rows 0 `
   --max-duplicate-tick-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `

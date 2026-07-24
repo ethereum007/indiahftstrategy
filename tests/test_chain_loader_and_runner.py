@@ -127,6 +127,29 @@ def test_option_chain_normalizer_quarantines_nonintegral_depth_and_timestamp():
     assert normalized.quarantine.dropped_negative_depth_rows == 0
 
 
+def test_option_chain_normalizer_quarantines_int64_overflow_before_casts():
+    valid = chain_rows().iloc[[0]].copy()
+    valid["time"] = 1
+    depth_overflow = valid.copy()
+    depth_overflow["cbq"] = 10**30
+    timestamp_overflow = valid.copy()
+    timestamp_overflow["time"] = 10_000_000_000
+
+    normalized = normalize_option_chain(
+        pd.concat([valid, depth_overflow, timestamp_overflow], ignore_index=True),
+        column_map=chain_map(),
+        timestamp_unit="s",
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert len(normalized.data) == 1
+    assert normalized.data.loc[0, "ts"] == 1_000_000_000
+    assert normalized.quarantine.dropped_integer_overflow_rows == 2
+    assert normalized.quarantine.dropped_nonfinite_rows == 0
+    assert normalized.quarantine.dropped_nonintegral_rows == 0
+
+
 def test_parity_box_runner_writes_outputs(tmp_path):
     chain = pd.DataFrame(
         [
