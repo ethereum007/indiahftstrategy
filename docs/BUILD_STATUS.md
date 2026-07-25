@@ -7574,6 +7574,28 @@ healthy at `2722 tests` across `164` files. The full suite was not rerun
 because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
 
+Latest parity order-activation proof: both replay engines now snapshot every
+accepted strategy order in engine-owned `order_submissions.csv` before the
+order can fill or leave the live-order map. Each immutable row preserves
+instrument and order identity, side, quantity, accepted price, order type,
+strategy send timestamp, scheduled venue activation, and sampled order
+latency. Parity replay binds every accepted call, put, and future leg to
+exactly one IOC submission, requires send time to equal the guarded decision,
+and derives activation-to-first-fill and activation-to-completion latency for
+every filled leg. Independent proof repeats that join against raw submissions
+and fills, verifies order metadata and integer-exact timing, and rejects a
+fill that occurs after the decision but before its own venue activation.
+Partial packages retain timing for filled legs but cannot satisfy the
+three-leg timing census required of completed packages. Parity sweeps and
+cross-sweep comparisons preserve timing-evaluable, missing, inconsistent, and
+pre-activation leg counts plus minimum first-fill and maximum completion
+latency from venue activation. The `111`-test engine, replay, proof, and sweep
+set and the broader `162`-test shared-replay, parity, promotion, order-plan,
+launch, and sweep set pass. Source compilation succeeds. Repository collection
+remains healthy at `2722 tests` across `164` files. The full suite was not
+rerun because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

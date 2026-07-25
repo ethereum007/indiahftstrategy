@@ -139,6 +139,24 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
         ]
     ) == 2
     assert result.runs[
+        "parity_execution_order_timing_enabled"
+    ].all()
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_order_timing_enabled_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_order_timing_declared_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_order_submissions_artifact_present_runs"
+        ]
+    ) == 2
+    assert result.runs[
         "parity_execution_ioc_batch_preflight_enabled"
     ].all()
     assert int(
@@ -307,6 +325,36 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(
         result.summary.iloc[0][
             "max_parity_execution_completion_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_order_timing_evaluable_legs"
+        ]
+    ) == 3
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_order_timing_missing_evidence_legs"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_order_timing_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_pre_activation_fill_legs"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "min_parity_execution_activation_to_first_fill_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        result.summary.iloc[0][
+            "max_parity_execution_activation_to_completion_latency_ns"
         ]
     ) == 100_000
     assert int(

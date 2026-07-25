@@ -556,11 +556,13 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     )
     parity_legging_path = run_dir / "legging.csv"
     fills_path = run_dir / "fills.csv"
+    order_submissions_path = run_dir / "order_submissions.csv"
     parity_execution_guard = _read_optional(
         parity_execution_guard_path
     )
     parity_legging = _read_optional(parity_legging_path)
     replay_fills = _read_optional(fills_path)
+    order_submissions = _read_optional(order_submissions_path)
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
     market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
 
@@ -672,6 +674,12 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_execution_realized_edge_declared = _bool(
         row.get(
             "parity_execution_realized_edge_enabled",
+            False,
+        )
+    )
+    parity_execution_order_timing_declared = _bool(
+        row.get(
+            "parity_execution_order_timing_enabled",
             False,
         )
     )
@@ -1112,6 +1120,13 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         replay_fills,
         enabled=parity_execution_realized_edge_declared,
         fills_present=fills_path.exists(),
+    )
+    parity_order_timing_metrics = _parity_order_timing_metrics(
+        parity_legging,
+        replay_fills,
+        order_submissions,
+        enabled=parity_execution_order_timing_declared,
+        order_submissions_present=order_submissions_path.exists(),
     )
     parity_routed_capacity_ratios = parity_capacity_ratio.loc[
         parity_capacity_passed
@@ -1642,6 +1657,10 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             parity_execution_realized_edge_declared
         ),
         **parity_realized_edge_metrics,
+        "parity_execution_order_timing_declared": (
+            parity_execution_order_timing_declared
+        ),
+        **parity_order_timing_metrics,
         "parity_execution_ioc_batch_preflight_enabled": (
             parity_execution_ioc_batch_preflight_enabled
         ),
@@ -2877,6 +2896,245 @@ def _parity_realized_edge_metrics(
     }
 
 
+def _parity_order_timing_metrics(
+    legging: pd.DataFrame,
+    fills: pd.DataFrame,
+    order_submissions: pd.DataFrame,
+    *,
+    enabled: bool,
+    order_submissions_present: bool,
+) -> dict[str, int | bool]:
+    evaluable_legs = 0
+    missing_evidence_legs = 0
+    consistency_violations = 0
+    pre_activation_fill_legs = 0
+    first_fill_latencies: list[int] = []
+    completion_latencies: list[int] = []
+    submission_oids = pd.to_numeric(
+        order_submissions.get(
+            "oid",
+            pd.Series(index=order_submissions.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+    fill_oids = pd.to_numeric(
+        fills.get(
+            "oid",
+            pd.Series(index=fills.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+
+    if enabled:
+        for _, row in legging.iterrows():
+            decision_ts_raw = pd.to_numeric(
+                row.get("decision_ts_ns", np.nan),
+                errors="coerce",
+            )
+            requested_qty_raw = pd.to_numeric(
+                row.get("requested_qty", np.nan),
+                errors="coerce",
+            )
+            for leg in ("call", "put", "future"):
+                order_id_raw = pd.to_numeric(
+                    row.get(f"{leg}_order_id", np.nan),
+                    errors="coerce",
+                )
+                if pd.isna(order_id_raw):
+                    continue
+                if order_id_raw <= 0 or order_id_raw % 1 != 0:
+                    consistency_violations += 1
+                    continue
+                order_id = int(order_id_raw)
+
+                matches = order_submissions.loc[
+                    submission_oids.eq(order_id)
+                ]
+                if matches.empty:
+                    missing_evidence_legs += 1
+                    continue
+                if len(matches) != 1:
+                    consistency_violations += 1
+                    continue
+
+                submission = matches.iloc[0]
+                number_names = [
+                    "ts_sent_ns",
+                    "ts_active_ns",
+                    "order_latency_ns",
+                    "oid",
+                    "side",
+                    "qty",
+                    "price",
+                ]
+                numbers = {
+                    name: pd.to_numeric(
+                        submission.get(name, np.nan),
+                        errors="coerce",
+                    )
+                    for name in number_names
+                }
+                instrument_id_raw = submission.get(
+                    "instrument_id",
+                    np.nan,
+                )
+                order_type_raw = submission.get(
+                    "order_type",
+                    np.nan,
+                )
+                expected_instrument_raw = row.get(
+                    f"{leg}_instrument_id",
+                    np.nan,
+                )
+                expected_side = pd.to_numeric(
+                    row.get(f"{leg}_side", np.nan),
+                    errors="coerce",
+                )
+                expected_price = pd.to_numeric(
+                    row.get(f"{leg}_limit_price", np.nan),
+                    errors="coerce",
+                )
+                instrument_id = str(instrument_id_raw).strip()
+                order_type = str(order_type_raw).strip()
+                if (
+                    any(
+                        pd.isna(value)
+                        for value in numbers.values()
+                    )
+                    or any(
+                        not np.isfinite(float(value))
+                        for value in numbers.values()
+                        if not pd.isna(value)
+                    )
+                    or pd.isna(decision_ts_raw)
+                    or pd.isna(requested_qty_raw)
+                    or not np.isfinite(float(decision_ts_raw))
+                    or not np.isfinite(float(requested_qty_raw))
+                    or pd.isna(instrument_id_raw)
+                    or pd.isna(order_type_raw)
+                    or pd.isna(expected_instrument_raw)
+                    or pd.isna(expected_side)
+                    or pd.isna(expected_price)
+                    or instrument_id == ""
+                    or order_type == ""
+                ):
+                    missing_evidence_legs += 1
+                    continue
+
+                sent_ts = int(numbers["ts_sent_ns"])
+                active_ts = int(numbers["ts_active_ns"])
+                latency_ns = int(numbers["order_latency_ns"])
+                metadata_violation = (
+                    numbers["ts_sent_ns"] % 1 != 0
+                    or numbers["ts_active_ns"] % 1 != 0
+                    or numbers["order_latency_ns"] % 1 != 0
+                    or numbers["oid"] % 1 != 0
+                    or numbers["side"] % 1 != 0
+                    or numbers["qty"] % 1 != 0
+                    or decision_ts_raw % 1 != 0
+                    or requested_qty_raw % 1 != 0
+                    or sent_ts != int(decision_ts_raw)
+                    or active_ts < sent_ts
+                    or latency_ns < 0
+                    or latency_ns != active_ts - sent_ts
+                    or int(numbers["oid"]) != order_id
+                    or numbers["side"] not in (-1, 1)
+                    or numbers["qty"] <= 0
+                    or numbers["price"] <= 0
+                    or float(numbers["side"])
+                    != float(expected_side)
+                    or float(numbers["qty"])
+                    != float(requested_qty_raw)
+                    or abs(
+                        float(numbers["price"])
+                        - float(expected_price)
+                    )
+                    > 1e-9
+                    or instrument_id
+                    != str(expected_instrument_raw).strip()
+                    or order_type != "IOC"
+                )
+                consistency_violations += int(
+                    metadata_violation
+                )
+
+                reported_filled_qty = pd.to_numeric(
+                    row.get(f"{leg}_filled_qty", np.nan),
+                    errors="coerce",
+                )
+                raw_leg_fills = fills.loc[
+                    fill_oids.eq(order_id)
+                ]
+                if pd.isna(reported_filled_qty):
+                    missing_evidence_legs += 1
+                    continue
+                if raw_leg_fills.empty:
+                    missing_evidence_legs += int(
+                        reported_filled_qty > 0
+                    )
+                    continue
+                if reported_filled_qty <= 0:
+                    consistency_violations += 1
+                    continue
+
+                raw_timestamps = pd.to_numeric(
+                    raw_leg_fills.get(
+                        "ts_ns",
+                        pd.Series(
+                            np.nan,
+                            index=raw_leg_fills.index,
+                        ),
+                    ),
+                    errors="coerce",
+                )
+                if raw_timestamps.isna().any():
+                    missing_evidence_legs += 1
+                    continue
+                if raw_timestamps.mod(1).ne(0).any():
+                    consistency_violations += 1
+                    continue
+
+                first_fill_ts = int(raw_timestamps.min())
+                last_fill_ts = int(raw_timestamps.max())
+                first_latency = first_fill_ts - active_ts
+                completion_latency = last_fill_ts - active_ts
+                evaluable_legs += 1
+                first_fill_latencies.append(first_latency)
+                completion_latencies.append(completion_latency)
+                pre_activation_fill_legs += int(
+                    raw_timestamps.lt(active_ts).any()
+                )
+
+    return {
+        "parity_execution_order_timing_enabled": bool(enabled),
+        "parity_execution_order_submissions_present": bool(
+            order_submissions_present
+        ),
+        "parity_execution_order_timing_evaluable_legs": (
+            evaluable_legs
+        ),
+        "parity_execution_order_timing_missing_evidence_legs": (
+            missing_evidence_legs
+        ),
+        "parity_execution_order_timing_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_pre_activation_fill_legs": (
+            pre_activation_fill_legs
+        ),
+        "parity_execution_min_activation_to_first_fill_latency_ns": (
+            min(first_fill_latencies)
+            if first_fill_latencies
+            else 0
+        ),
+        "parity_execution_max_activation_to_completion_latency_ns": (
+            max(completion_latencies)
+            if completion_latencies
+            else 0
+        ),
+    }
+
+
 def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofThresholds) -> pd.DataFrame:
     rows = [
         _check(metrics, "net_pnl", metrics["net_pnl"], ">=", thresholds.min_net_pnl),
@@ -3141,6 +3399,27 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+        order_timing_declared = bool(
+            metrics["parity_execution_order_timing_declared"]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_order_timing_declared",
+                "value": order_timing_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": order_timing_declared,
+                "reason": (
+                    ""
+                    if order_timing_declared
+                    else (
+                        "parity execution lacks engine-owned order "
+                        "activation timing evidence"
+                    )
+                ),
+            }
+        )
         preflight_declared = bool(
             metrics[
                 "parity_execution_ioc_batch_preflight_declared"
@@ -3198,6 +3477,10 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_fills_present",
                 "parity raw fills artifact is missing",
+            ),
+            (
+                "parity_execution_order_submissions_present",
+                "parity order-submission artifact is missing",
             ),
         ]:
             present = bool(metrics[metric])
@@ -3276,6 +3559,18 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_negative_fill_latency_count",
                 "a parity package contains a fill before its decision",
+            ),
+            (
+                "parity_execution_order_timing_missing_evidence_legs",
+                "a parity leg lacks accepted-order timing evidence",
+            ),
+            (
+                "parity_execution_order_timing_consistency_violations",
+                "parity accepted-order timing evidence is inconsistent",
+            ),
+            (
+                "parity_execution_pre_activation_fill_legs",
+                "a parity leg contains a fill before venue activation",
             ),
             (
                 "parity_execution_ioc_batch_preflight_missing_evidence_rows",
@@ -3409,6 +3704,40 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     else (
                         "completed parity packages lack causal "
                         "decision-to-fill timing evidence"
+                    )
+                ),
+            }
+        )
+        order_timing_legs = int(
+            metrics[
+                "parity_execution_order_timing_evaluable_legs"
+            ]
+        )
+        required_order_timing_legs = (
+            complete_executions * 3
+            if order_timing_declared
+            else 0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_order_timing_evaluable_legs"
+                ),
+                "value": order_timing_legs,
+                "operator": ">=",
+                "threshold": required_order_timing_legs,
+                "passed": (
+                    order_timing_legs
+                    >= required_order_timing_legs
+                ),
+                "reason": (
+                    ""
+                    if order_timing_legs
+                    >= required_order_timing_legs
+                    else (
+                        "completed parity packages lack three-leg "
+                        "activation-to-fill timing evidence"
                     )
                 ),
             }

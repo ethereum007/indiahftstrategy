@@ -155,6 +155,7 @@ def run_parity_replay(
     for key, value in _execution_guard_metrics(
         execution_guard,
         legging,
+        result.order_submissions,
         max_leg_book_age_ns=max_leg_book_age_ns,
         max_leg_book_skew_ns=max_leg_book_skew_ns,
     ).items():
@@ -280,6 +281,7 @@ def _futures_freshness_metrics(
 def _execution_guard_metrics(
     guard: pd.DataFrame,
     legging: pd.DataFrame,
+    order_submissions: pd.DataFrame,
     *,
     max_leg_book_age_ns: int,
     max_leg_book_skew_ns: int,
@@ -542,6 +544,10 @@ def _execution_guard_metrics(
         errors="coerce",
     ).fillna(0)
     realized_edge_metrics = _realized_edge_metrics(legging)
+    order_timing_metrics = _order_timing_metrics(
+        legging,
+        order_submissions,
+    )
     return {
         "parity_execution_guard_enabled": True,
         "parity_execution_max_leg_book_age_ns": int(
@@ -649,6 +655,7 @@ def _execution_guard_metrics(
             route_rejections.sum()
         ),
         "parity_execution_unfilled_legs": int(unfilled_legs.sum()),
+        **order_timing_metrics,
         **realized_edge_metrics,
     }
 
@@ -1060,6 +1067,216 @@ def _realized_edge_metrics(
             else 0
         ),
         "parity_execution_max_completion_latency_ns": (
+            max(completion_latencies)
+            if completion_latencies
+            else 0
+        ),
+    }
+
+
+def _order_timing_metrics(
+    legging: pd.DataFrame,
+    order_submissions: pd.DataFrame,
+) -> dict[str, int | bool]:
+    evaluable_legs = 0
+    missing_evidence_legs = 0
+    consistency_violations = 0
+    pre_activation_fill_legs = 0
+    first_fill_latencies: list[int] = []
+    completion_latencies: list[int] = []
+    submission_oids = pd.to_numeric(
+        order_submissions.get(
+            "oid",
+            pd.Series(index=order_submissions.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+
+    for _, row in legging.iterrows():
+        decision_ts_raw = pd.to_numeric(
+            row.get("decision_ts_ns", np.nan),
+            errors="coerce",
+        )
+        requested_qty_raw = pd.to_numeric(
+            row.get("requested_qty", np.nan),
+            errors="coerce",
+        )
+        for leg in ("call", "put", "future"):
+            order_id_raw = pd.to_numeric(
+                row.get(f"{leg}_order_id", np.nan),
+                errors="coerce",
+            )
+            if pd.isna(order_id_raw):
+                continue
+            if order_id_raw <= 0 or order_id_raw % 1 != 0:
+                consistency_violations += 1
+                continue
+
+            matches = order_submissions.loc[
+                submission_oids.eq(int(order_id_raw))
+            ]
+            if matches.empty:
+                missing_evidence_legs += 1
+                continue
+            if len(matches) != 1:
+                consistency_violations += 1
+                continue
+
+            submission = matches.iloc[0]
+            number_names = [
+                "ts_sent_ns",
+                "ts_active_ns",
+                "order_latency_ns",
+                "oid",
+                "side",
+                "qty",
+                "price",
+            ]
+            numbers = {
+                name: pd.to_numeric(
+                    submission.get(name, np.nan),
+                    errors="coerce",
+                )
+                for name in number_names
+            }
+            instrument_id_raw = submission.get(
+                "instrument_id",
+                np.nan,
+            )
+            order_type_raw = submission.get(
+                "order_type",
+                np.nan,
+            )
+            expected_instrument_raw = row.get(
+                f"{leg}_instrument_id",
+                np.nan,
+            )
+            expected_side = pd.to_numeric(
+                row.get(f"{leg}_side", np.nan),
+                errors="coerce",
+            )
+            expected_price = pd.to_numeric(
+                row.get(f"{leg}_limit_price", np.nan),
+                errors="coerce",
+            )
+            instrument_id = str(instrument_id_raw).strip()
+            order_type = str(order_type_raw).strip()
+            if (
+                any(pd.isna(value) for value in numbers.values())
+                or any(
+                    not np.isfinite(float(value))
+                    for value in numbers.values()
+                    if not pd.isna(value)
+                )
+                or pd.isna(decision_ts_raw)
+                or pd.isna(requested_qty_raw)
+                or not np.isfinite(float(decision_ts_raw))
+                or not np.isfinite(float(requested_qty_raw))
+                or pd.isna(instrument_id_raw)
+                or pd.isna(order_type_raw)
+                or pd.isna(expected_instrument_raw)
+                or pd.isna(expected_side)
+                or pd.isna(expected_price)
+                or instrument_id == ""
+                or order_type == ""
+            ):
+                missing_evidence_legs += 1
+                continue
+
+            sent_ts = int(numbers["ts_sent_ns"])
+            active_ts = int(numbers["ts_active_ns"])
+            latency_ns = int(numbers["order_latency_ns"])
+            metadata_violation = (
+                numbers["ts_sent_ns"] % 1 != 0
+                or numbers["ts_active_ns"] % 1 != 0
+                or numbers["order_latency_ns"] % 1 != 0
+                or numbers["oid"] % 1 != 0
+                or numbers["side"] % 1 != 0
+                or numbers["qty"] % 1 != 0
+                or decision_ts_raw % 1 != 0
+                or requested_qty_raw % 1 != 0
+                or sent_ts != int(decision_ts_raw)
+                or active_ts < sent_ts
+                or latency_ns < 0
+                or latency_ns != active_ts - sent_ts
+                or int(numbers["oid"]) != int(order_id_raw)
+                or numbers["side"] not in (-1, 1)
+                or numbers["qty"] <= 0
+                or numbers["price"] <= 0
+                or float(numbers["side"]) != float(expected_side)
+                or float(numbers["qty"]) != float(requested_qty_raw)
+                or abs(
+                    float(numbers["price"]) - float(expected_price)
+                )
+                > 1e-9
+                or instrument_id
+                != str(expected_instrument_raw).strip()
+                or order_type != "IOC"
+            )
+            consistency_violations += int(metadata_violation)
+
+            filled_qty = pd.to_numeric(
+                row.get(f"{leg}_filled_qty", np.nan),
+                errors="coerce",
+            )
+            first_fill_raw = pd.to_numeric(
+                row.get(f"{leg}_first_fill_ts_ns", np.nan),
+                errors="coerce",
+            )
+            last_fill_raw = pd.to_numeric(
+                row.get(f"{leg}_last_fill_ts_ns", np.nan),
+                errors="coerce",
+            )
+            if pd.isna(filled_qty):
+                missing_evidence_legs += 1
+                continue
+            if filled_qty <= 0:
+                consistency_violations += int(
+                    not pd.isna(first_fill_raw)
+                    or not pd.isna(last_fill_raw)
+                )
+                continue
+            if pd.isna(first_fill_raw) or pd.isna(last_fill_raw):
+                missing_evidence_legs += 1
+                continue
+            if (
+                first_fill_raw % 1 != 0
+                or last_fill_raw % 1 != 0
+            ):
+                consistency_violations += 1
+                continue
+
+            first_fill_ts = int(first_fill_raw)
+            last_fill_ts = int(last_fill_raw)
+            first_latency = first_fill_ts - active_ts
+            completion_latency = last_fill_ts - active_ts
+            evaluable_legs += 1
+            first_fill_latencies.append(first_latency)
+            completion_latencies.append(completion_latency)
+            pre_activation_fill_legs += int(
+                first_latency < 0 or completion_latency < 0
+            )
+
+    return {
+        "parity_execution_order_timing_enabled": True,
+        "parity_execution_order_timing_evaluable_legs": (
+            evaluable_legs
+        ),
+        "parity_execution_order_timing_missing_evidence_legs": (
+            missing_evidence_legs
+        ),
+        "parity_execution_order_timing_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_pre_activation_fill_legs": (
+            pre_activation_fill_legs
+        ),
+        "parity_execution_min_activation_to_first_fill_latency_ns": (
+            min(first_fill_latencies)
+            if first_fill_latencies
+            else 0
+        ),
+        "parity_execution_max_activation_to_completion_latency_ns": (
             max(completion_latencies)
             if completion_latencies
             else 0

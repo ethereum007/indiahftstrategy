@@ -339,7 +339,7 @@ def test_global_clock_interleaves_other_instrument_before_fill():
             ),
         },
         venues={
-            "NSE": VenueConfig("NSE", LatencyModel(0, 0, 0, np.random.default_rng(2))),
+            "NSE": VenueConfig("NSE", LatencyModel(0, 50, 0, np.random.default_rng(2))),
             "BSE": VenueConfig("BSE", LatencyModel(0, 0, 0, np.random.default_rng(3))),
         },
         strategy=strategy,
@@ -349,6 +349,14 @@ def test_global_clock_interleaves_other_instrument_before_fill():
 
     assert result.fills.iloc[0]["instrument_id"] == "A"
     assert result.fills.iloc[0]["ts_ns"] == 120_000
+    assert len(result.order_submissions) == 1
+    submission = result.order_submissions.iloc[0]
+    assert submission["instrument_id"] == "A"
+    assert submission["oid"] == result.fills.iloc[0]["oid"]
+    assert submission["order_type"] == "IOC"
+    assert submission["ts_sent_ns"] == 0
+    assert submission["ts_active_ns"] == 50_000
+    assert submission["order_latency_ns"] == 50_000
     assert strategy.events[:3] == [
         ("tick", "A", 0),
         ("tick", "B", 60_000),

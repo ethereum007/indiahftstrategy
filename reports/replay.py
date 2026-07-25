@@ -589,6 +589,10 @@ def write_replay_outputs(
     out.mkdir(parents=True, exist_ok=True)
     result.equity.to_csv(out / "equity.csv", index=False)
     result.fills.to_csv(out / "fills.csv", index=False)
+    result.order_submissions.to_csv(
+        out / "order_submissions.csv",
+        index=False,
+    )
     result.order_rejections.to_csv(out / "order_rejections.csv", index=False)
     result.order_cancellations.to_csv(
         out / "order_cancellations.csv",

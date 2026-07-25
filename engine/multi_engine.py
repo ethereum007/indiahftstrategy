@@ -24,6 +24,8 @@ from engine.hft_backtest import (
     ORDER_HORIZON_STATE_COLUMNS,
     OrderRejection,
     ORDER_REJECTION_COLUMNS,
+    OrderSubmission,
+    ORDER_SUBMISSION_COLUMNS,
     OrderType,
     QueueInitialization,
     QUEUE_INITIALIZATION_COLUMNS,
@@ -175,6 +177,7 @@ class MultiInstrumentEngine:
 
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[RoutedFill] = []
+        self.order_submissions: List[OrderSubmission] = []
         self.order_rejections: List[OrderRejection] = []
         self.order_cancellations: List[OrderCancellation] = []
         self._cancellation_index_by_oid: Dict[int, int] = {}
@@ -189,6 +192,7 @@ class MultiInstrumentEngine:
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
         self.causal_event_ordering_enabled = True
+        self.order_submission_tracking_enabled = True
         self.cancel_lifecycle_tracking_enabled = True
         self.order_horizon_tracking_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
@@ -326,6 +330,19 @@ class MultiInstrumentEngine:
             otype,
             ts_sent_ns=self._now_ns,
             ts_active_ns=active_ns,
+        )
+        self.order_submissions.append(
+            OrderSubmission(
+                ts_sent_ns=self._now_ns,
+                ts_active_ns=active_ns,
+                order_latency_ns=active_ns - self._now_ns,
+                instrument_id=instrument_id,
+                oid=order.oid,
+                side=side,
+                qty=qty,
+                price=price,
+                order_type=otype.value,
+            )
         )
         if otype == OrderType.LIMIT:
             self.limit_orders_sent += 1
@@ -2024,6 +2041,13 @@ class MultiBacktestResult:
         self.engine = engine
         self.equity = pd.DataFrame(engine.equity_curve, columns=["ts", "equity"])
         self.fills = pd.DataFrame([fill.__dict__ for fill in engine.fills])
+        self.order_submissions = pd.DataFrame(
+            [
+                submission.__dict__
+                for submission in engine.order_submissions
+            ],
+            columns=ORDER_SUBMISSION_COLUMNS,
+        )
         self.order_rejections = pd.DataFrame(
             [rejection.__dict__ for rejection in engine.order_rejections],
             columns=ORDER_REJECTION_COLUMNS,

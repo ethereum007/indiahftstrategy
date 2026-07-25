@@ -877,7 +877,8 @@ python -m hft_cli replay-parity `
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
-`order_cancellations.csv`, `order_horizon_states.csv`,
+`order_submissions.csv`, `order_cancellations.csv`,
+`order_horizon_states.csv`,
 `input_quarantine.csv`, `liquidity_shortfalls.csv`,
 `queue_initializations.csv`, `parity_futures_join_audit.csv`,
 `parity_execution_guard.csv`, and `terminal_liquidations.csv`.
@@ -941,18 +942,31 @@ gross edge, total actual fill cost, realized net edge, decision-to-fill edge
 change, and package fill span. Partial packages never receive realized-edge
 credit.
 
+`order_submissions.csv` is owned by the replay engine rather than the
+strategy. It snapshots every accepted strategy order before the order can
+fill or leave the live-order map, including instrument and order identity,
+side, requested quantity, accepted limit, order type, strategy send
+timestamp, scheduled venue-activation timestamp, and the sampled order
+latency. For parity, each accepted leg must bind to exactly one IOC submission
+whose send timestamp equals the guarded decision timestamp and whose
+activation timestamp equals send plus latency.
+
 Proof independently reconstructs source-book lag from signal and book ages,
 derives all three executable sides, recomputes parity gross edge and the
 reported decision-time leg-cost sum, and verifies the net-edge threshold before
 checking limiting-leg marketability and fill ratio. It then joins each package
-order ID to raw `fills.csv`, verifies instrument, side, quantity, limit-price
-protection, cost, and integer-exact nanosecond timing, and independently
-recomputes realized package economics. Signal and decision timestamps must
-match the execution guard, the decision cannot predate the signal, and no raw
-fill may predate the decision. Replay and proof report decision-to-first-fill
-and decision-to-completion latency for every package with at least one fill;
-partial packages retain timing evidence but never receive realized-edge
-credit. Missing or reused order IDs, altered fills, incomplete evidence,
+order ID to raw `order_submissions.csv` and `fills.csv`, verifies instrument,
+side, quantity, limit-price protection, order type, cost, and integer-exact
+nanosecond timing, and independently recomputes realized package economics.
+Signal and decision timestamps must match the execution guard, the decision
+cannot predate the signal, no raw fill may predate the decision, and no fill
+may predate its own venue activation. Replay and proof report
+decision-to-first-fill and decision-to-completion latency per package plus
+activation-to-first-fill and activation-to-completion latency per filled leg.
+The latter isolates venue-side waiting from sampled transport latency. Partial
+packages retain timing evidence but never receive realized-edge credit.
+Missing or duplicate submission evidence, altered order schedules, missing or
+reused order IDs, pre-activation fills, altered fills, incomplete evidence,
 negative fill latency, inconsistent arithmetic, or a completed package with
 nonpositive realized net edge fail proof. It also recomputes the other guard,
 preflight, and legging consistency checks and rejects over-age or over-skew
@@ -962,6 +976,8 @@ comparisons preserve source-pending and edge-rejected counts, maximum
 source-book lag and observed edge decay, proof-integrity counts, minimum routed
 net edge, realized package counts and net edge, decision-to-fill edge change,
 maximum fill span, minimum first-fill latency, maximum completion latency,
+accepted-order timing counts, minimum activation-to-first-fill latency,
+maximum activation-to-completion latency, pre-activation fill counts,
 visible marketability and capacity-shortfall counts, and minimum routed
 visible fill ratio.
 

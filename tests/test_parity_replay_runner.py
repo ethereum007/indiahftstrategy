@@ -50,6 +50,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
         futures_path=futures_path,
         output_dir=out_dir,
         depth_fraction=0.25,
+        order_latency_us=50.0,
         signal_limit=1,
     )
 
@@ -63,6 +64,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(replay.legging.iloc[0]["unfilled_leg_count"]) == 0
     assert replay.summary.iloc[0]["fills"] == 3
     assert (out_dir / "fills.csv").exists()
+    assert (out_dir / "order_submissions.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
@@ -207,6 +209,45 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(
         summary["parity_execution_max_completion_latency_ns"]
     ) == 100_000
+    assert bool(
+        summary["parity_execution_order_timing_enabled"]
+    )
+    assert int(
+        summary["parity_execution_order_timing_evaluable_legs"]
+    ) == 3
+    assert int(
+        summary[
+            "parity_execution_order_timing_missing_evidence_legs"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_order_timing_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        summary["parity_execution_pre_activation_fill_legs"]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_min_activation_to_first_fill_latency_ns"
+        ]
+    ) == 50_000
+    assert int(
+        summary[
+            "parity_execution_max_activation_to_completion_latency_ns"
+        ]
+    ) == 50_000
+    order_submissions = pd.read_csv(
+        out_dir / "order_submissions.csv"
+    )
+    assert len(order_submissions) == 3
+    assert set(order_submissions["order_type"]) == {"IOC"}
+    assert order_submissions["ts_sent_ns"].nunique() == 1
+    assert (
+        order_submissions["ts_active_ns"]
+        - order_submissions["ts_sent_ns"]
+    ).eq(50_000).all()
     assert bool(
         summary["parity_execution_ioc_batch_preflight_enabled"]
     )
@@ -420,6 +461,26 @@ def test_run_parity_replay_proves_reverse_realized_package_edge(
     assert int(
         proof_metrics[
             "parity_execution_max_completion_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        proof_metrics[
+            "parity_execution_order_timing_evaluable_legs"
+        ]
+    ) == 3
+    assert int(
+        proof_metrics[
+            "parity_execution_pre_activation_fill_legs"
+        ]
+    ) == 0
+    assert int(
+        proof_metrics[
+            "parity_execution_min_activation_to_first_fill_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        proof_metrics[
+            "parity_execution_max_activation_to_completion_latency_ns"
         ]
     ) == 100_000
     assert float(

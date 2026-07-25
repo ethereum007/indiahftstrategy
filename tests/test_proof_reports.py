@@ -470,6 +470,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         0,
         "parity_execution_realized_edge_enabled",
     ] = True
+    summary.loc[
+        0,
+        "parity_execution_order_timing_enabled",
+    ] = True
     summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
     summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
     summary.to_csv(summary_path, index=False)
@@ -637,6 +641,47 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         ]
     )
     fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    order_submissions = pd.DataFrame(
+        [
+            {
+                "ts_sent_ns": 200,
+                "ts_active_ns": 250,
+                "order_latency_ns": 50,
+                "instrument_id": "CALL1000",
+                "oid": 1,
+                "side": 1,
+                "qty": 75,
+                "price": 55.0,
+                "order_type": "IOC",
+            },
+            {
+                "ts_sent_ns": 200,
+                "ts_active_ns": 250,
+                "order_latency_ns": 50,
+                "instrument_id": "PUT1000",
+                "oid": 2,
+                "side": -1,
+                "qty": 75,
+                "price": 60.0,
+                "order_type": "IOC",
+            },
+            {
+                "ts_sent_ns": 200,
+                "ts_active_ns": 250,
+                "order_latency_ns": 50,
+                "instrument_id": "FUT",
+                "oid": 3,
+                "side": -1,
+                "qty": 75,
+                "price": 1008.0,
+                "order_type": "IOC",
+            },
+        ]
+    )
+    order_submissions.to_csv(
+        run_dir / "order_submissions.csv",
+        index=False,
+    )
 
     valid = evaluate_replay_dirs([run_dir])
 
@@ -771,6 +816,38 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     assert int(
         metrics["parity_execution_max_completion_latency_ns"]
     ) == 102
+    assert bool(
+        metrics["parity_execution_order_timing_declared"]
+    )
+    assert bool(
+        metrics["parity_execution_order_submissions_present"]
+    )
+    assert int(
+        metrics["parity_execution_order_timing_evaluable_legs"]
+    ) == 3
+    assert int(
+        metrics[
+            "parity_execution_order_timing_missing_evidence_legs"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_order_timing_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        metrics["parity_execution_pre_activation_fill_legs"]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_min_activation_to_first_fill_latency_ns"
+        ]
+    ) == 50
+    assert int(
+        metrics[
+            "parity_execution_max_activation_to_completion_latency_ns"
+        ]
+    ) == 52
     assert int(
         metrics[
             "parity_execution_ioc_visible_capacity_missing_evidence_rows"
@@ -874,6 +951,28 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
 
     summary.loc[
         0,
+        "parity_execution_order_timing_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    order_timing_undeclared = evaluate_replay_dirs([run_dir])
+
+    order_timing_undeclared_failed = (
+        order_timing_undeclared.checks.loc[
+            ~order_timing_undeclared.checks["passed"]
+        ]
+    )
+    assert not order_timing_undeclared.passed
+    assert order_timing_undeclared_failed["check"].tolist() == [
+        "parity_execution_order_timing_declared"
+    ]
+    summary.loc[
+        0,
+        "parity_execution_order_timing_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
         "parity_execution_signal_source_causality_enabled",
     ] = False
     summary.to_csv(summary_path, index=False)
@@ -893,6 +992,34 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         "parity_execution_signal_source_causality_enabled",
     ] = True
     summary.to_csv(summary_path, index=False)
+
+    order_submissions.loc[
+        order_submissions["instrument_id"].eq("CALL1000"),
+        "ts_active_ns",
+    ] = 251
+    order_submissions.to_csv(
+        run_dir / "order_submissions.csv",
+        index=False,
+    )
+    order_schedule_tampered = evaluate_replay_dirs([run_dir])
+
+    order_schedule_tampered_failed = (
+        order_schedule_tampered.checks.loc[
+            ~order_schedule_tampered.checks["passed"]
+        ]
+    )
+    assert not order_schedule_tampered.passed
+    assert order_schedule_tampered_failed["check"].tolist() == [
+        "parity_execution_order_timing_consistency_violations"
+    ]
+    order_submissions.loc[
+        order_submissions["instrument_id"].eq("CALL1000"),
+        "ts_active_ns",
+    ] = 250
+    order_submissions.to_csv(
+        run_dir / "order_submissions.csv",
+        index=False,
+    )
 
     fills_frame.loc[
         fills_frame["instrument_id"].eq("FUT"),
@@ -917,6 +1044,26 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     fills_frame.loc[
         fills_frame["instrument_id"].eq("CALL1000"),
         "ts_ns",
+    ] = 249
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    legging.loc[0, "call_first_fill_ts_ns"] = 249
+    legging.loc[0, "call_last_fill_ts_ns"] = 249
+    legging.loc[0, "first_fill_ts_ns"] = 249
+    legging.loc[0, "fill_span_ns"] = 53
+    legging.to_csv(run_dir / "legging.csv", index=False)
+    pre_activation_fill = evaluate_replay_dirs([run_dir])
+
+    pre_activation_fill_failed = pre_activation_fill.checks.loc[
+        ~pre_activation_fill.checks["passed"]
+    ]
+    assert not pre_activation_fill.passed
+    assert pre_activation_fill_failed["check"].tolist() == [
+        "parity_execution_pre_activation_fill_legs"
+    ]
+
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("CALL1000"),
+        "ts_ns",
     ] = 199
     fills_frame.to_csv(run_dir / "fills.csv", index=False)
     legging.loc[0, "call_first_fill_ts_ns"] = 199
@@ -935,6 +1082,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     assert negative_fill_latency_failed["check"].tolist() == [
         "parity_execution_realized_edge_consistency_violations",
         "parity_execution_negative_fill_latency_count",
+        "parity_execution_pre_activation_fill_legs",
     ]
     fills_frame.loc[
         fills_frame["instrument_id"].eq("CALL1000"),

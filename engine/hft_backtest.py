@@ -218,6 +218,19 @@ class Fill:
     maker: bool
 
 
+@dataclass(frozen=True)
+class OrderSubmission:
+    ts_sent_ns: int
+    ts_active_ns: int
+    order_latency_ns: int
+    instrument_id: str
+    oid: int
+    side: int
+    qty: int
+    price: float
+    order_type: str
+
+
 @dataclass
 class OrderRejection:
     ts_ns: int
@@ -536,6 +549,18 @@ ORDER_REJECTION_COLUMNS = [
     "conflicting_oid",
 ]
 
+ORDER_SUBMISSION_COLUMNS = [
+    "ts_sent_ns",
+    "ts_active_ns",
+    "order_latency_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "qty",
+    "price",
+    "order_type",
+]
+
 CANCELLATION_COLUMNS = [
     "ts_sent_ns",
     "ts_effective_ns",
@@ -803,6 +828,7 @@ class BacktestEngine:
         self._oid = 0
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[Fill] = []
+        self.order_submissions: List[OrderSubmission] = []
         self.order_rejections: List[OrderRejection] = []
         self.order_cancellations: List[OrderCancellation] = []
         self._cancellation_index_by_oid: Dict[int, int] = {}
@@ -817,6 +843,7 @@ class BacktestEngine:
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
         self.causal_event_ordering_enabled = True
+        self.order_submission_tracking_enabled = True
         self.cancel_lifecycle_tracking_enabled = True
         self.order_horizon_tracking_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
@@ -932,6 +959,19 @@ class BacktestEngine:
         o = Order(self._oid, side, qty, price, otype,
                   ts_sent_ns=now,
                   ts_active_ns=active_ns)
+        self.order_submissions.append(
+            OrderSubmission(
+                ts_sent_ns=now,
+                ts_active_ns=active_ns,
+                order_latency_ns=active_ns - now,
+                instrument_id=self.inst.symbol,
+                oid=o.oid,
+                side=side,
+                qty=qty,
+                price=price,
+                order_type=otype.value,
+            )
+        )
         if otype == OrderType.LIMIT:
             self.limit_orders_sent += 1
             market_ts = int(self._tick.get("market_ts", self._tick["ts"]))
@@ -1980,6 +2020,13 @@ class BacktestResult:
         self.eng = eng
         self.equity = pd.DataFrame(eng.equity_curve, columns=["ts", "equity"])
         self.fills = pd.DataFrame([f.__dict__ for f in eng.fills])
+        self.order_submissions = pd.DataFrame(
+            [
+                submission.__dict__
+                for submission in eng.order_submissions
+            ],
+            columns=ORDER_SUBMISSION_COLUMNS,
+        )
         self.order_rejections = pd.DataFrame(
             [rejection.__dict__ for rejection in eng.order_rejections],
             columns=ORDER_REJECTION_COLUMNS,

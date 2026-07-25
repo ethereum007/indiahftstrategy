@@ -341,6 +341,14 @@ def test_ioc_fill_uses_arrival_time_book_not_decision_time():
 
     assert res.fills.iloc[0]["ts_ns"] == 200_000
     assert res.fills.iloc[0]["price"] == 100.25
+    assert len(res.order_submissions) == 1
+    submission = res.order_submissions.iloc[0]
+    assert submission["instrument_id"] == "NIFTY-TEST"
+    assert submission["oid"] == res.fills.iloc[0]["oid"]
+    assert submission["order_type"] == "IOC"
+    assert submission["ts_sent_ns"] == 0
+    assert submission["ts_active_ns"] == 150_000
+    assert submission["order_latency_ns"] == 150_000
 
 
 def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
