@@ -871,8 +871,8 @@ python -m hft_cli replay-parity `
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
-`liquidity_shortfalls.csv`, `queue_initializations.csv`, and
-`terminal_liquidations.csv`.
+`order_cancellations.csv`, `liquidity_shortfalls.csv`,
+`queue_initializations.csv`, and `terminal_liquidations.csv`.
 
 All shared-clock replays reserve the remaining quantity of live and
 cancel-pending orders when applying instrument position, portfolio gross
@@ -896,6 +896,19 @@ venue-aligned events. Configured latency components must be finite and
 nonnegative, and jitter samples are floored at zero so an event or order cannot
 travel backward in replay time. `summary.csv`, proof, walk-forward, and sweep
 evidence retain `causal_event_ordering_enabled`.
+
+Cancel requests share that causal clock. A request remains fillable until its
+sampled order-latency deadline, becomes effective before any market or feed
+event at the same timestamp, and is idempotent while in flight so repeated
+strategy calls cannot resample the deadline. `order_cancellations.csv` records
+request, effective, and latest-status timestamps; instrument, order, side,
+price, and type; quantity requested; quantity filled while pending; residual
+quantity; and one of `effective`, `effective_after_partial_fill`,
+`filled_before_effective`, `closed_before_effective`, or
+`pending_at_replay_end`. Replay, proof, walk-forward, sweep, and cross-sweep
+evidence retain cancel-request and race-outcome counts plus in-flight filled
+quantity. A lifecycle-enabled proof fails when any cancel is still pending at
+the replay horizon.
 
 Displayed bid and ask quantities are event-scoped budgets: concurrent IOC or
 marketable limit orders cannot each claim the full same L1 depth. Passive

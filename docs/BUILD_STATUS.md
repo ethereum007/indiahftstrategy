@@ -7370,6 +7370,26 @@ walk-forward, calibration, pipeline, catalog, and sweep regressions pass
 across `164` files. The full suite was not rerun because recent complete runs
 exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest causal cancel-lifecycle proof: single- and multi-instrument replay now
+applies every due cancel before the next logical market or feed event, so a
+delayed strategy callback cannot reserve risk against or observe an order
+whose cancel already reached the venue. A cancel wins an exact timestamp tie,
+while fills strictly before its effective time remain valid. Repeated cancel
+calls are idempotent while in flight and cannot resample the deadline. Every
+request writes `order_cancellations.csv` with request, effective, and status
+timestamps; order identity and intent; requested, in-flight-filled, and
+remaining quantity; and whether the cancel became effective, followed a
+partial fill, lost to a full fill, was closed first, or remained pending at
+the replay horizon. Replay summaries retain all race counts and in-flight
+filled quantity; proof rejects a lifecycle-enabled run with pending end-state
+cancels; walk-forward candidates, sweeps, and cross-sweep comparisons preserve
+the evidence. Engine, replay, proof, parity, calibration, catalog,
+walk-forward, sweep, robust-selection, pipeline, promotion, and
+strategy-evidence regressions pass (`310` tests across `25` files).
+Repository collection is healthy at `2688 tests` across `164` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All
+outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

@@ -123,6 +123,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert not replay.markouts.empty
     assert (out_dir / "fills.csv").exists()
     assert (out_dir / "order_rejections.csv").exists()
+    assert (out_dir / "order_cancellations.csv").exists()
     assert (out_dir / "liquidity_shortfalls.csv").exists()
     assert (out_dir / "queue_initializations.csv").exists()
     assert (out_dir / "resting_transitions.csv").exists()
@@ -139,6 +140,18 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "fills_by_regime.csv").exists()
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    order_cancellations = pd.read_csv(out_dir / "order_cancellations.csv")
+    assert {
+        "ts_sent_ns",
+        "ts_effective_ns",
+        "ts_status_ns",
+        "instrument_id",
+        "oid",
+        "requested_qty",
+        "filled_while_pending_qty",
+        "remaining_qty",
+        "status",
+    }.issubset(order_cancellations.columns)
     queue_initializations = pd.read_csv(out_dir / "queue_initializations.csv")
     assert {
         "arrival_ts_ns",
@@ -182,6 +195,14 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert bool(summary["persistent_displayed_liquidity_enabled"])
     assert bool(summary["lot_conserving_fills_enabled"])
     assert bool(summary["causal_event_ordering_enabled"])
+    assert bool(summary["cancel_lifecycle_tracking_enabled"])
+    assert int(summary["cancel_requests"]) == 0
+    assert int(summary["cancel_effective_events"]) == 0
+    assert int(summary["cancel_effective_after_partial_fill_events"]) == 0
+    assert int(summary["cancel_filled_before_effective_events"]) == 0
+    assert int(summary["cancel_closed_before_effective_events"]) == 0
+    assert int(summary["cancel_pending_at_replay_end_events"]) == 0
+    assert int(summary["cancel_inflight_filled_qty"]) == 0
     assert bool(summary["arrival_queue_initialization_enabled"])
     assert int(summary["limit_orders_sent"]) == 0
     assert int(summary["queue_initialization_events"]) == 0

@@ -573,6 +573,31 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     causal_event_ordering_enabled = _bool(
         row.get("causal_event_ordering_enabled", False)
     )
+    cancel_lifecycle_tracking_enabled = _bool(
+        row.get("cancel_lifecycle_tracking_enabled", False)
+    )
+    cancel_requests = _int(row, "cancel_requests")
+    cancel_effective_events = _int(row, "cancel_effective_events")
+    cancel_effective_after_partial_fill_events = _int(
+        row,
+        "cancel_effective_after_partial_fill_events",
+    )
+    cancel_filled_before_effective_events = _int(
+        row,
+        "cancel_filled_before_effective_events",
+    )
+    cancel_closed_before_effective_events = _int(
+        row,
+        "cancel_closed_before_effective_events",
+    )
+    cancel_pending_at_replay_end_events = _int(
+        row,
+        "cancel_pending_at_replay_end_events",
+    )
+    cancel_inflight_filled_qty = _int(
+        row,
+        "cancel_inflight_filled_qty",
+    )
     arrival_queue_initialization_enabled = _bool(
         row.get("arrival_queue_initialization_enabled", False)
     )
@@ -728,6 +753,24 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         ),
         "lot_conserving_fills_enabled": lot_conserving_fills_enabled,
         "causal_event_ordering_enabled": causal_event_ordering_enabled,
+        "cancel_lifecycle_tracking_enabled": (
+            cancel_lifecycle_tracking_enabled
+        ),
+        "cancel_requests": cancel_requests,
+        "cancel_effective_events": cancel_effective_events,
+        "cancel_effective_after_partial_fill_events": (
+            cancel_effective_after_partial_fill_events
+        ),
+        "cancel_filled_before_effective_events": (
+            cancel_filled_before_effective_events
+        ),
+        "cancel_closed_before_effective_events": (
+            cancel_closed_before_effective_events
+        ),
+        "cancel_pending_at_replay_end_events": (
+            cancel_pending_at_replay_end_events
+        ),
+        "cancel_inflight_filled_qty": cancel_inflight_filled_qty,
         "arrival_queue_initialization_enabled": (
             arrival_queue_initialization_enabled
         ),
@@ -832,6 +875,28 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     ""
                     if complete
                     else "terminal liquidation left residual inventory"
+                ),
+            }
+        )
+    if bool(metrics["cancel_lifecycle_tracking_enabled"]):
+        pending_cancels = int(
+            metrics["cancel_pending_at_replay_end_events"]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "cancel_pending_at_replay_end_events",
+                "value": pending_cancels,
+                "operator": "==",
+                "threshold": 0,
+                "passed": pending_cancels == 0,
+                "reason": (
+                    ""
+                    if pending_cancels == 0
+                    else (
+                        f"{pending_cancels} cancel request(s) remained "
+                        "in flight at replay end"
+                    )
                 ),
             }
         )

@@ -58,6 +58,7 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert replay.summary.iloc[0]["fills"] == 2
     assert not replay.markouts.empty
     assert (out_dir / "fills.csv").exists()
+    assert (out_dir / "order_cancellations.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
@@ -78,3 +79,6 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert bool(summary.loc[0, "terminal_liquidation_depth_constrained_enabled"])
     assert bool(summary.loc[0, "terminal_liquidation_complete"])
     assert int(summary.loc[0, "terminal_residual_position_qty"]) == 0
+    assert bool(summary.loc[0, "cancel_lifecycle_tracking_enabled"])
+    assert int(summary.loc[0, "cancel_requests"]) == 0
+    assert int(summary.loc[0, "cancel_pending_at_replay_end_events"]) == 0

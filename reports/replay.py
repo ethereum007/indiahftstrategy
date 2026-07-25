@@ -40,6 +40,20 @@ def replay_summary(
     venue_rule_rejections = rejection_reasons.isin(
         VENUE_ORDER_REJECTION_REASONS
     )
+    order_cancellations = result.order_cancellations
+    cancellation_statuses = (
+        order_cancellations["status"]
+        if not order_cancellations.empty
+        else pd.Series(dtype="object")
+    )
+    cancellation_inflight_filled_qty = (
+        pd.to_numeric(
+            order_cancellations["filled_while_pending_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not order_cancellations.empty
+        else pd.Series(dtype="float64")
+    )
     liquidity_shortfalls = result.liquidity_shortfalls
     liquidity_sources = (
         liquidity_shortfalls["liquidity_source"]
@@ -217,6 +231,45 @@ def replay_summary(
                 "causal_event_ordering_enabled": bool(
                     result.engine.causal_event_ordering_enabled
                 ),
+                "cancel_lifecycle_tracking_enabled": bool(
+                    result.engine.cancel_lifecycle_tracking_enabled
+                ),
+                "cancel_requests": int(len(order_cancellations)),
+                "cancel_effective_events": int(
+                    cancellation_statuses.isin(
+                        {
+                            "effective",
+                            "effective_after_partial_fill",
+                        }
+                    ).sum()
+                ),
+                "cancel_effective_after_partial_fill_events": int(
+                    (
+                        cancellation_statuses
+                        == "effective_after_partial_fill"
+                    ).sum()
+                ),
+                "cancel_filled_before_effective_events": int(
+                    (
+                        cancellation_statuses
+                        == "filled_before_effective"
+                    ).sum()
+                ),
+                "cancel_closed_before_effective_events": int(
+                    (
+                        cancellation_statuses
+                        == "closed_before_effective"
+                    ).sum()
+                ),
+                "cancel_pending_at_replay_end_events": int(
+                    (
+                        cancellation_statuses
+                        == "pending_at_replay_end"
+                    ).sum()
+                ),
+                "cancel_inflight_filled_qty": int(
+                    cancellation_inflight_filled_qty.sum()
+                ),
                 "arrival_queue_initialization_enabled": bool(
                     result.engine.arrival_queue_initialization_enabled
                 ),
@@ -352,6 +405,10 @@ def write_replay_outputs(
     result.equity.to_csv(out / "equity.csv", index=False)
     result.fills.to_csv(out / "fills.csv", index=False)
     result.order_rejections.to_csv(out / "order_rejections.csv", index=False)
+    result.order_cancellations.to_csv(
+        out / "order_cancellations.csv",
+        index=False,
+    )
     result.liquidity_shortfalls.to_csv(
         out / "liquidity_shortfalls.csv",
         index=False,

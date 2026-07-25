@@ -420,6 +420,34 @@ def _fold_row(
         "causal_event_ordering_enabled": _to_bool(
             row.get("causal_event_ordering_enabled", False)
         ),
+        "cancel_lifecycle_tracking_enabled": _to_bool(
+            row.get("cancel_lifecycle_tracking_enabled", False)
+        ),
+        "cancel_requests": _int(row, "cancel_requests"),
+        "cancel_effective_events": _int(
+            row,
+            "cancel_effective_events",
+        ),
+        "cancel_effective_after_partial_fill_events": _int(
+            row,
+            "cancel_effective_after_partial_fill_events",
+        ),
+        "cancel_filled_before_effective_events": _int(
+            row,
+            "cancel_filled_before_effective_events",
+        ),
+        "cancel_closed_before_effective_events": _int(
+            row,
+            "cancel_closed_before_effective_events",
+        ),
+        "cancel_pending_at_replay_end_events": _int(
+            row,
+            "cancel_pending_at_replay_end_events",
+        ),
+        "cancel_inflight_filled_qty": _int(
+            row,
+            "cancel_inflight_filled_qty",
+        ),
         "arrival_queue_initialization_enabled": _to_bool(
             row.get("arrival_queue_initialization_enabled", False)
         ),
@@ -662,6 +690,10 @@ def _summary(
         "causal_event_ordering_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    cancel_lifecycle_tracking_enabled = folds.get(
+        "cancel_lifecycle_tracking_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     arrival_queue_enabled = folds.get(
         "arrival_queue_initialization_enabled",
         pd.Series(False, index=folds.index),
@@ -715,6 +747,52 @@ def _summary(
                 ),
                 "causal_event_ordering_enabled_folds": int(
                     causal_event_ordering_enabled.sum()
+                ),
+                "cancel_lifecycle_tracking_enabled_folds": int(
+                    cancel_lifecycle_tracking_enabled.sum()
+                ),
+                "total_cancel_requests": _numeric_reduce(
+                    folds,
+                    "cancel_requests",
+                    "sum",
+                ),
+                "total_cancel_effective_events": _numeric_reduce(
+                    folds,
+                    "cancel_effective_events",
+                    "sum",
+                ),
+                "total_cancel_effective_after_partial_fill_events": (
+                    _numeric_reduce(
+                        folds,
+                        "cancel_effective_after_partial_fill_events",
+                        "sum",
+                    )
+                ),
+                "total_cancel_filled_before_effective_events": (
+                    _numeric_reduce(
+                        folds,
+                        "cancel_filled_before_effective_events",
+                        "sum",
+                    )
+                ),
+                "total_cancel_closed_before_effective_events": (
+                    _numeric_reduce(
+                        folds,
+                        "cancel_closed_before_effective_events",
+                        "sum",
+                    )
+                ),
+                "total_cancel_pending_at_replay_end_events": (
+                    _numeric_reduce(
+                        folds,
+                        "cancel_pending_at_replay_end_events",
+                        "sum",
+                    )
+                ),
+                "total_cancel_inflight_filled_qty": _numeric_reduce(
+                    folds,
+                    "cancel_inflight_filled_qty",
+                    "sum",
                 ),
                 "arrival_queue_initialization_enabled_folds": int(
                     arrival_queue_enabled.sum()
@@ -951,6 +1029,32 @@ def _candidate_config(
         ),
         "causal_event_ordering_enabled_folds": _jsonable(
             summary.get("causal_event_ordering_enabled_folds")
+        ),
+        "cancel_lifecycle_tracking_enabled_folds": _jsonable(
+            summary.get("cancel_lifecycle_tracking_enabled_folds")
+        ),
+        "total_cancel_requests": _jsonable(
+            summary.get("total_cancel_requests")
+        ),
+        "total_cancel_effective_events": _jsonable(
+            summary.get("total_cancel_effective_events")
+        ),
+        "total_cancel_effective_after_partial_fill_events": _jsonable(
+            summary.get(
+                "total_cancel_effective_after_partial_fill_events"
+            )
+        ),
+        "total_cancel_filled_before_effective_events": _jsonable(
+            summary.get("total_cancel_filled_before_effective_events")
+        ),
+        "total_cancel_closed_before_effective_events": _jsonable(
+            summary.get("total_cancel_closed_before_effective_events")
+        ),
+        "total_cancel_pending_at_replay_end_events": _jsonable(
+            summary.get("total_cancel_pending_at_replay_end_events")
+        ),
+        "total_cancel_inflight_filled_qty": _jsonable(
+            summary.get("total_cancel_inflight_filled_qty")
         ),
         "arrival_queue_initialization_enabled_folds": _jsonable(
             summary.get("arrival_queue_initialization_enabled_folds")

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from engine.hft_backtest import (
+    CANCELLATION_COLUMNS,
     DisplayedLiquidityLedger,
     EventLiquidity,
     Fill,
@@ -18,6 +19,7 @@ from engine.hft_backtest import (
     LiquidityShortfall,
     LIQUIDITY_SHORTFALL_COLUMNS,
     Order,
+    OrderCancellation,
     OrderRejection,
     ORDER_REJECTION_COLUMNS,
     OrderType,
@@ -146,6 +148,8 @@ class MultiInstrumentEngine:
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[RoutedFill] = []
         self.order_rejections: List[OrderRejection] = []
+        self.order_cancellations: List[OrderCancellation] = []
+        self._cancellation_index_by_oid: Dict[int, int] = {}
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
         self.resting_transitions: List[RestingTransition] = []
@@ -156,6 +160,7 @@ class MultiInstrumentEngine:
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
         self.causal_event_ordering_enabled = True
+        self.cancel_lifecycle_tracking_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -581,20 +586,43 @@ class MultiInstrumentEngine:
 
     def cancel(self, oid: int):
         order = self.open_orders.get(oid)
-        if order is None:
+        if (
+            order is None
+            or not order.alive
+            or order.filled >= order.qty
+            or getattr(order, "_pending_cancel", False)
+        ):
             return
         instrument_id = self._order_instrument[oid]
         cfg = self.instruments[instrument_id]
         venue = self.venues[cfg.venue]
-        order.cancel_sent_ns = self._now_ns
-        order.cancel_at = self._now_ns + venue.latency.order_delay_ns()
+        ts_sent_ns = int(self._now_ns)
+        ts_effective_ns = ts_sent_ns + venue.latency.order_delay_ns()
+        remaining_qty = max(int(order.qty) - int(order.filled), 0)
+        order.cancel_sent_ns = ts_sent_ns
+        order.cancel_at = ts_effective_ns
         order._pending_cancel = True
-        if order.cancel_at <= self._now_ns:
-            self._remove_order(
-                instrument_id,
-                order,
-                release_queue=True,
+        self._cancellation_index_by_oid[order.oid] = len(
+            self.order_cancellations
+        )
+        self.order_cancellations.append(
+            OrderCancellation(
+                ts_sent_ns=ts_sent_ns,
+                ts_effective_ns=ts_effective_ns,
+                ts_status_ns=None,
+                instrument_id=instrument_id,
+                oid=order.oid,
+                side=order.side,
+                price=float(order.price),
+                order_type=order.otype.value,
+                requested_qty=remaining_qty,
+                filled_while_pending_qty=0,
+                remaining_qty=remaining_qty,
+                status="pending",
             )
+        )
+        if ts_effective_ns <= ts_sent_ns:
+            self._complete_cancel(instrument_id, order)
 
     def cancel_all(self, instrument_id: str | None = None):
         for oid in list(self.open_orders):
@@ -919,13 +947,121 @@ class MultiInstrumentEngine:
             exclude_post_cancel_orders=True,
         )
 
+    def _pending_cancellation(
+        self,
+        order: Order,
+    ) -> OrderCancellation | None:
+        index = self._cancellation_index_by_oid.get(order.oid)
+        if index is None:
+            return None
+        cancellation = self.order_cancellations[index]
+        return cancellation if cancellation.status == "pending" else None
+
+    def _resolve_cancellation(
+        self,
+        order: Order,
+        *,
+        status: str,
+        ts_status_ns: int,
+    ) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is None:
+            return
+        cancellation.ts_status_ns = int(ts_status_ns)
+        cancellation.remaining_qty = max(
+            int(order.qty) - int(order.filled),
+            0,
+        )
+        cancellation.status = status
+        order._pending_cancel = False
+        self._cancellation_index_by_oid.pop(order.oid, None)
+
+    def _record_pending_cancel_fill(self, order: Order, qty: int) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is None:
+            return
+        cancellation.filled_while_pending_qty += int(qty)
+        cancellation.remaining_qty = max(
+            int(order.qty) - int(order.filled),
+            0,
+        )
+
+    def _complete_cancel(
+        self,
+        instrument_id: str,
+        order: Order,
+    ) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is None:
+            return
+        status = (
+            "effective_after_partial_fill"
+            if cancellation.filled_while_pending_qty > 0
+            else "effective"
+        )
+        self._resolve_cancellation(
+            order,
+            status=status,
+            ts_status_ns=cancellation.ts_effective_ns,
+        )
+        self._remove_order(
+            instrument_id,
+            order,
+            release_queue=True,
+        )
+
+    def _expire_cancels(self, now_ns: int) -> None:
+        due = sorted(
+            (
+                order
+                for order in self.open_orders.values()
+                if (
+                    getattr(order, "_pending_cancel", False)
+                    and int(getattr(order, "cancel_at", now_ns + 1))
+                    <= int(now_ns)
+                )
+            ),
+            key=lambda order: (int(order.cancel_at), order.oid),
+        )
+        for order in due:
+            instrument_id = self._order_instrument.get(order.oid)
+            if instrument_id is not None:
+                self._complete_cancel(instrument_id, order)
+
+    def _finalize_pending_cancels(self, replay_end_ns: int) -> None:
+        for order in list(self.open_orders.values()):
+            if self._pending_cancellation(order) is None:
+                continue
+            self._resolve_cancellation(
+                order,
+                status="pending_at_replay_end",
+                ts_status_ns=int(replay_end_ns),
+            )
+
     def _remove_order(
         self,
         instrument_id: str,
         order: Order,
         *,
         release_queue: bool = False,
+        close_ts_ns: int | None = None,
     ) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is not None:
+            remaining_qty = max(int(order.qty) - int(order.filled), 0)
+            self._resolve_cancellation(
+                order,
+                status=(
+                    "filled_before_effective"
+                    if remaining_qty == 0
+                    else "closed_before_effective"
+                ),
+                ts_status_ns=(
+                    int(close_ts_ns)
+                    if close_ts_ns is not None
+                    else int(self._now_ns)
+                ),
+            )
         if release_queue:
             self._release_own_queue(instrument_id, order)
         order.alive = False
@@ -1109,11 +1245,7 @@ class MultiInstrumentEngine:
         if ts < order.ts_active_ns:
             return
         if getattr(order, "_pending_cancel", False) and ts >= getattr(order, "cancel_at", np.inf):
-            self._remove_order(
-                instrument_id,
-                order,
-                release_queue=True,
-            )
+            self._complete_cancel(instrument_id, order)
             return
 
         if order.otype == OrderType.LIMIT:
@@ -1159,7 +1291,11 @@ class MultiInstrumentEngine:
                     ts_ns=ts,
                     requested_qty=remaining,
                 )
-            self._remove_order(instrument_id, order)
+            self._remove_order(
+                instrument_id,
+                order,
+                close_ts_ns=int(ts),
+            )
             return
 
         if not order.resting_at_venue:
@@ -1263,7 +1399,11 @@ class MultiInstrumentEngine:
                     )
 
         if order.filled >= order.qty:
-            self._remove_order(instrument_id, order)
+            self._remove_order(
+                instrument_id,
+                order,
+                close_ts_ns=int(ts),
+            )
 
     def _execute(
         self,
@@ -1279,6 +1419,7 @@ class MultiInstrumentEngine:
             raise RuntimeError("fill quantity must preserve instrument lot size")
         cost = cfg.costs.cost(order.side, price, qty, cfg.instrument)
         order.filled += qty
+        self._record_pending_cancel_fill(order, qty)
         self.positions[instrument_id] += order.side * qty
         self.cash -= order.side * qty * price * cfg.instrument.multiplier
         self.cash -= cost
@@ -1303,6 +1444,7 @@ class MultiInstrumentEngine:
         self.strategy.on_start(self)
         for event in self._events():
             self._now_ns = event.ts_ns
+            self._expire_cancels(event.ts_ns)
             if event.kind == "market":
                 self._latest_books[event.instrument_id] = event.tick
                 liquidity = self._displayed_liquidity[
@@ -1336,6 +1478,7 @@ class MultiInstrumentEngine:
 
         self._flatten_open_positions()
         self.strategy.on_end(self)
+        self._finalize_pending_cancels(self._now_ns)
         return MultiBacktestResult(self)
 
     def _flatten_open_positions(self):
@@ -1423,6 +1566,13 @@ class MultiBacktestResult:
         self.order_rejections = pd.DataFrame(
             [rejection.__dict__ for rejection in engine.order_rejections],
             columns=ORDER_REJECTION_COLUMNS,
+        )
+        self.order_cancellations = pd.DataFrame(
+            [
+                cancellation.__dict__
+                for cancellation in engine.order_cancellations
+            ],
+            columns=CANCELLATION_COLUMNS,
         )
         self.liquidity_shortfalls = pd.DataFrame(
             [shortfall.__dict__ for shortfall in engine.liquidity_shortfalls],

@@ -234,6 +234,22 @@ class OrderRejection:
 
 
 @dataclass
+class OrderCancellation:
+    ts_sent_ns: int
+    ts_effective_ns: int
+    ts_status_ns: int | None
+    instrument_id: str
+    oid: int
+    side: int
+    price: float
+    order_type: str
+    requested_qty: int
+    filled_while_pending_qty: int
+    remaining_qty: int
+    status: str
+
+
+@dataclass
 class LiquidityShortfall:
     ts_ns: int
     instrument_id: str
@@ -501,6 +517,21 @@ ORDER_REJECTION_COLUMNS = [
     "conflicting_oid",
 ]
 
+CANCELLATION_COLUMNS = [
+    "ts_sent_ns",
+    "ts_effective_ns",
+    "ts_status_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "price",
+    "order_type",
+    "requested_qty",
+    "filled_while_pending_qty",
+    "remaining_qty",
+    "status",
+]
+
 LIQUIDITY_SHORTFALL_COLUMNS = [
     "ts_ns",
     "instrument_id",
@@ -736,6 +767,8 @@ class BacktestEngine:
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[Fill] = []
         self.order_rejections: List[OrderRejection] = []
+        self.order_cancellations: List[OrderCancellation] = []
+        self._cancellation_index_by_oid: Dict[int, int] = {}
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
         self.resting_transitions: List[RestingTransition] = []
@@ -746,6 +779,7 @@ class BacktestEngine:
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
         self.causal_event_ordering_enabled = True
+        self.cancel_lifecycle_tracking_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -1226,13 +1260,43 @@ class BacktestEngine:
 
     def cancel(self, oid: int):
         o = self.open_orders.get(oid)
-        if o:
-            # cancel also takes order latency; fills can still occur in flight.
-            o.cancel_sent_ns = self._tick["ts"]
-            o.cancel_at = self._tick["ts"] + self.latency.order_delay_ns()
-            o._pending_cancel = True
-            if o.cancel_at <= self._tick["ts"]:
-                self._remove_order(o, release_queue=True)
+        if (
+            o is None
+            or not o.alive
+            or o.filled >= o.qty
+            or getattr(o, "_pending_cancel", False)
+        ):
+            return
+
+        # Cancel requests are idempotent while in flight. A repeated call must
+        # not resample latency and move the exchange-effective time backwards.
+        ts_sent_ns = int(self._tick["ts"])
+        ts_effective_ns = ts_sent_ns + self.latency.order_delay_ns()
+        remaining_qty = max(int(o.qty) - int(o.filled), 0)
+        o.cancel_sent_ns = ts_sent_ns
+        o.cancel_at = ts_effective_ns
+        o._pending_cancel = True
+        self._cancellation_index_by_oid[o.oid] = len(
+            self.order_cancellations
+        )
+        self.order_cancellations.append(
+            OrderCancellation(
+                ts_sent_ns=ts_sent_ns,
+                ts_effective_ns=ts_effective_ns,
+                ts_status_ns=None,
+                instrument_id=self.inst.symbol,
+                oid=o.oid,
+                side=o.side,
+                price=float(o.price),
+                order_type=o.otype.value,
+                requested_qty=remaining_qty,
+                filled_while_pending_qty=0,
+                remaining_qty=remaining_qty,
+                status="pending",
+            )
+        )
+        if ts_effective_ns <= ts_sent_ns:
+            self._complete_cancel(o)
 
     def cancel_all(self):
         for oid in list(self.open_orders):
@@ -1281,7 +1345,111 @@ class BacktestEngine:
             exclude_post_cancel_orders=True,
         )
 
-    def _remove_order(self, order: Order, *, release_queue: bool = False) -> None:
+    def _pending_cancellation(
+        self,
+        order: Order,
+    ) -> OrderCancellation | None:
+        index = self._cancellation_index_by_oid.get(order.oid)
+        if index is None:
+            return None
+        cancellation = self.order_cancellations[index]
+        return cancellation if cancellation.status == "pending" else None
+
+    def _resolve_cancellation(
+        self,
+        order: Order,
+        *,
+        status: str,
+        ts_status_ns: int,
+    ) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is None:
+            return
+        cancellation.ts_status_ns = int(ts_status_ns)
+        cancellation.remaining_qty = max(
+            int(order.qty) - int(order.filled),
+            0,
+        )
+        cancellation.status = status
+        order._pending_cancel = False
+        self._cancellation_index_by_oid.pop(order.oid, None)
+
+    def _record_pending_cancel_fill(self, order: Order, qty: int) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is None:
+            return
+        cancellation.filled_while_pending_qty += int(qty)
+        cancellation.remaining_qty = max(
+            int(order.qty) - int(order.filled),
+            0,
+        )
+
+    def _complete_cancel(self, order: Order) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is None:
+            return
+        status = (
+            "effective_after_partial_fill"
+            if cancellation.filled_while_pending_qty > 0
+            else "effective"
+        )
+        self._resolve_cancellation(
+            order,
+            status=status,
+            ts_status_ns=cancellation.ts_effective_ns,
+        )
+        self._remove_order(order, release_queue=True)
+
+    def _expire_cancels(self, now_ns: int) -> None:
+        due = sorted(
+            (
+                order
+                for order in self.open_orders.values()
+                if (
+                    getattr(order, "_pending_cancel", False)
+                    and int(getattr(order, "cancel_at", now_ns + 1))
+                    <= int(now_ns)
+                )
+            ),
+            key=lambda order: (int(order.cancel_at), order.oid),
+        )
+        for order in due:
+            if order.oid in self.open_orders:
+                self._complete_cancel(order)
+
+    def _finalize_pending_cancels(self, replay_end_ns: int) -> None:
+        for order in list(self.open_orders.values()):
+            if self._pending_cancellation(order) is None:
+                continue
+            self._resolve_cancellation(
+                order,
+                status="pending_at_replay_end",
+                ts_status_ns=int(replay_end_ns),
+            )
+
+    def _remove_order(
+        self,
+        order: Order,
+        *,
+        release_queue: bool = False,
+        close_ts_ns: int | None = None,
+    ) -> None:
+        cancellation = self._pending_cancellation(order)
+        if cancellation is not None:
+            remaining_qty = max(int(order.qty) - int(order.filled), 0)
+            self._resolve_cancellation(
+                order,
+                status=(
+                    "filled_before_effective"
+                    if remaining_qty == 0
+                    else "closed_before_effective"
+                ),
+                ts_status_ns=(
+                    int(close_ts_ns)
+                    if close_ts_ns is not None
+                    else int(self._tick.get("ts", self._horizon_ns))
+                ),
+            )
         if release_queue:
             self._release_own_queue(order)
         order.alive = False
@@ -1441,7 +1609,7 @@ class BacktestEngine:
         if ts < o.ts_active_ns:
             return
         if getattr(o, "_pending_cancel", False) and ts >= getattr(o, "cancel_at", np.inf):
-            self._remove_order(o, release_queue=True)
+            self._complete_cancel(o)
             return
 
         if o.otype == OrderType.LIMIT:
@@ -1482,7 +1650,7 @@ class BacktestEngine:
                     ts_ns=ts,
                     requested_qty=remaining,
                 )
-            self._remove_order(o)
+            self._remove_order(o, close_ts_ns=int(ts))
             return
 
         if not o.resting_at_venue:
@@ -1561,13 +1729,14 @@ class BacktestEngine:
                     )
 
         if o.filled >= o.qty:
-            self._remove_order(o)
+            self._remove_order(o, close_ts_ns=int(ts))
 
     def _execute(self, o: Order, qty: int, price: float, ts: int, maker: bool):
         if qty % self.inst.lot_size != 0:
             raise RuntimeError("fill quantity must preserve instrument lot size")
         cost = self.costs.cost(o.side, price, qty, self.inst)
         o.filled += qty
+        self._record_pending_cancel_fill(o, qty)
         self.position += o.side * qty
         self.cash -= o.side * qty * price * self.inst.multiplier
         self.cash -= cost
@@ -1593,6 +1762,7 @@ class BacktestEngine:
                 event = heapq.heappop(feed_events)
             tick = event.tick
             self._horizon_ns = max(self._horizon_ns, event.ts_ns)
+            self._expire_cancels(event.ts_ns)
             if event.kind == "feed":
                 self._tick = tick
                 self.strategy.on_tick(self, tick)
@@ -1700,6 +1870,12 @@ class BacktestEngine:
                 )
             )
         self.strategy.on_end(self)
+        self._finalize_pending_cancels(
+            max(
+                int(self._horizon_ns),
+                int(self._tick.get("ts", self._horizon_ns)),
+            )
+        )
         return BacktestResult(self)
 
 
@@ -1715,6 +1891,13 @@ class BacktestResult:
         self.order_rejections = pd.DataFrame(
             [rejection.__dict__ for rejection in eng.order_rejections],
             columns=ORDER_REJECTION_COLUMNS,
+        )
+        self.order_cancellations = pd.DataFrame(
+            [
+                cancellation.__dict__
+                for cancellation in eng.order_cancellations
+            ],
+            columns=CANCELLATION_COLUMNS,
         )
         self.liquidity_shortfalls = pd.DataFrame(
             [shortfall.__dict__ for shortfall in eng.liquidity_shortfalls],

@@ -145,6 +145,46 @@ class EnterThenReduceStrategy(MultiInstrumentStrategy):
         pass
 
 
+class CancelThenProbeRisk(MultiInstrumentStrategy):
+    def __init__(self):
+        self.stage = 0
+        self.first_oid = None
+        self.second_oid = None
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, instrument_id, tick):
+        if instrument_id != "A":
+            return
+        if self.stage == 0:
+            self.first_oid = engine.send(
+                "A",
+                +1,
+                75,
+                100.00,
+                OrderType.LIMIT,
+            )
+        elif self.stage == 1:
+            engine.cancel(self.first_oid)
+            engine.cancel(self.first_oid)
+        elif self.stage == 2:
+            self.second_oid = engine.send(
+                "A",
+                +1,
+                75,
+                100.00,
+                OrderType.LIMIT,
+            )
+        self.stage += 1
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
 def frame(rows):
     return pd.DataFrame(
         rows,
@@ -211,6 +251,51 @@ def test_global_clock_interleaves_other_instrument_before_fill():
         ("tick", "B", 60_000),
         ("fill", "A", 120_000),
     ]
+
+
+def test_multi_cancel_expires_before_feed_callback_and_releases_risk():
+    strategy = CancelThenProbeRisk()
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 75, 75, np.nan, 0),
+                        (100, 100.00, 100.05, 75, 75, np.nan, 0),
+                        (200, 100.00, 100.05, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+                max_position_lots=1,
+            )
+        },
+        venues={"NSE": venue(feed_us=1.0, order_us=0.05)},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert strategy.first_oid not in engine.open_orders
+    assert strategy.second_oid in engine.open_orders
+    assert engine.orders_sent == 2
+    assert len(result.order_cancellations) == 1
+    cancellation = result.order_cancellations.iloc[0]
+    assert cancellation["ts_sent_ns"] == 1_100
+    assert cancellation["ts_effective_ns"] == 1_150
+    assert cancellation["ts_status_ns"] == 1_150
+    assert cancellation["instrument_id"] == "A"
+    assert cancellation["status"] == "effective"
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["cancel_lifecycle_tracking_enabled"])
+    assert int(summary["cancel_requests"]) == 1
+    assert int(summary["cancel_effective_events"]) == 1
+    assert int(summary["cancel_effective_after_partial_fill_events"]) == 0
+    assert int(summary["cancel_filled_before_effective_events"]) == 0
+    assert int(summary["cancel_closed_before_effective_events"]) == 0
+    assert int(summary["cancel_pending_at_replay_end_events"]) == 0
+    assert int(summary["cancel_inflight_filled_qty"]) == 0
 
 
 def test_multi_engine_orders_share_instrument_event_liquidity():

@@ -32,6 +32,14 @@ KNOWN_NON_PARAM_COLUMNS = {
     "persistent_displayed_liquidity_enabled",
     "lot_conserving_fills_enabled",
     "causal_event_ordering_enabled",
+    "cancel_lifecycle_tracking_enabled",
+    "cancel_requests",
+    "cancel_effective_events",
+    "cancel_effective_after_partial_fill_events",
+    "cancel_filled_before_effective_events",
+    "cancel_closed_before_effective_events",
+    "cancel_pending_at_replay_end_events",
+    "cancel_inflight_filled_qty",
     "arrival_queue_initialization_enabled",
     "limit_orders_sent",
     "queue_initialization_events",
@@ -245,6 +253,34 @@ def _score_scenarios(
             group,
             "self_cross_rejections",
         ).fillna(0.0)
+        cancel_requests = _numeric(
+            group,
+            "cancel_requests",
+        ).fillna(0.0)
+        cancel_effective_events = _numeric(
+            group,
+            "cancel_effective_events",
+        ).fillna(0.0)
+        cancel_effective_after_partial_fill_events = _numeric(
+            group,
+            "cancel_effective_after_partial_fill_events",
+        ).fillna(0.0)
+        cancel_filled_before_effective_events = _numeric(
+            group,
+            "cancel_filled_before_effective_events",
+        ).fillna(0.0)
+        cancel_closed_before_effective_events = _numeric(
+            group,
+            "cancel_closed_before_effective_events",
+        ).fillna(0.0)
+        cancel_pending_at_replay_end_events = _numeric(
+            group,
+            "cancel_pending_at_replay_end_events",
+        ).fillna(0.0)
+        cancel_inflight_filled_qty = _numeric(
+            group,
+            "cancel_inflight_filled_qty",
+        ).fillna(0.0)
         liquidity_shortfall_events = _numeric(
             group,
             "liquidity_shortfall_events",
@@ -388,6 +424,25 @@ def _score_scenarios(
                 "total_self_cross_rejections": int(
                     self_cross_rejections.sum()
                 ),
+                "total_cancel_requests": int(cancel_requests.sum()),
+                "total_cancel_effective_events": int(
+                    cancel_effective_events.sum()
+                ),
+                "total_cancel_effective_after_partial_fill_events": int(
+                    cancel_effective_after_partial_fill_events.sum()
+                ),
+                "total_cancel_filled_before_effective_events": int(
+                    cancel_filled_before_effective_events.sum()
+                ),
+                "total_cancel_closed_before_effective_events": int(
+                    cancel_closed_before_effective_events.sum()
+                ),
+                "total_cancel_pending_at_replay_end_events": int(
+                    cancel_pending_at_replay_end_events.sum()
+                ),
+                "total_cancel_inflight_filled_qty": int(
+                    cancel_inflight_filled_qty.sum()
+                ),
                 "total_liquidity_shortfall_events": int(
                     liquidity_shortfall_events.sum()
                 ),
@@ -505,6 +560,13 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_venue_rule_rejections": 0,
                     "total_position_risk_rejections": 0,
                     "total_self_cross_rejections": 0,
+                    "total_cancel_requests": 0,
+                    "total_cancel_effective_events": 0,
+                    "total_cancel_effective_after_partial_fill_events": 0,
+                    "total_cancel_filled_before_effective_events": 0,
+                    "total_cancel_closed_before_effective_events": 0,
+                    "total_cancel_pending_at_replay_end_events": 0,
+                    "total_cancel_inflight_filled_qty": 0,
                     "total_liquidity_shortfall_events": 0,
                     "total_liquidity_shortfall_qty": 0,
                     "total_carried_depletion_shortfall_events": 0,
@@ -564,6 +626,56 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                 ),
                 "total_self_cross_rejections": int(
                     _numeric(scenario_runs, "self_cross_rejections")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_requests": int(
+                    _numeric(scenario_runs, "cancel_requests")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_effective_events": int(
+                    _numeric(scenario_runs, "cancel_effective_events")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_effective_after_partial_fill_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "cancel_effective_after_partial_fill_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_filled_before_effective_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "cancel_filled_before_effective_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_closed_before_effective_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "cancel_closed_before_effective_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_pending_at_replay_end_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "cancel_pending_at_replay_end_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_inflight_filled_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "cancel_inflight_filled_qty",
+                    )
                     .fillna(0.0)
                     .sum()
                 ),

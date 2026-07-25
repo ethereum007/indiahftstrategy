@@ -51,6 +51,14 @@ def write_run(
                 "persistent_displayed_liquidity_enabled": True,
                 "lot_conserving_fills_enabled": True,
                 "causal_event_ordering_enabled": True,
+                "cancel_lifecycle_tracking_enabled": True,
+                "cancel_requests": 3,
+                "cancel_effective_events": 2,
+                "cancel_effective_after_partial_fill_events": 1,
+                "cancel_filled_before_effective_events": 1,
+                "cancel_closed_before_effective_events": 0,
+                "cancel_pending_at_replay_end_events": 0,
+                "cancel_inflight_filled_qty": 75,
                 "arrival_queue_initialization_enabled": True,
                 "limit_orders_sent": 4,
                 "queue_initialization_events": 4,
@@ -159,6 +167,21 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     )
     assert bool(report.metrics.iloc[0]["lot_conserving_fills_enabled"])
     assert bool(report.metrics.iloc[0]["causal_event_ordering_enabled"])
+    assert bool(report.metrics.iloc[0]["cancel_lifecycle_tracking_enabled"])
+    assert int(report.metrics.iloc[0]["cancel_requests"]) == 3
+    assert int(report.metrics.iloc[0]["cancel_effective_events"]) == 2
+    assert int(
+        report.metrics.iloc[0][
+            "cancel_effective_after_partial_fill_events"
+        ]
+    ) == 1
+    assert int(
+        report.metrics.iloc[0]["cancel_filled_before_effective_events"]
+    ) == 1
+    assert int(
+        report.metrics.iloc[0]["cancel_pending_at_replay_end_events"]
+    ) == 0
+    assert int(report.metrics.iloc[0]["cancel_inflight_filled_qty"]) == 75
     assert bool(report.metrics.iloc[0]["arrival_queue_initialization_enabled"])
     assert int(report.metrics.iloc[0]["limit_orders_sent"]) == 4
     assert int(report.metrics.iloc[0]["queue_initialization_events"]) == 4
@@ -237,6 +260,26 @@ def test_proof_report_rejects_incomplete_terminal_liquidation(tmp_path):
     assert failed["check"].tolist() == ["terminal_liquidation_complete"]
     assert failed.iloc[0]["reason"] == (
         "terminal liquidation left residual inventory"
+    )
+
+
+def test_proof_report_rejects_cancel_pending_at_replay_end(tmp_path):
+    run_dir = tmp_path / "pending_cancel"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "cancel_pending_at_replay_end_events"] = 1
+    summary.to_csv(summary_path, index=False)
+
+    report = evaluate_replay_dirs([run_dir])
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.passed
+    assert failed["check"].tolist() == [
+        "cancel_pending_at_replay_end_events"
+    ]
+    assert failed.iloc[0]["reason"] == (
+        "1 cancel request(s) remained in flight at replay end"
     )
 
 

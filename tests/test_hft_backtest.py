@@ -60,6 +60,64 @@ class CancelAfterSend(Strategy):
         pass
 
 
+class CancelThenProbeRisk(Strategy):
+    def __init__(self, qty, price):
+        self.qty = qty
+        self.price = price
+        self.stage = 0
+        self.first_oid = None
+        self.second_oid = None
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, tick):
+        if self.stage == 0:
+            self.first_oid = engine.send(
+                +1,
+                self.qty,
+                self.price,
+                OrderType.LIMIT,
+            )
+        elif self.stage == 1:
+            engine.cancel(self.first_oid)
+            engine.cancel(self.first_oid)
+        elif self.stage == 2:
+            self.second_oid = engine.send(
+                +1,
+                self.qty,
+                self.price,
+                OrderType.LIMIT,
+            )
+        self.stage += 1
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
+class CancelPartialIocOnFill(Strategy):
+    def __init__(self):
+        self.sent = False
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, tick):
+        if self.sent:
+            return
+        engine.send(+1, 150, 101.00, OrderType.IOC)
+        self.sent = True
+
+    def on_fill(self, engine, fill):
+        engine.cancel(fill.oid)
+
+    def on_end(self, engine):
+        pass
+
+
 class BuyAndHold(Strategy):
     def __init__(self, qty):
         self.qty = qty
@@ -174,6 +232,18 @@ def no_costs():
 
 def fixed_latency(feed_us=0.0, order_us=0.0):
     return LatencyModel(feed_us=feed_us, order_us=order_us, jitter_us=0.0)
+
+
+class SequencedLatency:
+    def __init__(self, order_delays_ns, feed_delay_ns=0):
+        self.order_delays_ns = iter(order_delays_ns)
+        self.feed_delay = int(feed_delay_ns)
+
+    def feed_delay_ns(self):
+        return self.feed_delay
+
+    def order_delay_ns(self):
+        return int(next(self.order_delays_ns))
 
 
 @pytest.mark.parametrize(
@@ -999,7 +1069,7 @@ def test_cancel_takes_latency_and_order_can_fill_in_flight():
             (0, 100.00, 100.05, 75, 75, np.nan, 0),
             (100_000, 100.00, 100.05, 75, 75, np.nan, 0),
             (150_000, 100.00, 100.05, 75, 75, np.nan, 0),
-            (200_000, 99.90, 99.95, 75, 75, np.nan, 0),
+            (175_000, 99.90, 99.95, 75, 75, np.nan, 0),
         ]
     )
     strategy = CancelAfterSend(75, 100.00)
@@ -1013,8 +1083,131 @@ def test_cancel_takes_latency_and_order_can_fill_in_flight():
 
     res = eng.run()
 
-    assert res.fills.iloc[0]["ts_ns"] == 200_000
+    assert res.fills.iloc[0]["ts_ns"] == 175_000
     assert res.fills.iloc[0]["maker"]
+    cancellation = res.order_cancellations.iloc[0]
+    assert cancellation["ts_sent_ns"] == 100_000
+    assert cancellation["ts_effective_ns"] == 200_000
+    assert cancellation["ts_status_ns"] == 175_000
+    assert cancellation["filled_while_pending_qty"] == 75
+    assert cancellation["remaining_qty"] == 0
+    assert cancellation["status"] == "filled_before_effective"
+
+
+def test_cancel_expires_before_later_feed_callback_and_releases_risk():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (100, 100.00, 100.05, 75, 75, np.nan, 0),
+            (200, 100.00, 100.05, 75, 75, np.nan, 0),
+        ]
+    )
+    strategy = CancelThenProbeRisk(75, 100.00)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(feed_us=1.0, order_us=0.05),
+        costs=no_costs(),
+        max_position_lots=1,
+    )
+
+    result = eng.run()
+
+    assert strategy.first_oid not in eng.open_orders
+    assert strategy.second_oid in eng.open_orders
+    assert eng.orders_sent == 2
+    assert len(result.order_cancellations) == 1
+    cancellation = result.order_cancellations.iloc[0]
+    assert cancellation["ts_sent_ns"] == 1_100
+    assert cancellation["ts_effective_ns"] == 1_150
+    assert cancellation["ts_status_ns"] == 1_150
+    assert cancellation["status"] == "effective"
+
+
+def test_cancel_pending_beyond_replay_horizon_is_reported():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (100, 100.00, 100.05, 75, 75, np.nan, 0),
+        ]
+    )
+    strategy = CancelAfterSend(75, 100.00)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(feed_us=1.0, order_us=1.0),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    cancellation = result.order_cancellations.iloc[0]
+    assert cancellation["ts_sent_ns"] == 1_100
+    assert cancellation["ts_effective_ns"] == 2_100
+    assert cancellation["ts_status_ns"] == 1_100
+    assert cancellation["remaining_qty"] == 75
+    assert cancellation["status"] == "pending_at_replay_end"
+
+
+def test_cancel_effective_after_partial_inflight_fill_is_reported():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 150, 150, np.nan, 0),
+            (50_000, 100.00, 100.05, 150, 150, np.nan, 0),
+            (100_000, 99.90, 99.95, 150, 75, np.nan, 0),
+            (250_000, 99.90, 99.95, 150, 75, np.nan, 0),
+        ]
+    )
+    strategy = CancelAfterSend(150, 100.00)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=SequencedLatency([0, 200_000]),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    cancellation = result.order_cancellations.iloc[0]
+    assert cancellation["ts_sent_ns"] == 50_000
+    assert cancellation["ts_effective_ns"] == 250_000
+    assert cancellation["ts_status_ns"] == 250_000
+    assert cancellation["requested_qty"] == 150
+    assert cancellation["filled_while_pending_qty"] == 75
+    assert cancellation["remaining_qty"] == 75
+    assert cancellation["status"] == "effective_after_partial_fill"
+
+
+def test_ioc_close_can_resolve_cancel_before_effective_timestamp():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (50_000, 100.00, 100.05, 75, 75, np.nan, 0),
+        ]
+    )
+    strategy = CancelPartialIocOnFill()
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=SequencedLatency([0, 100_000]),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    cancellation = result.order_cancellations.iloc[0]
+    assert cancellation["ts_sent_ns"] == 50_000
+    assert cancellation["ts_effective_ns"] == 150_000
+    assert cancellation["ts_status_ns"] == 50_000
+    assert cancellation["requested_qty"] == 75
+    assert cancellation["filled_while_pending_qty"] == 0
+    assert cancellation["remaining_qty"] == 75
+    assert cancellation["status"] == "closed_before_effective"
 
 
 def test_indian_cost_model_hand_computed_futures_sell_and_options_round_trip():
