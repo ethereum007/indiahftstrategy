@@ -190,6 +190,7 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
             timestamp_unit="datetime",
             tick_size=0.05,
             min_rows=2,
+            min_daily_observation_span_ns=1_000_000_000,
         ),
     )
 
@@ -1320,6 +1321,106 @@ def test_vendor_market_data_pipeline_gates_declared_stale_bbo(tmp_path):
         )
 
 
+def test_vendor_market_data_pipeline_gates_min_daily_observation_span(
+    tmp_path,
+):
+    raw_path = tmp_path / "short_session_ticks.csv"
+    vendor_ticks("2026-06-10").to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_short_session_pipeline"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            min_daily_observation_span_ns=1_000_000_001,
+        ),
+    )
+
+    diagnostic_summary = blocked.diagnostics.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert int(diagnostic_summary["observation_days"]) == 1
+    assert (
+        int(diagnostic_summary["min_daily_observation_span_ns"])
+        == 1_000_000_000
+    )
+    assert (
+        int(blocked.summary.loc[0, "min_daily_observation_span_ns"])
+        == 1_000_000_000
+    )
+    assert "tick_min_daily_observation_span_ns" in failed
+    assert (
+        blocked_config["diagnostics"]["min_daily_observation_span_ns"]
+        == 1_000_000_000
+    )
+    assert (
+        "- Minimum daily observation span (ns): 1000000000"
+        in blocked_runbook
+    )
+
+    allowed_dir = tmp_path / "allowed_short_session_pipeline"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--min-daily-observation-span-ns",
+            "1000000000",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert code == 0
+    assert allowed_config["data_readiness"]["thresholds"][
+        "min_tick_daily_observation_span_ns"
+    ] == 1_000_000_000
+
+    with pytest.raises(
+        ValueError,
+        match="min_daily_observation_span_ns",
+    ):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=tmp_path / "invalid_observation_span",
+            config=VendorMarketDataPipelineConfig(
+                adapter="arrow_money",
+                kind="ticks",
+                timestamp_unit="datetime",
+                min_daily_observation_span_ns=-1,
+            ),
+        )
+
+
 def test_vendor_market_data_pipeline_gates_integer_overflow_rows(tmp_path):
     raw = vendor_ticks("2026-06-12")
     raw["bid_size"] = raw["bid_size"].astype("object")
@@ -1785,6 +1886,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert bool(summary["price_grid_validation_enabled"])
     assert summary["price_grid_tick_size"] == pytest.approx(0.05)
     assert int(summary["off_tick_price_rows"]) == 0
+    assert int(summary["observation_days"]) == 2
+    assert int(summary["min_daily_observation_span_ns"]) == 1_000_000_000
+    assert int(summary["max_daily_observation_span_ns"]) == 1_000_000_000
     assert summary["blocked_action_count"] == 0
     assert summary["next_gate"] == ""
     assert report.action_queue is not None
@@ -1801,6 +1905,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert "- Integer-overflow rows: 0" in runbook
     assert "- Nonmonotonic tick packets: 0" in runbook
     assert "- Nonpositive depth rows: 0" in runbook
+    assert "- Local trading days observed: 2" in runbook
+    assert "- Minimum daily observation span (ns): 1000000000" in runbook
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
     assert (report.datasets["dropped_null_rows"].astype(int) == 0).all()
     assert (report.datasets["dropped_nonfinite_rows"].astype(int) == 0).all()
@@ -1823,6 +1929,10 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     ).all()
     assert report.datasets["price_grid_validation_enabled"].astype(bool).all()
     assert (report.datasets["off_tick_price_rows"].astype(int) == 0).all()
+    assert (
+        report.datasets["min_daily_observation_span_ns"].astype(int)
+        == 1_000_000_000
+    ).all()
     assert report.datasets["source_file_sha256"].nunique() == 2
     assert report.datasets["source_header_sha256"].nunique() == 1
     assert "dataset_manifests" in manifest["inputs"]
@@ -1851,6 +1961,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["price_grid_validation_enabled"]
     assert config["price_grid_tick_size"] == pytest.approx(0.05)
     assert config["off_tick_price_rows"] == 0
+    assert config["observation_days"] == 2
+    assert config["min_daily_observation_span_ns"] == 1_000_000_000
     assert config["unique_source_files"] == 2
     assert config["source_file_fingerprint_coverage"] == 1.0
     assert config["min_mapping_coverage"] == 1.0
@@ -1873,6 +1985,10 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["datasets"][0]["price_grid_validation_enabled"]
     assert config["datasets"][0]["price_grid_tick_size"] == pytest.approx(0.05)
     assert config["datasets"][0]["off_tick_price_rows"] == 0
+    assert (
+        config["datasets"][0]["min_daily_observation_span_ns"]
+        == 1_000_000_000
+    )
     assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
@@ -1914,6 +2030,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
             "7",
             "--max-nonpositive-strike-rows",
             "8",
+            "--min-daily-observation-span-ns",
+            "1000000000",
             "--min-datasets",
             "2",
             "--fail-on-blocked-actions",
@@ -1937,6 +2055,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert cli_config["data_readiness_thresholds"][
         "max_nonpositive_strike_rows"
     ] == 8
+    assert cli_config["data_readiness_thresholds"][
+        "min_tick_daily_observation_span_ns"
+    ] == 1_000_000_000
 
 
 def test_vendor_market_data_batch_uses_distinct_target_applications(tmp_path):

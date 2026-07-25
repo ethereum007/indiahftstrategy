@@ -73,7 +73,9 @@ class DataReadinessThresholds:
     expected_adapter: str | None = None
     expected_vendor_data_kind: str | None = None
     min_tick_rows: int = 1
+    min_tick_daily_observation_span_ns: int | None = None
     min_chain_rows: int = 1
+    min_chain_daily_observation_span_ns: int | None = None
     min_chain_expiries: int = 1
     min_chain_strikes: int = 1
     min_chain_expiry_snapshots: int = 1
@@ -1685,6 +1687,19 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
         )
     if thresholds.max_tick_p99_gap_ns is not None:
         checks.append(_threshold_check("tick_p99_gap_ns", _number(row, "p99_gap_ns"), "<=", thresholds.max_tick_p99_gap_ns))
+    if thresholds.min_tick_daily_observation_span_ns is not None:
+        checks.append(
+            _threshold_check(
+                "tick_min_daily_observation_span_ns",
+                _number(
+                    row,
+                    "min_daily_observation_span_ns",
+                    fallback=float("nan"),
+                ),
+                ">=",
+                thresholds.min_tick_daily_observation_span_ns,
+            )
+        )
     if thresholds.max_tick_median_spread_ticks is not None:
         checks.append(
             _threshold_check(
@@ -2109,6 +2124,19 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 _number(row, "p99_snapshot_gap_ns", fallback=0.0),
                 "<=",
                 thresholds.max_chain_snapshot_p99_gap_ns,
+            )
+        )
+    if thresholds.min_chain_daily_observation_span_ns is not None:
+        checks.append(
+            _threshold_check(
+                "chain_min_daily_observation_span_ns",
+                _number(
+                    row,
+                    "min_daily_observation_span_ns",
+                    fallback=float("nan"),
+                ),
+                ">=",
+                thresholds.min_chain_daily_observation_span_ns,
             )
         )
     return checks
@@ -3350,6 +3378,8 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_wide_spread_rows",
         "max_stale_bbo_rows",
         "max_off_grid_strike_rows",
+        "min_tick_daily_observation_span_ns",
+        "min_chain_daily_observation_span_ns",
         "max_tick_p99_gap_ns",
         "max_tick_median_spread_ticks",
         "max_chain_median_spread_ticks",

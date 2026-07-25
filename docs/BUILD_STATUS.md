@@ -7139,6 +7139,24 @@ collection is healthy at `2623 tests` across `164` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
 
+Latest minimum daily observation-span gate: tick and option-chain diagnostics
+now derive local trading dates from the selected market profile and retain the
+number of observed days plus minimum, median, and maximum daily timestamp span.
+Chain reports retain the same evidence per expiry. The opt-in
+`min_daily_observation_span_ns` wrapper policy maps to separate direct tick and
+chain readiness thresholds, so the shortest retained day must meet the
+declared capture window instead of being hidden by row count or an average
+across longer days. The policy and evidence propagate through
+Arrow.money/iRage single-day and batch onboarding, provider wrappers,
+broker-vendor proof, CLI, configs, summaries, manifests, and runbooks. The
+gate complements p99-gap checks, does not drop or extend observations, and
+does not hard-code an NSE session length, preserving intentional windowed
+captures and later US-market portability. Changed-path and downstream
+normalization, chain-replay, calendar/contract, live-ingest, parity, and
+surface regressions pass (`215` tests). Repository collection is healthy at
+`2624 tests` across `164` files. The full suite was not rerun because recent
+complete runs exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

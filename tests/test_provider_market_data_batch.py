@@ -122,6 +122,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "2",
             "--pipeline-min-rows",
             "2",
+            "--min-daily-observation-span-ns",
+            "1000000000",
             "--max-null-rows",
             "2",
             "--max-nonfinite-rows",
@@ -175,6 +177,10 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
     assert cli_config["parameters"]["max_wide_spread_rows"] == 0
     assert cli_config["parameters"]["max_unchanged_bbo_ns"] == 5_000_000_000
     assert cli_config["parameters"]["max_stale_bbo_rows"] == 0
+    assert (
+        cli_config["parameters"]["min_daily_observation_span_ns"]
+        == 1_000_000_000
+    )
     assert all(bool(row["ready"]) for row in cli_config["datasets"])
 
 

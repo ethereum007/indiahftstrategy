@@ -127,6 +127,12 @@ class _BboStalenessDiagnostics:
     stale: pd.Series
 
 
+@dataclass(frozen=True)
+class _DailyObservationSpanDiagnostics:
+    overall: dict[str, object]
+    by_group: pd.DataFrame
+
+
 def tick_diagnostics(
     ticks: pd.DataFrame,
     *,
@@ -161,6 +167,10 @@ def tick_diagnostics(
         state_columns=("bid", "ask", "bid_qty", "ask_qty"),
         max_unchanged_bbo_ns=max_unchanged_bbo_ns,
     )
+    observation_spans = _daily_observation_span_diagnostics(
+        frame,
+        market=market,
+    )
     gaps = frame["ts"].sort_values().diff().dropna()
     nonmonotonic = ~_timestamp_at_high_water_mask(frame["ts"])
     invalid_trade = _invalid_trade_mask(frame)
@@ -182,6 +192,7 @@ def tick_diagnostics(
                 "rows": int(len(frame)),
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
+                **observation_spans.overall,
                 "nonmonotonic_rows": int(nonmonotonic.sum()),
                 "crossed_quote_rows": int((frame["ask"] < frame["bid"]).sum()),
                 "nonpositive_quote_rows": int(((frame["bid"] <= 0) | (frame["ask"] <= 0)).sum()),
@@ -298,6 +309,11 @@ def chain_diagnostics(
     )
     frame["bbo_age_ns"] = bbo_staleness.age_ns
     frame["stale_bbo"] = bbo_staleness.stale
+    observation_spans = _daily_observation_span_diagnostics(
+        frame,
+        market=market,
+        group_column="expiry",
+    )
     frame["off_tick_price"] = _off_tick_price_mask(
         frame,
         ("call_bid", "call_ask", "put_bid", "put_ask"),
@@ -419,6 +435,12 @@ def chain_diagnostics(
         how="left",
         validate="one_to_one",
     )
+    by_expiry = by_expiry.merge(
+        observation_spans.by_group,
+        on="expiry",
+        how="left",
+        validate="one_to_one",
+    )
     if expiry_diagnostics.enabled:
         validations = [
             expiry_diagnostics.validations[_expiry_key(value)]
@@ -503,6 +525,7 @@ def chain_diagnostics(
                 "strikes": int(frame["strike"].nunique()),
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
+                **observation_spans.overall,
                 "nonmonotonic_rows": int(frame["nonmonotonic_ts"].sum()),
                 "nonpositive_strike_rows": int(
                     frame["nonpositive_strike"].sum()
@@ -725,6 +748,121 @@ def _wide_spread_mask(
         numeric
         > float(max_quote_spread_ticks) + PRICE_GRID_ATOL_TICKS
     )
+
+
+def _daily_observation_span_diagnostics(
+    frame: pd.DataFrame,
+    *,
+    market: str,
+    group_column: str | None = None,
+) -> _DailyObservationSpanDiagnostics:
+    timestamps = pd.to_numeric(frame["ts"], errors="coerce")
+    valid = timestamps.notna() & np.isfinite(timestamps)
+    working = pd.DataFrame(
+        {
+            "ts_ns": timestamps.loc[valid].astype("int64"),
+        }
+    )
+    profile = get_market_profile(market)
+    working["observation_date"] = (
+        profile.session.local_datetimes(working["ts_ns"]).dt.date
+    )
+    if group_column is not None:
+        working[group_column] = frame.loc[valid, group_column]
+
+    daily = _daily_observation_spans(
+        working,
+        group_columns=(
+            (group_column, "observation_date")
+            if group_column is not None
+            else ("observation_date",)
+        ),
+    )
+    overall_daily = _daily_observation_spans(
+        working,
+        group_columns=("observation_date",),
+    )
+    overall = _daily_observation_span_summary(overall_daily)
+
+    summary_columns = [
+        "observation_days",
+        "min_daily_observation_span_ns",
+        "median_daily_observation_span_ns",
+        "max_daily_observation_span_ns",
+    ]
+    if group_column is None:
+        by_group = pd.DataFrame(columns=summary_columns)
+    elif daily.empty:
+        by_group = pd.DataFrame(
+            columns=[group_column, *summary_columns]
+        )
+    else:
+        by_group = (
+            daily.groupby(group_column, dropna=False, sort=False)
+            .agg(
+                observation_days=("daily_observation_span_ns", "size"),
+                min_daily_observation_span_ns=(
+                    "daily_observation_span_ns",
+                    "min",
+                ),
+                median_daily_observation_span_ns=(
+                    "daily_observation_span_ns",
+                    "median",
+                ),
+                max_daily_observation_span_ns=(
+                    "daily_observation_span_ns",
+                    "max",
+                ),
+            )
+            .reset_index()
+        )
+    return _DailyObservationSpanDiagnostics(
+        overall=overall,
+        by_group=by_group,
+    )
+
+
+def _daily_observation_spans(
+    working: pd.DataFrame,
+    *,
+    group_columns: tuple[str, ...],
+) -> pd.DataFrame:
+    if working.empty:
+        return pd.DataFrame(
+            columns=[*group_columns, "daily_observation_span_ns"]
+        )
+    daily = (
+        working.groupby(
+            list(group_columns),
+            dropna=False,
+            sort=False,
+        )["ts_ns"]
+        .agg(["min", "max"])
+        .reset_index()
+    )
+    daily["daily_observation_span_ns"] = (
+        daily["max"] - daily["min"]
+    ).astype("int64")
+    return daily
+
+
+def _daily_observation_span_summary(
+    daily: pd.DataFrame,
+) -> dict[str, object]:
+    if daily.empty:
+        return {
+            "observation_days": 0,
+            "min_daily_observation_span_ns": 0,
+            "median_daily_observation_span_ns": 0.0,
+            "max_daily_observation_span_ns": 0,
+        }
+    spans = daily["daily_observation_span_ns"]
+    return {
+        "observation_days": int(len(daily)),
+        "min_daily_observation_span_ns": int(spans.min()),
+        "median_daily_observation_span_ns": float(spans.median()),
+        "max_daily_observation_span_ns": int(spans.max()),
+    }
 
 
 def _bbo_staleness_diagnostics(

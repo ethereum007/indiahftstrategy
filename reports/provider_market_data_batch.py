@@ -38,6 +38,7 @@ class ProviderMarketDataBatchConfig:
     timestamp_unit: str = "datetime"
     timestamp_tz: str | None = None
     pipeline_min_rows: int = 1
+    min_daily_observation_span_ns: int | None = None
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
@@ -237,6 +238,9 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         timestamp_unit=config.timestamp_unit,
         timestamp_tz=config.timestamp_tz,
         pipeline_min_rows=config.pipeline_min_rows,
+        min_daily_observation_span_ns=(
+            config.min_daily_observation_span_ns
+        ),
         max_null_rows=config.max_null_rows,
         max_nonfinite_rows=config.max_nonfinite_rows,
         max_nonintegral_rows=config.max_nonintegral_rows,
@@ -661,6 +665,17 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
     ):
         raise ValueError(
             "max_unchanged_bbo_ns must be a non-negative integer"
+        )
+    if (
+        config.min_daily_observation_span_ns is not None
+        and (
+            isinstance(config.min_daily_observation_span_ns, bool)
+            or not isinstance(config.min_daily_observation_span_ns, int)
+            or config.min_daily_observation_span_ns < 0
+        )
+    ):
+        raise ValueError(
+            "min_daily_observation_span_ns must be a non-negative integer"
         )
     if (
         config.max_off_grid_strike_rows is not None

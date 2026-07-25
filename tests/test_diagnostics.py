@@ -309,6 +309,78 @@ def test_tick_and_chain_diagnostics_report_declared_stale_bbo():
             )
 
 
+def test_tick_and_chain_diagnostics_report_daily_observation_spans():
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist(timestamp),
+                "bid": 100.0,
+                "ask": 100.05,
+                "bid_qty": 75,
+                "ask_qty": 150,
+            }
+            for timestamp in (
+                "2026-06-10 09:15:00",
+                "2026-06-10 09:15:04",
+                "2026-06-11 09:15:00",
+                "2026-06-11 09:15:02",
+            )
+        ]
+    )
+    chain_rows = []
+    for expiry, strike, timestamp in (
+        ("2026-06-25", 22500.0, "2026-06-10 09:15:00"),
+        ("2026-06-25", 22500.0, "2026-06-10 09:15:05"),
+        ("2026-06-25", 22500.0, "2026-06-11 09:15:00"),
+        ("2026-06-25", 22500.0, "2026-06-11 09:15:01"),
+        ("2026-07-30", 22600.0, "2026-06-10 09:15:00"),
+        ("2026-07-30", 22600.0, "2026-06-10 09:15:03"),
+    ):
+        chain_rows.append(
+            {
+                "ts": ns_ist(timestamp),
+                "expiry": expiry,
+                "strike": strike,
+                "call_bid": 100.0,
+                "call_ask": 100.05,
+                "call_bid_qty": 75,
+                "call_ask_qty": 75,
+                "put_bid": 90.0,
+                "put_ask": 90.05,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+        )
+
+    tick_summary = tick_diagnostics(ticks).summary.iloc[0]
+    chain_summary = chain_diagnostics(pd.DataFrame(chain_rows)).summary
+    chain_overall = chain_summary.loc[
+        chain_summary["scope"] == "overall"
+    ].iloc[0]
+    june_expiry = chain_summary.loc[
+        (chain_summary["scope"] == "expiry")
+        & (chain_summary["expiry"] == "2026-06-25")
+    ].iloc[0]
+    july_expiry = chain_summary.loc[
+        (chain_summary["scope"] == "expiry")
+        & (chain_summary["expiry"] == "2026-07-30")
+    ].iloc[0]
+
+    assert int(tick_summary["observation_days"]) == 2
+    assert int(tick_summary["min_daily_observation_span_ns"]) == 2_000_000_000
+    assert int(tick_summary["median_daily_observation_span_ns"]) == 3_000_000_000
+    assert int(tick_summary["max_daily_observation_span_ns"]) == 4_000_000_000
+    assert int(chain_overall["observation_days"]) == 2
+    assert int(chain_overall["min_daily_observation_span_ns"]) == 1_000_000_000
+    assert int(chain_overall["median_daily_observation_span_ns"]) == 3_000_000_000
+    assert int(chain_overall["max_daily_observation_span_ns"]) == 5_000_000_000
+    assert int(june_expiry["observation_days"]) == 2
+    assert int(june_expiry["min_daily_observation_span_ns"]) == 1_000_000_000
+    assert int(june_expiry["max_daily_observation_span_ns"]) == 5_000_000_000
+    assert int(july_expiry["observation_days"]) == 1
+    assert int(july_expiry["min_daily_observation_span_ns"]) == 3_000_000_000
+
+
 def test_tick_and_chain_diagnostics_apply_timestamp_high_water():
     timestamps = [
         ns_ist("2026-06-10 09:15:04"),

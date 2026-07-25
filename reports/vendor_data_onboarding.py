@@ -62,6 +62,7 @@ class VendorMarketDataPipelineConfig:
     strike_step: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
+    min_daily_observation_span_ns: int | None = None
     min_chain_expiry_snapshots: int = 1
     min_chain_snapshots_per_expiry: int = 1
     min_chain_snapshot_strikes: int = 1
@@ -570,6 +571,28 @@ def write_vendor_market_data_batch_pipeline(
                         fallback=0.0,
                     )
                 ),
+                "observation_days": int(
+                    _number(row, "observation_days", fallback=0.0)
+                ),
+                "min_daily_observation_span_ns": int(
+                    _number(
+                        row,
+                        "min_daily_observation_span_ns",
+                        fallback=0.0,
+                    )
+                ),
+                "median_daily_observation_span_ns": _number(
+                    row,
+                    "median_daily_observation_span_ns",
+                    fallback=0.0,
+                ),
+                "max_daily_observation_span_ns": int(
+                    _number(
+                        row,
+                        "max_daily_observation_span_ns",
+                        fallback=0.0,
+                    )
+                ),
                 "strike_grid_validation_enabled": _truthy(
                     row.get("strike_grid_validation_enabled", False)
                 ),
@@ -820,7 +843,17 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         expected_adapter=config.adapter,
         expected_vendor_data_kind=config.kind,
         min_tick_rows=config.min_rows,
+        min_tick_daily_observation_span_ns=(
+            config.min_daily_observation_span_ns
+            if config.kind == "ticks"
+            else None
+        ),
         min_chain_rows=config.min_rows,
+        min_chain_daily_observation_span_ns=(
+            config.min_daily_observation_span_ns
+            if config.kind == "chain"
+            else None
+        ),
         min_chain_expiry_snapshots=config.min_chain_expiry_snapshots,
         min_chain_snapshots_per_expiry=(
             config.min_chain_snapshots_per_expiry
@@ -1152,6 +1185,32 @@ def _summary(
                     _number(
                         diagnostic_row,
                         "max_observed_bbo_age_ns",
+                        fallback=0.0,
+                    )
+                ),
+                "observation_days": int(
+                    _number(
+                        diagnostic_row,
+                        "observation_days",
+                        fallback=0.0,
+                    )
+                ),
+                "min_daily_observation_span_ns": int(
+                    _number(
+                        diagnostic_row,
+                        "min_daily_observation_span_ns",
+                        fallback=0.0,
+                    )
+                ),
+                "median_daily_observation_span_ns": _number(
+                    diagnostic_row,
+                    "median_daily_observation_span_ns",
+                    fallback=0.0,
+                ),
+                "max_daily_observation_span_ns": int(
+                    _number(
+                        diagnostic_row,
+                        "max_daily_observation_span_ns",
                         fallback=0.0,
                     )
                 ),
@@ -1572,6 +1631,10 @@ def _pipeline_runbook_markdown(
         f"- Maximum unchanged BBO age (ns): {_value_text(summary_row.get('max_unchanged_bbo_ns')) or 'n/a'}",
         f"- Stale-BBO rows: {int(_number_from_value(summary_row.get('stale_bbo_rows', 0)))}",
         f"- Maximum observed BBO age (ns): {int(_number_from_value(summary_row.get('max_observed_bbo_age_ns', 0)))}",
+        f"- Local trading days observed: {int(_number_from_value(summary_row.get('observation_days', 0)))}",
+        f"- Minimum daily observation span (ns): {int(_number_from_value(summary_row.get('min_daily_observation_span_ns', 0)))}",
+        f"- Median daily observation span (ns): {_number_from_value(summary_row.get('median_daily_observation_span_ns', 0.0))}",
+        f"- Maximum daily observation span (ns): {int(_number_from_value(summary_row.get('max_daily_observation_span_ns', 0)))}",
         f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
         f"- Strike-grid step: {_value_text(summary_row.get('strike_grid_step')) or 'n/a'}",
         f"- Off-grid strike rows: {int(_number_from_value(summary_row.get('off_grid_strike_rows', 0)))}",
@@ -1660,6 +1723,10 @@ def _batch_runbook_markdown(
         f"- Maximum unchanged BBO age (ns): {_value_text(summary_row.get('max_unchanged_bbo_ns')) or 'n/a'}",
         f"- Stale-BBO rows: {int(_number_from_value(summary_row.get('stale_bbo_rows', 0)))}",
         f"- Maximum observed BBO age (ns): {int(_number_from_value(summary_row.get('max_observed_bbo_age_ns', 0)))}",
+        f"- Local trading days observed: {int(_number_from_value(summary_row.get('observation_days', 0)))}",
+        f"- Minimum daily observation span (ns): {int(_number_from_value(summary_row.get('min_daily_observation_span_ns', 0)))}",
+        f"- Median daily observation span (ns): {_number_from_value(summary_row.get('median_daily_observation_span_ns', 0.0))}",
+        f"- Maximum daily observation span (ns): {int(_number_from_value(summary_row.get('max_daily_observation_span_ns', 0)))}",
         f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
         f"- Strike-grid step: {_value_text(summary_row.get('strike_grid_step')) or 'n/a'}",
         f"- Off-grid strike rows: {int(_number_from_value(summary_row.get('off_grid_strike_rows', 0)))}",
@@ -1948,6 +2015,54 @@ def _batch_summary(
                     if dataset_count
                     else 0
                 ),
+                "observation_days": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "observation_days",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "min_daily_observation_span_ns": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "min_daily_observation_span_ns",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).min()
+                    )
+                    if dataset_count
+                    else 0
+                ),
+                "median_daily_observation_span_ns": (
+                    float(
+                        pd.to_numeric(
+                            datasets.get(
+                                "median_daily_observation_span_ns",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).median()
+                    )
+                    if dataset_count
+                    else 0.0
+                ),
+                "max_daily_observation_span_ns": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "max_daily_observation_span_ns",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).max()
+                    )
+                    if dataset_count
+                    else 0
+                ),
                 "strike_grid_validation_enabled": bool(
                     dataset_count
                     and datasets.get(
@@ -2170,6 +2285,28 @@ def _pipeline_config(
             "max_observed_bbo_age_ns": int(
                 _number(row, "max_observed_bbo_age_ns", fallback=0.0)
             ),
+            "observation_days": int(
+                _number(row, "observation_days", fallback=0.0)
+            ),
+            "min_daily_observation_span_ns": int(
+                _number(
+                    row,
+                    "min_daily_observation_span_ns",
+                    fallback=0.0,
+                )
+            ),
+            "median_daily_observation_span_ns": _number(
+                row,
+                "median_daily_observation_span_ns",
+                fallback=0.0,
+            ),
+            "max_daily_observation_span_ns": int(
+                _number(
+                    row,
+                    "max_daily_observation_span_ns",
+                    fallback=0.0,
+                )
+            ),
             "strike_grid_validation_enabled": _truthy(
                 row.get("strike_grid_validation_enabled", False)
             ),
@@ -2289,6 +2426,22 @@ def _batch_config(
             "max_observed_bbo_age_ns": int(
                 _number_from_value(
                     item.get("max_observed_bbo_age_ns", 0)
+                )
+            ),
+            "observation_days": int(
+                _number_from_value(item.get("observation_days", 0))
+            ),
+            "min_daily_observation_span_ns": int(
+                _number_from_value(
+                    item.get("min_daily_observation_span_ns", 0)
+                )
+            ),
+            "median_daily_observation_span_ns": _number_from_value(
+                item.get("median_daily_observation_span_ns", 0.0)
+            ),
+            "max_daily_observation_span_ns": int(
+                _number_from_value(
+                    item.get("max_daily_observation_span_ns", 0)
                 )
             ),
             "strike_grid_validation_enabled": _truthy(
@@ -2417,6 +2570,28 @@ def _batch_config(
         ),
         "max_observed_bbo_age_ns": int(
             _number(row, "max_observed_bbo_age_ns", fallback=0.0)
+        ),
+        "observation_days": int(
+            _number(row, "observation_days", fallback=0.0)
+        ),
+        "min_daily_observation_span_ns": int(
+            _number(
+                row,
+                "min_daily_observation_span_ns",
+                fallback=0.0,
+            )
+        ),
+        "median_daily_observation_span_ns": _number(
+            row,
+            "median_daily_observation_span_ns",
+            fallback=0.0,
+        ),
+        "max_daily_observation_span_ns": int(
+            _number(
+                row,
+                "max_daily_observation_span_ns",
+                fallback=0.0,
+            )
         ),
         "strike_grid_validation_enabled": _truthy(
             row.get("strike_grid_validation_enabled", False)
@@ -2692,6 +2867,17 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
     ):
         raise ValueError(
             "max_unchanged_bbo_ns must be a non-negative integer"
+        )
+    if (
+        config.min_daily_observation_span_ns is not None
+        and (
+            isinstance(config.min_daily_observation_span_ns, bool)
+            or not isinstance(config.min_daily_observation_span_ns, int)
+            or config.min_daily_observation_span_ns < 0
+        )
+    ):
+        raise ValueError(
+            "min_daily_observation_span_ns must be a non-negative integer"
         )
     if config.strike_step is not None and config.kind != "chain":
         raise ValueError("strike_step is only valid for chain data")

@@ -3042,6 +3042,11 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--timestamp-unit", default="datetime")
     provider_market_data_pipeline.add_argument("--timestamp-tz", default=None)
     provider_market_data_pipeline.add_argument("--pipeline-min-rows", type=int, default=1)
+    provider_market_data_pipeline.add_argument(
+        "--min-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     provider_market_data_pipeline.add_argument("--max-null-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonfinite-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonintegral-rows", type=int, default=0)
@@ -3088,6 +3093,11 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--timestamp-unit", default="datetime")
     provider_market_data_batch.add_argument("--timestamp-tz", default=None)
     provider_market_data_batch.add_argument("--pipeline-min-rows", type=int, default=1)
+    provider_market_data_batch.add_argument(
+        "--min-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     provider_market_data_batch.add_argument("--max-null-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonfinite-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonintegral-rows", type=int, default=0)
@@ -3172,6 +3182,11 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--strike-step", type=float, default=None)
     vendor_market_data.add_argument("--allow-missing-required", action="store_true")
     vendor_market_data.add_argument("--min-rows", type=int, default=1)
+    vendor_market_data.add_argument(
+        "--min-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     vendor_market_data.add_argument("--max-null-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonfinite-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonintegral-rows", type=int, default=0)
@@ -3272,6 +3287,11 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--strike-step", type=float, default=None)
     vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
     vendor_market_data_batch.add_argument("--min-rows", type=int, default=1)
+    vendor_market_data_batch.add_argument(
+        "--min-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     vendor_market_data_batch.add_argument("--max-null-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonfinite-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonintegral-rows", type=int, default=0)
@@ -3378,6 +3398,11 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--strike-step", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--allow-missing-required", action="store_true")
     broker_vendor_data_readiness.add_argument("--min-rows", type=int, default=1)
+    broker_vendor_data_readiness.add_argument(
+        "--min-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     broker_vendor_data_readiness.add_argument("--max-null-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonfinite-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonintegral-rows", type=int, default=0)
@@ -3537,7 +3562,17 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--expected-adapter", default=None)
     data_readiness.add_argument("--expected-vendor-data-kind", default=None)
     data_readiness.add_argument("--min-tick-rows", type=int, default=1)
+    data_readiness.add_argument(
+        "--min-tick-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     data_readiness.add_argument("--min-chain-rows", type=int, default=1)
+    data_readiness.add_argument(
+        "--min-chain-daily-observation-span-ns",
+        type=int,
+        default=None,
+    )
     data_readiness.add_argument("--min-chain-expiries", type=int, default=1)
     data_readiness.add_argument("--min-chain-strikes", type=int, default=1)
     data_readiness.add_argument("--min-chain-expiry-snapshots", type=int, default=1)
@@ -7948,6 +7983,9 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_unit=args.timestamp_unit,
                 timestamp_tz=args.timestamp_tz,
                 pipeline_min_rows=args.pipeline_min_rows,
+                min_daily_observation_span_ns=(
+                    args.min_daily_observation_span_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8004,6 +8042,9 @@ def main(argv: list[str] | None = None) -> int:
                 timestamp_unit=args.timestamp_unit,
                 timestamp_tz=args.timestamp_tz,
                 pipeline_min_rows=args.pipeline_min_rows,
+                min_daily_observation_span_ns=(
+                    args.min_daily_observation_span_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8072,6 +8113,9 @@ def main(argv: list[str] | None = None) -> int:
                 strike_step=args.strike_step,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
+                min_daily_observation_span_ns=(
+                    args.min_daily_observation_span_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8152,6 +8196,9 @@ def main(argv: list[str] | None = None) -> int:
                 strike_step=args.strike_step,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
+                min_daily_observation_span_ns=(
+                    args.min_daily_observation_span_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8259,6 +8306,9 @@ def main(argv: list[str] | None = None) -> int:
                 strike_step=args.strike_step,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
+                min_daily_observation_span_ns=(
+                    args.min_daily_observation_span_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8430,7 +8480,13 @@ def main(argv: list[str] | None = None) -> int:
                 expected_adapter=args.expected_adapter,
                 expected_vendor_data_kind=args.expected_vendor_data_kind,
                 min_tick_rows=args.min_tick_rows,
+                min_tick_daily_observation_span_ns=(
+                    args.min_tick_daily_observation_span_ns
+                ),
                 min_chain_rows=args.min_chain_rows,
+                min_chain_daily_observation_span_ns=(
+                    args.min_chain_daily_observation_span_ns
+                ),
                 min_chain_expiries=args.min_chain_expiries,
                 min_chain_strikes=args.min_chain_strikes,
                 min_chain_expiry_snapshots=(

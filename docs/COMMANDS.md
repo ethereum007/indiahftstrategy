@@ -8806,6 +8806,7 @@ python -m hft_cli pipeline-provider-market-data `
   --out runs\provider_market_data_roots\arrow_ws_nse_day1 `
   --min-capture-rows 100000 `
   --pipeline-min-rows 100000 `
+  --min-daily-observation-span-ns 21600000000000 `
   --tick-size 0.05 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
@@ -8833,6 +8834,7 @@ python -m hft_cli pipeline-provider-market-data-batch `
   --out runs\provider_market_data_batches\arrow_ws_nse_2026_06_23 `
   --min-capture-rows 100000 `
   --pipeline-min-rows 100000 `
+  --min-daily-observation-span-ns 21600000000000 `
   --tick-size 0.05 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
@@ -8866,6 +8868,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --timestamp-unit datetime `
   --tick-size 0.05 `
   --min-rows 100000 `
+  --min-daily-observation-span-ns 21600000000000 `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
@@ -8905,6 +8908,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --lot-size 65 `
   --tick-size 0.05 `
   --strike-step 50 `
+  --min-daily-observation-span-ns 21600000000000 `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
@@ -9046,6 +9050,21 @@ quotes, and no venue timeout is inferred. The direct diagnostics,
 Arrow.money/iRage vendor pipelines, provider single/batch wrappers, and
 broker-vendor readiness wrapper all accept the declaration; readiness-facing
 commands also accept the violation budget.
+Tick and chain diagnostics also retain local-day coverage as
+`observation_days`, `min_daily_observation_span_ns`,
+`median_daily_observation_span_ns`, and
+`max_daily_observation_span_ns`. Chain summaries retain the same evidence per
+expiry. Use `--min-daily-observation-span-ns` on vendor, provider, batch, and
+broker-vendor pipelines to gate the shortest observed local trading day; use
+`--min-tick-daily-observation-span-ns` and
+`--min-chain-daily-observation-span-ns` on direct readiness reports. The
+minimum prevents a short or cherry-picked fragment from being averaged away,
+while the existing p99-gap checks still detect holes inside the retained
+window. The threshold is opt-in and must come from the reviewed capture or
+delivery policy: diagnostics do not hard-code an NSE session length, so
+intentional open/close windows and later US-market captures remain usable.
+The `21600000000000` values in these examples are illustrative six-hour
+policies, not venue defaults.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9162,6 +9181,7 @@ python -m hft_cli pipeline-vendor-market-data-batch `
   --kind ticks `
   --timestamp-unit datetime `
   --tick-size 0.05 `
+  --min-daily-observation-span-ns 21600000000000 `
   --min-datasets 2 `
   --min-ready-rate 1 `
   --fail-on-blocked-actions `
@@ -9243,6 +9263,7 @@ python -m hft_cli pipeline-broker-vendor-readiness `
   --kind ticks `
   --timestamp-unit datetime `
   --tick-size 0.05 `
+  --min-daily-observation-span-ns 21600000000000 `
   --schema-audit runs\broker_schema\arrow_money `
   --order-export runs\launch\04_export `
   --upload-pack runs\launch\05_upload_pack `
@@ -9559,6 +9580,8 @@ python -m hft_cli review-data-readiness `
   --expected-market india_nse_index_derivatives `
   --expected-adapter arrow_money `
   --expected-vendor-data-kind ticks `
+  --min-tick-daily-observation-span-ns 21600000000000 `
+  --min-chain-daily-observation-span-ns 21600000000000 `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `

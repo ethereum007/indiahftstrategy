@@ -28,6 +28,10 @@ def tick_summary(**overrides):
         "rows": 100,
         "start_ts": 1_000,
         "end_ts": 2_000,
+        "observation_days": 2,
+        "min_daily_observation_span_ns": 3_600_000_000_000,
+        "median_daily_observation_span_ns": 3_900_000_000_000.0,
+        "max_daily_observation_span_ns": 4_200_000_000_000,
         "nonmonotonic_rows": 0,
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
@@ -61,6 +65,10 @@ def chain_summary(**overrides):
         "expiry_snapshots": 20,
         "min_snapshots_per_expiry": 10,
         "min_snapshot_strikes": 10,
+        "observation_days": 2,
+        "min_daily_observation_span_ns": 7_200_000_000_000,
+        "median_daily_observation_span_ns": 7_500_000_000_000.0,
+        "max_daily_observation_span_ns": 7_800_000_000_000,
         "p99_snapshot_gap_ns": 2_000.0,
         "nonmonotonic_rows": 0,
         "nonpositive_strike_rows": 0,
@@ -605,6 +613,46 @@ def test_data_readiness_gates_declared_stale_bbo_rows():
     assert allowed_chain.ready
 
 
+def test_data_readiness_gates_minimum_daily_observation_span():
+    short_tick = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(
+            min_daily_observation_span_ns=2_000,
+        ),
+        thresholds=DataReadinessThresholds(
+            min_tick_daily_observation_span_ns=2_001,
+        ),
+    )
+    allowed_chain = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(
+            min_daily_observation_span_ns=5_000,
+        ),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            min_chain_daily_observation_span_ns=5_000,
+        ),
+    )
+    missing_evidence = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary().drop(
+            columns=["min_daily_observation_span_ns"]
+        ),
+        thresholds=DataReadinessThresholds(
+            min_tick_daily_observation_span_ns=0,
+        ),
+    )
+
+    failed = set(
+        short_tick.checks.loc[
+            ~short_tick.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not short_tick.ready
+    assert "tick_min_daily_observation_span_ns" in failed
+    assert allowed_chain.ready
+    assert not missing_evidence.ready
+
+
 def test_data_readiness_gates_declared_chain_strike_grid():
     off_grid = evaluate_data_readiness(
         chain_diagnostic_summary=chain_summary(off_grid_strike_rows=1),
@@ -669,6 +717,8 @@ def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
             "--skip-tick-diagnostics",
             "--max-off-grid-strike-rows",
             "1",
+            "--min-chain-daily-observation-span-ns",
+            "7200000000000",
             "--fail-on-breach",
         ]
     )
@@ -678,6 +728,10 @@ def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
     )
     assert code == 0
     assert config["thresholds"]["max_off_grid_strike_rows"] == 1
+    assert (
+        config["thresholds"]["min_chain_daily_observation_span_ns"]
+        == 7_200_000_000_000
+    )
     components = {
         row["component"]: row for row in config["components"]
     }
@@ -704,6 +758,8 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
             "1",
             "--max-stale-bbo-rows",
             "1",
+            "--min-tick-daily-observation-span-ns",
+            "3600000000000",
             "--fail-on-breach",
         ]
     )
@@ -714,6 +770,10 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
     assert code == 0
     assert config["thresholds"]["max_wide_spread_rows"] == 1
     assert config["thresholds"]["max_stale_bbo_rows"] == 1
+    assert (
+        config["thresholds"]["min_tick_daily_observation_span_ns"]
+        == 3_600_000_000_000
+    )
 
 
 def test_data_readiness_fails_on_filtered_mapped_data_quarantine():

@@ -39,6 +39,7 @@ class ProviderMarketDataPipelineConfig:
     timestamp_unit: str = "datetime"
     timestamp_tz: str | None = None
     pipeline_min_rows: int = 1
+    min_daily_observation_span_ns: int | None = None
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
@@ -131,6 +132,9 @@ def write_provider_market_data_pipeline(
                 strike_step=config.strike_step,
                 require_all_mapped=True,
                 min_rows=config.pipeline_min_rows,
+                min_daily_observation_span_ns=(
+                    config.min_daily_observation_span_ns
+                ),
                 max_null_rows=config.max_null_rows,
                 max_nonfinite_rows=config.max_nonfinite_rows,
                 max_nonintegral_rows=config.max_nonintegral_rows,
