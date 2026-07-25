@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
@@ -17,6 +18,7 @@ class ParitySweepResult:
     runs: pd.DataFrame
     summary: pd.DataFrame
     proof: ProofReport
+    seed_robustness: pd.DataFrame
     output_dir: Path | None = None
 
 
@@ -31,6 +33,7 @@ def run_parity_sweep(
     order_latency_us_values: list[float],
     latency_jitter_us_values: list[float] | None = None,
     latency_seed: int = 17,
+    latency_seed_values: list[int] | None = None,
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
@@ -61,6 +64,16 @@ def run_parity_sweep(
     )
     if not latency_jitter_us_values:
         raise ValueError("latency_jitter_us_values must not be empty")
+    latency_seed_values = _normalized_latency_seeds(
+        [latency_seed]
+        if latency_seed_values is None
+        else latency_seed_values
+    )
+    if not latency_seed_values:
+        raise ValueError("latency_seed_values must not be empty")
+    if len(set(latency_seed_values)) != len(latency_seed_values):
+        raise ValueError("latency_seed_values must be unique")
+    include_seed_in_run_name = len(latency_seed_values) > 1
 
     out = Path(output_dir)
     runs_root = out / "runs"
@@ -75,19 +88,30 @@ def run_parity_sweep(
         feed_latency_us,
         order_latency_us,
         latency_jitter_us,
+        scenario_latency_seed,
     ) in product(
         depth_fraction_values,
         asof_latency_ns_values,
         feed_latency_us_values,
         order_latency_us_values,
         latency_jitter_us_values,
+        latency_seed_values,
     ):
+        seed_group = _run_name(
+            depth_fraction,
+            asof_latency_ns,
+            feed_latency_us,
+            order_latency_us,
+            latency_jitter_us,
+        )
         run_name = _run_name(
             depth_fraction,
             asof_latency_ns,
             feed_latency_us,
             order_latency_us,
             latency_jitter_us,
+            latency_seed=scenario_latency_seed,
+            include_seed=include_seed_in_run_name,
         )
         run_dir = runs_root / run_name
         replay = run_parity_replay(
@@ -106,7 +130,7 @@ def run_parity_sweep(
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
             latency_jitter_us=latency_jitter_us,
-            latency_seed=latency_seed,
+            latency_seed=scenario_latency_seed,
             max_signal_age_ns=max_signal_age_ns,
             max_leg_book_age_ns=max_leg_book_age_ns,
             max_leg_book_skew_ns=max_leg_book_skew_ns,
@@ -125,7 +149,8 @@ def run_parity_sweep(
                 "feed_latency_us": float(feed_latency_us),
                 "order_latency_us": float(order_latency_us),
                 "latency_jitter_us": float(latency_jitter_us),
-                "latency_seed": int(latency_seed),
+                "latency_seed": int(scenario_latency_seed),
+                "latency_seed_group": seed_group,
                 "signal_count": int(len(replay.signals)),
                 **legging,
                 **summary,
@@ -141,8 +166,16 @@ def run_parity_sweep(
         run_names=run_names,
     )
     runs = _merge_proof_metrics(pd.DataFrame(rows), proof)
-    summary = _sweep_summary(runs)
+    seed_robustness = _latency_seed_robustness(
+        runs,
+        expected_seed_runs=len(latency_seed_values),
+    )
+    summary = _sweep_summary(runs, seed_robustness)
     runs.to_csv(out / "sweep_runs.csv", index=False)
+    seed_robustness.to_csv(
+        out / "latency_seed_robustness.csv",
+        index=False,
+    )
     summary.to_csv(out / "sweep_summary.csv", index=False)
     write_experiment_manifest(
         out,
@@ -154,7 +187,12 @@ def run_parity_sweep(
             "feed_latency_us_values": feed_latency_us_values,
             "order_latency_us_values": order_latency_us_values,
             "latency_jitter_us_values": latency_jitter_us_values,
-            "latency_seed": latency_seed,
+            "latency_seed": (
+                latency_seed_values[0]
+                if len(latency_seed_values) == 1
+                else None
+            ),
+            "latency_seed_values": latency_seed_values,
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
@@ -171,7 +209,13 @@ def run_parity_sweep(
             "proof_thresholds": getattr(proof_thresholds, "__dict__", None),
         },
     )
-    return ParitySweepResult(runs=runs, summary=summary, proof=proof, output_dir=out)
+    return ParitySweepResult(
+        runs=runs,
+        summary=summary,
+        proof=proof,
+        seed_robustness=seed_robustness,
+        output_dir=out,
+    )
 
 
 def _legging_metrics(legging: pd.DataFrame) -> dict[str, int]:
@@ -207,7 +251,133 @@ def _merge_proof_metrics(runs: pd.DataFrame, proof: ProofReport) -> pd.DataFrame
     return merged
 
 
-def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
+def _latency_seed_robustness(
+    runs: pd.DataFrame,
+    *,
+    expected_seed_runs: int,
+) -> pd.DataFrame:
+    columns = [
+        "latency_seed_group",
+        "depth_fraction",
+        "asof_latency_ns",
+        "feed_latency_us",
+        "order_latency_us",
+        "latency_jitter_us",
+        "latency_seed_values",
+        "latency_seed_runs",
+        "latency_seed_expected_runs",
+        "latency_seed_count",
+        "latency_seed_passed_runs",
+        "latency_seed_pass_rate",
+        "latency_seed_group_passed",
+        "latency_seed_worst_run",
+        "latency_seed_worst_seed",
+        "latency_seed_worst_robust_score",
+        "latency_seed_worst_net_pnl",
+        "latency_seed_median_net_pnl",
+        "latency_seed_best_net_pnl",
+        "latency_seed_min_fills",
+        "latency_seed_worst_drawdown",
+        "latency_seed_bound_violations",
+    ]
+    if runs.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows: list[dict[str, object]] = []
+    for seed_group, group in runs.groupby(
+        "latency_seed_group",
+        sort=False,
+        dropna=False,
+    ):
+        work = group.copy()
+        passed = work["proof_passed"].fillna(False).astype(bool)
+        seeds = sorted(
+            pd.to_numeric(
+                work["latency_seed"],
+                errors="coerce",
+            )
+            .dropna()
+            .astype(int)
+            .unique()
+            .tolist()
+        )
+        worst = work.sort_values(
+            ["robust_score", "net_pnl", "run"],
+            ascending=[True, True, True],
+            kind="stable",
+        ).iloc[0]
+        first = work.iloc[0]
+        bound_violations = sum(
+            _sum_int_metric(work, column)
+            for column in [
+                "parity_feed_latency_bound_violations",
+                "parity_order_latency_bound_violations",
+                "parity_latency_configuration_violations",
+            ]
+        )
+        seed_count = len(seeds)
+        seed_runs = len(work)
+        group_passed = bool(
+            seed_runs == expected_seed_runs
+            and seed_count == expected_seed_runs
+            and passed.all()
+            and bound_violations == 0
+        )
+        rows.append(
+            {
+                "latency_seed_group": str(seed_group),
+                "depth_fraction": float(first["depth_fraction"]),
+                "asof_latency_ns": int(first["asof_latency_ns"]),
+                "feed_latency_us": float(first["feed_latency_us"]),
+                "order_latency_us": float(first["order_latency_us"]),
+                "latency_jitter_us": float(
+                    first["latency_jitter_us"]
+                ),
+                "latency_seed_values": ",".join(
+                    str(seed) for seed in seeds
+                ),
+                "latency_seed_runs": int(seed_runs),
+                "latency_seed_expected_runs": int(
+                    expected_seed_runs
+                ),
+                "latency_seed_count": int(seed_count),
+                "latency_seed_passed_runs": int(passed.sum()),
+                "latency_seed_pass_rate": float(passed.mean()),
+                "latency_seed_group_passed": group_passed,
+                "latency_seed_worst_run": str(worst["run"]),
+                "latency_seed_worst_seed": int(
+                    worst["latency_seed"]
+                ),
+                "latency_seed_worst_robust_score": float(
+                    worst["robust_score"]
+                ),
+                "latency_seed_worst_net_pnl": float(
+                    worst["net_pnl"]
+                ),
+                "latency_seed_median_net_pnl": float(
+                    work["net_pnl"].median()
+                ),
+                "latency_seed_best_net_pnl": float(
+                    work["net_pnl"].max()
+                ),
+                "latency_seed_min_fills": int(
+                    work["fills"].min()
+                ),
+                "latency_seed_worst_drawdown": float(
+                    work["max_drawdown"].max(skipna=True)
+                ),
+                "latency_seed_bound_violations": int(
+                    bound_violations
+                ),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _sweep_summary(
+    runs: pd.DataFrame,
+    seed_robustness: pd.DataFrame,
+) -> pd.DataFrame:
     if runs.empty:
         return pd.DataFrame(
             columns=[
@@ -216,6 +386,13 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "pass_rate",
                 "best_run",
                 "best_robust_score",
+                "latency_seed_group_count",
+                "latency_seed_passed_groups",
+                "latency_seed_group_pass_rate",
+                "min_latency_seed_pass_rate",
+                "best_latency_seed_group",
+                "best_latency_seed_worst_run",
+                "best_latency_seed_worst_robust_score",
                 "median_net_pnl",
                 "min_net_pnl",
                 "worst_drawdown",
@@ -372,7 +549,35 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_self_cross_rejections",
             ]
         )
-    best = runs.sort_values(["robust_score", "net_pnl"], ascending=False).iloc[0]
+    passing_seed_groups = seed_robustness.loc[
+        seed_robustness[
+            "latency_seed_group_passed"
+        ].fillna(False).astype(bool)
+    ]
+    candidate_seed_groups = (
+        passing_seed_groups
+        if not passing_seed_groups.empty
+        else seed_robustness
+    )
+    best_seed_group = candidate_seed_groups.sort_values(
+        [
+            "latency_seed_worst_robust_score",
+            "latency_seed_worst_net_pnl",
+            "latency_seed_group",
+        ],
+        ascending=[False, False, True],
+        kind="stable",
+    ).iloc[0]
+    best_run = str(best_seed_group["latency_seed_worst_run"])
+    best_matches = runs.loc[runs["run"].astype(str) == best_run]
+    best = (
+        best_matches.iloc[0]
+        if not best_matches.empty
+        else runs.sort_values(
+            ["robust_score", "net_pnl"],
+            ascending=False,
+        ).iloc[0]
+    )
     return pd.DataFrame(
         [
             {
@@ -381,6 +586,36 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "pass_rate": float(runs["proof_passed"].fillna(False).mean()),
                 "best_run": best["run"],
                 "best_robust_score": float(best["robust_score"]),
+                "latency_seed_group_count": int(
+                    len(seed_robustness)
+                ),
+                "latency_seed_passed_groups": int(
+                    len(passing_seed_groups)
+                ),
+                "latency_seed_group_pass_rate": float(
+                    seed_robustness[
+                        "latency_seed_group_passed"
+                    ]
+                    .fillna(False)
+                    .astype(bool)
+                    .mean()
+                ),
+                "min_latency_seed_pass_rate": float(
+                    seed_robustness[
+                        "latency_seed_pass_rate"
+                    ].min()
+                ),
+                "best_latency_seed_group": str(
+                    best_seed_group["latency_seed_group"]
+                ),
+                "best_latency_seed_worst_run": str(
+                    best_seed_group["latency_seed_worst_run"]
+                ),
+                "best_latency_seed_worst_robust_score": float(
+                    best_seed_group[
+                        "latency_seed_worst_robust_score"
+                    ]
+                ),
                 "median_net_pnl": float(runs["net_pnl"].median()),
                 "min_net_pnl": float(runs["net_pnl"].min()),
                 "worst_drawdown": float(runs["max_drawdown"].max(skipna=True)),
@@ -1304,6 +1539,8 @@ def _run_name(
     feed_latency_us: float,
     order_latency_us: float,
     latency_jitter_us: float = 0.0,
+    latency_seed: int = 17,
+    include_seed: bool = False,
 ) -> str:
     name = (
         f"depth_{_label_number(depth_fraction)}"
@@ -1315,6 +1552,8 @@ def _run_name(
         name += (
             f"__jitter_{_label_number(latency_jitter_us)}us"
         )
+    if include_seed:
+        name += f"__seed_{int(latency_seed)}"
     return name
 
 
@@ -1329,6 +1568,27 @@ def _float_list(values: list[str]) -> list[float]:
 
 def _int_list(values: list[str]) -> list[int]:
     return [int(value) for value in values]
+
+
+def _normalized_latency_seeds(values: list[int]) -> list[int]:
+    seeds: list[int] = []
+    for value in values:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "latency_seed_values must contain integers"
+            ) from exc
+        if (
+            not math.isfinite(numeric)
+            or numeric < 0
+            or numeric % 1 != 0
+        ):
+            raise ValueError(
+                "latency_seed_values must contain non-negative integers"
+            )
+        seeds.append(int(numeric))
+    return seeds
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1352,6 +1612,7 @@ def main(argv: list[str] | None = None) -> int:
         default=["0"],
     )
     parser.add_argument("--latency-seed", type=int, default=17)
+    parser.add_argument("--latency-seeds", nargs="+", type=int)
     parser.add_argument(
         "--max-futures-quote-age-ns",
         type=int,
@@ -1390,6 +1651,7 @@ def main(argv: list[str] | None = None) -> int:
             args.latency_jitter_us
         ),
         latency_seed=args.latency_seed,
+        latency_seed_values=args.latency_seeds,
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,

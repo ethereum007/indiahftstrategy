@@ -1175,7 +1175,7 @@ python -m hft_cli sweep-parity `
   --feed-latency-us 0 50 `
   --order-latency-us 100 250 500 `
   --latency-jitter-us 0 25 50 `
-  --latency-seed 20260725 `
+  --latency-seeds 101 202 303 404 505 `
   --signal-limit 100 `
   --max-futures-quote-age-ns 1000000 `
   --max-leg-book-age-ns 1000000 `
@@ -1191,15 +1191,21 @@ Outputs include per-scenario replay folders plus:
 ```text
 sweep_runs.csv
 sweep_summary.csv
+latency_seed_robustness.csv
 proof/proof_metrics.csv
 proof/proof_checks.csv
 proof/proof_summary.csv
 ```
 
-Jitter magnitude is a sweep dimension. The seed is fixed across the sweep and
-stored in every run plus the sweep manifest, so scenarios are reproducible and
-candidate promotion carries the exact latency path assumptions forward rather
-than silently selecting an unrecorded random draw.
+Jitter magnitude is a sweep dimension. `--latency-seeds` replicates every
+economic scenario across the declared RNG seeds; `--latency-seed` remains the
+single-replication shorthand. Replicated run names carry a seed suffix.
+`latency_seed_robustness.csv` groups those paths back into one economic
+scenario, reports pass rate and worst-seed PnL/drawdown/robust score, and only
+marks the group passed when every expected seed is present, unique,
+proof-passing, and within its latency bounds. Candidate promotion independently
+reconciles that aggregate to raw `sweep_runs.csv`, selects the strongest
+worst-seed group, and carries its conservative seed into replay defaults.
 
 ## Parity / Box Candidate Promotion
 

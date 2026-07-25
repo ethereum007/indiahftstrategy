@@ -7656,6 +7656,23 @@ compilation succeeds. Repository collection is healthy at `2727 tests` across
 `164` files. The full suite was not rerun because recent complete runs exceed
 40 minutes.
 
+Latest multi-seed latency robustness proof: parity sweeps can now execute an
+explicit set of latency RNG seeds as replications of the same economic
+scenario and publish `latency_seed_robustness.csv`. A seed group passes only
+when every expected seed is present exactly once, every replication passes
+independent proof, and no latency configuration or sampled-bound violation is
+reported. Group summaries rank scenarios by their worst-seed robust score and
+retain worst, median, and best net PnL evidence. Candidate promotion consumes
+the aggregate artifact, independently reconciles its seed census, pass rate,
+worst score, and worst PnL to raw sweep rows, and selects the worst-seed run
+for replay defaults. A lucky seed or forged aggregate therefore cannot promote
+an otherwise failing group. Single-seed sweep naming remains backward
+compatible. All outputs remain research-only and non-authorizing. The
+`232`-test affected engine, replay, proof, parity, promotion, order-plan,
+launch, CLI, comparison, and evidence set passes. Source compilation succeeds.
+Repository collection is healthy at `2729 tests` across `164` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

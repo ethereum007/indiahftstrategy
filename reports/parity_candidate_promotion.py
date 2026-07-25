@@ -13,6 +13,52 @@ from reports.manifest import write_experiment_manifest
 from reports.parity_order_plan import PARITY_BOX_STRATEGY, BOX_DIRECTIONS, PARITY_DIRECTIONS
 
 
+LATENCY_SEED_ROBUSTNESS_COLUMNS = (
+    "latency_seed_group",
+    "depth_fraction",
+    "asof_latency_ns",
+    "feed_latency_us",
+    "order_latency_us",
+    "latency_jitter_us",
+    "latency_seed_values",
+    "latency_seed_runs",
+    "latency_seed_expected_runs",
+    "latency_seed_count",
+    "latency_seed_passed_runs",
+    "latency_seed_pass_rate",
+    "latency_seed_group_passed",
+    "latency_seed_worst_run",
+    "latency_seed_worst_seed",
+    "latency_seed_worst_robust_score",
+    "latency_seed_worst_net_pnl",
+    "latency_seed_median_net_pnl",
+    "latency_seed_best_net_pnl",
+    "latency_seed_min_fills",
+    "latency_seed_worst_drawdown",
+    "latency_seed_bound_violations",
+)
+
+LATENCY_SEED_PROMOTION_METRICS = (
+    "latency_seed_group",
+    "latency_seed_values",
+    "latency_seed_runs",
+    "latency_seed_expected_runs",
+    "latency_seed_count",
+    "latency_seed_passed_runs",
+    "latency_seed_pass_rate",
+    "latency_seed_group_passed",
+    "latency_seed_worst_run",
+    "latency_seed_worst_seed",
+    "latency_seed_worst_robust_score",
+    "latency_seed_worst_net_pnl",
+    "latency_seed_median_net_pnl",
+    "latency_seed_best_net_pnl",
+    "latency_seed_min_fills",
+    "latency_seed_worst_drawdown",
+    "latency_seed_bound_violations",
+)
+
+
 @dataclass(frozen=True)
 class ParityCandidatePromotionThresholds:
     require_edge_passed: bool = True
@@ -47,6 +93,7 @@ def evaluate_parity_candidate_promotion(
     sweep_summary: pd.DataFrame,
     sweep_runs: pd.DataFrame,
     *,
+    latency_seed_robustness: pd.DataFrame | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     thresholds: ParityCandidatePromotionThresholds | None = None,
 ) -> ParityCandidatePromotionReport:
@@ -55,11 +102,35 @@ def evaluate_parity_candidate_promotion(
     _require(edge_summary, ["passed", "total_opportunities", "best_net_edge"], "edge_summary")
     _require(sweep_summary, ["passed_scenarios", "pass_rate", "best_run"], "sweep_summary")
     _require(sweep_runs, ["run"], "sweep_runs")
+    seed_robustness_enabled = latency_seed_robustness is not None
+    latency_seed_robustness = (
+        pd.DataFrame()
+        if latency_seed_robustness is None
+        else latency_seed_robustness.copy()
+    )
+    if seed_robustness_enabled and not latency_seed_robustness.empty:
+        _require(
+            latency_seed_robustness,
+            list(LATENCY_SEED_ROBUSTNESS_COLUMNS),
+            "latency_seed_robustness",
+        )
 
     opportunities = _combined_opportunities(parity_opportunities, box_opportunities)
     candidate_row = _select_candidate(opportunities)
-    sweep_row = _select_sweep_run(sweep_summary.iloc[0], sweep_runs)
-    checks = _checks(edge_summary.iloc[0], sweep_summary.iloc[0], candidate_row, sweep_row, thresholds)
+    sweep_row = _select_sweep_run(
+        sweep_summary.iloc[0],
+        sweep_runs,
+        latency_seed_robustness=latency_seed_robustness,
+        seed_robustness_enabled=seed_robustness_enabled,
+    )
+    checks = _checks(
+        edge_summary.iloc[0],
+        sweep_summary.iloc[0],
+        candidate_row,
+        sweep_row,
+        thresholds,
+        seed_robustness_enabled=seed_robustness_enabled,
+    )
     candidate = (
         pd.DataFrame([_candidate_record(candidate_row, edge_summary.iloc[0], sweep_summary.iloc[0], sweep_row, market)])
         if candidate_row is not None
@@ -87,6 +158,9 @@ def write_parity_candidate_promotion(
     edge_summary_path = edge / "parity_edge_summary.csv"
     sweep_summary_path = sweep / "sweep_summary.csv"
     sweep_runs_path = sweep / "sweep_runs.csv"
+    latency_seed_robustness_path = (
+        sweep / "latency_seed_robustness.csv"
+    )
     for path in [parity_path, box_path, edge_summary_path, sweep_summary_path, sweep_runs_path]:
         if not path.exists():
             raise FileNotFoundError(f"required parity promotion input missing: {path}")
@@ -98,6 +172,11 @@ def write_parity_candidate_promotion(
         pd.read_csv(edge_summary_path),
         pd.read_csv(sweep_summary_path),
         pd.read_csv(sweep_runs_path),
+        latency_seed_robustness=(
+            pd.read_csv(latency_seed_robustness_path)
+            if latency_seed_robustness_path.exists()
+            else None
+        ),
         market=market,
         thresholds=thresholds,
     )
@@ -110,6 +189,20 @@ def write_parity_candidate_promotion(
         json.dumps(_jsonable(report.candidate_config), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    manifest_inputs = {
+        "scan": scan,
+        "edge_audit": edge,
+        "sweep": sweep,
+        "parity_opportunities": parity_path,
+        "box_opportunities": box_path,
+        "edge_summary": edge_summary_path,
+        "sweep_summary": sweep_summary_path,
+        "sweep_runs": sweep_runs_path,
+    }
+    if latency_seed_robustness_path.exists():
+        manifest_inputs["latency_seed_robustness"] = (
+            latency_seed_robustness_path
+        )
     write_experiment_manifest(
         out,
         run_type="promotion_report",
@@ -118,16 +211,7 @@ def write_parity_candidate_promotion(
             "market": market,
             "thresholds": asdict(thresholds),
         },
-        inputs={
-            "scan": scan,
-            "edge_audit": edge,
-            "sweep": sweep,
-            "parity_opportunities": parity_path,
-            "box_opportunities": box_path,
-            "edge_summary": edge_summary_path,
-            "sweep_summary": sweep_summary_path,
-            "sweep_runs": sweep_runs_path,
-        },
+        inputs=manifest_inputs,
         extra={"promotion_source": "parity_scan_edge_sweep"},
     )
     return ParityCandidatePromotionReport(
@@ -167,10 +251,63 @@ def _select_candidate(opportunities: pd.DataFrame) -> pd.Series | None:
     return work.sort_values(["_net_edge_sort", "_persistence_sort"], ascending=False).iloc[0]
 
 
-def _select_sweep_run(sweep_summary: pd.Series, sweep_runs: pd.DataFrame) -> pd.Series:
+def _select_sweep_run(
+    sweep_summary: pd.Series,
+    sweep_runs: pd.DataFrame,
+    *,
+    latency_seed_robustness: pd.DataFrame,
+    seed_robustness_enabled: bool,
+) -> pd.Series:
     work = sweep_runs.copy()
     if work.empty:
         return pd.Series(dtype=object)
+    if seed_robustness_enabled:
+        robust = latency_seed_robustness.copy()
+        if robust.empty:
+            return pd.Series(dtype=object)
+        passed_groups = robust.loc[
+            robust["latency_seed_group_passed"].map(_to_bool)
+        ].copy()
+        if passed_groups.empty:
+            return pd.Series(dtype=object)
+        selected_group = passed_groups.sort_values(
+            [
+                "latency_seed_worst_robust_score",
+                "latency_seed_worst_net_pnl",
+                "latency_seed_group",
+            ],
+            ascending=[False, False, True],
+            kind="stable",
+        ).iloc[0]
+        if "latency_seed_group" not in work.columns:
+            return pd.Series(dtype=object)
+        group_runs = work.loc[
+            work["latency_seed_group"].astype(str)
+            == str(selected_group["latency_seed_group"])
+        ].copy()
+        if not _seed_group_consistent(
+            group_runs,
+            selected_group,
+        ):
+            return pd.Series(dtype=object)
+        worst_run = str(
+            selected_group["latency_seed_worst_run"]
+        )
+        matched = group_runs.loc[
+            group_runs["run"].astype(str) == worst_run
+        ]
+        if matched.empty:
+            matched = group_runs.sort_values(
+                ["robust_score", "net_pnl", "run"],
+                ascending=[True, True, True],
+                kind="stable",
+            )
+        if matched.empty:
+            return pd.Series(dtype=object)
+        selected = matched.iloc[0].copy()
+        for key in LATENCY_SEED_ROBUSTNESS_COLUMNS:
+            selected[key] = selected_group[key]
+        return selected
     if "proof_passed" in work.columns:
         passed = work.loc[work["proof_passed"].map(_to_bool)].copy()
         if not passed.empty:
@@ -186,19 +323,263 @@ def _select_sweep_run(sweep_summary: pd.Series, sweep_runs: pd.DataFrame) -> pd.
     return work.iloc[0]
 
 
+def _seed_group_consistent(
+    runs: pd.DataFrame,
+    aggregate: pd.Series,
+) -> bool:
+    if runs.empty:
+        return False
+    required = [
+        "run",
+        "latency_seed_group",
+        "latency_seed",
+        "proof_passed",
+        "robust_score",
+        "net_pnl",
+        "fills",
+        "max_drawdown",
+        "depth_fraction",
+        "asof_latency_ns",
+        "feed_latency_us",
+        "order_latency_us",
+        "latency_jitter_us",
+    ]
+    if any(column not in runs.columns for column in required):
+        return False
+    if runs["run"].astype(str).duplicated().any():
+        return False
+    aggregate_group = str(
+        aggregate.get("latency_seed_group", "")
+    )
+    if (
+        not aggregate_group
+        or not runs["latency_seed_group"]
+        .astype(str)
+        .eq(aggregate_group)
+        .all()
+    ):
+        return False
+    passed = runs["proof_passed"].map(_to_bool)
+    seeds = pd.to_numeric(
+        runs["latency_seed"],
+        errors="coerce",
+    )
+    if (
+        seeds.isna().any()
+        or seeds.lt(0).any()
+        or seeds.mod(1).ne(0).any()
+    ):
+        return False
+    seed_values = sorted(seeds.astype(int).unique().tolist())
+    declared_seed_values = [
+        value.strip()
+        for value in str(
+            aggregate.get("latency_seed_values", "")
+        ).split(",")
+        if value.strip()
+    ]
+    try:
+        parsed_seed_values = sorted(
+            int(value) for value in declared_seed_values
+        )
+    except ValueError:
+        return False
+    if (
+        parsed_seed_values != seed_values
+        or len(parsed_seed_values) != len(set(parsed_seed_values))
+    ):
+        return False
+
+    integer_fields = {
+        key: _exact_integer(aggregate.get(key))
+        for key in [
+            "latency_seed_runs",
+            "latency_seed_expected_runs",
+            "latency_seed_count",
+            "latency_seed_passed_runs",
+            "latency_seed_bound_violations",
+        ]
+    }
+    if any(value is None for value in integer_fields.values()):
+        return False
+    expected_seed_runs = integer_fields[
+        "latency_seed_expected_runs"
+    ]
+    if expected_seed_runs is None or expected_seed_runs <= 0:
+        return False
+    bound_violations = _raw_seed_bound_violations(runs)
+    if bound_violations is None:
+        return False
+    expected_values = {
+        "latency_seed_runs": len(runs),
+        "latency_seed_count": len(seed_values),
+        "latency_seed_passed_runs": int(passed.sum()),
+        "latency_seed_bound_violations": bound_violations,
+    }
+    if any(
+        integer_fields[key] != value
+        for key, value in expected_values.items()
+    ):
+        return False
+
+    for column in [
+        "depth_fraction",
+        "asof_latency_ns",
+        "feed_latency_us",
+        "order_latency_us",
+        "latency_jitter_us",
+    ]:
+        values = pd.to_numeric(runs[column], errors="coerce")
+        if (
+            values.isna().any()
+            or not np.allclose(
+                values.to_numpy(dtype=float),
+                float(values.iloc[0]),
+                rtol=0.0,
+                atol=1e-12,
+            )
+            or not _numbers_match(
+                aggregate.get(column),
+                values.iloc[0],
+            )
+        ):
+            return False
+
+    scored = runs.copy()
+    scored["_robust_score"] = pd.to_numeric(
+        scored["robust_score"],
+        errors="coerce",
+    )
+    scored["_net_pnl"] = pd.to_numeric(
+        scored["net_pnl"],
+        errors="coerce",
+    )
+    fills = pd.to_numeric(scored["fills"], errors="coerce")
+    drawdowns = pd.to_numeric(
+        scored["max_drawdown"],
+        errors="coerce",
+    )
+    if (
+        scored[["_robust_score", "_net_pnl"]].isna().any().any()
+        or fills.isna().any()
+        or fills.mod(1).ne(0).any()
+    ):
+        return False
+    worst = scored.sort_values(
+        ["_robust_score", "_net_pnl", "run"],
+        ascending=[True, True, True],
+        kind="stable",
+    ).iloc[0]
+    aggregate_pass_rate = _number(
+        aggregate.get("latency_seed_pass_rate"),
+        np.nan,
+    )
+    if (
+        not np.isfinite(aggregate_pass_rate)
+        or abs(aggregate_pass_rate - float(passed.mean())) > 1e-12
+    ):
+        return False
+    expected_group_passed = bool(
+        passed.all()
+        and len(runs) == expected_seed_runs
+        and len(seed_values) == expected_seed_runs
+        and bound_violations == 0
+    )
+    if _to_bool(
+        aggregate.get("latency_seed_group_passed", False)
+    ) != expected_group_passed:
+        return False
+    if str(aggregate.get("latency_seed_worst_run", "")) != str(
+        worst["run"]
+    ):
+        return False
+    if _exact_integer(
+        aggregate.get("latency_seed_worst_seed")
+    ) != int(worst["latency_seed"]):
+        return False
+    expected_metrics = {
+        "latency_seed_worst_robust_score": worst[
+            "_robust_score"
+        ],
+        "latency_seed_worst_net_pnl": worst["_net_pnl"],
+        "latency_seed_median_net_pnl": scored[
+            "_net_pnl"
+        ].median(),
+        "latency_seed_best_net_pnl": scored["_net_pnl"].max(),
+        "latency_seed_min_fills": int(fills.min()),
+        "latency_seed_worst_drawdown": (
+            drawdowns.max(skipna=True)
+        ),
+    }
+    for key, value in expected_metrics.items():
+        if not _numbers_match(aggregate.get(key), value):
+            return False
+    return True
+
+
+def _raw_seed_bound_violations(
+    runs: pd.DataFrame,
+) -> int | None:
+    total = 0
+    for column in [
+        "parity_feed_latency_bound_violations",
+        "parity_order_latency_bound_violations",
+        "parity_latency_configuration_violations",
+    ]:
+        if column not in runs.columns:
+            continue
+        values = pd.to_numeric(runs[column], errors="coerce")
+        if (
+            values.isna().any()
+            or values.lt(0).any()
+            or values.mod(1).ne(0).any()
+        ):
+            return None
+        total += int(values.sum())
+    return total
+
+
+def _exact_integer(value: Any) -> int | None:
+    number = _number(value, np.nan)
+    if (
+        not np.isfinite(number)
+        or number % 1 != 0
+    ):
+        return None
+    return int(number)
+
+
+def _numbers_match(left: Any, right: Any) -> bool:
+    left_number = _number(left, np.nan)
+    right_number = _number(right, np.nan)
+    if np.isnan(left_number) and np.isnan(right_number):
+        return True
+    return bool(
+        np.isfinite(left_number)
+        and np.isfinite(right_number)
+        and np.isclose(
+            left_number,
+            right_number,
+            rtol=0.0,
+            atol=1e-12,
+        )
+    )
+
+
 def _checks(
     edge: pd.Series,
     sweep: pd.Series,
     candidate: pd.Series | None,
     sweep_run: pd.Series,
     thresholds: ParityCandidatePromotionThresholds,
+    *,
+    seed_robustness_enabled: bool,
 ) -> pd.DataFrame:
     edge_passed = _to_bool(edge.get("passed", False))
     passed_scenarios = _number(sweep.get("passed_scenarios"), 0)
     candidate_net_edge = _number(candidate.get("net_edge") if candidate is not None else None, np.nan)
     candidate_persistence = _number(candidate.get("persistence_ticks") if candidate is not None else None, np.nan)
-    return pd.DataFrame(
-        [
+    rows = [
             _check(
                 "edge_audit_passed",
                 edge_passed,
@@ -251,7 +632,49 @@ def _checks(
                 "no sweep run is available for replay defaults",
             ),
         ]
-    )
+    if seed_robustness_enabled:
+        seed_group_available = not sweep_run.empty
+        seed_group_passed = (
+            _to_bool(
+                sweep_run.get(
+                    "latency_seed_group_passed",
+                    False,
+                )
+            )
+            if seed_group_available
+            else False
+        )
+        seed_pass_rate = _number(
+            sweep_run.get("latency_seed_pass_rate"),
+            np.nan,
+        )
+        rows.extend(
+            [
+                _check(
+                    "latency_seed_robust_group_available",
+                    1 if seed_group_available else 0,
+                    ">=",
+                    1,
+                    seed_group_available,
+                    "no fully passing latency-seed group is available",
+                ),
+                _check(
+                    "latency_seed_group_passed",
+                    seed_group_passed,
+                    "is",
+                    True,
+                    seed_group_passed,
+                    "selected latency configuration did not pass every seed",
+                ),
+                _threshold_check(
+                    "latency_seed_pass_rate",
+                    seed_pass_rate,
+                    ">=",
+                    1.0,
+                ),
+            ]
+        )
+    return pd.DataFrame(rows)
 
 
 def _candidate_record(
@@ -301,6 +724,9 @@ def _candidate_record(
         "sweep_fills": _jsonable(sweep_run.get("fills")),
         "sweep_robust_score": _jsonable(sweep_run.get("robust_score")),
     }
+    for key in LATENCY_SEED_PROMOTION_METRICS:
+        if key in sweep_run.index:
+            record[key] = _jsonable(sweep_run.get(key))
     if (
         "max_futures_quote_age_ns" in sweep_run.index
         or "parity_futures_max_quote_age_ns" in sweep_run.index
@@ -370,6 +796,13 @@ def _summary(candidate: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy": str(row.get("strategy", PARITY_BOX_STRATEGY)),
                 "market": str(row.get("market", "")),
                 "direction": str(row.get("direction", "")),
+                "latency_seed_count": int(
+                    _number(row.get("latency_seed_count"), 0)
+                ),
+                "latency_seed_pass_rate": _number(
+                    row.get("latency_seed_pass_rate"),
+                    np.nan,
+                ),
                 "checks": int(len(checks)),
                 "failed_checks": failed,
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_in_research",
@@ -458,6 +891,7 @@ def _promotion_candidate_config(
             "sweep_net_pnl",
             "sweep_fills",
             "sweep_robust_score",
+            *LATENCY_SEED_PROMOTION_METRICS,
         ]
         if key in row.index
     }

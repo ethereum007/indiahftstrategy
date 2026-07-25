@@ -4124,6 +4124,7 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
     parity_sweep.add_argument("--latency-jitter-us", nargs="+", default=[0.0], type=float)
     parity_sweep.add_argument("--latency-seed", type=int, default=17)
+    parity_sweep.add_argument("--latency-seeds", nargs="+", type=int)
     parity_sweep.add_argument("--signal-limit", type=int, default=None)
     parity_sweep.add_argument(
         "--max-futures-quote-age-ns",
@@ -9290,6 +9291,7 @@ def main(argv: list[str] | None = None) -> int:
             order_latency_us_values=args.order_latency_us,
             latency_jitter_us_values=args.latency_jitter_us,
             latency_seed=args.latency_seed,
+            latency_seed_values=args.latency_seeds,
             filter_session=not args.no_filter_session,
             signal_limit=args.signal_limit,
             max_futures_quote_age_ns=args.max_futures_quote_age_ns,
