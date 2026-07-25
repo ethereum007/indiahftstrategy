@@ -5,7 +5,12 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from engine.hft_backtest import OrderType
-from engine.multi_engine import MultiInstrumentEngine, MultiInstrumentStrategy, RoutedFill
+from engine.multi_engine import (
+    IOCOrderIntent,
+    MultiInstrumentEngine,
+    MultiInstrumentStrategy,
+    RoutedFill,
+)
 
 
 PARITY_EXECUTION_GUARD_COLUMNS = [
@@ -29,6 +34,15 @@ PARITY_EXECUTION_GUARD_COLUMNS = [
     "leg_book_skew_ns",
     "max_leg_book_age_ns",
     "max_leg_book_skew_ns",
+    "ioc_batch_preflight_enabled",
+    "ioc_batch_preflight_attempted",
+    "ioc_batch_preflight_passed",
+    "ioc_batch_preflight_reason",
+    "ioc_batch_preflight_instrument_id",
+    "ioc_batch_preflight_projected_min",
+    "ioc_batch_preflight_projected_max",
+    "ioc_batch_preflight_limit",
+    "ioc_batch_preflight_conflicting_oid",
     "guard_passed",
     "guard_reason",
     "affected_legs",
@@ -320,9 +334,6 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             self.execution_guard_decisions.append(guard)
             return False
 
-        guard["guard_passed"] = True
-        guard["guard_reason"] = "ready"
-        guard["orders_requested"] = 3
         if direction == "buy_synthetic_sell_future":
             legs = [
                 (call_id, +1, call["ask"]),
@@ -336,6 +347,58 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
                 (future_id, +1, future["ask"]),
             ]
 
+        preflight = engine.preflight_ioc_batch(
+            [
+                IOCOrderIntent(
+                    instrument_id=leg_instrument_id,
+                    side=side,
+                    qty=qty,
+                    price=price,
+                )
+                for leg_instrument_id, side, price in legs
+            ]
+        )
+        guard["ioc_batch_preflight_attempted"] = True
+        guard["ioc_batch_preflight_passed"] = preflight.passed
+        guard["ioc_batch_preflight_reason"] = preflight.reason
+        guard["ioc_batch_preflight_instrument_id"] = (
+            preflight.instrument_id
+        )
+        guard["ioc_batch_preflight_projected_min"] = (
+            None
+            if pd.isna(preflight.projected_min)
+            else preflight.projected_min
+        )
+        guard["ioc_batch_preflight_projected_max"] = (
+            None
+            if pd.isna(preflight.projected_max)
+            else preflight.projected_max
+        )
+        guard["ioc_batch_preflight_limit"] = (
+            None
+            if pd.isna(preflight.limit)
+            else preflight.limit
+        )
+        guard["ioc_batch_preflight_conflicting_oid"] = (
+            preflight.conflicting_oid
+        )
+        if not preflight.passed:
+            guard["guard_reason"] = "ioc_batch_preflight_rejected"
+            instrument_to_leg = {
+                call_id: "call",
+                put_id: "put",
+                future_id: "future",
+            }
+            guard["affected_legs"] = instrument_to_leg.get(
+                preflight.instrument_id,
+                "package",
+            )
+            self.execution_guard_decisions.append(guard)
+            return False
+
+        guard["guard_passed"] = True
+        guard["guard_reason"] = "ready"
+        guard["orders_requested"] = 3
         execution = SignalExecution(
             signal_index=signal_index,
             direction=direction,
@@ -400,6 +463,15 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             "max_leg_book_skew_ns": int(
                 self.config.max_leg_book_skew_ns
             ),
+            "ioc_batch_preflight_enabled": True,
+            "ioc_batch_preflight_attempted": False,
+            "ioc_batch_preflight_passed": False,
+            "ioc_batch_preflight_reason": "not_attempted",
+            "ioc_batch_preflight_instrument_id": "",
+            "ioc_batch_preflight_projected_min": None,
+            "ioc_batch_preflight_projected_max": None,
+            "ioc_batch_preflight_limit": None,
+            "ioc_batch_preflight_conflicting_oid": None,
             "guard_passed": False,
             "guard_reason": guard_reason,
             "affected_legs": "",

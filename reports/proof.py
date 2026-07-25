@@ -649,6 +649,15 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         or parity_execution_guard_path.exists()
         or parity_legging_path.exists()
     )
+    parity_execution_ioc_batch_preflight_declared = _bool(
+        row.get(
+            "parity_execution_ioc_batch_preflight_enabled",
+            False,
+        )
+    )
+    parity_execution_ioc_batch_preflight_enabled = bool(
+        parity_execution_guard_enabled
+    )
     parity_execution_max_leg_book_age_ns = _int(
         row,
         "parity_execution_max_leg_book_age_ns",
@@ -697,6 +706,32 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         ),
         errors="coerce",
     )
+    parity_preflight_enabled_raw = parity_execution_guard.get(
+        "ioc_batch_preflight_enabled",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_preflight_enabled = parity_preflight_enabled_raw.map(_bool)
+    parity_preflight_attempted_raw = parity_execution_guard.get(
+        "ioc_batch_preflight_attempted",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_preflight_attempted = (
+        parity_preflight_attempted_raw.map(_bool)
+    )
+    parity_preflight_passed_raw = parity_execution_guard.get(
+        "ioc_batch_preflight_passed",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_preflight_passed = parity_preflight_passed_raw.map(_bool)
+    parity_preflight_reason_raw = parity_execution_guard.get(
+        "ioc_batch_preflight_reason",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_preflight_reasons = (
+        parity_preflight_reason_raw.astype("string")
+        .fillna("")
+        .str.strip()
+    )
     parity_known_guard_reasons = {
         "signal_age_exceeded",
         "nonpositive_quantity",
@@ -707,6 +742,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "negative_leg_book_age",
         "stale_leg_book",
         "leg_book_skew_exceeded",
+        "ioc_batch_preflight_rejected",
         "ready",
     }
     parity_known_routing_statuses = {
@@ -734,6 +770,77 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         | parity_routing_status.eq("")
         | parity_guard_orders_requested.isna()
         | parity_guard_orders_accepted.isna()
+    )
+    parity_preflight_missing_evidence = (
+        _boolean_evidence_missing(parity_preflight_enabled_raw)
+        | _boolean_evidence_missing(parity_preflight_attempted_raw)
+        | _boolean_evidence_missing(parity_preflight_passed_raw)
+        | parity_preflight_reason_raw.isna()
+        | parity_preflight_reasons.eq("")
+    )
+    parity_preflight_consistency_violation = (
+        ~parity_preflight_enabled
+        | (
+            parity_preflight_attempted
+            & parity_preflight_passed
+            & ~parity_preflight_reasons.eq("passed")
+        )
+        | (
+            parity_preflight_attempted
+            & ~parity_preflight_passed
+            & parity_preflight_reasons.isin(
+                {"passed", "not_attempted"}
+            )
+        )
+        | (
+            ~parity_preflight_attempted
+            & (
+                parity_preflight_passed
+                | ~parity_preflight_reasons.eq("not_attempted")
+            )
+        )
+        | (
+            parity_guard_passed
+            & (
+                ~parity_preflight_attempted
+                | ~parity_preflight_passed
+                | ~parity_preflight_reasons.eq("passed")
+            )
+        )
+        | (
+            parity_guard_reasons.eq(
+                "ioc_batch_preflight_rejected"
+            )
+            & (
+                ~parity_preflight_attempted
+                | parity_preflight_passed
+                | parity_preflight_reasons.isin(
+                    {"passed", "not_attempted"}
+                )
+            )
+        )
+        | (
+            ~parity_guard_passed
+            & ~parity_guard_reasons.eq(
+                "ioc_batch_preflight_rejected"
+            )
+            & (
+                parity_preflight_attempted
+                | parity_preflight_passed
+                | ~parity_preflight_reasons.eq("not_attempted")
+            )
+        )
+    )
+    parity_execution_ioc_batch_preflight_missing_evidence_rows = (
+        int(parity_preflight_missing_evidence.sum())
+    )
+    parity_execution_ioc_batch_preflight_consistency_violations = (
+        int(
+            (
+                parity_preflight_consistency_violation
+                & ~parity_preflight_missing_evidence
+            ).sum()
+        )
     )
     parity_expected_routing_status = pd.Series(
         "not_attempted",
@@ -1249,6 +1356,35 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "parity_execution_guard_deferred_attempts": int(
             (~parity_guard_passed).sum()
         ),
+        "parity_execution_ioc_batch_preflight_enabled": (
+            parity_execution_ioc_batch_preflight_enabled
+        ),
+        "parity_execution_ioc_batch_preflight_declared": (
+            parity_execution_ioc_batch_preflight_declared
+        ),
+        "parity_execution_ioc_batch_preflight_attempts": int(
+            parity_preflight_attempted.sum()
+        ),
+        "parity_execution_ioc_batch_preflight_passed_attempts": int(
+            (
+                parity_preflight_attempted
+                & parity_preflight_passed
+            ).sum()
+        ),
+        "parity_execution_ioc_batch_preflight_rejected_attempts": (
+            int(
+                (
+                    parity_preflight_attempted
+                    & ~parity_preflight_passed
+                ).sum()
+            )
+        ),
+        "parity_execution_ioc_batch_preflight_missing_evidence_rows": (
+            parity_execution_ioc_batch_preflight_missing_evidence_rows
+        ),
+        "parity_execution_ioc_batch_preflight_consistency_violations": (
+            parity_execution_ioc_batch_preflight_consistency_violations
+        ),
         "parity_execution_guard_missing_evidence_rows": (
             parity_execution_guard_missing_evidence_rows
         ),
@@ -1643,6 +1779,31 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+        preflight_declared = bool(
+            metrics[
+                "parity_execution_ioc_batch_preflight_declared"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_ioc_batch_preflight_declared"
+                ),
+                "value": preflight_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": preflight_declared,
+                "reason": (
+                    ""
+                    if preflight_declared
+                    else (
+                        "parity execution lacks the IOC package "
+                        "preflight safety declaration"
+                    )
+                ),
+            }
+        )
         for metric in [
             "parity_execution_max_leg_book_age_ns",
             "parity_execution_max_leg_book_skew_ns",
@@ -1717,6 +1878,18 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_guard_consistency_violations",
                 "parity execution guard status is internally inconsistent",
+            ),
+            (
+                "parity_execution_ioc_batch_preflight_missing_evidence_rows",
+                "parity IOC package preflight evidence is missing",
+            ),
+            (
+                "parity_execution_ioc_batch_preflight_consistency_violations",
+                "parity IOC package preflight evidence is inconsistent",
+            ),
+            (
+                "parity_execution_ioc_batch_preflight_rejected_attempts",
+                "parity IOC packages failed admission before routing",
             ),
             (
                 "parity_execution_guard_passed_missing_age_rows",

@@ -3,7 +3,12 @@ import pandas as pd
 import pytest
 
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel
-from engine.multi_engine import InstrumentConfig, MultiInstrumentEngine, VenueConfig
+from engine.multi_engine import (
+    IOCBatchPreflightResult,
+    InstrumentConfig,
+    MultiInstrumentEngine,
+    VenueConfig,
+)
 from strategies.parity_arb import ParityArbConfig, ParityArbTakerStrategy, ParityLegMap
 
 
@@ -207,7 +212,7 @@ def test_parity_arb_taker_defers_cross_leg_book_skew():
     assert set(guard["leg_book_skew_ns"]) == {100}
 
 
-def test_parity_arb_taker_marks_rejected_third_leg_incomplete():
+def test_parity_arb_taker_preflights_rejected_third_leg_before_routing():
     strategy = ParityArbTakerStrategy(
         pd.DataFrame(
             [
@@ -232,17 +237,74 @@ def test_parity_arb_taker_marks_rejected_third_leg_incomplete():
 
     result = engine.run()
 
+    guard = strategy.execution_guard_report()
+    attempted = guard.loc[
+        guard["ioc_batch_preflight_attempted"]
+    ]
+    assert engine.orders_sent == 0
+    assert result.fills.empty
+    assert result.order_rejections.empty
+    assert not attempted.empty
+    assert not attempted["guard_passed"].any()
+    assert set(attempted["guard_reason"]) == {
+        "ioc_batch_preflight_rejected"
+    }
+    assert set(attempted["ioc_batch_preflight_reason"]) == {
+        "instrument_position_limit"
+    }
+    assert set(attempted["ioc_batch_preflight_instrument_id"]) == {
+        "FUT"
+    }
+    assert set(attempted["affected_legs"]) == {"future"}
+    assert strategy.legging_report().empty
+
+
+def test_parity_arb_taker_marks_post_preflight_rejection_incomplete(
+    monkeypatch,
+):
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        future_max_position_lots=0,
+    )
+    monkeypatch.setattr(
+        engine,
+        "preflight_ioc_batch",
+        lambda intents: IOCBatchPreflightResult(
+            passed=True,
+            reason="passed",
+        ),
+    )
+
+    result = engine.run()
+
     strategy_fills = result.fills.loc[result.fills["oid"].isin([1, 2])]
     guard = strategy.execution_guard_report()
     legging = strategy.legging_report()
+    routed_guard = guard.loc[guard["guard_passed"]].iloc[0]
     assert engine.orders_sent == 2
     assert len(strategy_fills) == 2
-    assert guard.loc[guard["guard_passed"]].iloc[0][
-        "routing_status"
-    ] == "partial"
-    assert int(guard.loc[guard["guard_passed"]].iloc[0][
-        "orders_accepted"
-    ]) == 2
+    assert bool(routed_guard["ioc_batch_preflight_attempted"])
+    assert bool(routed_guard["ioc_batch_preflight_passed"])
+    assert routed_guard["ioc_batch_preflight_reason"] == "passed"
+    assert routed_guard["routing_status"] == "partial"
+    assert int(routed_guard["orders_accepted"]) == 2
     assert bool(legging.iloc[0]["partial"])
     assert not bool(legging.iloc[0]["routing_complete"])
     assert int(legging.iloc[0]["route_rejection_count"]) == 1

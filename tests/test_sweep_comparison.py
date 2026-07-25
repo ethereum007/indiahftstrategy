@@ -42,6 +42,13 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_futures_max_signal_age_ns": 20,
             "parity_execution_guard_enabled": True,
             "parity_execution_guard_declared": True,
+            "parity_execution_ioc_batch_preflight_enabled": True,
+            "parity_execution_ioc_batch_preflight_declared": True,
+            "parity_execution_ioc_batch_preflight_attempts": 1,
+            "parity_execution_ioc_batch_preflight_passed_attempts": 1,
+            "parity_execution_ioc_batch_preflight_rejected_attempts": 0,
+            "parity_execution_ioc_batch_preflight_missing_evidence_rows": 0,
+            "parity_execution_ioc_batch_preflight_consistency_violations": 0,
             "parity_execution_guard_present": True,
             "parity_execution_legging_present": True,
             "parity_execution_guard_attempts": 3,
@@ -138,6 +145,13 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_futures_max_signal_age_ns": 150,
             "parity_execution_guard_enabled": True,
             "parity_execution_guard_declared": True,
+            "parity_execution_ioc_batch_preflight_enabled": True,
+            "parity_execution_ioc_batch_preflight_declared": True,
+            "parity_execution_ioc_batch_preflight_attempts": 1,
+            "parity_execution_ioc_batch_preflight_passed_attempts": 0,
+            "parity_execution_ioc_batch_preflight_rejected_attempts": 1,
+            "parity_execution_ioc_batch_preflight_missing_evidence_rows": 1,
+            "parity_execution_ioc_batch_preflight_consistency_violations": 1,
             "parity_execution_guard_present": True,
             "parity_execution_legging_present": True,
             "parity_execution_guard_attempts": 4,
@@ -259,11 +273,30 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(weak["max_parity_futures_signal_age_ns"]) == 150
     assert int(best["parity_execution_guard_enabled_runs"]) == 2
     assert int(best["parity_execution_guard_declared_runs"]) == 2
+    assert int(
+        best["parity_execution_ioc_batch_preflight_enabled_runs"]
+    ) == 2
+    assert int(
+        best["parity_execution_ioc_batch_preflight_declared_runs"]
+    ) == 2
     assert int(best["parity_execution_guard_artifact_present_runs"]) == 2
     assert int(best["parity_execution_legging_artifact_present_runs"]) == 2
     assert int(best["total_parity_execution_guard_attempts"]) == 6
     assert int(best["total_parity_execution_guard_passed_attempts"]) == 2
     assert int(best["total_parity_execution_guard_deferred_attempts"]) == 4
+    assert int(
+        best["total_parity_execution_ioc_batch_preflight_attempts"]
+    ) == 2
+    assert int(
+        best[
+            "total_parity_execution_ioc_batch_preflight_passed_attempts"
+        ]
+    ) == 2
+    assert int(
+        best[
+            "total_parity_execution_ioc_batch_preflight_rejected_attempts"
+        ]
+    ) == 0
     assert int(best["total_parity_execution_routing_complete_attempts"]) == 2
     assert int(best["total_parity_execution_complete_count"]) == 2
     assert int(best["total_parity_execution_incomplete_count"]) == 0
@@ -275,6 +308,21 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     ) == 2
     assert int(
         weak["total_parity_execution_guard_consistency_violations"]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_batch_preflight_rejected_attempts"
+        ]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_batch_preflight_missing_evidence_rows"
+        ]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_batch_preflight_consistency_violations"
+        ]
     ) == 2
     assert int(weak["total_parity_execution_signal_expiry_events"]) == 2
     assert int(weak["total_parity_execution_stale_book_attempts"]) == 2
@@ -392,6 +440,16 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     ) == 4
     assert int(
         comparison.summary.iloc[0][
+            "parity_execution_ioc_batch_preflight_enabled_runs"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "parity_execution_ioc_batch_preflight_declared_runs"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
             "parity_execution_guard_artifact_present_runs"
         ]
     ) == 4
@@ -410,6 +468,21 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
             "total_parity_execution_guard_deferred_attempts"
         ]
     ) == 10
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_attempts"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_passed_attempts"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_rejected_attempts"
+        ]
+    ) == 2
     assert int(
         comparison.summary.iloc[0][
             "total_parity_execution_routing_incomplete_attempts"

@@ -105,6 +105,19 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(
         result.summary.iloc[0]["parity_execution_guard_declared_runs"]
     ) == 2
+    assert result.runs[
+        "parity_execution_ioc_batch_preflight_enabled"
+    ].all()
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_ioc_batch_preflight_enabled_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_ioc_batch_preflight_declared_runs"
+        ]
+    ) == 2
     assert int(
         result.summary.iloc[0][
             "parity_execution_guard_artifact_present_runs"
@@ -128,6 +141,31 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
             "total_parity_execution_guard_deferred_attempts"
         ]
     ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_attempts"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_passed_attempts"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_rejected_attempts"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_batch_preflight_consistency_violations"
+        ]
+    ) == 0
     assert int(
         result.summary.iloc[0][
             "total_parity_execution_guard_missing_evidence_rows"

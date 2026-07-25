@@ -204,11 +204,18 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "max_parity_futures_signal_age_ns",
                 "parity_execution_guard_enabled_runs",
                 "parity_execution_guard_declared_runs",
+                "parity_execution_ioc_batch_preflight_enabled_runs",
+                "parity_execution_ioc_batch_preflight_declared_runs",
                 "parity_execution_guard_artifact_present_runs",
                 "parity_execution_legging_artifact_present_runs",
                 "total_parity_execution_guard_attempts",
                 "total_parity_execution_guard_passed_attempts",
                 "total_parity_execution_guard_deferred_attempts",
+                "total_parity_execution_ioc_batch_preflight_attempts",
+                "total_parity_execution_ioc_batch_preflight_passed_attempts",
+                "total_parity_execution_ioc_batch_preflight_rejected_attempts",
+                "total_parity_execution_ioc_batch_preflight_missing_evidence_rows",
+                "total_parity_execution_ioc_batch_preflight_consistency_violations",
                 "total_parity_execution_guard_missing_evidence_rows",
                 "total_parity_execution_guard_unclassified_rows",
                 "total_parity_execution_guard_consistency_violations",
@@ -325,6 +332,18 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     runs,
                     "parity_execution_guard_declared",
                 ),
+                "parity_execution_ioc_batch_preflight_enabled_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_enabled",
+                    )
+                ),
+                "parity_execution_ioc_batch_preflight_declared_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_declared",
+                    )
+                ),
                 "parity_execution_guard_artifact_present_runs": (
                     _sum_bool_metric(
                         runs,
@@ -351,6 +370,36 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     _sum_int_metric(
                         runs,
                         "parity_execution_guard_deferred_attempts",
+                    )
+                ),
+                "total_parity_execution_ioc_batch_preflight_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_attempts",
+                    )
+                ),
+                "total_parity_execution_ioc_batch_preflight_passed_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_passed_attempts",
+                    )
+                ),
+                "total_parity_execution_ioc_batch_preflight_rejected_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_rejected_attempts",
+                    )
+                ),
+                "total_parity_execution_ioc_batch_preflight_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_ioc_batch_preflight_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_batch_preflight_consistency_violations",
                     )
                 ),
                 "total_parity_execution_guard_missing_evidence_rows": (

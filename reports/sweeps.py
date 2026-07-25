@@ -58,6 +58,13 @@ KNOWN_NON_PARAM_COLUMNS = {
     "parity_execution_guard_attempts",
     "parity_execution_guard_passed_attempts",
     "parity_execution_guard_deferred_attempts",
+    "parity_execution_ioc_batch_preflight_enabled",
+    "parity_execution_ioc_batch_preflight_declared",
+    "parity_execution_ioc_batch_preflight_attempts",
+    "parity_execution_ioc_batch_preflight_passed_attempts",
+    "parity_execution_ioc_batch_preflight_rejected_attempts",
+    "parity_execution_ioc_batch_preflight_missing_evidence_rows",
+    "parity_execution_ioc_batch_preflight_consistency_violations",
     "parity_execution_guard_missing_evidence_rows",
     "parity_execution_guard_unclassified_rows",
     "parity_execution_guard_consistency_violations",
@@ -1317,6 +1324,18 @@ def _parity_execution_aggregates(
             pd.Series(False, index=frame.index),
         )
     )
+    preflight_enabled = _bool_series(
+        frame.get(
+            "parity_execution_ioc_batch_preflight_enabled",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    preflight_declared = _bool_series(
+        frame.get(
+            "parity_execution_ioc_batch_preflight_declared",
+            pd.Series(False, index=frame.index),
+        )
+    )
     guard_present = _bool_series(
         frame.get(
             "parity_execution_guard_present",
@@ -1338,6 +1357,21 @@ def _parity_execution_aggregates(
         ),
         "total_parity_execution_guard_deferred_attempts": (
             "parity_execution_guard_deferred_attempts"
+        ),
+        "total_parity_execution_ioc_batch_preflight_attempts": (
+            "parity_execution_ioc_batch_preflight_attempts"
+        ),
+        "total_parity_execution_ioc_batch_preflight_passed_attempts": (
+            "parity_execution_ioc_batch_preflight_passed_attempts"
+        ),
+        "total_parity_execution_ioc_batch_preflight_rejected_attempts": (
+            "parity_execution_ioc_batch_preflight_rejected_attempts"
+        ),
+        "total_parity_execution_ioc_batch_preflight_missing_evidence_rows": (
+            "parity_execution_ioc_batch_preflight_missing_evidence_rows"
+        ),
+        "total_parity_execution_ioc_batch_preflight_consistency_violations": (
+            "parity_execution_ioc_batch_preflight_consistency_violations"
         ),
         "total_parity_execution_guard_missing_evidence_rows": (
             "parity_execution_guard_missing_evidence_rows"
@@ -1402,6 +1436,12 @@ def _parity_execution_aggregates(
     return {
         "parity_execution_guard_enabled_runs": int(enabled.sum()),
         "parity_execution_guard_declared_runs": int(declared.sum()),
+        "parity_execution_ioc_batch_preflight_enabled_runs": int(
+            preflight_enabled.sum()
+        ),
+        "parity_execution_ioc_batch_preflight_declared_runs": int(
+            preflight_declared.sum()
+        ),
         "parity_execution_guard_artifact_present_runs": int(
             guard_present.sum()
         ),

@@ -900,11 +900,22 @@ books for the call, put, and future and bounds the timestamp skew across all
 three legs. Feed delay therefore consumes the configured book-age budget
 instead of resetting it. `parity_execution_guard.csv` records every deferred,
 expired, rejected, partial, or complete routing decision with per-leg book
-timestamps and ages. `legging.csv` treats the execution as complete only when
-all three orders are accepted and every leg fills its requested quantity;
-two fills plus a rejected third leg remains partial. Proof independently
-recomputes these constraints and rejects over-age or over-skew routed books,
-expired signals, incomplete routing, rejected legs, and unfilled legs.
+timestamps and ages. Once those books pass, the engine preflights the three
+IOC intents as one non-mutating admission package. The preflight checks venue
+lot/tick rules, visible-book availability, conservative self-cross conflicts,
+and the package-wide instrument, gross-position, delta, and vega envelopes
+without allocating order IDs, consuming liquidity, or sampling order latency.
+The guard artifact retains whether preflight was attempted, its pass/fail
+reason, affected instrument, projected range, limit, and conflicting order
+when available. A predictable rejection therefore routes zero legs.
+
+This admission check does not make multi-leg fills atomic. Liquidity and
+latency can still produce a partial outcome after all three orders are
+accepted. `legging.csv` treats the execution as complete only when all three
+orders are accepted and every leg fills its requested quantity. Proof
+independently recomputes guard, preflight, and legging consistency and rejects
+over-age or over-skew routed books, expired signals, package-admission
+rejections, incomplete routing, rejected legs, and unfilled legs.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows

@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel, OrderType
 from engine.multi_engine import (
+    IOCOrderIntent,
     InstrumentConfig,
     MultiInstrumentEngine,
     MultiInstrumentStrategy,
@@ -177,6 +179,68 @@ class CancelThenProbeRisk(MultiInstrumentStrategy):
                 OrderType.LIMIT,
             )
         self.stage += 1
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
+class IOCBatchPreflightStrategy(MultiInstrumentStrategy):
+    def __init__(self, intents, *, route_on_pass=False):
+        self.intents = intents
+        self.route_on_pass = route_on_pass
+        self.preflight = None
+        self.oids = []
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, instrument_id, tick):
+        if instrument_id != "B" or self.preflight is not None:
+            return
+        self.preflight = engine.preflight_ioc_batch(self.intents)
+        if self.preflight.passed and self.route_on_pass:
+            self.oids = [
+                engine.send(
+                    intent.instrument_id,
+                    intent.side,
+                    intent.qty,
+                    intent.price,
+                    OrderType.IOC,
+                )
+                for intent in self.intents
+            ]
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
+class SelfCrossPreflightStrategy(MultiInstrumentStrategy):
+    def __init__(self):
+        self.resting_oid = None
+        self.preflight = None
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, instrument_id, tick):
+        if self.preflight is not None:
+            return
+        self.resting_oid = engine.send(
+            instrument_id,
+            -1,
+            75,
+            100.05,
+            OrderType.LIMIT,
+        )
+        self.preflight = engine.preflight_ioc_batch(
+            [IOCOrderIntent(instrument_id, +1, 75, 100.05)]
+        )
 
     def on_fill(self, engine, fill):
         pass
@@ -844,6 +908,168 @@ def test_instrument_and_portfolio_risk_limits_reject_orders():
 
     assert too_much_delta.oid is None
     assert engine.orders_sent == 0
+
+
+def test_ioc_batch_preflight_rejects_package_without_mutating_engine():
+    strategy = IOCBatchPreflightStrategy(
+        [
+            IOCOrderIntent("A", +1, 75, 100.05),
+            IOCOrderIntent("B", -1, 75, 200.00),
+        ]
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            ),
+            "B": InstrumentConfig(
+                option_inst("B"),
+                "NSE",
+                frame([(0, 200.00, 200.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+                max_position_lots=0,
+            ),
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert not strategy.preflight.passed
+    assert strategy.preflight.reason == "instrument_position_limit"
+    assert strategy.preflight.instrument_id == "B"
+    assert strategy.preflight.projected_min == -75
+    assert strategy.preflight.projected_max == 0
+    assert strategy.preflight.limit == 0
+    assert engine.orders_sent == 0
+    assert engine._oid == 0
+    assert result.order_rejections.empty
+
+
+@pytest.mark.parametrize(
+    ("reserve_open_order_risk", "projected_min"),
+    [(True, 0), (False, 150)],
+)
+def test_ioc_batch_preflight_applies_package_wide_portfolio_risk(
+    reserve_open_order_risk,
+    projected_min,
+):
+    strategy = IOCBatchPreflightStrategy(
+        [
+            IOCOrderIntent("A", +1, 75, 100.05),
+            IOCOrderIntent("B", +1, 75, 200.05),
+        ]
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            ),
+            "B": InstrumentConfig(
+                option_inst("B"),
+                "NSE",
+                frame([(0, 200.00, 200.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            ),
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+        portfolio_limits=PortfolioLimits(max_abs_position=100),
+        reserve_open_order_risk=reserve_open_order_risk,
+    )
+
+    engine.run()
+
+    assert not strategy.preflight.passed
+    assert (
+        strategy.preflight.reason
+        == "portfolio_gross_position_limit"
+    )
+    assert strategy.preflight.projected_min == projected_min
+    assert strategy.preflight.projected_max == 150
+    assert strategy.preflight.limit == 100
+    assert engine.orders_sent == 0
+
+
+def test_ioc_batch_preflight_reports_self_cross_without_rejecting():
+    strategy = SelfCrossPreflightStrategy()
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert strategy.resting_oid == 1
+    assert not strategy.preflight.passed
+    assert strategy.preflight.reason == "aggressive_self_cross"
+    assert strategy.preflight.instrument_id == "A"
+    assert strategy.preflight.conflicting_oid == 1
+    assert engine.orders_sent == 1
+    assert engine._oid == 1
+    assert result.order_rejections.empty
+
+
+def test_ioc_batch_preflight_can_route_every_admitted_leg():
+    strategy = IOCBatchPreflightStrategy(
+        [
+            IOCOrderIntent("A", +1, 75, 100.05),
+            IOCOrderIntent("B", -1, 75, 200.00),
+        ],
+        route_on_pass=True,
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 75, 75, np.nan, 0),
+                        (1, 100.00, 100.05, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            ),
+            "B": InstrumentConfig(
+                option_inst("B"),
+                "NSE",
+                frame(
+                    [
+                        (0, 200.00, 200.05, 75, 75, np.nan, 0),
+                        (1, 200.00, 200.05, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            ),
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert strategy.preflight.passed
+    assert strategy.preflight.reason == "passed"
+    assert strategy.oids == [1, 2]
+    assert engine.orders_sent == 2
+    routed = result.fills[result.fills["oid"].isin(strategy.oids)]
+    assert len(routed) == 2
 
 
 def test_pending_orders_are_reserved_against_instrument_position_limit():

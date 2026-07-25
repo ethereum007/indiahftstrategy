@@ -454,6 +454,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     summary.loc[0, "parity_futures_asof_freshness_enabled"] = True
     summary.loc[0, "parity_futures_max_quote_age_ns"] = 100
     summary.loc[0, "parity_execution_guard_enabled"] = True
+    summary.loc[
+        0,
+        "parity_execution_ioc_batch_preflight_enabled",
+    ] = True
     summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
     summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
     summary.to_csv(summary_path, index=False)
@@ -472,6 +476,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
                 "orders_requested": 3,
                 "orders_accepted": 3,
                 "routing_complete": True,
+                "ioc_batch_preflight_enabled": True,
+                "ioc_batch_preflight_attempted": True,
+                "ioc_batch_preflight_passed": True,
+                "ioc_batch_preflight_reason": "passed",
                 "call_book_age_ns": 100,
                 "put_book_age_ns": 80,
                 "future_book_age_ns": 50,
@@ -506,6 +514,27 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     assert int(
         metrics["parity_execution_guard_missing_evidence_rows"]
     ) == 0
+    assert bool(
+        metrics["parity_execution_ioc_batch_preflight_declared"]
+    )
+    assert int(
+        metrics["parity_execution_ioc_batch_preflight_attempts"]
+    ) == 1
+    assert int(
+        metrics[
+            "parity_execution_ioc_batch_preflight_passed_attempts"
+        ]
+    ) == 1
+    assert int(
+        metrics[
+            "parity_execution_ioc_batch_preflight_rejected_attempts"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_batch_preflight_missing_evidence_rows"
+        ]
+    ) == 0
     assert int(metrics["parity_execution_max_routed_book_age_ns"]) == 100
     assert int(metrics["parity_execution_max_routed_book_skew_ns"]) == 50
     assert int(
@@ -529,6 +558,57 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ]
     summary.loc[0, "parity_execution_guard_enabled"] = True
     summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
+        "parity_execution_ioc_batch_preflight_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    preflight_undeclared = evaluate_replay_dirs([run_dir])
+
+    preflight_undeclared_failed = preflight_undeclared.checks.loc[
+        ~preflight_undeclared.checks["passed"]
+    ]
+    assert not preflight_undeclared.passed
+    assert preflight_undeclared_failed["check"].tolist() == [
+        "parity_execution_ioc_batch_preflight_declared"
+    ]
+    summary.loc[
+        0,
+        "parity_execution_ioc_batch_preflight_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    guard.loc[0, "guard_passed"] = False
+    guard.loc[0, "guard_reason"] = "ioc_batch_preflight_rejected"
+    guard.loc[0, "routing_status"] = "not_attempted"
+    guard.loc[0, "orders_requested"] = 0
+    guard.loc[0, "orders_accepted"] = 0
+    guard.loc[0, "routing_complete"] = False
+    guard.loc[0, "ioc_batch_preflight_passed"] = False
+    guard.loc[
+        0,
+        "ioc_batch_preflight_reason",
+    ] = "instrument_position_limit"
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    preflight_rejected = evaluate_replay_dirs([run_dir])
+
+    preflight_rejected_failed = preflight_rejected.checks.loc[
+        ~preflight_rejected.checks["passed"]
+    ]
+    assert not preflight_rejected.passed
+    assert preflight_rejected_failed["check"].tolist() == [
+        "parity_execution_ioc_batch_preflight_rejected_attempts"
+    ]
+
+    guard.loc[0, "guard_passed"] = True
+    guard.loc[0, "guard_reason"] = "ready"
+    guard.loc[0, "routing_status"] = "complete"
+    guard.loc[0, "orders_requested"] = 3
+    guard.loc[0, "orders_accepted"] = 3
+    guard.loc[0, "routing_complete"] = True
+    guard.loc[0, "ioc_batch_preflight_passed"] = True
+    guard.loc[0, "ioc_batch_preflight_reason"] = "passed"
 
     guard.loc[0, "call_book_age_ns"] = 101
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)

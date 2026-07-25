@@ -36,10 +36,14 @@
   quotes cannot form signals.
 - Executable parity replay now gates all three IOC legs on source-market
   call/put/future book age and cross-leg timestamp skew. Its reason-coded
-  execution audit preserves deferred and routed decisions, while legging
-  evidence requires all three orders to be accepted and fully filled before
-  an execution is complete. Proof, sweeps, comparisons, and candidate replay
-  defaults preserve and enforce the same limits.
+  execution audit preserves deferred and routed decisions. Fresh packages
+  receive a non-mutating IOC-batch admission preflight covering venue rules,
+  visible books, conservative self-cross conflicts, and package-wide
+  instrument, gross, delta, and vega risk before any order ID is allocated.
+  Legging evidence still requires all three non-atomic orders to be accepted
+  and fully filled before an execution is complete. Proof, sweeps,
+  comparisons, and candidate replay defaults preserve and enforce the same
+  limits and preflight evidence.
 - Parity/box edge audit that gates scan outputs on opportunity count, net edge,
   persistence, direction coverage, and futures staleness before replay/sweep
   work.
@@ -7472,6 +7476,24 @@ order-plan/launch, and strategy-evidence regressions pass (`166` tests).
 Repository collection is healthy at `2708 tests` across `164` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes. All
 outputs remain non-authorizing.
+
+Latest parity IOC-package admission proof: after book freshness passes, the
+multi-instrument engine now preflights all three parity IOC intents without
+allocating order IDs, consuming displayed liquidity, emitting rejection
+artifacts, or sampling order latency. The package check applies venue lot/tick
+rules, visible-book availability, conservative self-cross detection, and the
+same instrument, gross-position, delta, and vega envelopes used by sequential
+routing. A predictable third-leg rejection therefore prevents the first two
+legs from being sent. `parity_execution_guard.csv` preserves the attempted,
+passed, reason, instrument, projected range, limit, and conflicting-order
+evidence. Replay summaries, independent proof, parity sweeps, and cross-sweep
+comparisons retain and enforce the counters; proof fails missing or
+inconsistent evidence and any rejected package. This is an admission guarantee,
+not atomic execution: post-admission partial fills remain legging failures.
+All 22 multi-engine tests and 71 parity, proof, promotion, launch, and sweep
+tests pass. Repository collection is healthy at `2714 tests` across `164`
+files. The full suite was not rerun because recent complete runs exceed 40
+minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 

@@ -107,6 +107,32 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["parity_execution_guard_attempts"]) == 3
     assert int(summary["parity_execution_guard_passed_attempts"]) == 1
     assert int(summary["parity_execution_guard_deferred_attempts"]) == 2
+    assert bool(
+        summary["parity_execution_ioc_batch_preflight_enabled"]
+    )
+    assert int(
+        summary["parity_execution_ioc_batch_preflight_attempts"]
+    ) == 1
+    assert int(
+        summary[
+            "parity_execution_ioc_batch_preflight_passed_attempts"
+        ]
+    ) == 1
+    assert int(
+        summary[
+            "parity_execution_ioc_batch_preflight_rejected_attempts"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_batch_preflight_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_batch_preflight_consistency_violations"
+        ]
+    ) == 0
     assert int(summary["parity_execution_signal_expiry_events"]) == 0
     assert int(summary["parity_execution_stale_book_attempts"]) == 0
     assert int(summary["parity_execution_negative_book_age_attempts"]) == 0
@@ -127,6 +153,13 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
         "missing_leg_book",
         "ready",
     }
+    routed_guard = replay.execution_guard.loc[
+        replay.execution_guard["guard_passed"]
+    ].iloc[0]
+    assert bool(routed_guard["ioc_batch_preflight_enabled"])
+    assert bool(routed_guard["ioc_batch_preflight_attempted"])
+    assert bool(routed_guard["ioc_batch_preflight_passed"])
+    assert routed_guard["ioc_batch_preflight_reason"] == "passed"
 
 
 def test_run_parity_replay_quarantines_stale_futures_join(tmp_path):

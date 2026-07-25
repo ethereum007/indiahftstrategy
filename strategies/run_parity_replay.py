@@ -299,6 +299,87 @@ def _execution_guard_metrics(
         if "routing_status" in guard.columns
         else pd.Series("", index=guard.index)
     )
+    preflight_enabled_raw = guard.get(
+        "ioc_batch_preflight_enabled",
+        pd.Series(np.nan, index=guard.index),
+    )
+    preflight_attempted_raw = guard.get(
+        "ioc_batch_preflight_attempted",
+        pd.Series(np.nan, index=guard.index),
+    )
+    preflight_passed_raw = guard.get(
+        "ioc_batch_preflight_passed",
+        pd.Series(np.nan, index=guard.index),
+    )
+    preflight_reasons = (
+        guard.get(
+            "ioc_batch_preflight_reason",
+            pd.Series(pd.NA, index=guard.index, dtype="string"),
+        )
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    preflight_enabled = preflight_enabled_raw.fillna(False).astype(
+        bool
+    )
+    preflight_attempted = preflight_attempted_raw.fillna(False).astype(
+        bool
+    )
+    preflight_passed = preflight_passed_raw.fillna(False).astype(bool)
+    preflight_missing_evidence = (
+        preflight_enabled_raw.isna()
+        | preflight_attempted_raw.isna()
+        | preflight_passed_raw.isna()
+        | preflight_reasons.eq("")
+    )
+    preflight_consistency_violation = (
+        ~preflight_enabled
+        | (
+            preflight_attempted
+            & preflight_passed
+            & ~preflight_reasons.eq("passed")
+        )
+        | (
+            preflight_attempted
+            & ~preflight_passed
+            & preflight_reasons.isin({"passed", "not_attempted"})
+        )
+        | (
+            ~preflight_attempted
+            & (
+                preflight_passed
+                | ~preflight_reasons.eq("not_attempted")
+            )
+        )
+        | (
+            passed
+            & (
+                ~preflight_attempted
+                | ~preflight_passed
+                | ~preflight_reasons.eq("passed")
+            )
+        )
+        | (
+            reasons.eq("ioc_batch_preflight_rejected")
+            & (
+                ~preflight_attempted
+                | preflight_passed
+                | preflight_reasons.isin(
+                    {"passed", "not_attempted"}
+                )
+            )
+        )
+        | (
+            ~passed
+            & ~reasons.eq("ioc_batch_preflight_rejected")
+            & (
+                preflight_attempted
+                | preflight_passed
+                | ~preflight_reasons.eq("not_attempted")
+            )
+        )
+    )
     passed_rows = guard.loc[passed]
     leg_age_columns = [
         "call_book_age_ns",
@@ -364,6 +445,27 @@ def _execution_guard_metrics(
         "parity_execution_guard_attempts": int(len(guard)),
         "parity_execution_guard_passed_attempts": int(passed.sum()),
         "parity_execution_guard_deferred_attempts": int((~passed).sum()),
+        "parity_execution_ioc_batch_preflight_enabled": True,
+        "parity_execution_ioc_batch_preflight_attempts": int(
+            preflight_attempted.sum()
+        ),
+        "parity_execution_ioc_batch_preflight_passed_attempts": int(
+            (preflight_attempted & preflight_passed).sum()
+        ),
+        "parity_execution_ioc_batch_preflight_rejected_attempts": int(
+            (preflight_attempted & ~preflight_passed).sum()
+        ),
+        "parity_execution_ioc_batch_preflight_missing_evidence_rows": (
+            int(preflight_missing_evidence.sum())
+        ),
+        "parity_execution_ioc_batch_preflight_consistency_violations": (
+            int(
+                (
+                    preflight_consistency_violation
+                    & ~preflight_missing_evidence
+                ).sum()
+            )
+        ),
         "parity_execution_signal_expiry_events": int(
             (reasons == "signal_age_exceeded").sum()
         ),

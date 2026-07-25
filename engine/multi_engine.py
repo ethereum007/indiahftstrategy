@@ -83,6 +83,25 @@ class RoutedFill:
         return cls(instrument_id=instrument_id, **fill.__dict__)
 
 
+@dataclass(frozen=True)
+class IOCOrderIntent:
+    instrument_id: str
+    side: int
+    qty: int
+    price: float
+
+
+@dataclass(frozen=True)
+class IOCBatchPreflightResult:
+    passed: bool
+    reason: str
+    instrument_id: str = ""
+    projected_min: float = float("nan")
+    projected_max: float = float("nan")
+    limit: float = float("nan")
+    conflicting_oid: int | None = None
+
+
 class MultiInstrumentStrategy:
     def on_start(self, engine: "MultiInstrumentEngine"): ...
     def on_tick(self, engine: "MultiInstrumentEngine", instrument_id: str, tick: dict): ...
@@ -317,6 +336,97 @@ class MultiInstrumentEngine:
         self._order_instrument[order.oid] = instrument_id
         self.orders_sent += 1
         return order.oid
+
+    def preflight_ioc_batch(
+        self,
+        intents: list[IOCOrderIntent] | tuple[IOCOrderIntent, ...],
+    ) -> IOCBatchPreflightResult:
+        """Validate a correlated IOC package without mutating engine state."""
+        if not intents:
+            raise ValueError("intents must not be empty")
+
+        normalized: list[IOCOrderIntent] = []
+        for intent in intents:
+            if not isinstance(intent, IOCOrderIntent):
+                raise TypeError("intents must contain IOCOrderIntent values")
+            instrument_id = intent.instrument_id
+            side = intent.side
+            qty = intent.qty
+            if instrument_id not in self.instruments:
+                raise KeyError(f"unknown instrument_id {instrument_id}")
+            if side not in (-1, 1):
+                raise ValueError("side must be +1 buy or -1 sell")
+            if isinstance(qty, bool) or not isinstance(
+                qty,
+                (int, np.integer),
+            ):
+                raise ValueError("qty must be an integer")
+            if qty <= 0:
+                raise ValueError("qty must be positive")
+            try:
+                price = float(intent.price)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("price must be numeric") from exc
+
+            cfg = self.instruments[instrument_id]
+            inst = cfg.instrument
+            venue_rejection = _venue_order_rejection(
+                inst,
+                qty,
+                price,
+            )
+            if venue_rejection is not None:
+                reason, limit = venue_rejection
+                position = float(self.positions[instrument_id])
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason=reason,
+                    instrument_id=instrument_id,
+                    projected_min=position,
+                    projected_max=position,
+                    limit=float(limit),
+                )
+            if self._visible_ticks.get(instrument_id) is None:
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="missing_visible_book",
+                    instrument_id=instrument_id,
+                )
+
+            price = _quantize_price(price, inst.tick)
+            conflict = self._preflight_self_cross_conflict(
+                instrument_id=instrument_id,
+                side=side,
+                price=price,
+            )
+            if conflict is not None:
+                position_min, position_max = (
+                    self._instrument_position_envelope(
+                        instrument_id,
+                        extra=(side, qty),
+                    )
+                )
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="aggressive_self_cross",
+                    instrument_id=instrument_id,
+                    projected_min=float(position_min),
+                    projected_max=float(position_max),
+                    conflicting_oid=conflict.oid,
+                )
+            normalized.append(
+                IOCOrderIntent(
+                    instrument_id=instrument_id,
+                    side=side,
+                    qty=int(qty),
+                    price=price,
+                )
+            )
+
+        risk_rejection = self._ioc_batch_risk_rejection(normalized)
+        if risk_rejection is not None:
+            return risk_rejection
+        return IOCBatchPreflightResult(passed=True, reason="passed")
 
     def _own_queue_tail(
         self,
@@ -760,11 +870,174 @@ class MultiInstrumentEngine:
                 )
         return None
 
+    def _ioc_batch_risk_rejection(
+        self,
+        intents: list[IOCOrderIntent],
+    ) -> IOCBatchPreflightResult | None:
+        if not self.reserve_open_order_risk:
+            proposed_positions = dict(self.positions)
+            for intent in intents:
+                instrument_id = intent.instrument_id
+                proposed_positions[instrument_id] += (
+                    intent.side * intent.qty
+                )
+                cfg = self.instruments[instrument_id]
+                inst_limit = (
+                    cfg.max_position_lots
+                    * cfg.instrument.lot_size
+                )
+                proposed = proposed_positions[instrument_id]
+                if abs(proposed) > inst_limit:
+                    return IOCBatchPreflightResult(
+                        passed=False,
+                        reason="instrument_position_limit",
+                        instrument_id=instrument_id,
+                        projected_min=float(proposed),
+                        projected_max=float(proposed),
+                        limit=float(inst_limit),
+                    )
+
+                limits = self.portfolio_limits
+                if limits.max_abs_position is not None:
+                    gross = sum(
+                        abs(pos)
+                        for pos in proposed_positions.values()
+                    )
+                    if gross > limits.max_abs_position:
+                        return IOCBatchPreflightResult(
+                            passed=False,
+                            reason="portfolio_gross_position_limit",
+                            projected_min=float(gross),
+                            projected_max=float(gross),
+                            limit=float(limits.max_abs_position),
+                        )
+                if limits.max_abs_delta is not None:
+                    delta = sum(
+                        proposed_positions[iid]
+                        * item.delta_per_unit
+                        for iid, item in self.instruments.items()
+                    )
+                    if abs(delta) > limits.max_abs_delta:
+                        return IOCBatchPreflightResult(
+                            passed=False,
+                            reason="portfolio_delta_limit",
+                            projected_min=float(delta),
+                            projected_max=float(delta),
+                            limit=float(limits.max_abs_delta),
+                        )
+                if limits.max_abs_vega is not None:
+                    vega = sum(
+                        proposed_positions[iid]
+                        * item.vega_per_unit
+                        for iid, item in self.instruments.items()
+                    )
+                    if abs(vega) > limits.max_abs_vega:
+                        return IOCBatchPreflightResult(
+                            passed=False,
+                            reason="portfolio_vega_limit",
+                            projected_min=float(vega),
+                            projected_max=float(vega),
+                            limit=float(limits.max_abs_vega),
+                        )
+            return None
+
+        pending = self._pending_quantities(
+            extras=[
+                (
+                    intent.instrument_id,
+                    intent.side,
+                    intent.qty,
+                )
+                for intent in intents
+            ]
+        )
+        position_ranges = {
+            iid: (
+                self.positions[iid] - pending[iid][1],
+                self.positions[iid] + pending[iid][0],
+            )
+            for iid in self.instruments
+        }
+        checked_instruments: set[str] = set()
+        for intent in intents:
+            instrument_id = intent.instrument_id
+            if instrument_id in checked_instruments:
+                continue
+            checked_instruments.add(instrument_id)
+            cfg = self.instruments[instrument_id]
+            inst_limit = (
+                cfg.max_position_lots * cfg.instrument.lot_size
+            )
+            position_min, position_max = position_ranges[instrument_id]
+            if (
+                position_min < -inst_limit
+                or position_max > inst_limit
+            ):
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="instrument_position_limit",
+                    instrument_id=instrument_id,
+                    projected_min=float(position_min),
+                    projected_max=float(position_max),
+                    limit=float(inst_limit),
+                )
+
+        limits = self.portfolio_limits
+        if limits.max_abs_position is not None:
+            gross = sum(
+                max(abs(position_min), abs(position_max))
+                for position_min, position_max in position_ranges.values()
+            )
+            if gross > limits.max_abs_position:
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="portfolio_gross_position_limit",
+                    projected_min=0.0,
+                    projected_max=float(gross),
+                    limit=float(limits.max_abs_position),
+                )
+        if limits.max_abs_delta is not None:
+            delta_min, delta_max = self._portfolio_exposure_envelope(
+                pending,
+                exposure_name="delta_per_unit",
+            )
+            if (
+                delta_min < -limits.max_abs_delta
+                or delta_max > limits.max_abs_delta
+            ):
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="portfolio_delta_limit",
+                    projected_min=float(delta_min),
+                    projected_max=float(delta_max),
+                    limit=float(limits.max_abs_delta),
+                )
+        if limits.max_abs_vega is not None:
+            vega_min, vega_max = self._portfolio_exposure_envelope(
+                pending,
+                exposure_name="vega_per_unit",
+            )
+            if (
+                vega_min < -limits.max_abs_vega
+                or vega_max > limits.max_abs_vega
+            ):
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="portfolio_vega_limit",
+                    projected_min=float(vega_min),
+                    projected_max=float(vega_max),
+                    limit=float(limits.max_abs_vega),
+                )
+        return None
+
     def _pending_quantities(
         self,
         *,
         extra: tuple[str, int, int] | None = None,
+        extras: list[tuple[str, int, int]] | None = None,
     ) -> dict[str, list[int]]:
+        if extra is not None and extras is not None:
+            raise ValueError("provide extra or extras, not both")
         pending = {iid: [0, 0] for iid in self.instruments}
         for oid, order in self.open_orders.items():
             if not order.alive:
@@ -777,6 +1050,9 @@ class MultiInstrumentEngine:
         if extra is not None:
             instrument_id, side, qty = extra
             pending[instrument_id][0 if side > 0 else 1] += qty
+        if extras is not None:
+            for instrument_id, side, qty in extras:
+                pending[instrument_id][0 if side > 0 else 1] += qty
         return pending
 
     def _instrument_position_envelope(
@@ -848,6 +1124,39 @@ class MultiInstrumentEngine:
             if (
                 getattr(order, "_pending_cancel", False)
                 and getattr(order, "cancel_at", np.inf) <= overlap_ns
+            ):
+                continue
+            return order
+        return None
+
+    def _preflight_self_cross_conflict(
+        self,
+        *,
+        instrument_id: str,
+        side: int,
+        price: float,
+    ) -> Order | None:
+        if not self.ban_aggressive_self_cross:
+            return None
+        for oid, order in self.open_orders.items():
+            if (
+                self._order_instrument.get(oid) != instrument_id
+                or not order.alive
+                or order.side == side
+                or order.otype != OrderType.LIMIT
+                or order.filled >= order.qty
+            ):
+                continue
+            prices_cross = (
+                side > 0 and price >= order.price
+            ) or (
+                side < 0 and price <= order.price
+            )
+            if not prices_cross:
+                continue
+            if (
+                getattr(order, "_pending_cancel", False)
+                and getattr(order, "cancel_at", np.inf) <= self._now_ns
             ):
                 continue
             return order
