@@ -32,6 +32,7 @@ class ProviderMarketDataBatchConfig:
     expected_kind: str = "ticks"
     sample_rows: int = 1000
     tick_size: float | None = None
+    strike_step: float | None = None
     timestamp_unit: str = "datetime"
     timestamp_tz: str | None = None
     pipeline_min_rows: int = 1
@@ -47,6 +48,7 @@ class ProviderMarketDataBatchConfig:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_p99_gap_ns: float | None = None
@@ -225,6 +227,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         expected_kind=config.expected_kind,
         sample_rows=config.sample_rows,
         tick_size=config.tick_size,
+        strike_step=config.strike_step,
         timestamp_unit=config.timestamp_unit,
         timestamp_tz=config.timestamp_tz,
         pipeline_min_rows=config.pipeline_min_rows,
@@ -240,6 +243,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
+        max_off_grid_strike_rows=config.max_off_grid_strike_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_p99_gap_ns=config.max_p99_gap_ns,
@@ -621,6 +625,13 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         raise ValueError(
             "tick_size is required when max_off_tick_price_rows is set"
         )
+    if (
+        config.max_off_grid_strike_rows is not None
+        and config.strike_step is None
+    ):
+        raise ValueError(
+            "strike_step is required when max_off_grid_strike_rows is set"
+        )
     if not 0 <= config.min_ready_rate <= 1:
         raise ValueError("min_ready_rate must be between 0 and 1")
     for name in (
@@ -648,8 +659,14 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         and config.max_off_tick_price_rows < 0
     ):
         raise ValueError("max_off_tick_price_rows must be non-negative")
+    if (
+        config.max_off_grid_strike_rows is not None
+        and config.max_off_grid_strike_rows < 0
+    ):
+        raise ValueError("max_off_grid_strike_rows must be non-negative")
     for name in (
         "tick_size",
+        "strike_step",
         "max_p99_gap_ns",
         "max_median_spread_ticks",
         "min_source_file_fingerprint_coverage",

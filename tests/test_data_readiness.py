@@ -63,6 +63,9 @@ def chain_summary(**overrides):
         "price_grid_validation_enabled": True,
         "price_grid_tick_size": 0.05,
         "off_tick_price_rows": 0,
+        "strike_grid_validation_enabled": True,
+        "strike_grid_step": 50.0,
+        "off_grid_strike_rows": 0,
         "out_of_session_rows": 0,
         "scope": "overall",
     }
@@ -506,6 +509,85 @@ def test_data_readiness_gates_price_grid_rows_and_requires_validation_evidence()
             "check",
         ]
     )
+
+
+def test_data_readiness_gates_declared_chain_strike_grid():
+    off_grid = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(off_grid_strike_rows=1),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_off_grid_strike_rows=0,
+        ),
+    )
+    validation_missing = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(
+            strike_grid_validation_enabled=False,
+            strike_grid_step=float("nan"),
+        ),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_off_grid_strike_rows=0,
+        ),
+    )
+    allowed = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(off_grid_strike_rows=1),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_off_grid_strike_rows=1,
+        ),
+    )
+
+    off_grid_failed = set(
+        off_grid.checks.loc[~off_grid.checks["passed"].astype(bool), "check"]
+    )
+    validation_failed = set(
+        validation_missing.checks.loc[
+            ~validation_missing.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not off_grid.ready
+    assert "chain_off_grid_strike_rows" in off_grid_failed
+    assert not validation_missing.ready
+    assert "chain_strike_grid_validation_enabled" in validation_failed
+    assert allowed.ready
+
+
+def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
+    chain_dir = tmp_path / "chain_diagnostics"
+    out_dir = tmp_path / "readiness"
+    chain_dir.mkdir()
+    chain_summary(off_grid_strike_rows=1).to_csv(
+        chain_dir / "diagnostic_summary.csv",
+        index=False,
+    )
+
+    code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(out_dir),
+            "--chain-diagnostics",
+            str(chain_dir),
+            "--skip-tick-diagnostics",
+            "--max-off-grid-strike-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+
+    config = json.loads(
+        (out_dir / "data_readiness_config.json").read_text(encoding="utf-8")
+    )
+    assert code == 0
+    assert config["thresholds"]["max_off_grid_strike_rows"] == 1
+    components = {
+        row["component"]: row for row in config["components"]
+    }
+    assert components["chain_diagnostics"]["required"]
 
 
 def test_data_readiness_fails_on_filtered_mapped_data_quarantine():

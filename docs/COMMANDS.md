@@ -8900,11 +8900,13 @@ python -m hft_cli pipeline-vendor-market-data `
   --underlying NIFTY `
   --lot-size 65 `
   --tick-size 0.05 `
+  --strike-step 50 `
   --max-null-rows 0 `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
   --max-integer-overflow-rows 0 `
   --max-nonpositive-strike-rows 0 `
+  --max-off-grid-strike-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-off-tick-price-rows 0 `
   --min-chain-expiry-snapshots 1000 `
@@ -8982,6 +8984,15 @@ the zero-default `--max-nonpositive-strike-rows` gate. The count is carried
 through mapped, vendor, provider, batch, broker-vendor, config, and runbook
 evidence. This is a contract-validity rule; premium tick-grid validation does
 not infer or round strike values.
+When a reviewed contract specification declares a strike interval, pass
+`--strike-step` and `--max-off-grid-strike-rows`. Diagnostics then retain
+`strike_grid_validation_enabled`, `strike_grid_step`,
+`off_grid_strike_rows`, and row-level `off_grid_strike` evidence overall and
+per expiry. The gate is opt-in because strike intervals vary by instrument and
+contract regime; the platform does not hard-code or infer an interval from the
+observed file. Validation treats valid strikes as zero-anchored multiples of
+the declared step; leave it disabled for adjusted or nonstandard contracts
+whose reviewed specification does not follow that convention.
 Top-of-book depth must also be strictly positive. Tick and option-chain rows
 with any zero or negative bid/ask quantity are quarantined before engine output;
 the compatibility evidence field is `dropped_negative_depth_rows`, and it
@@ -9444,6 +9455,7 @@ python -m hft_cli diagnose-chain `
   --chain data\chain.csv `
   --out runs\diagnostics\chain `
   --tick-size 0.05 `
+  --strike-step 50 `
   --market india_nse_index_derivatives `
   --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
   --expiry-cycle monthly `
@@ -9520,6 +9532,7 @@ python -m hft_cli review-data-readiness `
   --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
   --max-nonpositive-strike-rows 0 `
+  --max-off-grid-strike-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-invalid-trade-rows 0 `
   --max-off-tick-price-rows 0 `

@@ -13,17 +13,17 @@ from reports.provider_market_data_pipeline import (
 )
 
 
-def _write_client_packet(tmp_path, *, transport="websocket"):
+def _write_client_packet(tmp_path, *, transport="websocket", kind="ticks"):
     source_uri = (
-        "https://api.arrow.money/market-data/nse/ticks"
+        f"https://api.arrow.money/market-data/nse/{kind}"
         if transport == "rest"
-        else "wss://feed.arrow.money/market-data/nse"
+        else f"wss://feed.arrow.money/market-data/nse/{kind}"
     )
     source_report = write_market_data_source_plan(
-        tmp_path / f"source_{transport}",
+        tmp_path / f"source_{transport}_{kind}",
         config=MarketDataSourceConfig(
             provider="arrow_money",
-            kind="ticks",
+            kind=kind,
             transport=transport,
             source_uri=source_uri,
             auth_env_vars=("ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"),
@@ -31,7 +31,7 @@ def _write_client_packet(tmp_path, *, transport="websocket"):
     )
     fetch_report = write_market_data_fetch_plan(
         source_report.output_dir / "market_data_source_config.json",
-        tmp_path / f"fetch_{transport}",
+        tmp_path / f"fetch_{transport}_{kind}",
         config=MarketDataFetchConfig(
             symbols=("NIFTY-I",),
             window_start="2026-06-10 09:15:00" if transport == "rest" else "",
@@ -40,11 +40,11 @@ def _write_client_packet(tmp_path, *, transport="websocket"):
     )
     fetcher_report = write_provider_market_data_fetcher_plan(
         fetch_report.output_dir / "market_data_fetch_config.json",
-        tmp_path / f"fetcher_{transport}",
+        tmp_path / f"fetcher_{transport}_{kind}",
     )
     client_report = write_provider_market_data_client_plan(
         fetcher_report.output_dir / "provider_market_data_fetcher_config.json",
-        tmp_path / f"client_{transport}",
+        tmp_path / f"client_{transport}_{kind}",
     )
     return client_report.output_dir / "provider_market_data_client_packet.json"
 
@@ -54,6 +54,17 @@ def _write_capture(path):
         "ts,bid,ask,bid_qty,ask_qty,last,last_qty\n"
         "2026-06-10 09:15:00,100.0,100.05,75,150,100.05,75\n"
         "2026-06-10 09:15:01,100.05,100.10,100,125,100.05,50\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_chain_capture(path):
+    path.write_text(
+        "ts,expiry,strike,call_bid,call_ask,call_bid_qty,call_ask_qty,"
+        "put_bid,put_ask,put_bid_qty,put_ask_qty\n"
+        "2026-06-10 09:15:00,2026-06-25,22500,100,100.5,75,150,90,90.5,75,150\n"
+        "2026-06-10 09:15:01,2026-06-25,22525,99,99.5,75,150,91,91.5,75,150\n",
         encoding="utf-8",
     )
     return path
@@ -186,3 +197,48 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
     assert config["parameters"]["max_nonmonotonic_rows"] == 7
     assert config["parameters"]["max_nonpositive_strike_rows"] == 8
     assert config["parameters"]["max_off_tick_price_rows"] == 0
+
+
+def test_cli_provider_market_data_pipeline_carries_chain_strike_grid(tmp_path):
+    client_packet = _write_client_packet(tmp_path, kind="chain")
+    capture = _write_chain_capture(tmp_path / "chain_capture.csv")
+    out_dir = tmp_path / "chain_provider_root"
+
+    code = main(
+        [
+            "pipeline-provider-market-data",
+            "--client-packet",
+            str(client_packet),
+            "--capture",
+            str(capture),
+            "--out",
+            str(out_dir),
+            "--expected-kind",
+            "chain",
+            "--min-capture-rows",
+            "2",
+            "--pipeline-min-rows",
+            "2",
+            "--strike-step",
+            "50",
+            "--max-off-grid-strike-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+
+    config = json.loads(
+        (out_dir / "provider_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    vendor_summary = pd.read_csv(
+        out_dir
+        / "02_vendor_market_data_pipeline"
+        / "vendor_market_data_pipeline_summary.csv"
+    )
+    assert code == 0
+    assert config["parameters"]["strike_step"] == 50.0
+    assert config["parameters"]["max_off_grid_strike_rows"] == 1
+    assert bool(vendor_summary.loc[0, "strike_grid_validation_enabled"])
+    assert int(vendor_summary.loc[0, "off_grid_strike_rows"]) == 1

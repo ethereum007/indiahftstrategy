@@ -340,6 +340,45 @@ def test_chain_diagnostics_reports_nonpositive_strikes():
     ) == [1, 2]
 
 
+def test_chain_diagnostics_reports_declared_strike_grid_violations():
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist("2026-06-10 09:15:00"),
+                "expiry": "2026-06-25",
+                "strike": strike,
+                "call_bid": 50.0,
+                "call_ask": 50.5,
+                "call_bid_qty": 75,
+                "call_ask_qty": 75,
+                "put_bid": 40.0,
+                "put_ask": 40.5,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+            for strike in (22500.0, 22525.0, 22550.0)
+        ]
+    )
+
+    result = chain_diagnostics(chain, strike_step=50.0)
+
+    overall = result.summary.loc[result.summary["scope"] == "overall"].iloc[0]
+    expiry = result.summary.loc[result.summary["scope"] == "expiry"].iloc[0]
+    assert bool(overall["strike_grid_validation_enabled"])
+    assert overall["strike_grid_step"] == pytest.approx(50.0)
+    assert int(overall["off_grid_strike_rows"]) == 1
+    assert int(expiry["off_grid_strike_rows"]) == 1
+    assert list(
+        result.issues.loc[
+            result.issues["issue"] == "off_grid_strike",
+            "row_index",
+        ]
+    ) == [1]
+
+    with pytest.raises(ValueError, match="strike_step"):
+        chain_diagnostics(chain, strike_step=0)
+
+
 def test_unified_cli_diagnose_ticks(tmp_path):
     ticks = pd.DataFrame(
         [

@@ -91,6 +91,7 @@ class DataReadinessThresholds:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
@@ -1765,6 +1766,28 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 ),
             ]
         )
+    if thresholds.max_off_grid_strike_rows is not None:
+        strike_grid_enabled = _to_bool(
+            row.get("strike_grid_validation_enabled", False)
+        )
+        checks.extend(
+            [
+                _check(
+                    "chain_strike_grid_validation_enabled",
+                    strike_grid_enabled,
+                    "is",
+                    True,
+                    strike_grid_enabled,
+                    "chain diagnostics did not validate the declared strike grid",
+                ),
+                _threshold_check(
+                    "chain_off_grid_strike_rows",
+                    _number(row, "off_grid_strike_rows"),
+                    "<=",
+                    thresholds.max_off_grid_strike_rows,
+                ),
+            ]
+        )
     expiry_validation_enabled = _to_bool(
         row.get("contract_expiry_validation_enabled", False)
     )
@@ -2803,6 +2826,7 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
                 thresholds.require_chain_diagnostics
                 or thresholds.require_contract_expiry_validation
                 or thresholds.require_contract_lot_validation
+                or thresholds.max_off_grid_strike_rows is not None
             ),
             "market_profile": thresholds.require_market_profile,
             "market_portability": thresholds.require_market_portability,
@@ -3233,6 +3257,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
             raise ValueError(f"{name} must be non-negative")
     for name in (
         "max_off_tick_price_rows",
+        "max_off_grid_strike_rows",
         "max_tick_p99_gap_ns",
         "max_tick_median_spread_ticks",
         "max_chain_median_spread_ticks",

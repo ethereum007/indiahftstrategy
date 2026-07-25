@@ -725,6 +725,78 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert bool(summary.loc[0, "placeholder_schema_allowed"])
 
 
+def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
+    raw_path = tmp_path / "irage_chain.csv"
+    pd.DataFrame(
+        [
+            {
+                "exchange_ts": f"2026-06-10 09:15:0{offset}",
+                "expiry_date": "2026-06-25",
+                "strike_price": strike,
+                "ce_bid": 100.0,
+                "ce_ask": 100.5,
+                "ce_bid_qty": 75,
+                "ce_ask_qty": 150,
+                "pe_bid": 90.0,
+                "pe_ask": 90.5,
+                "pe_bid_qty": 75,
+                "pe_ask_qty": 150,
+            }
+            for offset, strike in enumerate((22500.0, 22525.0))
+        ]
+    ).to_csv(raw_path, index=False)
+    out_dir = tmp_path / "chain_proof"
+
+    code = main(
+        [
+            "pipeline-broker-vendor-readiness",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "irage",
+            "--kind",
+            "chain",
+            "--timestamp-unit",
+            "datetime",
+            "--strike-step",
+            "50",
+            "--max-off-grid-strike-rows",
+            "1",
+            "--allow-placeholder-schema",
+            "--skip-schema-audit",
+            "--skip-order-export",
+            "--skip-upload-pack",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(
+        out_dir / "broker_vendor_data_readiness_summary.csv"
+    )
+    config = json.loads(
+        (out_dir / "broker_vendor_data_readiness_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert code == 0
+    assert bool(summary.loc[0, "strike_grid_validation_enabled"])
+    assert summary.loc[0, "strike_grid_step"] == 50.0
+    assert int(summary.loc[0, "off_grid_strike_rows"]) == 1
+    assert config["vendor_market_data_batch"][
+        "strike_grid_validation_enabled"
+    ]
+    assert config["vendor_market_data_batch"]["off_grid_strike_rows"] == 1
+    assert manifest["parameters"]["config"]["strike_step"] == 50.0
+    assert (
+        manifest["parameters"]["config"]["max_off_grid_strike_rows"] == 1
+    )
+
+
 def test_cli_broker_vendor_data_readiness_blocks_placeholder_schema_without_override(tmp_path):
     paths = write_inputs(tmp_path, "arrow_money")
     out_dir = tmp_path / "proof"

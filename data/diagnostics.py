@@ -199,6 +199,7 @@ def chain_diagnostics(
     chain: pd.DataFrame,
     *,
     tick_size: float | None = None,
+    strike_step: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
     expiry_cycle: str | None = None,
@@ -207,6 +208,7 @@ def chain_diagnostics(
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
     _validate_tick_size(tick_size)
+    _validate_strike_step(strike_step)
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = chain.copy()
     frame["call_spread"] = frame["call_ask"] - frame["call_bid"]
@@ -224,6 +226,10 @@ def chain_diagnostics(
     )
     frame["nonmonotonic_ts"] = ~_timestamp_at_high_water_mask(frame["ts"])
     frame["nonpositive_strike"] = frame["strike"] <= 0
+    frame["off_grid_strike"] = _off_grid_value_mask(
+        frame["strike"],
+        step=strike_step,
+    )
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
@@ -283,6 +289,7 @@ def chain_diagnostics(
             off_tick_price_rows=("off_tick_price", "sum"),
             nonmonotonic_rows=("nonmonotonic_ts", "sum"),
             nonpositive_strike_rows=("nonpositive_strike", "sum"),
+            off_grid_strike_rows=("off_grid_strike", "sum"),
             parseable_contract_expiry_rows=(
                 "contract_expiry_parseable",
                 "sum",
@@ -418,6 +425,15 @@ def chain_diagnostics(
                 "nonpositive_strike_rows": int(
                     frame["nonpositive_strike"].sum()
                 ),
+                "strike_grid_validation_enabled": strike_step is not None,
+                "strike_grid_step": (
+                    float(strike_step)
+                    if strike_step is not None
+                    else np.nan
+                ),
+                "off_grid_strike_rows": int(
+                    frame["off_grid_strike"].sum()
+                ),
                 "crossed_quote_rows": int(((frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"])).sum()),
                 "nonpositive_quote_rows": int(
                     (
@@ -452,6 +468,7 @@ def chain_diagnostics(
             frame,
             nonmonotonic=frame["nonmonotonic_ts"],
             nonpositive_strike=frame["nonpositive_strike"],
+            off_grid_strike=frame["off_grid_strike"],
             non_trading_days=non_trading_days,
             calendar_closed=calendar_closed,
             calendar_out_of_range=calendar_out_of_range,
@@ -560,6 +577,31 @@ def _off_tick_price_mask(
     return off_tick
 
 
+def _off_grid_value_mask(
+    values: pd.Series,
+    *,
+    step: float | None,
+) -> pd.Series:
+    off_grid = pd.Series(False, index=values.index, dtype=bool)
+    if step is None:
+        return off_grid
+    numeric = pd.to_numeric(values, errors="coerce")
+    finite = numeric.notna() & np.isfinite(numeric)
+    scaled = numeric / float(step)
+    on_grid = pd.Series(
+        np.isclose(
+            scaled,
+            np.rint(scaled),
+            rtol=0.0,
+            atol=PRICE_GRID_ATOL_TICKS,
+            equal_nan=False,
+        ),
+        index=values.index,
+        dtype=bool,
+    )
+    return finite & ~on_grid
+
+
 def _validate_tick_size(tick_size: float | None) -> None:
     if tick_size is None:
         return
@@ -568,11 +610,20 @@ def _validate_tick_size(tick_size: float | None) -> None:
         raise ValueError("tick_size must be positive and finite")
 
 
+def _validate_strike_step(strike_step: float | None) -> None:
+    if strike_step is None:
+        return
+    value = float(strike_step)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("strike_step must be positive and finite")
+
+
 def _chain_issues(
     frame: pd.DataFrame,
     *,
     nonmonotonic: pd.Series,
     nonpositive_strike: pd.Series,
+    off_grid_strike: pd.Series,
     non_trading_days: pd.Series,
     calendar_closed: pd.Series,
     calendar_out_of_range: pd.Series,
@@ -589,6 +640,7 @@ def _chain_issues(
     checks = {
         "nonmonotonic_ts": nonmonotonic,
         "nonpositive_strike": nonpositive_strike,
+        "off_grid_strike": off_grid_strike,
         "crossed_quote": (frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"]),
         "nonpositive_quote": (frame["call_bid"] <= 0)
         | (frame["call_ask"] <= 0)

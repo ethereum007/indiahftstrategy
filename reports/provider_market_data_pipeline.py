@@ -33,6 +33,7 @@ class ProviderMarketDataPipelineConfig:
     expected_kind: str = "ticks"
     sample_rows: int = 1000
     tick_size: float | None = None
+    strike_step: float | None = None
     timestamp_unit: str = "datetime"
     timestamp_tz: str | None = None
     pipeline_min_rows: int = 1
@@ -48,6 +49,7 @@ class ProviderMarketDataPipelineConfig:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_p99_gap_ns: float | None = None
@@ -120,6 +122,7 @@ def write_provider_market_data_pipeline(
                 market=str(capture_summary["market"]),
                 market_calendar_path=config.market_calendar_path,
                 tick_size=config.tick_size,
+                strike_step=config.strike_step,
                 require_all_mapped=True,
                 min_rows=config.pipeline_min_rows,
                 max_null_rows=config.max_null_rows,
@@ -134,6 +137,7 @@ def write_provider_market_data_pipeline(
                 max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=config.max_invalid_trade_rows,
                 max_off_tick_price_rows=config.max_off_tick_price_rows,
+                max_off_grid_strike_rows=config.max_off_grid_strike_rows,
                 max_non_trading_day_rows=config.max_non_trading_day_rows,
                 max_out_of_session_rows=config.max_out_of_session_rows,
                 max_p99_gap_ns=config.max_p99_gap_ns,

@@ -7080,6 +7080,28 @@ Repository collection is healthy at `2609 tests` across `164` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes. All outputs
 remain non-authorizing.
 
+Latest declared strike-grid gate: option-chain diagnostics can now validate
+strikes against an explicitly supplied positive `strike_step`, using the same
+floating-safe grid tolerance as quote-price checks while keeping strike and
+premium rules separate. Reports retain `strike_grid_validation_enabled`,
+`strike_grid_step`, overall and per-expiry `off_grid_strike_rows`, and
+row-level `off_grid_strike` evidence. The opt-in
+`--max-off-grid-strike-rows` threshold automatically requires chain
+diagnostics and fails closed when grid evidence is missing; vendor/provider
+configs also require a declared step whenever the threshold is set. The
+declaration and evidence propagate through Arrow.money/iRage single-day,
+batch, provider, broker-vendor, CLI, config, summary, and runbook surfaces.
+No NSE interval is hard-coded or inferred from the observed strikes. The
+declared grid uses zero-anchored step multiples and remains disabled for
+adjusted or nonstandard contracts unless their reviewed specification supports
+that convention, keeping the proof usable across contract regimes and later US
+adapters. Diagnostics, readiness, vendor, provider, broker-vendor, snapshot,
+calendar, contract-authority, parity, and surface regressions pass (`147`
+tests).
+Repository collection is healthy at `2616 tests` across `164` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All outputs
+remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

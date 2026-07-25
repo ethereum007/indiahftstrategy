@@ -13,29 +13,29 @@ from reports.provider_market_data_client import write_provider_market_data_clien
 from reports.provider_market_data_fetcher import write_provider_market_data_fetcher_plan
 
 
-def _write_client_packet(tmp_path):
+def _write_client_packet(tmp_path, *, kind="ticks"):
     source_report = write_market_data_source_plan(
-        tmp_path / "source",
+        tmp_path / f"source_{kind}",
         config=MarketDataSourceConfig(
             provider="arrow_money",
-            kind="ticks",
+            kind=kind,
             transport="websocket",
-            source_uri="wss://feed.arrow.money/market-data/nse",
+            source_uri=f"wss://feed.arrow.money/market-data/nse/{kind}",
             auth_env_vars=("ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"),
         ),
     )
     fetch_report = write_market_data_fetch_plan(
         source_report.output_dir / "market_data_source_config.json",
-        tmp_path / "fetch",
+        tmp_path / f"fetch_{kind}",
         config=MarketDataFetchConfig(symbols=("NIFTY-I",)),
     )
     fetcher_report = write_provider_market_data_fetcher_plan(
         fetch_report.output_dir / "market_data_fetch_config.json",
-        tmp_path / "fetcher",
+        tmp_path / f"fetcher_{kind}",
     )
     client_report = write_provider_market_data_client_plan(
         fetcher_report.output_dir / "provider_market_data_fetcher_config.json",
-        tmp_path / "client",
+        tmp_path / f"client_{kind}",
     )
     return client_report.output_dir / "provider_market_data_client_packet.json"
 
@@ -45,6 +45,17 @@ def _write_capture(path, day: str, *, base: float = 100.0):
         "ts,bid,ask,bid_qty,ask_qty,last,last_qty\n"
         f"{day} 09:15:00,{base:.2f},{base + 0.05:.2f},75,150,{base + 0.05:.2f},75\n"
         f"{day} 09:15:01,{base + 0.05:.2f},{base + 0.10:.2f},100,125,{base + 0.05:.2f},50\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_chain_capture(path, day: str):
+    path.write_text(
+        "ts,expiry,strike,call_bid,call_ask,call_bid_qty,call_ask_qty,"
+        "put_bid,put_ask,put_bid_qty,put_ask_qty\n"
+        f"{day} 09:15:00,2026-06-25,22500,100,100.5,75,150,90,90.5,75,150\n"
+        f"{day} 09:15:01,2026-06-25,22525,99,99.5,75,150,91,91.5,75,150\n",
         encoding="utf-8",
     )
     return path
@@ -152,6 +163,53 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
     assert cli_config["parameters"]["max_nonmonotonic_rows"] == 7
     assert cli_config["parameters"]["max_nonpositive_strike_rows"] == 8
     assert cli_config["parameters"]["max_off_tick_price_rows"] == 0
+
+
+def test_cli_provider_market_data_batch_carries_chain_strike_grid(tmp_path):
+    client_packet = _write_client_packet(tmp_path, kind="chain")
+    day1 = _write_chain_capture(
+        tmp_path / "chain_capture_day1.csv",
+        "2026-06-10",
+    )
+    day2 = _write_chain_capture(
+        tmp_path / "chain_capture_day2.csv",
+        "2026-06-11",
+    )
+    out_dir = tmp_path / "chain_batch"
+
+    code = main(
+        [
+            "pipeline-provider-market-data-batch",
+            "--client-packet",
+            str(client_packet),
+            "--capture",
+            str(day1),
+            str(day2),
+            "--out",
+            str(out_dir),
+            "--expected-kind",
+            "chain",
+            "--min-capture-rows",
+            "2",
+            "--pipeline-min-rows",
+            "2",
+            "--strike-step",
+            "50",
+            "--max-off-grid-strike-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+
+    config = json.loads(
+        (out_dir / "provider_market_data_batch_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert code == 0
+    assert config["parameters"]["strike_step"] == 50.0
+    assert config["parameters"]["max_off_grid_strike_rows"] == 1
+    assert all(bool(row["ready"]) for row in config["datasets"])
 
 
 def test_provider_market_data_batch_blocks_reused_capture_file(tmp_path):

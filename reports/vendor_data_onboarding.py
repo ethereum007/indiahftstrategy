@@ -57,6 +57,7 @@ class VendorMarketDataPipelineConfig:
     underlying: str | None = None
     lot_size: int | None = None
     tick_size: float | None = None
+    strike_step: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
     min_chain_expiry_snapshots: int = 1
@@ -74,6 +75,7 @@ class VendorMarketDataPipelineConfig:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
@@ -535,6 +537,17 @@ def write_vendor_market_data_batch_pipeline(
                 "off_tick_price_rows": int(
                     _number(row, "off_tick_price_rows", fallback=0.0)
                 ),
+                "strike_grid_validation_enabled": _truthy(
+                    row.get("strike_grid_validation_enabled", False)
+                ),
+                "strike_grid_step": _number(
+                    row,
+                    "strike_grid_step",
+                    fallback=float("nan"),
+                ),
+                "off_grid_strike_rows": int(
+                    _number(row, "off_grid_strike_rows", fallback=0.0)
+                ),
                 "dropped_calendar_closed_rows": int(
                     _number(row, "dropped_calendar_closed_rows", fallback=0.0)
                 ),
@@ -716,6 +729,7 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
             chain_diagnostics(
                 data,
                 tick_size=config.tick_size,
+                strike_step=config.strike_step,
                 market=config.market,
                 market_calendar=config.market_calendar_path,
                 expiry_cycle=config.expiry_cycle,
@@ -787,6 +801,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
+        max_off_grid_strike_rows=config.max_off_grid_strike_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_unparseable_contract_expiry_rows=(
@@ -1055,6 +1070,24 @@ def _summary(
                     _number(
                         diagnostic_row,
                         "off_tick_price_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "strike_grid_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "strike_grid_validation_enabled",
+                        False,
+                    )
+                ),
+                "strike_grid_step": _number(
+                    diagnostic_row,
+                    "strike_grid_step",
+                    fallback=float("nan"),
+                ),
+                "off_grid_strike_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "off_grid_strike_rows",
                         fallback=0.0,
                     )
                 ),
@@ -1450,6 +1483,9 @@ def _pipeline_runbook_markdown(
         f"- Price-grid validation: {'yes' if _truthy(summary_row.get('price_grid_validation_enabled', False)) else 'no'}",
         f"- Price-grid tick size: {_value_text(summary_row.get('price_grid_tick_size')) or 'n/a'}",
         f"- Off-tick price rows: {int(_number_from_value(summary_row.get('off_tick_price_rows', 0)))}",
+        f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
+        f"- Strike-grid step: {_value_text(summary_row.get('strike_grid_step')) or 'n/a'}",
+        f"- Off-grid strike rows: {int(_number_from_value(summary_row.get('off_grid_strike_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Contract horizon timezone: {_value_text(summary_row.get('contract_horizon_market_timezone')) or 'n/a'}",
@@ -1528,6 +1564,9 @@ def _batch_runbook_markdown(
         f"- Price-grid validation: {'yes' if _truthy(summary_row.get('price_grid_validation_enabled', False)) else 'no'}",
         f"- Price-grid tick size: {_value_text(summary_row.get('price_grid_tick_size')) or 'n/a'}",
         f"- Off-tick price rows: {int(_number_from_value(summary_row.get('off_tick_price_rows', 0)))}",
+        f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
+        f"- Strike-grid step: {_value_text(summary_row.get('strike_grid_step')) or 'n/a'}",
+        f"- Off-grid strike rows: {int(_number_from_value(summary_row.get('off_grid_strike_rows', 0)))}",
         f"- Calendar-closed rows: {int(_number_from_value(summary_row.get('dropped_calendar_closed_rows', 0)))}",
         f"- Calendar out-of-range rows: {int(_number_from_value(summary_row.get('dropped_calendar_out_of_range_rows', 0)))}",
         f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
@@ -1758,6 +1797,27 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "strike_grid_validation_enabled": bool(
+                    dataset_count
+                    and datasets.get(
+                        "strike_grid_validation_enabled",
+                        pd.Series(False, index=datasets.index, dtype=bool),
+                    ).fillna(False).astype(bool).all()
+                ),
+                "strike_grid_step": (
+                    float(config.strike_step)
+                    if config.strike_step is not None
+                    else float("nan")
+                ),
+                "off_grid_strike_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "off_grid_strike_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "dropped_calendar_closed_rows": int(
                     pd.to_numeric(
                         datasets.get("dropped_calendar_closed_rows", pd.Series(dtype=float)),
@@ -1936,6 +1996,17 @@ def _pipeline_config(
             "off_tick_price_rows": int(
                 _number(row, "off_tick_price_rows", fallback=0.0)
             ),
+            "strike_grid_validation_enabled": _truthy(
+                row.get("strike_grid_validation_enabled", False)
+            ),
+            "strike_grid_step": _number(
+                row,
+                "strike_grid_step",
+                fallback=0.0,
+            ),
+            "off_grid_strike_rows": int(
+                _number(row, "off_grid_strike_rows", fallback=0.0)
+            ),
         },
         "data_readiness": {
             "ready": _truthy(row.get("data_readiness_ready", False)),
@@ -2018,6 +2089,16 @@ def _batch_config(
             ),
             "off_tick_price_rows": int(
                 _number_from_value(item.get("off_tick_price_rows", 0))
+            ),
+            "strike_grid_validation_enabled": _truthy(
+                item.get("strike_grid_validation_enabled", False)
+            ),
+            "strike_grid_step": _number_from_value(
+                item.get("strike_grid_step", 0.0),
+                fallback=0.0,
+            ),
+            "off_grid_strike_rows": int(
+                _number_from_value(item.get("off_grid_strike_rows", 0))
             ),
             "dropped_calendar_closed_rows": int(
                 _number_from_value(item.get("dropped_calendar_closed_rows", 0))
@@ -2112,6 +2193,17 @@ def _batch_config(
         ),
         "off_tick_price_rows": int(
             _number(row, "off_tick_price_rows", fallback=0.0)
+        ),
+        "strike_grid_validation_enabled": _truthy(
+            row.get("strike_grid_validation_enabled", False)
+        ),
+        "strike_grid_step": _number(
+            row,
+            "strike_grid_step",
+            fallback=0.0,
+        ),
+        "off_grid_strike_rows": int(
+            _number(row, "off_grid_strike_rows", fallback=0.0)
         ),
         "dropped_calendar_closed_rows": int(
             _number(row, "dropped_calendar_closed_rows", fallback=0.0)
@@ -2348,6 +2440,15 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         raise ValueError(
             "tick_size is required when max_off_tick_price_rows is set"
         )
+    if config.strike_step is not None and config.kind != "chain":
+        raise ValueError("strike_step is only valid for chain data")
+    if (
+        config.max_off_grid_strike_rows is not None
+        and config.strike_step is None
+    ):
+        raise ValueError(
+            "strike_step is required when max_off_grid_strike_rows is set"
+        )
     if lot_validation_requested:
         if config.kind != "chain":
             raise ValueError(
@@ -2395,8 +2496,14 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         and config.max_off_tick_price_rows < 0
     ):
         raise ValueError("max_off_tick_price_rows must be non-negative")
+    if (
+        config.max_off_grid_strike_rows is not None
+        and config.max_off_grid_strike_rows < 0
+    ):
+        raise ValueError("max_off_grid_strike_rows must be non-negative")
     for name in (
         "tick_size",
+        "strike_step",
         "max_p99_gap_ns",
         "max_median_spread_ticks",
         "max_chain_snapshot_p99_gap_ns",

@@ -2183,6 +2183,133 @@ def test_vendor_market_data_pipeline_gates_nonpositive_option_strikes(tmp_path):
     ] == 2
 
 
+def test_vendor_market_data_pipeline_gates_declared_option_strike_grid(tmp_path):
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": f"2026-06-10 09:15:0{offset}",
+                "expiry_date": "2026-06-25",
+                "strike_price": strike,
+                "ce_bid": 100.0,
+                "ce_ask": 100.5,
+                "ce_bid_qty": 75,
+                "ce_ask_qty": 150,
+                "pe_bid": 90.0,
+                "pe_ask": 90.5,
+                "pe_bid_qty": 75,
+                "pe_ask_qty": 150,
+            }
+            for offset, strike in enumerate((22500.0, 22525.0, 22550.0))
+        ]
+    )
+    raw_path = tmp_path / "irage_chain_strike_grid.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_strike_grid"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="irage",
+            kind="chain",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            strike_step=50.0,
+            max_off_grid_strike_rows=0,
+        ),
+    )
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert list(blocked.mapped_data.data["strike"]) == [
+        22500.0,
+        22525.0,
+        22550.0,
+    ]
+    assert bool(blocked.summary.loc[0, "strike_grid_validation_enabled"])
+    assert blocked.summary.loc[0, "strike_grid_step"] == pytest.approx(50.0)
+    assert int(blocked.summary.loc[0, "off_grid_strike_rows"]) == 1
+    assert "chain_off_grid_strike_rows" in failed
+    assert blocked_config["diagnostics"]["strike_grid_validation_enabled"]
+    assert blocked_config["diagnostics"]["strike_grid_step"] == pytest.approx(
+        50.0
+    )
+    assert blocked_config["diagnostics"]["off_grid_strike_rows"] == 1
+    assert "- Off-grid strike rows: 1" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_strike_grid"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "irage",
+            "--kind",
+            "chain",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--strike-step",
+            "50",
+            "--max-off-grid-strike-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert code == 0
+    assert allowed_config["ready"]
+    assert allowed_config["diagnostics"]["off_grid_strike_rows"] == 1
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_off_grid_strike_rows"
+    ] == 1
+
+    with pytest.raises(ValueError, match="strike_step is required"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=tmp_path / "missing_strike_step",
+            config=VendorMarketDataPipelineConfig(
+                adapter="irage",
+                kind="chain",
+                timestamp_unit="datetime",
+                max_off_grid_strike_rows=0,
+            ),
+        )
+    with pytest.raises(ValueError, match="only valid for chain"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=tmp_path / "tick_strike_step",
+            config=VendorMarketDataPipelineConfig(
+                adapter="irage",
+                kind="ticks",
+                timestamp_unit="datetime",
+                strike_step=50.0,
+            ),
+        )
+
+
 def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_path):
     raw = pd.DataFrame(
         [

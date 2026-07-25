@@ -48,6 +48,7 @@ class BrokerVendorDataReadinessConfig:
     underlying: str | None = None
     lot_size: int | None = None
     tick_size: float | None = None
+    strike_step: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
     min_chain_expiry_snapshots: int = 1
@@ -65,6 +66,7 @@ class BrokerVendorDataReadinessConfig:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
     max_unparseable_contract_expiry_rows: int = 0
@@ -141,6 +143,7 @@ def write_broker_vendor_data_readiness_pipeline(
         underlying=config.underlying,
         lot_size=config.lot_size,
         tick_size=config.tick_size,
+        strike_step=config.strike_step,
         require_all_mapped=config.require_all_mapped,
         min_rows=config.min_rows,
         min_chain_expiry_snapshots=config.min_chain_expiry_snapshots,
@@ -160,6 +163,7 @@ def write_broker_vendor_data_readiness_pipeline(
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
+        max_off_grid_strike_rows=config.max_off_grid_strike_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
         max_unparseable_contract_expiry_rows=(
@@ -447,6 +451,15 @@ def _summary(
                 ),
                 "off_tick_price_rows": _int(
                     vendor_row.get("off_tick_price_rows", 0)
+                ),
+                "strike_grid_validation_enabled": _bool(
+                    vendor_row.get("strike_grid_validation_enabled", False)
+                ),
+                "strike_grid_step": _float(
+                    vendor_row.get("strike_grid_step", float("nan"))
+                ),
+                "off_grid_strike_rows": _int(
+                    vendor_row.get("off_grid_strike_rows", 0)
                 ),
                 "dropped_calendar_closed_rows": _int(
                     vendor_row.get("dropped_calendar_closed_rows", 0)
@@ -1124,6 +1137,9 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Price-grid validation: {'yes' if _bool(row.get('price_grid_validation_enabled', False)) else 'no'}",
         f"- Price-grid tick size: {_float(row.get('price_grid_tick_size')) if _bool(row.get('price_grid_validation_enabled', False)) else 'n/a'}",
         f"- Off-tick price rows: {_int(row.get('off_tick_price_rows', 0))}",
+        f"- Strike-grid validation: {'yes' if _bool(row.get('strike_grid_validation_enabled', False)) else 'no'}",
+        f"- Strike-grid step: {_float(row.get('strike_grid_step')) if _bool(row.get('strike_grid_validation_enabled', False)) else 'n/a'}",
+        f"- Off-grid strike rows: {_int(row.get('off_grid_strike_rows', 0))}",
         f"- Calendar-closed rows: {_int(row.get('dropped_calendar_closed_rows', 0))}",
         f"- Calendar out-of-range rows: {_int(row.get('dropped_calendar_out_of_range_rows', 0))}",
         f"- Mapping source mode: {str(row.get('mapping_source_mode', ''))}",
@@ -1287,6 +1303,15 @@ def _config(
             ),
             "off_tick_price_rows": _int(
                 row.get("off_tick_price_rows", 0)
+            ),
+            "strike_grid_validation_enabled": _bool(
+                row.get("strike_grid_validation_enabled", False)
+            ),
+            "strike_grid_step": _float(
+                row.get("strike_grid_step", float("nan"))
+            ),
+            "off_grid_strike_rows": _int(
+                row.get("off_grid_strike_rows", 0)
             ),
             "dropped_calendar_closed_rows": _int(
                 row.get("dropped_calendar_closed_rows", 0)
