@@ -39,6 +39,10 @@ def tick_summary(**overrides):
         "quote_spread_validation_enabled": True,
         "max_quote_spread_ticks": 10.0,
         "wide_spread_rows": 0,
+        "bbo_staleness_validation_enabled": True,
+        "max_unchanged_bbo_ns": 5_000_000_000,
+        "stale_bbo_rows": 0,
+        "max_observed_bbo_age_ns": 1_000_000_000,
         "out_of_session_rows": 0,
         "median_gap_ns": 1_000.0,
         "p99_gap_ns": 2_000.0,
@@ -69,6 +73,10 @@ def chain_summary(**overrides):
         "quote_spread_validation_enabled": True,
         "max_quote_spread_ticks": 10.0,
         "wide_spread_rows": 0,
+        "bbo_staleness_validation_enabled": True,
+        "max_unchanged_bbo_ns": 5_000_000_000,
+        "stale_bbo_rows": 0,
+        "max_observed_bbo_age_ns": 1_000_000_000,
         "strike_grid_validation_enabled": True,
         "strike_grid_step": 50.0,
         "off_grid_strike_rows": 0,
@@ -557,6 +565,46 @@ def test_data_readiness_gates_declared_wide_spread_rows():
     assert allowed_chain.ready
 
 
+def test_data_readiness_gates_declared_stale_bbo_rows():
+    stale_tick = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(stale_bbo_rows=1),
+        thresholds=DataReadinessThresholds(max_stale_bbo_rows=0),
+    )
+    validation_missing = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(
+            bbo_staleness_validation_enabled=False,
+            max_unchanged_bbo_ns=float("nan"),
+        ),
+        thresholds=DataReadinessThresholds(max_stale_bbo_rows=0),
+    )
+    allowed_chain = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(stale_bbo_rows=1),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_stale_bbo_rows=1,
+        ),
+    )
+
+    stale_failed = set(
+        stale_tick.checks.loc[
+            ~stale_tick.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    validation_failed = set(
+        validation_missing.checks.loc[
+            ~validation_missing.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not stale_tick.ready
+    assert "tick_stale_bbo_rows" in stale_failed
+    assert not validation_missing.ready
+    assert "tick_bbo_staleness_validation_enabled" in validation_failed
+    assert allowed_chain.ready
+
+
 def test_data_readiness_gates_declared_chain_strike_grid():
     off_grid = evaluate_data_readiness(
         chain_diagnostic_summary=chain_summary(off_grid_strike_rows=1),
@@ -654,6 +702,8 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
             str(tick_dir),
             "--max-wide-spread-rows",
             "1",
+            "--max-stale-bbo-rows",
+            "1",
             "--fail-on-breach",
         ]
     )
@@ -663,6 +713,7 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
     )
     assert code == 0
     assert config["thresholds"]["max_wide_spread_rows"] == 1
+    assert config["thresholds"]["max_stale_bbo_rows"] == 1
 
 
 def test_data_readiness_fails_on_filtered_mapped_data_quarantine():

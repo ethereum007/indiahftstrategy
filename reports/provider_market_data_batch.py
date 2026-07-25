@@ -33,6 +33,7 @@ class ProviderMarketDataBatchConfig:
     sample_rows: int = 1000
     tick_size: float | None = None
     max_quote_spread_ticks: float | None = None
+    max_unchanged_bbo_ns: int | None = None
     strike_step: float | None = None
     timestamp_unit: str = "datetime"
     timestamp_tz: str | None = None
@@ -50,6 +51,7 @@ class ProviderMarketDataBatchConfig:
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
     max_wide_spread_rows: int | None = None
+    max_stale_bbo_rows: int | None = None
     max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
@@ -230,6 +232,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         sample_rows=config.sample_rows,
         tick_size=config.tick_size,
         max_quote_spread_ticks=config.max_quote_spread_ticks,
+        max_unchanged_bbo_ns=config.max_unchanged_bbo_ns,
         strike_step=config.strike_step,
         timestamp_unit=config.timestamp_unit,
         timestamp_tz=config.timestamp_tz,
@@ -247,6 +250,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
         max_wide_spread_rows=config.max_wide_spread_rows,
+        max_stale_bbo_rows=config.max_stale_bbo_rows,
         max_off_grid_strike_rows=config.max_off_grid_strike_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
@@ -641,6 +645,24 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
             "max_quote_spread_ticks is required when max_wide_spread_rows is set"
         )
     if (
+        config.max_stale_bbo_rows is not None
+        and config.max_unchanged_bbo_ns is None
+    ):
+        raise ValueError(
+            "max_unchanged_bbo_ns is required when max_stale_bbo_rows is set"
+        )
+    if (
+        config.max_unchanged_bbo_ns is not None
+        and (
+            isinstance(config.max_unchanged_bbo_ns, bool)
+            or not isinstance(config.max_unchanged_bbo_ns, int)
+            or config.max_unchanged_bbo_ns < 0
+        )
+    ):
+        raise ValueError(
+            "max_unchanged_bbo_ns must be a non-negative integer"
+        )
+    if (
         config.max_off_grid_strike_rows is not None
         and config.strike_step is None
     ):
@@ -679,6 +701,15 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         and config.max_wide_spread_rows < 0
     ):
         raise ValueError("max_wide_spread_rows must be non-negative")
+    if (
+        config.max_stale_bbo_rows is not None
+        and (
+            isinstance(config.max_stale_bbo_rows, bool)
+            or not isinstance(config.max_stale_bbo_rows, int)
+            or config.max_stale_bbo_rows < 0
+        )
+    ):
+        raise ValueError("max_stale_bbo_rows must be a non-negative integer")
     if (
         config.max_off_grid_strike_rows is not None
         and config.max_off_grid_strike_rows < 0

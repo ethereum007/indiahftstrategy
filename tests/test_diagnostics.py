@@ -218,6 +218,97 @@ def test_tick_and_chain_diagnostics_report_declared_wide_spreads():
         )
 
 
+def test_tick_and_chain_diagnostics_report_declared_stale_bbo():
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist(timestamp),
+                "bid": 100.0,
+                "ask": 100.05,
+                "bid_qty": bid_qty,
+                "ask_qty": 150,
+            }
+            for timestamp, bid_qty in (
+                ("2026-06-10 09:15:00", 75),
+                ("2026-06-10 09:15:01", 75),
+                ("2026-06-10 09:15:03", 75),
+                ("2026-06-10 09:15:04", 150),
+                ("2026-06-10 09:15:02", 150),
+                ("2026-06-10 09:15:05", 150),
+            )
+        ]
+    )
+    chain_rows = []
+    for timestamp, strike, call_bid_qty in (
+        ("2026-06-10 09:15:00", 22500.0, 75),
+        ("2026-06-10 09:15:00", 22600.0, 75),
+        ("2026-06-10 09:15:03", 22500.0, 75),
+        ("2026-06-10 09:15:01", 22600.0, 75),
+        ("2026-06-10 09:15:04", 22500.0, 150),
+    ):
+        chain_rows.append(
+            {
+                "ts": ns_ist(timestamp),
+                "expiry": "2026-06-25",
+                "strike": strike,
+                "call_bid": 100.0,
+                "call_ask": 100.05,
+                "call_bid_qty": call_bid_qty,
+                "call_ask_qty": 75,
+                "put_bid": 90.0,
+                "put_ask": 90.05,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+        )
+    chain = pd.DataFrame(chain_rows)
+
+    tick_result = tick_diagnostics(
+        ticks,
+        max_unchanged_bbo_ns=2_000_000_000,
+    )
+    chain_result = chain_diagnostics(
+        chain,
+        max_unchanged_bbo_ns=2_000_000_000,
+    )
+
+    tick_summary = tick_result.summary.iloc[0]
+    chain_overall = chain_result.summary.loc[
+        chain_result.summary["scope"] == "overall"
+    ].iloc[0]
+    chain_expiry = chain_result.summary.loc[
+        chain_result.summary["scope"] == "expiry"
+    ].iloc[0]
+    assert bool(tick_summary["bbo_staleness_validation_enabled"])
+    assert int(tick_summary["max_unchanged_bbo_ns"]) == 2_000_000_000
+    assert int(tick_summary["stale_bbo_rows"]) == 2
+    assert int(tick_summary["max_observed_bbo_age_ns"]) == 3_000_000_000
+    assert list(
+        tick_result.issues.loc[
+            tick_result.issues["issue"] == "stale_bbo",
+            "row_index",
+        ]
+    ) == [2, 5]
+    assert bool(chain_overall["bbo_staleness_validation_enabled"])
+    assert int(chain_overall["stale_bbo_rows"]) == 1
+    assert int(chain_overall["max_observed_bbo_age_ns"]) == 3_000_000_000
+    assert int(chain_expiry["stale_bbo_rows"]) == 1
+    assert int(chain_expiry["max_observed_bbo_age_ns"]) == 3_000_000_000
+    assert list(
+        chain_result.issues.loc[
+            chain_result.issues["issue"] == "stale_bbo",
+            "row_index",
+        ]
+    ) == [2]
+
+    for invalid_limit in (-1, 1.5, True):
+        with pytest.raises(ValueError, match="max_unchanged_bbo_ns"):
+            tick_diagnostics(
+                ticks,
+                max_unchanged_bbo_ns=invalid_limit,
+            )
+
+
 def test_tick_and_chain_diagnostics_apply_timestamp_high_water():
     timestamps = [
         ns_ist("2026-06-10 09:15:04"),
@@ -480,6 +571,8 @@ def test_unified_cli_diagnose_ticks(tmp_path):
             "0.05",
             "--max-quote-spread-ticks",
             "1",
+            "--max-unchanged-bbo-ns",
+            "2000000000",
         ]
     )
 
@@ -490,3 +583,6 @@ def test_unified_cli_diagnose_ticks(tmp_path):
     assert bool(summary["quote_spread_validation_enabled"])
     assert summary["max_quote_spread_ticks"] == pytest.approx(1)
     assert int(summary["wide_spread_rows"]) == 0
+    assert bool(summary["bbo_staleness_validation_enabled"])
+    assert int(summary["max_unchanged_bbo_ns"]) == 2_000_000_000
+    assert int(summary["stale_bbo_rows"]) == 0

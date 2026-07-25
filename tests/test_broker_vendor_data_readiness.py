@@ -766,6 +766,10 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
             "10",
             "--max-wide-spread-rows",
             "0",
+            "--max-unchanged-bbo-ns",
+            "5000000000",
+            "--max-stale-bbo-rows",
+            "0",
             "--strike-step",
             "50",
             "--max-off-grid-strike-rows",
@@ -796,6 +800,9 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
     assert bool(summary.loc[0, "quote_spread_validation_enabled"])
     assert summary.loc[0, "max_quote_spread_ticks"] == 10.0
     assert int(summary.loc[0, "wide_spread_rows"]) == 0
+    assert bool(summary.loc[0, "bbo_staleness_validation_enabled"])
+    assert int(summary.loc[0, "max_unchanged_bbo_ns"]) == 5_000_000_000
+    assert int(summary.loc[0, "stale_bbo_rows"]) == 0
     assert config["vendor_market_data_batch"][
         "strike_grid_validation_enabled"
     ]
@@ -804,9 +811,22 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
         "quote_spread_validation_enabled"
     ]
     assert config["vendor_market_data_batch"]["wide_spread_rows"] == 0
+    assert config["vendor_market_data_batch"][
+        "bbo_staleness_validation_enabled"
+    ]
+    assert (
+        config["vendor_market_data_batch"]["max_unchanged_bbo_ns"]
+        == 5_000_000_000
+    )
+    assert config["vendor_market_data_batch"]["stale_bbo_rows"] == 0
     assert manifest["parameters"]["config"]["strike_step"] == 50.0
     assert manifest["parameters"]["config"]["max_quote_spread_ticks"] == 10.0
     assert manifest["parameters"]["config"]["max_wide_spread_rows"] == 0
+    assert (
+        manifest["parameters"]["config"]["max_unchanged_bbo_ns"]
+        == 5_000_000_000
+    )
+    assert manifest["parameters"]["config"]["max_stale_bbo_rows"] == 0
     assert (
         manifest["parameters"]["config"]["max_off_grid_strike_rows"] == 1
     )

@@ -3037,6 +3037,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--sample-rows", type=int, default=1000)
     provider_market_data_pipeline.add_argument("--tick-size", type=float, default=None)
     provider_market_data_pipeline.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    provider_market_data_pipeline.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     provider_market_data_pipeline.add_argument("--strike-step", type=float, default=None)
     provider_market_data_pipeline.add_argument("--timestamp-unit", default="datetime")
     provider_market_data_pipeline.add_argument("--timestamp-tz", default=None)
@@ -3054,6 +3055,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--max-invalid-trade-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-off-tick-price-rows", type=int, default=None)
     provider_market_data_pipeline.add_argument("--max-wide-spread-rows", type=int, default=None)
+    provider_market_data_pipeline.add_argument("--max-stale-bbo-rows", type=int, default=None)
     provider_market_data_pipeline.add_argument("--max-off-grid-strike-rows", type=int, default=None)
     provider_market_data_pipeline.add_argument("--max-non-trading-day-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-out-of-session-rows", type=int, default=0)
@@ -3081,6 +3083,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--sample-rows", type=int, default=1000)
     provider_market_data_batch.add_argument("--tick-size", type=float, default=None)
     provider_market_data_batch.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    provider_market_data_batch.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     provider_market_data_batch.add_argument("--strike-step", type=float, default=None)
     provider_market_data_batch.add_argument("--timestamp-unit", default="datetime")
     provider_market_data_batch.add_argument("--timestamp-tz", default=None)
@@ -3098,6 +3101,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--max-invalid-trade-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-off-tick-price-rows", type=int, default=None)
     provider_market_data_batch.add_argument("--max-wide-spread-rows", type=int, default=None)
+    provider_market_data_batch.add_argument("--max-stale-bbo-rows", type=int, default=None)
     provider_market_data_batch.add_argument("--max-off-grid-strike-rows", type=int, default=None)
     provider_market_data_batch.add_argument("--max-non-trading-day-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-out-of-session-rows", type=int, default=0)
@@ -3164,6 +3168,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--no-filter-session", action="store_true")
     vendor_market_data.add_argument("--tick-size", type=float, default=None)
     vendor_market_data.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    vendor_market_data.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     vendor_market_data.add_argument("--strike-step", type=float, default=None)
     vendor_market_data.add_argument("--allow-missing-required", action="store_true")
     vendor_market_data.add_argument("--min-rows", type=int, default=1)
@@ -3183,6 +3188,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--max-invalid-trade-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-off-tick-price-rows", type=int, default=None)
     vendor_market_data.add_argument("--max-wide-spread-rows", type=int, default=None)
+    vendor_market_data.add_argument("--max-stale-bbo-rows", type=int, default=None)
     vendor_market_data.add_argument("--max-off-grid-strike-rows", type=int, default=None)
     vendor_market_data.add_argument("--max-non-trading-day-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-out-of-session-rows", type=int, default=0)
@@ -3262,6 +3268,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--no-filter-session", action="store_true")
     vendor_market_data_batch.add_argument("--tick-size", type=float, default=None)
     vendor_market_data_batch.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    vendor_market_data_batch.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     vendor_market_data_batch.add_argument("--strike-step", type=float, default=None)
     vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
     vendor_market_data_batch.add_argument("--min-rows", type=int, default=1)
@@ -3281,6 +3288,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--max-invalid-trade-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-off-tick-price-rows", type=int, default=None)
     vendor_market_data_batch.add_argument("--max-wide-spread-rows", type=int, default=None)
+    vendor_market_data_batch.add_argument("--max-stale-bbo-rows", type=int, default=None)
     vendor_market_data_batch.add_argument("--max-off-grid-strike-rows", type=int, default=None)
     vendor_market_data_batch.add_argument("--max-non-trading-day-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-out-of-session-rows", type=int, default=0)
@@ -3366,6 +3374,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--no-filter-session", action="store_true")
     broker_vendor_data_readiness.add_argument("--tick-size", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    broker_vendor_data_readiness.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     broker_vendor_data_readiness.add_argument("--strike-step", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--allow-missing-required", action="store_true")
     broker_vendor_data_readiness.add_argument("--min-rows", type=int, default=1)
@@ -3385,6 +3394,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--max-invalid-trade-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-off-tick-price-rows", type=int, default=None)
     broker_vendor_data_readiness.add_argument("--max-wide-spread-rows", type=int, default=None)
+    broker_vendor_data_readiness.add_argument("--max-stale-bbo-rows", type=int, default=None)
     broker_vendor_data_readiness.add_argument("--max-off-grid-strike-rows", type=int, default=None)
     broker_vendor_data_readiness.add_argument("--max-non-trading-day-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
@@ -3449,6 +3459,7 @@ def main(argv: list[str] | None = None) -> int:
     diag_ticks.add_argument("--out", required=True)
     diag_ticks.add_argument("--tick-size", type=float, default=None)
     diag_ticks.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    diag_ticks.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     diag_ticks.add_argument("--market", default="india_nse_index_derivatives")
     _add_market_calendar_arg(diag_ticks)
     diag_ticks.add_argument("--no-filter-session", action="store_true")
@@ -3458,6 +3469,7 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--out", required=True)
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--max-quote-spread-ticks", type=float, default=None)
+    diag_chain.add_argument("--max-unchanged-bbo-ns", type=int, default=None)
     diag_chain.add_argument("--strike-step", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     _add_market_calendar_arg(diag_chain)
@@ -3544,6 +3556,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-invalid-trade-rows", type=int, default=0)
     data_readiness.add_argument("--max-off-tick-price-rows", type=int, default=None)
     data_readiness.add_argument("--max-wide-spread-rows", type=int, default=None)
+    data_readiness.add_argument("--max-stale-bbo-rows", type=int, default=None)
     data_readiness.add_argument("--max-off-grid-strike-rows", type=int, default=None)
     data_readiness.add_argument("--max-non-trading-day-rows", type=int, default=0)
     data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
@@ -7930,6 +7943,7 @@ def main(argv: list[str] | None = None) -> int:
                 sample_rows=args.sample_rows,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 strike_step=args.strike_step,
                 timestamp_unit=args.timestamp_unit,
                 timestamp_tz=args.timestamp_tz,
@@ -7947,6 +7961,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
                 max_wide_spread_rows=args.max_wide_spread_rows,
+                max_stale_bbo_rows=args.max_stale_bbo_rows,
                 max_off_grid_strike_rows=args.max_off_grid_strike_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
@@ -7984,6 +7999,7 @@ def main(argv: list[str] | None = None) -> int:
                 sample_rows=args.sample_rows,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 strike_step=args.strike_step,
                 timestamp_unit=args.timestamp_unit,
                 timestamp_tz=args.timestamp_tz,
@@ -8001,6 +8017,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
                 max_wide_spread_rows=args.max_wide_spread_rows,
+                max_stale_bbo_rows=args.max_stale_bbo_rows,
                 max_off_grid_strike_rows=args.max_off_grid_strike_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
@@ -8051,6 +8068,7 @@ def main(argv: list[str] | None = None) -> int:
                 lot_size=args.lot_size,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 strike_step=args.strike_step,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -8072,6 +8090,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
                 max_wide_spread_rows=args.max_wide_spread_rows,
+                max_stale_bbo_rows=args.max_stale_bbo_rows,
                 max_off_grid_strike_rows=args.max_off_grid_strike_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
@@ -8129,6 +8148,7 @@ def main(argv: list[str] | None = None) -> int:
                 lot_size=args.lot_size,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 strike_step=args.strike_step,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -8150,6 +8170,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
                 max_wide_spread_rows=args.max_wide_spread_rows,
+                max_stale_bbo_rows=args.max_stale_bbo_rows,
                 max_off_grid_strike_rows=args.max_off_grid_strike_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
@@ -8234,6 +8255,7 @@ def main(argv: list[str] | None = None) -> int:
                 lot_size=args.lot_size,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 strike_step=args.strike_step,
                 require_all_mapped=not args.allow_missing_required,
                 min_rows=args.min_rows,
@@ -8255,6 +8277,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
                 max_wide_spread_rows=args.max_wide_spread_rows,
+                max_stale_bbo_rows=args.max_stale_bbo_rows,
                 max_off_grid_strike_rows=args.max_off_grid_strike_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,
@@ -8335,6 +8358,7 @@ def main(argv: list[str] | None = None) -> int:
                 ticks,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 market=args.market,
                 market_calendar=args.market_calendar,
             ),
@@ -8354,6 +8378,7 @@ def main(argv: list[str] | None = None) -> int:
                 chain,
                 tick_size=args.tick_size,
                 max_quote_spread_ticks=args.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=args.max_unchanged_bbo_ns,
                 strike_step=args.strike_step,
                 market=args.market,
                 market_calendar=args.market_calendar,
@@ -8430,6 +8455,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
                 max_wide_spread_rows=args.max_wide_spread_rows,
+                max_stale_bbo_rows=args.max_stale_bbo_rows,
                 max_off_grid_strike_rows=args.max_off_grid_strike_rows,
                 max_non_trading_day_rows=args.max_non_trading_day_rows,
                 max_out_of_session_rows=args.max_out_of_session_rows,

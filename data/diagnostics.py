@@ -121,11 +121,18 @@ class _ChainSnapshotDiagnostics:
     by_expiry: pd.DataFrame
 
 
+@dataclass(frozen=True)
+class _BboStalenessDiagnostics:
+    age_ns: pd.Series
+    stale: pd.Series
+
+
 def tick_diagnostics(
     ticks: pd.DataFrame,
     *,
     tick_size: float | None = None,
     max_quote_spread_ticks: float | None = None,
+    max_unchanged_bbo_ns: int | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
@@ -135,6 +142,7 @@ def tick_diagnostics(
         tick_size=tick_size,
         max_quote_spread_ticks=max_quote_spread_ticks,
     )
+    _validate_unchanged_bbo_limit(max_unchanged_bbo_ns)
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = ticks.copy()
     frame["spread"] = frame["ask"] - frame["bid"]
@@ -147,6 +155,11 @@ def tick_diagnostics(
     wide_spread = _wide_spread_mask(
         frame["spread_ticks"],
         max_quote_spread_ticks=max_quote_spread_ticks,
+    )
+    bbo_staleness = _bbo_staleness_diagnostics(
+        frame,
+        state_columns=("bid", "ask", "bid_qty", "ask_qty"),
+        max_unchanged_bbo_ns=max_unchanged_bbo_ns,
     )
     gaps = frame["ts"].sort_values().diff().dropna()
     nonmonotonic = ~_timestamp_at_high_water_mask(frame["ts"])
@@ -186,6 +199,18 @@ def tick_diagnostics(
                     else np.nan
                 ),
                 "wide_spread_rows": int(wide_spread.sum()),
+                "bbo_staleness_validation_enabled": (
+                    max_unchanged_bbo_ns is not None
+                ),
+                "max_unchanged_bbo_ns": (
+                    int(max_unchanged_bbo_ns)
+                    if max_unchanged_bbo_ns is not None
+                    else np.nan
+                ),
+                "stale_bbo_rows": int(bbo_staleness.stale.sum()),
+                "max_observed_bbo_age_ns": _max_bbo_age(
+                    bbo_staleness.age_ns
+                ),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -210,6 +235,7 @@ def tick_diagnostics(
             invalid_trade=invalid_trade,
             off_tick_price=off_tick_price,
             wide_spread=wide_spread,
+            stale_bbo=bbo_staleness.stale,
         ),
     )
 
@@ -219,6 +245,7 @@ def chain_diagnostics(
     *,
     tick_size: float | None = None,
     max_quote_spread_ticks: float | None = None,
+    max_unchanged_bbo_ns: int | None = None,
     strike_step: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
@@ -232,6 +259,7 @@ def chain_diagnostics(
         tick_size=tick_size,
         max_quote_spread_ticks=max_quote_spread_ticks,
     )
+    _validate_unchanged_bbo_limit(max_unchanged_bbo_ns)
     _validate_strike_step(strike_step)
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = chain.copy()
@@ -253,6 +281,23 @@ def chain_diagnostics(
             max_quote_spread_ticks=max_quote_spread_ticks,
         )
     )
+    bbo_staleness = _bbo_staleness_diagnostics(
+        frame,
+        state_columns=(
+            "call_bid",
+            "call_ask",
+            "call_bid_qty",
+            "call_ask_qty",
+            "put_bid",
+            "put_ask",
+            "put_bid_qty",
+            "put_ask_qty",
+        ),
+        group_columns=("expiry", "strike"),
+        max_unchanged_bbo_ns=max_unchanged_bbo_ns,
+    )
+    frame["bbo_age_ns"] = bbo_staleness.age_ns
+    frame["stale_bbo"] = bbo_staleness.stale
     frame["off_tick_price"] = _off_tick_price_mask(
         frame,
         ("call_bid", "call_ask", "put_bid", "put_ask"),
@@ -322,6 +367,8 @@ def chain_diagnostics(
             median_put_spread_ticks=("put_spread_ticks", "median"),
             off_tick_price_rows=("off_tick_price", "sum"),
             wide_spread_rows=("wide_spread", "sum"),
+            stale_bbo_rows=("stale_bbo", "sum"),
+            max_observed_bbo_age_ns=("bbo_age_ns", "max"),
             nonmonotonic_rows=("nonmonotonic_ts", "sum"),
             nonpositive_strike_rows=("nonpositive_strike", "sum"),
             off_grid_strike_rows=("off_grid_strike", "sum"),
@@ -498,6 +545,18 @@ def chain_diagnostics(
                     else np.nan
                 ),
                 "wide_spread_rows": int(frame["wide_spread"].sum()),
+                "bbo_staleness_validation_enabled": (
+                    max_unchanged_bbo_ns is not None
+                ),
+                "max_unchanged_bbo_ns": (
+                    int(max_unchanged_bbo_ns)
+                    if max_unchanged_bbo_ns is not None
+                    else np.nan
+                ),
+                "stale_bbo_rows": int(frame["stale_bbo"].sum()),
+                "max_observed_bbo_age_ns": _max_bbo_age(
+                    frame["bbo_age_ns"]
+                ),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -537,6 +596,7 @@ def chain_diagnostics(
             conflicting_contract=key_diagnostics.row_conflicting,
             off_tick_price=frame["off_tick_price"],
             wide_spread=frame["wide_spread"],
+            stale_bbo=frame["stale_bbo"],
         ),
     )
 
@@ -560,6 +620,7 @@ def _tick_issues(
     invalid_trade: pd.Series,
     off_tick_price: pd.Series,
     wide_spread: pd.Series,
+    stale_bbo: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -570,6 +631,7 @@ def _tick_issues(
         "invalid_trade": invalid_trade,
         "off_tick_price": off_tick_price,
         "wide_spread": wide_spread,
+        "stale_bbo": stale_bbo,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days
@@ -665,6 +727,90 @@ def _wide_spread_mask(
     )
 
 
+def _bbo_staleness_diagnostics(
+    frame: pd.DataFrame,
+    *,
+    state_columns: tuple[str, ...],
+    max_unchanged_bbo_ns: int | None,
+    group_columns: tuple[str, ...] = (),
+) -> _BboStalenessDiagnostics:
+    ages = np.zeros(len(frame), dtype=np.int64)
+    timestamps = frame["ts"].tolist()
+    states = frame.loc[:, list(state_columns)].to_numpy(dtype=object)
+    if group_columns:
+        groups = frame.groupby(
+            list(group_columns),
+            dropna=False,
+            sort=False,
+        ).indices.values()
+    else:
+        groups = (np.arange(len(frame), dtype=np.int64),)
+
+    for positions in groups:
+        previous_state: tuple[object, ...] | None = None
+        previous_timestamp_ns: int | None = None
+        unchanged_since_ns: int | None = None
+        for position_value in positions:
+            position = int(position_value)
+            timestamp_ns = _timestamp_ns(timestamps[position])
+            state_values = states[position]
+            state = (
+                None
+                if bool(pd.isna(state_values).any())
+                else tuple(state_values)
+            )
+            reset = (
+                timestamp_ns is None
+                or state is None
+                or previous_state is None
+                or previous_timestamp_ns is None
+                or timestamp_ns < previous_timestamp_ns
+                or state != previous_state
+            )
+            if reset:
+                ages[position] = 0
+                unchanged_since_ns = timestamp_ns
+            else:
+                assert unchanged_since_ns is not None
+                ages[position] = min(
+                    timestamp_ns - unchanged_since_ns,
+                    np.iinfo(np.int64).max,
+                )
+
+            if timestamp_ns is None or state is None:
+                previous_state = None
+                previous_timestamp_ns = None
+                unchanged_since_ns = None
+            else:
+                previous_state = state
+                previous_timestamp_ns = timestamp_ns
+
+    age_ns = pd.Series(ages, index=frame.index, dtype="int64")
+    stale = pd.Series(False, index=frame.index, dtype=bool)
+    if max_unchanged_bbo_ns is not None:
+        stale = age_ns > int(max_unchanged_bbo_ns)
+    return _BboStalenessDiagnostics(age_ns=age_ns, stale=stale)
+
+
+def _timestamp_ns(value: object) -> int | None:
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(timestamp):
+        return None
+    try:
+        return int(timestamp.value)
+    except (OverflowError, ValueError):
+        return None
+
+
+def _max_bbo_age(age_ns: pd.Series) -> int:
+    if age_ns.empty:
+        return 0
+    return int(age_ns.max())
+
+
 def _validate_tick_size(tick_size: float | None) -> None:
     if tick_size is None:
         return
@@ -688,6 +834,21 @@ def _validate_quote_spread_limit(
     if tick_size is None:
         raise ValueError(
             "tick_size is required when max_quote_spread_ticks is set"
+        )
+
+
+def _validate_unchanged_bbo_limit(
+    max_unchanged_bbo_ns: int | None,
+) -> None:
+    if max_unchanged_bbo_ns is None:
+        return
+    if (
+        isinstance(max_unchanged_bbo_ns, (bool, np.bool_))
+        or not isinstance(max_unchanged_bbo_ns, (int, np.integer))
+        or int(max_unchanged_bbo_ns) < 0
+    ):
+        raise ValueError(
+            "max_unchanged_bbo_ns must be a non-negative integer"
         )
 
 
@@ -717,6 +878,7 @@ def _chain_issues(
     conflicting_contract: pd.Series,
     off_tick_price: pd.Series,
     wide_spread: pd.Series,
+    stale_bbo: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -734,6 +896,7 @@ def _chain_issues(
         | (frame["put_ask_qty"] <= 0),
         "off_tick_price": off_tick_price,
         "wide_spread": wide_spread,
+        "stale_bbo": stale_bbo,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days

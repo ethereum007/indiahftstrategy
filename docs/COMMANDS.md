@@ -8877,6 +8877,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-off-tick-price-rows 0 `
   --max-quote-spread-ticks 2 `
   --max-wide-spread-rows 0 `
+  --max-unchanged-bbo-ns 2000000000 `
+  --max-stale-bbo-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8913,6 +8915,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-off-tick-price-rows 0 `
   --max-quote-spread-ticks 20 `
   --max-wide-spread-rows 0 `
+  --max-unchanged-bbo-ns 2000000000 `
+  --max-stale-bbo-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -9026,6 +9030,22 @@ retained per expiry. `--max-wide-spread-rows` opts into readiness gating and
 requires the declared limit. Use `0` for fail-closed proof. This is diagnostic
 evidence only: it does not quarantine, narrow, or rewrite a quote, and the
 platform does not infer a spread limit from the observed file.
+When a reviewed capture policy declares how long a displayed top of book may
+remain unchanged, pass `--max-unchanged-bbo-ns`. Tick state includes bid, ask,
+bid quantity, and ask quantity; chain state includes all call and put
+top-of-book prices and displayed quantities, with an independent clock per
+`(expiry, strike)` contract. Diagnostics retain
+`bbo_staleness_validation_enabled`, `max_unchanged_bbo_ns`,
+`stale_bbo_rows`, `max_observed_bbo_age_ns`, and row-level `stale_bbo`
+issues; chain summaries also retain counts and maximum observed age per
+expiry. `--max-stale-bbo-rows` opts into readiness gating and requires the age
+declaration. A backwards or unparseable timestamp resets that contract's age
+run and remains subject to the separate timestamp-integrity gate. Use `0` for
+fail-closed stale-book proof. This evidence does not drop, refresh, or rewrite
+quotes, and no venue timeout is inferred. The direct diagnostics,
+Arrow.money/iRage vendor pipelines, provider single/batch wrappers, and
+broker-vendor readiness wrapper all accept the declaration; readiness-facing
+commands also accept the violation budget.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9461,6 +9481,7 @@ python -m hft_cli diagnose-ticks `
   --out runs\diagnostics\futures `
   --tick-size 0.05 `
   --max-quote-spread-ticks 2 `
+  --max-unchanged-bbo-ns 2000000000 `
   --market india_nse_index_derivatives
 ```
 
@@ -9470,6 +9491,7 @@ python -m hft_cli diagnose-chain `
   --out runs\diagnostics\chain `
   --tick-size 0.05 `
   --max-quote-spread-ticks 20 `
+  --max-unchanged-bbo-ns 2000000000 `
   --strike-step 50 `
   --market india_nse_index_derivatives `
   --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
@@ -9552,6 +9574,7 @@ python -m hft_cli review-data-readiness `
   --max-invalid-trade-rows 0 `
   --max-off-tick-price-rows 0 `
   --max-wide-spread-rows 0 `
+  --max-stale-bbo-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

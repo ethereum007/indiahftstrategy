@@ -144,6 +144,10 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "2",
             "--max-wide-spread-rows",
             "0",
+            "--max-unchanged-bbo-ns",
+            "5000000000",
+            "--max-stale-bbo-rows",
+            "0",
             "--max-median-spread-ticks",
             "2",
             "--fail-on-breach",
@@ -169,6 +173,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
     assert cli_config["parameters"]["max_off_tick_price_rows"] == 0
     assert cli_config["parameters"]["max_quote_spread_ticks"] == 2.0
     assert cli_config["parameters"]["max_wide_spread_rows"] == 0
+    assert cli_config["parameters"]["max_unchanged_bbo_ns"] == 5_000_000_000
+    assert cli_config["parameters"]["max_stale_bbo_rows"] == 0
     assert all(bool(row["ready"]) for row in cli_config["datasets"])
 
 

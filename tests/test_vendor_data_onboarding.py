@@ -1195,6 +1195,131 @@ def test_vendor_market_data_pipeline_gates_declared_wide_spreads(tmp_path):
         )
 
 
+def test_vendor_market_data_pipeline_gates_declared_stale_bbo(tmp_path):
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": f"2026-06-12 09:15:0{second}",
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+            for second in (0, 1, 4)
+        ]
+    )
+    raw_path = tmp_path / "stale_bbo_ticks.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_stale_bbo_pipeline"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            max_unchanged_bbo_ns=2_000_000_000,
+            max_stale_bbo_rows=0,
+        ),
+    )
+
+    diagnostic_summary = blocked.diagnostics.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert blocked.mapped_data.ready
+    assert bool(diagnostic_summary["bbo_staleness_validation_enabled"])
+    assert (
+        int(diagnostic_summary["max_unchanged_bbo_ns"])
+        == 2_000_000_000
+    )
+    assert int(diagnostic_summary["stale_bbo_rows"]) == 1
+    assert (
+        int(diagnostic_summary["max_observed_bbo_age_ns"])
+        == 4_000_000_000
+    )
+    assert int(blocked.summary.loc[0, "stale_bbo_rows"]) == 1
+    assert "tick_stale_bbo_rows" in failed
+    assert blocked_config["diagnostics"][
+        "bbo_staleness_validation_enabled"
+    ]
+    assert (
+        blocked_config["diagnostics"]["max_unchanged_bbo_ns"]
+        == 2_000_000_000
+    )
+    assert blocked_config["diagnostics"]["stale_bbo_rows"] == 1
+    assert (
+        blocked_config["diagnostics"]["max_observed_bbo_age_ns"]
+        == 4_000_000_000
+    )
+    assert "- Stale-BBO rows: 1" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_stale_bbo_pipeline"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--max-unchanged-bbo-ns",
+            "2000000000",
+            "--max-stale-bbo-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    allowed_summary = pd.read_csv(
+        allowed_dir / "vendor_market_data_pipeline_summary.csv"
+    ).iloc[0]
+
+    assert code == 0
+    assert bool(allowed_summary["ready"])
+    assert int(allowed_summary["stale_bbo_rows"]) == 1
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_stale_bbo_rows"
+    ] == 1
+
+    with pytest.raises(ValueError, match="max_unchanged_bbo_ns"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=tmp_path / "missing_bbo_age_limit",
+            config=VendorMarketDataPipelineConfig(
+                adapter="arrow_money",
+                kind="ticks",
+                timestamp_unit="datetime",
+                max_stale_bbo_rows=0,
+            ),
+        )
+
+
 def test_vendor_market_data_pipeline_gates_integer_overflow_rows(tmp_path):
     raw = vendor_ticks("2026-06-12")
     raw["bid_size"] = raw["bid_size"].astype("object")

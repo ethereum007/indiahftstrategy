@@ -58,6 +58,7 @@ class VendorMarketDataPipelineConfig:
     lot_size: int | None = None
     tick_size: float | None = None
     max_quote_spread_ticks: float | None = None
+    max_unchanged_bbo_ns: int | None = None
     strike_step: float | None = None
     require_all_mapped: bool = True
     min_rows: int = 1
@@ -77,6 +78,7 @@ class VendorMarketDataPipelineConfig:
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
     max_wide_spread_rows: int | None = None
+    max_stale_bbo_rows: int | None = None
     max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
@@ -550,6 +552,24 @@ def write_vendor_market_data_batch_pipeline(
                 "wide_spread_rows": int(
                     _number(row, "wide_spread_rows", fallback=0.0)
                 ),
+                "bbo_staleness_validation_enabled": _truthy(
+                    row.get("bbo_staleness_validation_enabled", False)
+                ),
+                "max_unchanged_bbo_ns": _number(
+                    row,
+                    "max_unchanged_bbo_ns",
+                    fallback=float("nan"),
+                ),
+                "stale_bbo_rows": int(
+                    _number(row, "stale_bbo_rows", fallback=0.0)
+                ),
+                "max_observed_bbo_age_ns": int(
+                    _number(
+                        row,
+                        "max_observed_bbo_age_ns",
+                        fallback=0.0,
+                    )
+                ),
                 "strike_grid_validation_enabled": _truthy(
                     row.get("strike_grid_validation_enabled", False)
                 ),
@@ -733,6 +753,7 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
                 data,
                 tick_size=config.tick_size,
                 max_quote_spread_ticks=config.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=config.max_unchanged_bbo_ns,
                 market=config.market,
                 market_calendar=config.market_calendar_path,
             ),
@@ -744,6 +765,7 @@ def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarke
                 data,
                 tick_size=config.tick_size,
                 max_quote_spread_ticks=config.max_quote_spread_ticks,
+                max_unchanged_bbo_ns=config.max_unchanged_bbo_ns,
                 strike_step=config.strike_step,
                 market=config.market,
                 market_calendar=config.market_calendar_path,
@@ -817,6 +839,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
         max_wide_spread_rows=config.max_wide_spread_rows,
+        max_stale_bbo_rows=config.max_stale_bbo_rows,
         max_off_grid_strike_rows=config.max_off_grid_strike_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
@@ -1104,6 +1127,31 @@ def _summary(
                     _number(
                         diagnostic_row,
                         "wide_spread_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "bbo_staleness_validation_enabled": _truthy(
+                    diagnostic_row.get(
+                        "bbo_staleness_validation_enabled",
+                        False,
+                    )
+                ),
+                "max_unchanged_bbo_ns": _number(
+                    diagnostic_row,
+                    "max_unchanged_bbo_ns",
+                    fallback=float("nan"),
+                ),
+                "stale_bbo_rows": int(
+                    _number(
+                        diagnostic_row,
+                        "stale_bbo_rows",
+                        fallback=0.0,
+                    )
+                ),
+                "max_observed_bbo_age_ns": int(
+                    _number(
+                        diagnostic_row,
+                        "max_observed_bbo_age_ns",
                         fallback=0.0,
                     )
                 ),
@@ -1520,6 +1568,10 @@ def _pipeline_runbook_markdown(
         f"- Quote-spread validation: {'yes' if _truthy(summary_row.get('quote_spread_validation_enabled', False)) else 'no'}",
         f"- Maximum quote spread (ticks): {_value_text(summary_row.get('max_quote_spread_ticks')) or 'n/a'}",
         f"- Wide-spread rows: {int(_number_from_value(summary_row.get('wide_spread_rows', 0)))}",
+        f"- BBO-staleness validation: {'yes' if _truthy(summary_row.get('bbo_staleness_validation_enabled', False)) else 'no'}",
+        f"- Maximum unchanged BBO age (ns): {_value_text(summary_row.get('max_unchanged_bbo_ns')) or 'n/a'}",
+        f"- Stale-BBO rows: {int(_number_from_value(summary_row.get('stale_bbo_rows', 0)))}",
+        f"- Maximum observed BBO age (ns): {int(_number_from_value(summary_row.get('max_observed_bbo_age_ns', 0)))}",
         f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
         f"- Strike-grid step: {_value_text(summary_row.get('strike_grid_step')) or 'n/a'}",
         f"- Off-grid strike rows: {int(_number_from_value(summary_row.get('off_grid_strike_rows', 0)))}",
@@ -1604,6 +1656,10 @@ def _batch_runbook_markdown(
         f"- Quote-spread validation: {'yes' if _truthy(summary_row.get('quote_spread_validation_enabled', False)) else 'no'}",
         f"- Maximum quote spread (ticks): {_value_text(summary_row.get('max_quote_spread_ticks')) or 'n/a'}",
         f"- Wide-spread rows: {int(_number_from_value(summary_row.get('wide_spread_rows', 0)))}",
+        f"- BBO-staleness validation: {'yes' if _truthy(summary_row.get('bbo_staleness_validation_enabled', False)) else 'no'}",
+        f"- Maximum unchanged BBO age (ns): {_value_text(summary_row.get('max_unchanged_bbo_ns')) or 'n/a'}",
+        f"- Stale-BBO rows: {int(_number_from_value(summary_row.get('stale_bbo_rows', 0)))}",
+        f"- Maximum observed BBO age (ns): {int(_number_from_value(summary_row.get('max_observed_bbo_age_ns', 0)))}",
         f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
         f"- Strike-grid step: {_value_text(summary_row.get('strike_grid_step')) or 'n/a'}",
         f"- Off-grid strike rows: {int(_number_from_value(summary_row.get('off_grid_strike_rows', 0)))}",
@@ -1858,6 +1914,40 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "bbo_staleness_validation_enabled": bool(
+                    dataset_count
+                    and datasets.get(
+                        "bbo_staleness_validation_enabled",
+                        pd.Series(False, index=datasets.index, dtype=bool),
+                    ).fillna(False).astype(bool).all()
+                ),
+                "max_unchanged_bbo_ns": (
+                    int(config.max_unchanged_bbo_ns)
+                    if config.max_unchanged_bbo_ns is not None
+                    else float("nan")
+                ),
+                "stale_bbo_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "stale_bbo_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "max_observed_bbo_age_ns": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "max_observed_bbo_age_ns",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).max()
+                    )
+                    if dataset_count
+                    else 0
+                ),
                 "strike_grid_validation_enabled": bool(
                     dataset_count
                     and datasets.get(
@@ -2068,6 +2158,18 @@ def _pipeline_config(
             "wide_spread_rows": int(
                 _number(row, "wide_spread_rows", fallback=0.0)
             ),
+            "bbo_staleness_validation_enabled": _truthy(
+                row.get("bbo_staleness_validation_enabled", False)
+            ),
+            "max_unchanged_bbo_ns": int(
+                _number(row, "max_unchanged_bbo_ns", fallback=0.0)
+            ),
+            "stale_bbo_rows": int(
+                _number(row, "stale_bbo_rows", fallback=0.0)
+            ),
+            "max_observed_bbo_age_ns": int(
+                _number(row, "max_observed_bbo_age_ns", fallback=0.0)
+            ),
             "strike_grid_validation_enabled": _truthy(
                 row.get("strike_grid_validation_enabled", False)
             ),
@@ -2171,6 +2273,23 @@ def _batch_config(
             ),
             "wide_spread_rows": int(
                 _number_from_value(item.get("wide_spread_rows", 0))
+            ),
+            "bbo_staleness_validation_enabled": _truthy(
+                item.get("bbo_staleness_validation_enabled", False)
+            ),
+            "max_unchanged_bbo_ns": int(
+                _number_from_value(
+                    item.get("max_unchanged_bbo_ns", 0),
+                    fallback=0.0,
+                )
+            ),
+            "stale_bbo_rows": int(
+                _number_from_value(item.get("stale_bbo_rows", 0))
+            ),
+            "max_observed_bbo_age_ns": int(
+                _number_from_value(
+                    item.get("max_observed_bbo_age_ns", 0)
+                )
             ),
             "strike_grid_validation_enabled": _truthy(
                 item.get("strike_grid_validation_enabled", False)
@@ -2286,6 +2405,18 @@ def _batch_config(
         ),
         "wide_spread_rows": int(
             _number(row, "wide_spread_rows", fallback=0.0)
+        ),
+        "bbo_staleness_validation_enabled": _truthy(
+            row.get("bbo_staleness_validation_enabled", False)
+        ),
+        "max_unchanged_bbo_ns": int(
+            _number(row, "max_unchanged_bbo_ns", fallback=0.0)
+        ),
+        "stale_bbo_rows": int(
+            _number(row, "stale_bbo_rows", fallback=0.0)
+        ),
+        "max_observed_bbo_age_ns": int(
+            _number(row, "max_observed_bbo_age_ns", fallback=0.0)
         ),
         "strike_grid_validation_enabled": _truthy(
             row.get("strike_grid_validation_enabled", False)
@@ -2544,6 +2675,24 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         raise ValueError(
             "max_quote_spread_ticks is required when max_wide_spread_rows is set"
         )
+    if (
+        config.max_stale_bbo_rows is not None
+        and config.max_unchanged_bbo_ns is None
+    ):
+        raise ValueError(
+            "max_unchanged_bbo_ns is required when max_stale_bbo_rows is set"
+        )
+    if (
+        config.max_unchanged_bbo_ns is not None
+        and (
+            isinstance(config.max_unchanged_bbo_ns, bool)
+            or not isinstance(config.max_unchanged_bbo_ns, int)
+            or config.max_unchanged_bbo_ns < 0
+        )
+    ):
+        raise ValueError(
+            "max_unchanged_bbo_ns must be a non-negative integer"
+        )
     if config.strike_step is not None and config.kind != "chain":
         raise ValueError("strike_step is only valid for chain data")
     if (
@@ -2605,6 +2754,15 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         and config.max_wide_spread_rows < 0
     ):
         raise ValueError("max_wide_spread_rows must be non-negative")
+    if (
+        config.max_stale_bbo_rows is not None
+        and (
+            isinstance(config.max_stale_bbo_rows, bool)
+            or not isinstance(config.max_stale_bbo_rows, int)
+            or config.max_stale_bbo_rows < 0
+        )
+    ):
+        raise ValueError("max_stale_bbo_rows must be a non-negative integer")
     if (
         config.max_off_grid_strike_rows is not None
         and config.max_off_grid_strike_rows < 0

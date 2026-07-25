@@ -7119,6 +7119,26 @@ tests). Repository collection is healthy at `2620 tests` across `164` files.
 The full suite was not rerun because recent complete runs exceed 40 minutes.
 All outputs remain non-authorizing.
 
+Latest declared unchanged-BBO staleness gate: tick diagnostics now track the
+age of an unchanged bid, ask, and displayed depth state in input order, while
+option-chain diagnostics maintain an independent clock per `(expiry, strike)`
+across interleaved snapshots. Any price or displayed-quantity change resets
+the clock; invalid or backwards timestamps start a new age run and remain
+subject to the separate timestamp-integrity gate. An explicit
+`max_unchanged_bbo_ns` declaration produces retained
+`bbo_staleness_validation_enabled`, `stale_bbo_rows`,
+`max_observed_bbo_age_ns`, row-level `stale_bbo`, and per-expiry chain
+evidence. The opt-in `--max-stale-bbo-rows` readiness budget requires that
+declaration and propagates through direct diagnostics, Arrow.money/iRage
+single-day and batch onboarding, provider wrappers, broker-vendor proof, CLI,
+configs, summaries, manifests, and runbooks. No timeout is hard-coded or
+inferred, and stale rows are diagnosed rather than dropped or refreshed.
+Changed-path and affected normalization, chain-replay, calendar/contract,
+live-ingest, parity, and surface regressions pass (`212` tests). Repository
+collection is healthy at `2623 tests` across `164` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound
