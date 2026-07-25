@@ -12,12 +12,22 @@ from data.chains import load_option_chain_csv
 from data.loaders import load_tick_csv
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from reports.manifest import write_experiment_manifest
 from scanners.parity_box import (
     ScannerCosts,
     ScannerInstruments,
     opportunity_report,
     scan_boxes,
     scan_parity_with_audit,
+)
+
+
+PARITY_SCAN_RUN_TYPE = "parity_box_scan"
+PARITY_SCAN_REQUIRED_ARTIFACTS = (
+    "parity_opportunities.csv",
+    "box_opportunities.csv",
+    "opportunity_report.csv",
+    "parity_futures_join_audit.csv",
 )
 
 
@@ -107,6 +117,28 @@ def run_scan(
         futures_join_audit.to_csv(
             out_dir / "parity_futures_join_audit.csv",
             index=False,
+        )
+        write_experiment_manifest(
+            out_dir,
+            run_type=PARITY_SCAN_RUN_TYPE,
+            inputs={
+                "chain": chain_path,
+                "futures": futures_path,
+            },
+            parameters={
+                "chain_column_map": chain_column_map,
+                "futures_column_map": futures_column_map,
+                "timestamp_unit": timestamp_unit,
+                "timestamp_tz": timestamp_tz,
+                "filter_session": filter_session,
+                "market": market,
+                "lot_size": lot_size,
+                "option_tick": option_tick,
+                "future_tick": future_tick,
+                "asof_latency_ns": asof_latency_ns,
+                "max_futures_quote_age_ns": tolerance_ns,
+                "depth_fraction": depth_fraction,
+            },
         )
     return ParityBoxRunResult(
         parity=parity,

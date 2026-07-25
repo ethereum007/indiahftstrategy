@@ -828,7 +828,12 @@ parity_opportunities.csv
 box_opportunities.csv
 opportunity_report.csv
 parity_futures_join_audit.csv
+manifest.json
 ```
+
+The scan manifest fingerprints the exact option-chain and futures files plus
+the column maps, timestamp normalization, session filter, market, lot/tick
+metadata, depth fraction, as-of latency, and futures quote-age ceiling.
 
 ## Parity / Box Edge Audit
 
@@ -856,6 +861,10 @@ parity_edge_checks.csv
 parity_edge_summary.csv
 manifest.json
 ```
+
+The edge audit verifies the scan manifest and adds
+`scan_manifest_current` to its checks and summary. Editing a scan artifact or
+either raw input after the scan therefore makes the edge audit fail closed.
 
 ## Parity Replay
 
@@ -1216,7 +1225,12 @@ multi-leg order template without manually re-entering prices. It also binds
 the selected futures quote-age limit, three-leg book-age/skew limits, and the
 opportunity's observed as-of and decision ages into `candidate_config.json`,
 preventing a later handoff from silently relaxing the researched freshness
-assumption:
+assumption. Promotion verifies all scan, edge, and sweep manifests, proves the
+edge audit is bound to the exact supplied scan manifest, requires the scan and
+sweep to fingerprint identical chain/futures content, and selects only a sweep
+group matching the scan's depth and as-of latency. Market, column-map,
+timestamp/session, lot-size, and tick-size assumptions must match, as must the
+selected futures quote-age ceiling:
 
 ```powershell
 python -m hft_cli promote-parity-candidate `

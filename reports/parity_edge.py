@@ -7,7 +7,24 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    ManifestIntegrity,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+from scanners.run_parity_box import (
+    PARITY_SCAN_REQUIRED_ARTIFACTS,
+    PARITY_SCAN_RUN_TYPE,
+)
+
+
+PARITY_EDGE_RUN_TYPE = "parity_edge_audit"
+PARITY_EDGE_REQUIRED_ARTIFACTS = (
+    "parity_edge_metrics.csv",
+    "parity_edge_checks.csv",
+    "parity_edge_summary.csv",
+)
 
 
 @dataclass(frozen=True)
@@ -60,11 +77,39 @@ def write_parity_edge_audit(
     output_dir: str | Path,
     thresholds: ParityEdgeThresholds | None = None,
 ) -> ParityEdgeAudit:
-    source = Path(scan_dir)
+    source = Path(scan_dir).resolve()
+    scan_manifest = source / "manifest.json"
+    scan_integrity = verify_experiment_manifest(
+        scan_manifest,
+        expected_run_type=PARITY_SCAN_RUN_TYPE,
+        required_artifacts=PARITY_SCAN_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
     parity = _read_required(source / "parity_opportunities.csv")
     boxes = _read_required(source / "box_opportunities.csv")
     thresholds = thresholds or ParityEdgeThresholds()
-    audit = evaluate_parity_edge(parity, boxes, thresholds=thresholds)
+    base_audit = evaluate_parity_edge(
+        parity,
+        boxes,
+        thresholds=thresholds,
+    )
+    checks = pd.concat(
+        [
+            _scan_manifest_check(scan_integrity),
+            base_audit.checks,
+        ],
+        ignore_index=True,
+    )
+    summary = _summary(base_audit.metrics, checks)
+    summary["scan_manifest_current"] = bool(
+        scan_integrity.passed
+    )
+    summary["scan_manifest_error"] = str(scan_integrity.error)
+    audit = ParityEdgeAudit(
+        base_audit.metrics,
+        checks,
+        summary,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     audit.metrics.to_csv(out / "parity_edge_metrics.csv", index=False)
@@ -72,11 +117,44 @@ def write_parity_edge_audit(
     audit.summary.to_csv(out / "parity_edge_summary.csv", index=False)
     write_experiment_manifest(
         out,
-        run_type="parity_edge_audit",
+        run_type=PARITY_EDGE_RUN_TYPE,
         parameters={"thresholds": asdict(thresholds)},
-        inputs={"scan": source},
+        inputs={
+            "scan": source,
+            "scan_manifest": scan_manifest,
+            "scan_dependencies": manifest_dependency_paths(
+                scan_manifest
+            ),
+        },
+        extra={
+            "scan_manifest_current": bool(
+                scan_integrity.passed
+            ),
+        },
     )
     return ParityEdgeAudit(audit.metrics, audit.checks, audit.summary, out)
+
+
+def _scan_manifest_check(
+    integrity: ManifestIntegrity,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "check": "scan_manifest_current",
+                "value": float(bool(integrity.passed)),
+                "operator": "is",
+                "threshold": 1.0,
+                "passed": bool(integrity.passed),
+                "reason": (
+                    ""
+                    if integrity.passed
+                    else "parity scan manifest failed: "
+                    f"{integrity.error or 'verification_failed'}"
+                ),
+            }
+        ]
+    )
 
 
 def _normalize_opportunities(frame: pd.DataFrame, *, scanner: str) -> pd.DataFrame:

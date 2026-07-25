@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 
 from data.chains import normalize_option_chain
-from scanners.run_parity_box import run_scan
+from reports.manifest import verify_experiment_manifest
+from scanners.run_parity_box import (
+    PARITY_SCAN_REQUIRED_ARTIFACTS,
+    PARITY_SCAN_RUN_TYPE,
+    run_scan,
+)
 
 
 def ns_ist(value: str) -> int:
@@ -269,6 +274,13 @@ def test_parity_box_runner_writes_outputs(tmp_path):
     assert (out_dir / "box_opportunities.csv").exists()
     assert (out_dir / "opportunity_report.csv").exists()
     assert (out_dir / "parity_futures_join_audit.csv").exists()
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=PARITY_SCAN_RUN_TYPE,
+        required_artifacts=PARITY_SCAN_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
     assert set(result.futures_join_audit["reason"]) == {"fresh"}
     assert set(result.futures_join_audit["future_asof_age_ns"]) == {0}
     assert "post_stt_hike" in set(result.report["regime"])

@@ -8,7 +8,14 @@ from reports.parity_candidate_promotion import (
     evaluate_parity_candidate_promotion,
     write_parity_candidate_promotion,
 )
+from reports.manifest import (
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+from reports.parity_edge import PARITY_EDGE_RUN_TYPE
 from reports.parity_order_plan import ParityOrderPlanConfig, build_parity_order_plan
+from scanners.run_parity_box import PARITY_SCAN_RUN_TYPE
+from strategies.run_parity_sweep import PARITY_SWEEP_RUN_TYPE
 
 
 def parity_opportunities():
@@ -180,46 +187,158 @@ def write_inputs(
     *,
     edge_passed=True,
     passed_scenarios=1,
-    include_seed_robustness=False,
+    sweep_source_matches=True,
+    sweep_option_tick=0.05,
+    scan_depth_fraction=0.25,
 ):
     scan_dir = root / "scan"
     edge_dir = root / "edge"
     sweep_dir = root / "sweep"
+    source_dir = root / "source"
     scan_dir.mkdir(parents=True)
     edge_dir.mkdir(parents=True)
     sweep_dir.mkdir(parents=True)
-    parity_opportunities().to_csv(scan_dir / "parity_opportunities.csv", index=False)
-    box_opportunities().to_csv(scan_dir / "box_opportunities.csv", index=False)
-    edge_summary(passed=edge_passed).to_csv(edge_dir / "parity_edge_summary.csv", index=False)
-    sweep_summary(passed_scenarios=passed_scenarios).to_csv(sweep_dir / "sweep_summary.csv", index=False)
-    runs = sweep_runs(proof_passed=bool(passed_scenarios))
-    if include_seed_robustness:
-        first = runs.iloc[0].to_dict()
-        first.update(
-            {
-                "run": "latency_group__seed_11",
-                "latency_seed_group": "latency_group",
-                "latency_seed": 11,
-                "robust_score": 100.0,
-                "net_pnl": 100.0,
-            }
-        )
-        second = dict(first)
-        second.update(
-            {
-                "run": "latency_group__seed_22",
-                "latency_seed": 22,
-                "robust_score": 10.0,
-                "net_pnl": 11.0,
-                "max_drawdown": 2.0,
-            }
-        )
-        runs = pd.DataFrame([first, second])
-        latency_seed_robustness().to_csv(
-            sweep_dir / "latency_seed_robustness.csv",
+    source_dir.mkdir(parents=True)
+    chain_path = source_dir / "chain.csv"
+    futures_path = source_dir / "futures.csv"
+    pd.DataFrame([{"ts": 1, "value": 100.0}]).to_csv(
+        chain_path,
+        index=False,
+    )
+    pd.DataFrame([{"ts": 1, "value": 101.0}]).to_csv(
+        futures_path,
+        index=False,
+    )
+    sweep_futures_path = futures_path
+    if not sweep_source_matches:
+        sweep_futures_path = source_dir / "other_futures.csv"
+        pd.DataFrame([{"ts": 1, "value": 999.0}]).to_csv(
+            sweep_futures_path,
             index=False,
         )
+    parity_opportunities().to_csv(scan_dir / "parity_opportunities.csv", index=False)
+    box_opportunities().to_csv(scan_dir / "box_opportunities.csv", index=False)
+    pd.DataFrame([{"opportunities": 2}]).to_csv(
+        scan_dir / "opportunity_report.csv",
+        index=False,
+    )
+    pd.DataFrame([{"reason": "fresh"}]).to_csv(
+        scan_dir / "parity_futures_join_audit.csv",
+        index=False,
+    )
+    scan_parameters = {
+        "market": "india_nse_index_derivatives",
+        "chain_column_map": None,
+        "futures_column_map": None,
+        "timestamp_unit": "ns",
+        "timestamp_tz": None,
+        "filter_session": True,
+        "lot_size": 75,
+        "option_tick": 0.05,
+        "future_tick": 0.05,
+        "asof_latency_ns": 0,
+        "max_futures_quote_age_ns": 100_000,
+        "depth_fraction": scan_depth_fraction,
+    }
+    write_experiment_manifest(
+        scan_dir,
+        run_type=PARITY_SCAN_RUN_TYPE,
+        inputs={
+            "chain": chain_path,
+            "futures": futures_path,
+        },
+        parameters=scan_parameters,
+    )
+
+    pd.DataFrame([{"total_opportunities": 2}]).to_csv(
+        edge_dir / "parity_edge_metrics.csv",
+        index=False,
+    )
+    pd.DataFrame([{"check": "fixture", "passed": edge_passed}]).to_csv(
+        edge_dir / "parity_edge_checks.csv",
+        index=False,
+    )
+    edge_summary(passed=edge_passed).to_csv(edge_dir / "parity_edge_summary.csv", index=False)
+    write_experiment_manifest(
+        edge_dir,
+        run_type=PARITY_EDGE_RUN_TYPE,
+        inputs={
+            "scan": scan_dir,
+            "scan_manifest": scan_dir / "manifest.json",
+        },
+        parameters={"thresholds": {}},
+    )
+
+    sweep_summary(passed_scenarios=passed_scenarios).to_csv(sweep_dir / "sweep_summary.csv", index=False)
+    runs = sweep_runs(proof_passed=bool(passed_scenarios))
+    first = runs.iloc[0].to_dict()
+    first.update(
+        {
+            "run": "latency_group__seed_11",
+            "latency_seed_group": "latency_group",
+            "latency_seed": 11,
+            "robust_score": 100.0,
+            "net_pnl": 100.0,
+        }
+    )
+    second = dict(first)
+    second.update(
+        {
+            "run": "latency_group__seed_22",
+            "latency_seed": 22,
+            "robust_score": 10.0,
+            "net_pnl": 11.0,
+            "max_drawdown": 2.0,
+        }
+    )
+    runs = pd.DataFrame([first, second])
+    robustness = latency_seed_robustness(
+        group_passed=bool(passed_scenarios),
+        pass_rate=1.0 if passed_scenarios else 0.0,
+    )
+    if not passed_scenarios:
+        robustness.loc[:, "latency_seed_passed_runs"] = 0
+    robustness.to_csv(
+        sweep_dir / "latency_seed_robustness.csv",
+        index=False,
+    )
     runs.to_csv(sweep_dir / "sweep_runs.csv", index=False)
+    proof_dir = sweep_dir / "proof"
+    proof_dir.mkdir()
+    pd.DataFrame([{"run": "latency_group__seed_11"}]).to_csv(
+        proof_dir / "proof_metrics.csv",
+        index=False,
+    )
+    pd.DataFrame([{"check": "fixture"}]).to_csv(
+        proof_dir / "proof_checks.csv",
+        index=False,
+    )
+    pd.DataFrame([{"passed": bool(passed_scenarios)}]).to_csv(
+        proof_dir / "proof_summary.csv",
+        index=False,
+    )
+    write_experiment_manifest(
+        sweep_dir,
+        run_type=PARITY_SWEEP_RUN_TYPE,
+        inputs={
+            "chain": chain_path,
+            "futures": sweep_futures_path,
+        },
+        parameters={
+            "market": "india_nse_index_derivatives",
+            "chain_column_map": None,
+            "futures_column_map": None,
+            "timestamp_unit": "ns",
+            "timestamp_tz": None,
+            "filter_session": True,
+            "lot_size": 75,
+            "option_tick": sweep_option_tick,
+            "future_tick": 0.05,
+            "max_futures_quote_age_ns": 100_000,
+            "depth_fraction_values": [0.25],
+            "asof_latency_ns_values": [0],
+        },
+    )
     return scan_dir, edge_dir, sweep_dir
 
 
@@ -392,7 +511,6 @@ def test_parity_candidate_promotion_can_promote_best_box_opportunity():
 def test_write_parity_candidate_promotion_outputs_launch_compatible_files(tmp_path):
     scan_dir, edge_dir, sweep_dir = write_inputs(
         tmp_path,
-        include_seed_robustness=True,
     )
     out_dir = tmp_path / "promotion"
 
@@ -411,13 +529,150 @@ def test_write_parity_candidate_promotion_outputs_launch_compatible_files(tmp_pa
     assert config["parameters"]["market"] == "india_nse_index_derivatives"
     assert config["replay_defaults"]["latency_seed"] == 22
     assert config["metrics"]["latency_seed_count"] == 2
+    assert config["metrics"]["scan_manifest_current"]
+    assert config["metrics"]["edge_manifest_current"]
+    assert config["metrics"]["sweep_manifest_current"]
+    assert config["metrics"]["scan_edge_manifest_bound"]
+    assert config["metrics"]["scan_sweep_source_match"]
+    assert config["metrics"]["scan_sweep_static_parameters_match"]
+    assert config["metrics"]["scan_sweep_selected_scenario_match"]
+    assert set(
+        report.checks["check"]
+    ).issuperset(
+        {
+            "scan_manifest_current",
+            "edge_manifest_current",
+            "sweep_manifest_current",
+            "scan_edge_manifest_bound",
+            "scan_sweep_source_match",
+            "scan_sweep_static_parameters_match",
+            "scan_sweep_selected_scenario_match",
+        }
+    )
     assert manifest["run_type"] == "promotion_report"
     assert manifest["parameters"]["strategy"] == "parity_box"
     assert manifest["extra"]["promotion_source"] == "parity_scan_edge_sweep"
     assert "latency_seed_robustness" in manifest["inputs"]
+    assert "scan_manifest" in manifest["inputs"]
+    assert "edge_manifest" in manifest["inputs"]
+    assert "sweep_manifest" in manifest["inputs"]
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="promotion_report",
+        required_artifacts=[
+            "promotion_candidate.csv",
+            "promotion_checks.csv",
+            "promotion_summary.csv",
+            "candidate_config.json",
+        ],
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
     assert (out_dir / "promotion_candidate.csv").exists()
     assert (out_dir / "promotion_checks.csv").exists()
     assert (out_dir / "promotion_summary.csv").exists()
+
+
+def test_parity_candidate_promotion_rejects_cross_source_and_parameter_mismatch(
+    tmp_path,
+):
+    cases = [
+        (
+            "source",
+            {"sweep_source_matches": False},
+            "scan_sweep_source_match",
+        ),
+        (
+            "static",
+            {"sweep_option_tick": 0.1},
+            "scan_sweep_static_parameters_match",
+        ),
+        (
+            "selected",
+            {"scan_depth_fraction": 0.5},
+            "scan_sweep_selected_scenario_match",
+        ),
+    ]
+    for name, kwargs, failed_check in cases:
+        scan_dir, edge_dir, sweep_dir = write_inputs(
+            tmp_path / name,
+            **kwargs,
+        )
+        report = write_parity_candidate_promotion(
+            scan_dir,
+            edge_audit_dir=edge_dir,
+            sweep_dir=sweep_dir,
+            output_dir=tmp_path / name / "promotion",
+        )
+
+        assert not report.ready
+        assert failed_check in set(
+            report.checks.loc[
+                ~report.checks["passed"].astype(bool),
+                "check",
+            ]
+        )
+
+
+def test_parity_candidate_promotion_rejects_sweep_artifact_drift(
+    tmp_path,
+):
+    scan_dir, edge_dir, sweep_dir = write_inputs(
+        tmp_path,
+    )
+    runs_path = sweep_dir / "sweep_runs.csv"
+    runs = pd.read_csv(runs_path)
+    runs.loc[0, "net_pnl"] = 999.0
+    runs.to_csv(runs_path, index=False)
+
+    report = write_parity_candidate_promotion(
+        scan_dir,
+        edge_audit_dir=edge_dir,
+        sweep_dir=sweep_dir,
+        output_dir=tmp_path / "promotion",
+    )
+
+    assert not report.ready
+    assert "sweep_manifest_current" in set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert report.summary.loc[0, "sweep_manifest_error"] == (
+        "artifact_drift"
+    )
+
+
+def test_parity_candidate_promotion_rejects_edge_from_another_scan(
+    tmp_path,
+):
+    _, edge_a, _ = write_inputs(
+        tmp_path / "run_a",
+    )
+    scan_b, _, sweep_b = write_inputs(
+        tmp_path / "run_b",
+    )
+
+    report = write_parity_candidate_promotion(
+        scan_b,
+        edge_audit_dir=edge_a,
+        sweep_dir=sweep_b,
+        output_dir=tmp_path / "promotion",
+    )
+
+    assert not report.ready
+    assert bool(report.summary.loc[0, "scan_manifest_current"])
+    assert bool(report.summary.loc[0, "edge_manifest_current"])
+    assert not bool(
+        report.summary.loc[0, "scan_edge_manifest_bound"]
+    )
+    assert "scan_edge_manifest_bound" in set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
 
 
 def test_cli_promote_parity_candidate_fails_closed_for_weak_evidence(tmp_path):

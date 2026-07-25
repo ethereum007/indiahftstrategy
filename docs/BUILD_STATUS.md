@@ -7673,6 +7673,26 @@ launch, CLI, comparison, and evidence set passes. Source compilation succeeds.
 Repository collection is healthy at `2729 tests` across `164` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes.
 
+Latest parity source-lineage proof: parity scans now write a manifest that
+fingerprints the exact chain and futures inputs plus column maps, timestamp and
+session normalization, market, lot/tick metadata, depth fraction, as-of
+latency, and futures quote-age ceiling. The edge audit verifies that manifest,
+fails on raw-input or scan-artifact drift, and carries the scan manifest and
+its dependencies into its own evidence contract. Candidate promotion verifies
+the scan, edge, and sweep manifests; proves the edge audit belongs to the exact
+supplied scan; requires scan and sweep chain/futures fingerprints to match; and
+requires compatible market, mapping, timestamp/session, lot-size, and tick-size
+assumptions. Sweep selection is constrained to the scan depth and as-of latency
+before ranking seed-robust groups, and the selected quote-age ceiling must also
+match. Manifest hashes and all lineage decisions persist in the promotion
+summary and candidate config, so current-but-unrelated evidence cannot be
+spliced into a launch candidate. All outputs remain research-only and
+non-authorizing. The `282`-test affected scanner, engine, replay, proof,
+manifest, parity, promotion, order-plan, launch, CLI, catalog, comparison, and
+evidence set passes. Source compilation succeeds. Repository collection is
+healthy at `2733 tests` across `164` files. The full suite was not rerun because
+recent complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

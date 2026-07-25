@@ -4,8 +4,13 @@ import pandas as pd
 import pytest
 
 from hft_cli import main
+from reports.manifest import verify_experiment_manifest
 from reports.proof import ProofThresholds, verify_proof_report
-from strategies.run_parity_sweep import run_parity_sweep
+from strategies.run_parity_sweep import (
+    PARITY_SWEEP_REQUIRED_ARTIFACTS,
+    PARITY_SWEEP_RUN_TYPE,
+    run_parity_sweep,
+)
 
 
 def ns_ist(value: str) -> int:
@@ -761,6 +766,17 @@ def test_run_parity_sweep_aggregates_latency_seed_replications(
         202,
         303,
     ]
+    assert manifest["parameters"]["market"] == (
+        "india_nse_index_derivatives"
+    )
+    assert manifest["parameters"]["chain_column_map"] is None
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type=PARITY_SWEEP_RUN_TYPE,
+        required_artifacts=PARITY_SWEEP_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
     with pytest.raises(
         ValueError,
         match="latency_seed_values must be unique",

@@ -8,9 +8,21 @@ from pathlib import Path
 
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_parity_replay import run_parity_replay
+
+
+PARITY_SWEEP_RUN_TYPE = "parity_sweep"
+PARITY_SWEEP_REQUIRED_ARTIFACTS = (
+    "sweep_runs.csv",
+    "sweep_summary.csv",
+    "latency_seed_robustness.csv",
+    "proof/proof_metrics.csv",
+    "proof/proof_checks.csv",
+    "proof/proof_summary.csv",
+)
 
 
 @dataclass(frozen=True)
@@ -179,9 +191,10 @@ def run_parity_sweep(
     summary.to_csv(out / "sweep_summary.csv", index=False)
     write_experiment_manifest(
         out,
-        run_type="parity_sweep",
+        run_type=PARITY_SWEEP_RUN_TYPE,
         inputs={"chain": chain_path, "futures": futures_path},
         parameters={
+            "market": INDIA_NSE_INDEX_DERIVATIVES.name,
             "depth_fraction_values": depth_fraction_values,
             "asof_latency_ns_values": asof_latency_ns_values,
             "feed_latency_us_values": feed_latency_us_values,
@@ -193,6 +206,8 @@ def run_parity_sweep(
                 else None
             ),
             "latency_seed_values": latency_seed_values,
+            "chain_column_map": None,
+            "futures_column_map": None,
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,26 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    ManifestIntegrity,
+    file_sha256,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+from reports.parity_edge import (
+    PARITY_EDGE_REQUIRED_ARTIFACTS,
+    PARITY_EDGE_RUN_TYPE,
+)
 from reports.parity_order_plan import PARITY_BOX_STRATEGY, BOX_DIRECTIONS, PARITY_DIRECTIONS
+from scanners.run_parity_box import (
+    PARITY_SCAN_REQUIRED_ARTIFACTS,
+    PARITY_SCAN_RUN_TYPE,
+)
+from strategies.run_parity_sweep import (
+    PARITY_SWEEP_REQUIRED_ARTIFACTS,
+    PARITY_SWEEP_RUN_TYPE,
+)
 
 
 LATENCY_SEED_ROBUSTNESS_COLUMNS = (
@@ -58,6 +77,26 @@ LATENCY_SEED_PROMOTION_METRICS = (
     "latency_seed_bound_violations",
 )
 
+PARITY_PROMOTION_LINEAGE_METRICS = (
+    "scan_manifest_current",
+    "scan_manifest_error",
+    "scan_manifest_sha256",
+    "edge_manifest_current",
+    "edge_manifest_error",
+    "edge_manifest_sha256",
+    "sweep_manifest_current",
+    "sweep_manifest_error",
+    "sweep_manifest_sha256",
+    "scan_edge_manifest_bound",
+    "scan_sweep_source_match",
+    "scan_sweep_static_parameters_match",
+    "scan_sweep_selected_scenario_match",
+    "scan_chain_sha256",
+    "scan_futures_sha256",
+    "sweep_chain_sha256",
+    "sweep_futures_sha256",
+)
+
 
 @dataclass(frozen=True)
 class ParityCandidatePromotionThresholds:
@@ -94,6 +133,7 @@ def evaluate_parity_candidate_promotion(
     sweep_runs: pd.DataFrame,
     *,
     latency_seed_robustness: pd.DataFrame | None = None,
+    sweep_run_constraints: Mapping[str, Any] | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     thresholds: ParityCandidatePromotionThresholds | None = None,
 ) -> ParityCandidatePromotionReport:
@@ -122,6 +162,7 @@ def evaluate_parity_candidate_promotion(
         sweep_runs,
         latency_seed_robustness=latency_seed_robustness,
         seed_robustness_enabled=seed_robustness_enabled,
+        constraints=sweep_run_constraints,
     )
     checks = _checks(
         edge_summary.iloc[0],
@@ -150,14 +191,17 @@ def write_parity_candidate_promotion(
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     thresholds: ParityCandidatePromotionThresholds | None = None,
 ) -> ParityCandidatePromotionReport:
-    scan = Path(scan_dir)
-    edge = Path(edge_audit_dir)
-    sweep = Path(sweep_dir)
+    scan = Path(scan_dir).resolve()
+    edge = Path(edge_audit_dir).resolve()
+    sweep = Path(sweep_dir).resolve()
     parity_path = scan / "parity_opportunities.csv"
     box_path = scan / "box_opportunities.csv"
     edge_summary_path = edge / "parity_edge_summary.csv"
     sweep_summary_path = sweep / "sweep_summary.csv"
     sweep_runs_path = sweep / "sweep_runs.csv"
+    scan_manifest_path = scan / "manifest.json"
+    edge_manifest_path = edge / "manifest.json"
+    sweep_manifest_path = sweep / "manifest.json"
     latency_seed_robustness_path = (
         sweep / "latency_seed_robustness.csv"
     )
@@ -166,7 +210,28 @@ def write_parity_candidate_promotion(
             raise FileNotFoundError(f"required parity promotion input missing: {path}")
 
     thresholds = thresholds or ParityCandidatePromotionThresholds()
-    report = evaluate_parity_candidate_promotion(
+    scan_integrity = verify_experiment_manifest(
+        scan_manifest_path,
+        expected_run_type=PARITY_SCAN_RUN_TYPE,
+        required_artifacts=PARITY_SCAN_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    edge_integrity = verify_experiment_manifest(
+        edge_manifest_path,
+        expected_run_type=PARITY_EDGE_RUN_TYPE,
+        required_artifacts=PARITY_EDGE_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    sweep_integrity = verify_experiment_manifest(
+        sweep_manifest_path,
+        expected_run_type=PARITY_SWEEP_RUN_TYPE,
+        required_artifacts=PARITY_SWEEP_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    scan_manifest = _read_manifest(scan_manifest_path)
+    edge_manifest = _read_manifest(edge_manifest_path)
+    sweep_manifest = _read_manifest(sweep_manifest_path)
+    base_report = evaluate_parity_candidate_promotion(
         pd.read_csv(parity_path),
         pd.read_csv(box_path),
         pd.read_csv(edge_summary_path),
@@ -177,8 +242,53 @@ def write_parity_candidate_promotion(
             if latency_seed_robustness_path.exists()
             else None
         ),
+        sweep_run_constraints=_scan_sweep_constraints(
+            scan_manifest
+        ),
         market=market,
         thresholds=thresholds,
+    )
+    lineage_checks, lineage = _parity_lineage(
+        scan_manifest_path=scan_manifest_path,
+        edge_manifest_path=edge_manifest_path,
+        sweep_manifest_path=sweep_manifest_path,
+        scan_manifest=scan_manifest,
+        edge_manifest=edge_manifest,
+        sweep_manifest=sweep_manifest,
+        scan_integrity=scan_integrity,
+        edge_integrity=edge_integrity,
+        sweep_integrity=sweep_integrity,
+        candidate=base_report.candidate,
+    )
+    checks = pd.concat(
+        [
+            _manifest_checks(
+                scan_integrity,
+                edge_integrity,
+                sweep_integrity,
+            ),
+            lineage_checks,
+            base_report.checks,
+        ],
+        ignore_index=True,
+    )
+    candidate = base_report.candidate.copy()
+    for key, value in lineage.items():
+        candidate[key] = value
+    summary = _summary(candidate, checks)
+    for key, value in lineage.items():
+        summary[key] = value
+    candidate_config = _promotion_candidate_config(
+        candidate,
+        checks,
+        summary.iloc[0],
+        thresholds,
+    )
+    report = ParityCandidatePromotionReport(
+        candidate,
+        checks,
+        summary,
+        candidate_config,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -198,6 +308,18 @@ def write_parity_candidate_promotion(
         "edge_summary": edge_summary_path,
         "sweep_summary": sweep_summary_path,
         "sweep_runs": sweep_runs_path,
+        "scan_manifest": scan_manifest_path,
+        "scan_dependencies": manifest_dependency_paths(
+            scan_manifest_path
+        ),
+        "edge_manifest": edge_manifest_path,
+        "edge_dependencies": manifest_dependency_paths(
+            edge_manifest_path
+        ),
+        "sweep_manifest": sweep_manifest_path,
+        "sweep_dependencies": manifest_dependency_paths(
+            sweep_manifest_path
+        ),
     }
     if latency_seed_robustness_path.exists():
         manifest_inputs["latency_seed_robustness"] = (
@@ -212,7 +334,34 @@ def write_parity_candidate_promotion(
             "thresholds": asdict(thresholds),
         },
         inputs=manifest_inputs,
-        extra={"promotion_source": "parity_scan_edge_sweep"},
+        extra={
+            "promotion_source": "parity_scan_edge_sweep",
+            "scan_manifest_current": bool(
+                scan_integrity.passed
+            ),
+            "edge_manifest_current": bool(
+                edge_integrity.passed
+            ),
+            "sweep_manifest_current": bool(
+                sweep_integrity.passed
+            ),
+            "scan_sweep_source_match": bool(
+                lineage["scan_sweep_source_match"]
+            ),
+            "scan_edge_manifest_bound": bool(
+                lineage["scan_edge_manifest_bound"]
+            ),
+            "scan_sweep_static_parameters_match": bool(
+                lineage[
+                    "scan_sweep_static_parameters_match"
+                ]
+            ),
+            "scan_sweep_selected_scenario_match": bool(
+                lineage[
+                    "scan_sweep_selected_scenario_match"
+                ]
+            ),
+        },
     )
     return ParityCandidatePromotionReport(
         report.candidate,
@@ -221,6 +370,335 @@ def write_parity_candidate_promotion(
         report.candidate_config,
         out,
     )
+
+
+def _manifest_checks(
+    scan: ManifestIntegrity,
+    edge: ManifestIntegrity,
+    sweep: ManifestIntegrity,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            _manifest_check("scan", scan),
+            _manifest_check("edge", edge),
+            _manifest_check("sweep", sweep),
+        ]
+    )
+
+
+def _manifest_check(
+    label: str,
+    integrity: ManifestIntegrity,
+) -> dict[str, Any]:
+    passed = bool(integrity.passed)
+    return _check(
+        f"{label}_manifest_current",
+        passed,
+        "is",
+        True,
+        passed,
+        (
+            ""
+            if passed
+            else f"parity {label} manifest failed: "
+            f"{integrity.error or 'verification_failed'}"
+        ),
+    )
+
+
+def _parity_lineage(
+    *,
+    scan_manifest_path: Path,
+    edge_manifest_path: Path,
+    sweep_manifest_path: Path,
+    scan_manifest: Mapping[str, Any],
+    edge_manifest: Mapping[str, Any],
+    sweep_manifest: Mapping[str, Any],
+    scan_integrity: ManifestIntegrity,
+    edge_integrity: ManifestIntegrity,
+    sweep_integrity: ManifestIntegrity,
+    candidate: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    scan_parameters = _manifest_mapping(
+        scan_manifest,
+        "parameters",
+    )
+    sweep_parameters = _manifest_mapping(
+        sweep_manifest,
+        "parameters",
+    )
+    scan_chain = _manifest_input_signature(
+        scan_manifest,
+        "chain",
+    )
+    scan_futures = _manifest_input_signature(
+        scan_manifest,
+        "futures",
+    )
+    sweep_chain = _manifest_input_signature(
+        sweep_manifest,
+        "chain",
+    )
+    sweep_futures = _manifest_input_signature(
+        sweep_manifest,
+        "futures",
+    )
+    scan_manifest_signature = _file_signature(
+        scan_manifest_path
+    )
+    edge_scan_manifest_signature = (
+        _manifest_input_signature(
+            edge_manifest,
+            "scan_manifest",
+        )
+    )
+    scan_edge_bound = bool(
+        scan_integrity.passed
+        and edge_integrity.passed
+        and scan_manifest_signature is not None
+        and scan_manifest_signature
+        == edge_scan_manifest_signature
+    )
+    source_match = bool(
+        scan_integrity.passed
+        and sweep_integrity.passed
+        and scan_chain is not None
+        and scan_chain == sweep_chain
+        and scan_futures is not None
+        and scan_futures == sweep_futures
+    )
+
+    static_parameter_names = [
+        "market",
+        "chain_column_map",
+        "futures_column_map",
+        "timestamp_unit",
+        "timestamp_tz",
+        "filter_session",
+        "lot_size",
+        "option_tick",
+        "future_tick",
+    ]
+    static_parameters_match = bool(
+        scan_integrity.passed
+        and sweep_integrity.passed
+        and all(
+            _values_match(
+                scan_parameters.get(name),
+                sweep_parameters.get(name),
+            )
+            for name in static_parameter_names
+        )
+    )
+
+    candidate_row = (
+        candidate.iloc[0]
+        if not candidate.empty
+        else pd.Series(dtype=object)
+    )
+    selected_pairs = [
+        ("market", "market"),
+        ("depth_fraction", "depth_fraction"),
+        ("asof_latency_ns", "asof_latency_ns"),
+        (
+            "max_futures_quote_age_ns",
+            "max_futures_quote_age_ns",
+        ),
+    ]
+    selected_scenario_match = bool(
+        scan_integrity.passed
+        and sweep_integrity.passed
+        and not candidate_row.empty
+        and all(
+            _values_match(
+                scan_parameters.get(scan_name),
+                candidate_row.get(candidate_name),
+            )
+            for scan_name, candidate_name in selected_pairs
+        )
+    )
+
+    lineage = {
+        "scan_manifest_current": bool(
+            scan_integrity.passed
+        ),
+        "scan_manifest_error": str(scan_integrity.error),
+        "scan_manifest_sha256": _file_sha256_or_empty(
+            scan_manifest_path
+        ),
+        "edge_manifest_current": bool(
+            edge_integrity.passed
+        ),
+        "edge_manifest_error": str(edge_integrity.error),
+        "edge_manifest_sha256": _file_sha256_or_empty(
+            edge_manifest_path
+        ),
+        "sweep_manifest_current": bool(
+            sweep_integrity.passed
+        ),
+        "sweep_manifest_error": str(
+            sweep_integrity.error
+        ),
+        "sweep_manifest_sha256": _file_sha256_or_empty(
+            sweep_manifest_path
+        ),
+        "scan_edge_manifest_bound": scan_edge_bound,
+        "scan_sweep_source_match": source_match,
+        "scan_sweep_static_parameters_match": (
+            static_parameters_match
+        ),
+        "scan_sweep_selected_scenario_match": (
+            selected_scenario_match
+        ),
+        "scan_chain_sha256": _signature_sha256(scan_chain),
+        "scan_futures_sha256": _signature_sha256(
+            scan_futures
+        ),
+        "sweep_chain_sha256": _signature_sha256(
+            sweep_chain
+        ),
+        "sweep_futures_sha256": _signature_sha256(
+            sweep_futures
+        ),
+    }
+    checks = pd.DataFrame(
+        [
+            _check(
+                "scan_edge_manifest_bound",
+                scan_edge_bound,
+                "is",
+                True,
+                scan_edge_bound,
+                "parity edge audit is not bound to the exact "
+                "scan manifest supplied for promotion",
+            ),
+            _check(
+                "scan_sweep_source_match",
+                source_match,
+                "is",
+                True,
+                source_match,
+                "parity scan and sweep do not fingerprint the "
+                "same chain and futures inputs",
+            ),
+            _check(
+                "scan_sweep_static_parameters_match",
+                static_parameters_match,
+                "is",
+                True,
+                static_parameters_match,
+                "parity scan and sweep normalization or "
+                "instrument assumptions differ",
+            ),
+            _check(
+                "scan_sweep_selected_scenario_match",
+                selected_scenario_match,
+                "is",
+                True,
+                selected_scenario_match,
+                "selected parity sweep scenario does not match "
+                "the scan depth, as-of latency, quote age, or market",
+            ),
+        ]
+    )
+    return checks, lineage
+
+
+def _read_manifest(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _manifest_mapping(
+    manifest: Mapping[str, Any],
+    key: str,
+) -> dict[str, Any]:
+    value = manifest.get(key, {})
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _manifest_input_signature(
+    manifest: Mapping[str, Any],
+    name: str,
+) -> tuple[int, str] | None:
+    inputs = _manifest_mapping(manifest, "inputs")
+    value = inputs.get(name)
+    if not isinstance(value, Mapping):
+        return None
+    if str(value.get("kind", "")) != "file":
+        return None
+    size = _exact_integer(value.get("size_bytes"))
+    digest = str(value.get("sha256", "")).strip().lower()
+    if size is None or size < 0 or len(digest) != 64:
+        return None
+    return size, digest
+
+
+def _signature_sha256(
+    signature: tuple[int, str] | None,
+) -> str:
+    return signature[1] if signature is not None else ""
+
+
+def _file_signature(path: Path) -> tuple[int, str] | None:
+    try:
+        if not path.is_file():
+            return None
+        return int(path.stat().st_size), file_sha256(path)
+    except OSError:
+        return None
+
+
+def _file_sha256_or_empty(path: Path) -> str:
+    signature = _file_signature(path)
+    return signature[1] if signature is not None else ""
+
+
+def _scan_sweep_constraints(
+    scan_manifest: Mapping[str, Any],
+) -> dict[str, Any]:
+    parameters = _manifest_mapping(
+        scan_manifest,
+        "parameters",
+    )
+    constraints: dict[str, Any] = {}
+    for name in ["depth_fraction", "asof_latency_ns"]:
+        value = _number(parameters.get(name), np.nan)
+        if np.isfinite(value):
+            constraints[name] = value
+    return constraints
+
+
+def _values_match(left: Any, right: Any) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, (bool, np.bool_)) or isinstance(
+        right,
+        (bool, np.bool_),
+    ):
+        return bool(left) == bool(right)
+    if isinstance(left, (int, float, np.number)) and isinstance(
+        right,
+        (int, float, np.number),
+    ):
+        return _numbers_match(left, right)
+    try:
+        return json.dumps(
+            _jsonable(left),
+            sort_keys=True,
+            separators=(",", ":"),
+        ) == json.dumps(
+            _jsonable(right),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError):
+        return str(left) == str(right)
 
 
 def _combined_opportunities(parity: pd.DataFrame, boxes: pd.DataFrame) -> pd.DataFrame:
@@ -257,12 +735,19 @@ def _select_sweep_run(
     *,
     latency_seed_robustness: pd.DataFrame,
     seed_robustness_enabled: bool,
+    constraints: Mapping[str, Any] | None,
 ) -> pd.Series:
-    work = sweep_runs.copy()
+    work = _constrain_sweep_rows(
+        sweep_runs.copy(),
+        constraints,
+    )
     if work.empty:
         return pd.Series(dtype=object)
     if seed_robustness_enabled:
-        robust = latency_seed_robustness.copy()
+        robust = _constrain_sweep_rows(
+            latency_seed_robustness.copy(),
+            constraints,
+        )
         if robust.empty:
             return pd.Series(dtype=object)
         passed_groups = robust.loc[
@@ -321,6 +806,35 @@ def _select_sweep_run(
     if sort_cols:
         return work.sort_values(sort_cols, ascending=False).iloc[0]
     return work.iloc[0]
+
+
+def _constrain_sweep_rows(
+    frame: pd.DataFrame,
+    constraints: Mapping[str, Any] | None,
+) -> pd.DataFrame:
+    if frame.empty or not constraints:
+        return frame
+    constrained = frame
+    for column, expected in constraints.items():
+        if column not in constrained.columns:
+            return constrained.iloc[0:0].copy()
+        values = pd.to_numeric(
+            constrained[column],
+            errors="coerce",
+        )
+        expected_number = _number(expected, np.nan)
+        if not np.isfinite(expected_number):
+            return constrained.iloc[0:0].copy()
+        constrained = constrained.loc[
+            values.notna()
+            & np.isclose(
+                values,
+                expected_number,
+                rtol=0.0,
+                atol=1e-12,
+            )
+        ].copy()
+    return constrained
 
 
 def _seed_group_consistent(
@@ -892,6 +1406,7 @@ def _promotion_candidate_config(
             "sweep_fills",
             "sweep_robust_score",
             *LATENCY_SEED_PROMOTION_METRICS,
+            *PARITY_PROMOTION_LINEAGE_METRICS,
         ]
         if key in row.index
     }
