@@ -59,6 +59,13 @@ def write_run(
                 "cancel_closed_before_effective_events": 0,
                 "cancel_pending_at_replay_end_events": 0,
                 "cancel_inflight_filled_qty": 75,
+                "order_horizon_tracking_enabled": True,
+                "open_orders_at_replay_end": 0,
+                "open_order_qty_at_replay_end": 0,
+                "pending_activation_orders_at_replay_end": 0,
+                "active_ioc_orders_at_replay_end": 0,
+                "active_limit_orders_at_replay_end": 0,
+                "cancel_pending_orders_at_replay_end": 0,
                 "arrival_queue_initialization_enabled": True,
                 "limit_orders_sent": 4,
                 "queue_initialization_events": 4,
@@ -182,6 +189,19 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
         report.metrics.iloc[0]["cancel_pending_at_replay_end_events"]
     ) == 0
     assert int(report.metrics.iloc[0]["cancel_inflight_filled_qty"]) == 75
+    assert bool(report.metrics.iloc[0]["order_horizon_tracking_enabled"])
+    assert int(report.metrics.iloc[0]["open_orders_at_replay_end"]) == 0
+    assert int(report.metrics.iloc[0]["open_order_qty_at_replay_end"]) == 0
+    assert int(
+        report.metrics.iloc[0]["pending_activation_orders_at_replay_end"]
+    ) == 0
+    assert int(report.metrics.iloc[0]["active_ioc_orders_at_replay_end"]) == 0
+    assert int(
+        report.metrics.iloc[0]["active_limit_orders_at_replay_end"]
+    ) == 0
+    assert int(
+        report.metrics.iloc[0]["cancel_pending_orders_at_replay_end"]
+    ) == 0
     assert bool(report.metrics.iloc[0]["arrival_queue_initialization_enabled"])
     assert int(report.metrics.iloc[0]["limit_orders_sent"]) == 4
     assert int(report.metrics.iloc[0]["queue_initialization_events"]) == 4
@@ -280,6 +300,26 @@ def test_proof_report_rejects_cancel_pending_at_replay_end(tmp_path):
     ]
     assert failed.iloc[0]["reason"] == (
         "1 cancel request(s) remained in flight at replay end"
+    )
+
+
+def test_proof_report_rejects_orders_live_beyond_replay_horizon(tmp_path):
+    run_dir = tmp_path / "open_order_horizon"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "open_orders_at_replay_end"] = 1
+    summary.loc[0, "open_order_qty_at_replay_end"] = 75
+    summary.loc[0, "active_ioc_orders_at_replay_end"] = 1
+    summary.to_csv(summary_path, index=False)
+
+    report = evaluate_replay_dirs([run_dir])
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.passed
+    assert failed["check"].tolist() == ["open_orders_at_replay_end"]
+    assert failed.iloc[0]["reason"] == (
+        "1 order(s) remained live beyond the replay evidence horizon"
     )
 
 

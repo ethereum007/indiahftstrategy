@@ -26,6 +26,13 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
+            "order_horizon_tracking_enabled": True,
+            "open_orders_at_replay_end": 0,
+            "open_order_qty_at_replay_end": 0,
+            "pending_activation_orders_at_replay_end": 0,
+            "active_ioc_orders_at_replay_end": 0,
+            "active_limit_orders_at_replay_end": 0,
+            "cancel_pending_orders_at_replay_end": 0,
             "arrival_queue_initialization_enabled": True,
             "limit_orders_sent": 1,
             "queue_initialization_events": 1,
@@ -70,6 +77,13 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
+            "order_horizon_tracking_enabled": True,
+            "open_orders_at_replay_end": 1,
+            "open_order_qty_at_replay_end": 75,
+            "pending_activation_orders_at_replay_end": 0,
+            "active_ioc_orders_at_replay_end": 1,
+            "active_limit_orders_at_replay_end": 0,
+            "cancel_pending_orders_at_replay_end": 0,
             "arrival_queue_initialization_enabled": True,
             "limit_orders_sent": 1,
             "queue_initialization_events": 1,
@@ -132,6 +146,12 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_venue_rule_rejections"]) == 0
     assert int(best["total_position_risk_rejections"]) == 0
     assert int(best["total_self_cross_rejections"]) == 0
+    assert int(best["order_horizon_tracking_enabled_runs"]) == 2
+    assert int(best["total_open_orders_at_replay_end"]) == 0
+    assert int(best["total_open_order_qty_at_replay_end"]) == 0
+    assert int(weak["total_open_orders_at_replay_end"]) == 2
+    assert int(weak["total_open_order_qty_at_replay_end"]) == 150
+    assert int(weak["total_active_ioc_orders_at_replay_end"]) == 2
     assert int(best["total_carried_depletion_shortfall_events"]) == 2
     assert int(best["total_carried_depletion_shortfall_qty"]) == 50
     assert int(best["total_limit_orders_sent"]) == 2
@@ -158,6 +178,18 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(
         comparison.summary.iloc[0]["total_venue_rule_rejections"]
     ) == 0
+    assert int(
+        comparison.summary.iloc[0]["order_horizon_tracking_enabled_runs"]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0]["total_open_orders_at_replay_end"]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0]["total_open_order_qty_at_replay_end"]
+    ) == 150
+    assert int(
+        comparison.summary.iloc[0]["total_active_ioc_orders_at_replay_end"]
+    ) == 2
     assert int(
         comparison.summary.iloc[0]["total_carried_depletion_shortfall_events"]
     ) == 4

@@ -54,6 +54,20 @@ def replay_summary(
         if not order_cancellations.empty
         else pd.Series(dtype="float64")
     )
+    order_horizon_states = result.order_horizon_states
+    horizon_order_states = (
+        order_horizon_states["state"]
+        if not order_horizon_states.empty
+        else pd.Series(dtype="object")
+    )
+    horizon_order_remaining_qty = (
+        pd.to_numeric(
+            order_horizon_states["remaining_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not order_horizon_states.empty
+        else pd.Series(dtype="float64")
+    )
     liquidity_shortfalls = result.liquidity_shortfalls
     liquidity_sources = (
         liquidity_shortfalls["liquidity_source"]
@@ -270,6 +284,30 @@ def replay_summary(
                 "cancel_inflight_filled_qty": int(
                     cancellation_inflight_filled_qty.sum()
                 ),
+                "order_horizon_tracking_enabled": bool(
+                    result.engine.order_horizon_tracking_enabled
+                ),
+                "open_orders_at_replay_end": int(
+                    len(order_horizon_states)
+                ),
+                "open_order_qty_at_replay_end": int(
+                    horizon_order_remaining_qty.sum()
+                ),
+                "pending_activation_orders_at_replay_end": int(
+                    (
+                        horizon_order_states
+                        == "pending_activation"
+                    ).sum()
+                ),
+                "active_ioc_orders_at_replay_end": int(
+                    (horizon_order_states == "active_ioc").sum()
+                ),
+                "active_limit_orders_at_replay_end": int(
+                    (horizon_order_states == "active_limit").sum()
+                ),
+                "cancel_pending_orders_at_replay_end": int(
+                    (horizon_order_states == "cancel_pending").sum()
+                ),
                 "arrival_queue_initialization_enabled": bool(
                     result.engine.arrival_queue_initialization_enabled
                 ),
@@ -407,6 +445,10 @@ def write_replay_outputs(
     result.order_rejections.to_csv(out / "order_rejections.csv", index=False)
     result.order_cancellations.to_csv(
         out / "order_cancellations.csv",
+        index=False,
+    )
+    result.order_horizon_states.to_csv(
+        out / "order_horizon_states.csv",
         index=False,
     )
     result.liquidity_shortfalls.to_csv(

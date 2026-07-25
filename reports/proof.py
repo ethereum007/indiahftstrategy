@@ -598,6 +598,33 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         row,
         "cancel_inflight_filled_qty",
     )
+    order_horizon_tracking_enabled = _bool(
+        row.get("order_horizon_tracking_enabled", False)
+    )
+    open_orders_at_replay_end = _int(
+        row,
+        "open_orders_at_replay_end",
+    )
+    open_order_qty_at_replay_end = _int(
+        row,
+        "open_order_qty_at_replay_end",
+    )
+    pending_activation_orders_at_replay_end = _int(
+        row,
+        "pending_activation_orders_at_replay_end",
+    )
+    active_ioc_orders_at_replay_end = _int(
+        row,
+        "active_ioc_orders_at_replay_end",
+    )
+    active_limit_orders_at_replay_end = _int(
+        row,
+        "active_limit_orders_at_replay_end",
+    )
+    cancel_pending_orders_at_replay_end = _int(
+        row,
+        "cancel_pending_orders_at_replay_end",
+    )
     arrival_queue_initialization_enabled = _bool(
         row.get("arrival_queue_initialization_enabled", False)
     )
@@ -771,6 +798,23 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             cancel_pending_at_replay_end_events
         ),
         "cancel_inflight_filled_qty": cancel_inflight_filled_qty,
+        "order_horizon_tracking_enabled": (
+            order_horizon_tracking_enabled
+        ),
+        "open_orders_at_replay_end": open_orders_at_replay_end,
+        "open_order_qty_at_replay_end": open_order_qty_at_replay_end,
+        "pending_activation_orders_at_replay_end": (
+            pending_activation_orders_at_replay_end
+        ),
+        "active_ioc_orders_at_replay_end": (
+            active_ioc_orders_at_replay_end
+        ),
+        "active_limit_orders_at_replay_end": (
+            active_limit_orders_at_replay_end
+        ),
+        "cancel_pending_orders_at_replay_end": (
+            cancel_pending_orders_at_replay_end
+        ),
         "arrival_queue_initialization_enabled": (
             arrival_queue_initialization_enabled
         ),
@@ -896,6 +940,26 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     else (
                         f"{pending_cancels} cancel request(s) remained "
                         "in flight at replay end"
+                    )
+                ),
+            }
+        )
+    if bool(metrics["order_horizon_tracking_enabled"]):
+        open_orders = int(metrics["open_orders_at_replay_end"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "open_orders_at_replay_end",
+                "value": open_orders,
+                "operator": "==",
+                "threshold": 0,
+                "passed": open_orders == 0,
+                "reason": (
+                    ""
+                    if open_orders == 0
+                    else (
+                        f"{open_orders} order(s) remained live beyond "
+                        "the replay evidence horizon"
                     )
                 ),
             }

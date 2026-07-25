@@ -40,6 +40,13 @@ KNOWN_NON_PARAM_COLUMNS = {
     "cancel_closed_before_effective_events",
     "cancel_pending_at_replay_end_events",
     "cancel_inflight_filled_qty",
+    "order_horizon_tracking_enabled",
+    "open_orders_at_replay_end",
+    "open_order_qty_at_replay_end",
+    "pending_activation_orders_at_replay_end",
+    "active_ioc_orders_at_replay_end",
+    "active_limit_orders_at_replay_end",
+    "cancel_pending_orders_at_replay_end",
     "arrival_queue_initialization_enabled",
     "limit_orders_sent",
     "queue_initialization_events",
@@ -281,6 +288,36 @@ def _score_scenarios(
             group,
             "cancel_inflight_filled_qty",
         ).fillna(0.0)
+        order_horizon_tracking_enabled = _bool_series(
+            group.get(
+                "order_horizon_tracking_enabled",
+                pd.Series(False, index=group.index),
+            )
+        )
+        open_orders_at_replay_end = _numeric(
+            group,
+            "open_orders_at_replay_end",
+        ).fillna(0.0)
+        open_order_qty_at_replay_end = _numeric(
+            group,
+            "open_order_qty_at_replay_end",
+        ).fillna(0.0)
+        pending_activation_orders_at_replay_end = _numeric(
+            group,
+            "pending_activation_orders_at_replay_end",
+        ).fillna(0.0)
+        active_ioc_orders_at_replay_end = _numeric(
+            group,
+            "active_ioc_orders_at_replay_end",
+        ).fillna(0.0)
+        active_limit_orders_at_replay_end = _numeric(
+            group,
+            "active_limit_orders_at_replay_end",
+        ).fillna(0.0)
+        cancel_pending_orders_at_replay_end = _numeric(
+            group,
+            "cancel_pending_orders_at_replay_end",
+        ).fillna(0.0)
         liquidity_shortfall_events = _numeric(
             group,
             "liquidity_shortfall_events",
@@ -443,6 +480,27 @@ def _score_scenarios(
                 "total_cancel_inflight_filled_qty": int(
                     cancel_inflight_filled_qty.sum()
                 ),
+                "order_horizon_tracking_enabled_runs": int(
+                    order_horizon_tracking_enabled.sum()
+                ),
+                "total_open_orders_at_replay_end": int(
+                    open_orders_at_replay_end.sum()
+                ),
+                "total_open_order_qty_at_replay_end": int(
+                    open_order_qty_at_replay_end.sum()
+                ),
+                "total_pending_activation_orders_at_replay_end": int(
+                    pending_activation_orders_at_replay_end.sum()
+                ),
+                "total_active_ioc_orders_at_replay_end": int(
+                    active_ioc_orders_at_replay_end.sum()
+                ),
+                "total_active_limit_orders_at_replay_end": int(
+                    active_limit_orders_at_replay_end.sum()
+                ),
+                "total_cancel_pending_orders_at_replay_end": int(
+                    cancel_pending_orders_at_replay_end.sum()
+                ),
                 "total_liquidity_shortfall_events": int(
                     liquidity_shortfall_events.sum()
                 ),
@@ -567,6 +625,13 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_cancel_closed_before_effective_events": 0,
                     "total_cancel_pending_at_replay_end_events": 0,
                     "total_cancel_inflight_filled_qty": 0,
+                    "order_horizon_tracking_enabled_runs": 0,
+                    "total_open_orders_at_replay_end": 0,
+                    "total_open_order_qty_at_replay_end": 0,
+                    "total_pending_activation_orders_at_replay_end": 0,
+                    "total_active_ioc_orders_at_replay_end": 0,
+                    "total_active_limit_orders_at_replay_end": 0,
+                    "total_cancel_pending_orders_at_replay_end": 0,
                     "total_liquidity_shortfall_events": 0,
                     "total_liquidity_shortfall_qty": 0,
                     "total_carried_depletion_shortfall_events": 0,
@@ -675,6 +740,62 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     _numeric(
                         scenario_runs,
                         "cancel_inflight_filled_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "order_horizon_tracking_enabled_runs": int(
+                    _bool_series(
+                        scenario_runs.get(
+                            "order_horizon_tracking_enabled",
+                            pd.Series(False, index=scenario_runs.index),
+                        )
+                    ).sum()
+                ),
+                "total_open_orders_at_replay_end": int(
+                    _numeric(
+                        scenario_runs,
+                        "open_orders_at_replay_end",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_open_order_qty_at_replay_end": int(
+                    _numeric(
+                        scenario_runs,
+                        "open_order_qty_at_replay_end",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_pending_activation_orders_at_replay_end": int(
+                    _numeric(
+                        scenario_runs,
+                        "pending_activation_orders_at_replay_end",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_active_ioc_orders_at_replay_end": int(
+                    _numeric(
+                        scenario_runs,
+                        "active_ioc_orders_at_replay_end",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_active_limit_orders_at_replay_end": int(
+                    _numeric(
+                        scenario_runs,
+                        "active_limit_orders_at_replay_end",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_cancel_pending_orders_at_replay_end": int(
+                    _numeric(
+                        scenario_runs,
+                        "cancel_pending_orders_at_replay_end",
                     )
                     .fillna(0.0)
                     .sum()

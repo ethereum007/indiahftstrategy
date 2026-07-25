@@ -250,6 +250,25 @@ class OrderCancellation:
 
 
 @dataclass
+class OrderHorizonState:
+    ts_horizon_ns: int
+    instrument_id: str
+    oid: int
+    side: int
+    price: float
+    order_type: str
+    qty: int
+    filled_qty: int
+    remaining_qty: int
+    ts_sent_ns: int
+    ts_active_ns: int
+    active_at_horizon: bool
+    cancel_pending: bool
+    cancel_effective_ns: int | None
+    state: str
+
+
+@dataclass
 class LiquidityShortfall:
     ts_ns: int
     instrument_id: str
@@ -532,6 +551,24 @@ CANCELLATION_COLUMNS = [
     "status",
 ]
 
+ORDER_HORIZON_STATE_COLUMNS = [
+    "ts_horizon_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "price",
+    "order_type",
+    "qty",
+    "filled_qty",
+    "remaining_qty",
+    "ts_sent_ns",
+    "ts_active_ns",
+    "active_at_horizon",
+    "cancel_pending",
+    "cancel_effective_ns",
+    "state",
+]
+
 LIQUIDITY_SHORTFALL_COLUMNS = [
     "ts_ns",
     "instrument_id",
@@ -769,6 +806,7 @@ class BacktestEngine:
         self.order_rejections: List[OrderRejection] = []
         self.order_cancellations: List[OrderCancellation] = []
         self._cancellation_index_by_oid: Dict[int, int] = {}
+        self.order_horizon_states: List[OrderHorizonState] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
         self.resting_transitions: List[RestingTransition] = []
@@ -780,6 +818,7 @@ class BacktestEngine:
         self.lot_conserving_fills_enabled = True
         self.causal_event_ordering_enabled = True
         self.cancel_lifecycle_tracking_enabled = True
+        self.order_horizon_tracking_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -1427,6 +1466,57 @@ class BacktestEngine:
                 ts_status_ns=int(replay_end_ns),
             )
 
+    def _capture_order_horizon_states(self, replay_end_ns: int) -> None:
+        self.order_horizon_states = []
+        for order in sorted(
+            self.open_orders.values(),
+            key=lambda value: (value.ts_active_ns, value.oid),
+        ):
+            remaining_qty = max(
+                int(order.qty) - int(order.filled),
+                0,
+            )
+            if not order.alive or remaining_qty <= 0:
+                continue
+            active_at_horizon = int(order.ts_active_ns) <= int(
+                replay_end_ns
+            )
+            cancel_pending = bool(
+                getattr(order, "_pending_cancel", False)
+            )
+            if cancel_pending:
+                state = "cancel_pending"
+            elif not active_at_horizon:
+                state = "pending_activation"
+            elif order.otype == OrderType.IOC:
+                state = "active_ioc"
+            else:
+                state = "active_limit"
+            cancel_effective_ns = (
+                int(order.cancel_at)
+                if cancel_pending
+                else None
+            )
+            self.order_horizon_states.append(
+                OrderHorizonState(
+                    ts_horizon_ns=int(replay_end_ns),
+                    instrument_id=self.inst.symbol,
+                    oid=order.oid,
+                    side=order.side,
+                    price=float(order.price),
+                    order_type=order.otype.value,
+                    qty=int(order.qty),
+                    filled_qty=int(order.filled),
+                    remaining_qty=remaining_qty,
+                    ts_sent_ns=int(order.ts_sent_ns),
+                    ts_active_ns=int(order.ts_active_ns),
+                    active_at_horizon=active_at_horizon,
+                    cancel_pending=cancel_pending,
+                    cancel_effective_ns=cancel_effective_ns,
+                    state=state,
+                )
+            )
+
     def _remove_order(
         self,
         order: Order,
@@ -1870,11 +1960,13 @@ class BacktestEngine:
                 )
             )
         self.strategy.on_end(self)
+        replay_end_ns = max(
+            int(self._horizon_ns),
+            int(self._tick.get("ts", self._horizon_ns)),
+        )
+        self._capture_order_horizon_states(replay_end_ns)
         self._finalize_pending_cancels(
-            max(
-                int(self._horizon_ns),
-                int(self._tick.get("ts", self._horizon_ns)),
-            )
+            replay_end_ns
         )
         return BacktestResult(self)
 
@@ -1898,6 +1990,13 @@ class BacktestResult:
                 for cancellation in eng.order_cancellations
             ],
             columns=CANCELLATION_COLUMNS,
+        )
+        self.order_horizon_states = pd.DataFrame(
+            [
+                horizon_state.__dict__
+                for horizon_state in eng.order_horizon_states
+            ],
+            columns=ORDER_HORIZON_STATE_COLUMNS,
         )
         self.liquidity_shortfalls = pd.DataFrame(
             [shortfall.__dict__ for shortfall in eng.liquidity_shortfalls],

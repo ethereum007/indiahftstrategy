@@ -7390,6 +7390,24 @@ Repository collection is healthy at `2688 tests` across `164` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes. All
 outputs remain non-authorizing.
 
+Latest replay-horizon live-order proof: single- and multi-instrument engines
+now snapshot every order still live after the final logical event, terminal
+actions, and strategy `on_end`, before pending cancels receive their reporting
+finalization. `order_horizon_states.csv` retains the evidence timestamp,
+instrument and order identity, side, price and type, original, filled, and
+remaining quantity, send and activation timestamps, cancel deadline, and an
+explicit `pending_activation`, `active_ioc`, `active_limit`, or
+`cancel_pending` state. Replay summaries expose total live orders and residual
+quantity plus state counts. Proof rejects any horizon-tracked run with a live
+order instead of assigning an unsupported post-data fill or cancellation.
+Lead-lag and imbalance walk-forward folds and candidate configs, strategy
+sweeps, and cross-sweep comparisons preserve the evidence. Engine, replay,
+proof, calibration, catalog, walk-forward, sweep, robust-selection,
+promotion, pipeline, and strategy-evidence regressions pass (`328` tests
+across `27` files). Repository collection is healthy at `2693 tests` across
+`164` files. The full suite was not rerun because recent complete runs exceed
+40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

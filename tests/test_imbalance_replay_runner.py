@@ -309,6 +309,10 @@ def test_cli_imbalance_replay_writes_summary(tmp_path):
     summary = pd.read_csv(out_dir / "summary.csv")
     assert code == 0
     assert int(summary.loc[0, "fills"]) == 2
+    assert (out_dir / "order_horizon_states.csv").exists()
+    assert bool(summary.loc[0, "order_horizon_tracking_enabled"])
+    assert int(summary.loc[0, "open_orders_at_replay_end"]) == 0
+    assert int(summary.loc[0, "open_order_qty_at_replay_end"]) == 0
 
 
 def test_cli_imbalance_replay_uses_candidate_config(tmp_path):

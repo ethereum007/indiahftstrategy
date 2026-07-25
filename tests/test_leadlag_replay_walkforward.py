@@ -184,6 +184,7 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert report.folds["lot_conserving_fills_enabled"].all()
     assert report.folds["causal_event_ordering_enabled"].all()
     assert report.folds["cancel_lifecycle_tracking_enabled"].all()
+    assert report.folds["order_horizon_tracking_enabled"].all()
     assert report.folds["arrival_queue_initialization_enabled"].all()
     assert int(report.summary.loc[0, "pending_order_risk_reservation_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "aggressive_self_cross_prevention_enabled_folds"]) == 2
@@ -202,6 +203,31 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
         report.summary.loc[
             0,
             "total_cancel_pending_at_replay_end_events",
+        ]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "order_horizon_tracking_enabled_folds"]
+    ) == 2
+    assert int(report.summary.loc[0, "total_open_orders_at_replay_end"]) == 0
+    assert int(
+        report.summary.loc[0, "total_open_order_qty_at_replay_end"]
+    ) == 0
+    assert int(
+        report.summary.loc[
+            0,
+            "total_pending_activation_orders_at_replay_end",
+        ]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_active_ioc_orders_at_replay_end"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_active_limit_orders_at_replay_end"]
+    ) == 0
+    assert int(
+        report.summary.loc[
+            0,
+            "total_cancel_pending_orders_at_replay_end",
         ]
     ) == 0
     assert int(report.summary.loc[0, "arrival_queue_initialization_enabled_folds"]) == 2
@@ -301,6 +327,22 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert (
         config["replay_walkforward"][
             "total_cancel_pending_at_replay_end_events"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "order_horizon_tracking_enabled_folds"
+        ]
+        == 2
+    )
+    assert (
+        config["replay_walkforward"]["total_open_orders_at_replay_end"]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_open_order_qty_at_replay_end"
         ]
         == 0
     )

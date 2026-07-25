@@ -276,6 +276,44 @@ def test_latency_model_clamps_negative_jitter_samples_to_zero():
     assert latency.order_delay_ns() == 0
 
 
+@pytest.mark.parametrize(
+    ("order_type", "order_us", "price", "expected_state", "active"),
+    [
+        (OrderType.IOC, 0.0, 101.00, "active_ioc", True),
+        (OrderType.IOC, 100.0, 101.00, "pending_activation", False),
+        (OrderType.LIMIT, 0.0, 100.00, "active_limit", True),
+    ],
+)
+def test_live_orders_at_replay_horizon_are_classified(
+    order_type,
+    order_us,
+    price,
+    expected_state,
+    active,
+):
+    strategy = SendOnce(+1, 75, price, order_type)
+    engine = BacktestEngine(
+        ticks([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+        inst(),
+        strategy,
+        latency=fixed_latency(order_us=order_us),
+        costs=no_costs(),
+    )
+
+    result = engine.run()
+
+    assert len(result.order_horizon_states) == 1
+    horizon_state = result.order_horizon_states.iloc[0]
+    assert horizon_state["instrument_id"] == "NIFTY-TEST"
+    assert horizon_state["order_type"] == order_type.value
+    assert horizon_state["qty"] == 75
+    assert horizon_state["filled_qty"] == 0
+    assert horizon_state["remaining_qty"] == 75
+    assert bool(horizon_state["active_at_horizon"]) is active
+    assert not bool(horizon_state["cancel_pending"])
+    assert horizon_state["state"] == expected_state
+
+
 def ticks(rows):
     return pd.DataFrame(
         rows,
@@ -1123,6 +1161,10 @@ def test_cancel_expires_before_later_feed_callback_and_releases_risk():
     assert cancellation["ts_effective_ns"] == 1_150
     assert cancellation["ts_status_ns"] == 1_150
     assert cancellation["status"] == "effective"
+    horizon_state = result.order_horizon_states.iloc[0]
+    assert horizon_state["oid"] == strategy.second_oid
+    assert horizon_state["remaining_qty"] == 75
+    assert horizon_state["state"] == "pending_activation"
 
 
 def test_cancel_pending_beyond_replay_horizon_is_reported():
@@ -1149,6 +1191,12 @@ def test_cancel_pending_beyond_replay_horizon_is_reported():
     assert cancellation["ts_status_ns"] == 1_100
     assert cancellation["remaining_qty"] == 75
     assert cancellation["status"] == "pending_at_replay_end"
+    horizon_state = result.order_horizon_states.iloc[0]
+    assert horizon_state["oid"] == strategy.oid
+    assert horizon_state["remaining_qty"] == 75
+    assert bool(horizon_state["cancel_pending"])
+    assert horizon_state["cancel_effective_ns"] == 2_100
+    assert horizon_state["state"] == "cancel_pending"
 
 
 def test_cancel_effective_after_partial_inflight_fill_is_reported():

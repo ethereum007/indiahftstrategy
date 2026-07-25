@@ -330,6 +330,33 @@ def _fold_row(
             row,
             "cancel_inflight_filled_qty",
         ),
+        "order_horizon_tracking_enabled": _to_bool(
+            row.get("order_horizon_tracking_enabled", False)
+        ),
+        "open_orders_at_replay_end": _int(
+            row,
+            "open_orders_at_replay_end",
+        ),
+        "open_order_qty_at_replay_end": _int(
+            row,
+            "open_order_qty_at_replay_end",
+        ),
+        "pending_activation_orders_at_replay_end": _int(
+            row,
+            "pending_activation_orders_at_replay_end",
+        ),
+        "active_ioc_orders_at_replay_end": _int(
+            row,
+            "active_ioc_orders_at_replay_end",
+        ),
+        "active_limit_orders_at_replay_end": _int(
+            row,
+            "active_limit_orders_at_replay_end",
+        ),
+        "cancel_pending_orders_at_replay_end": _int(
+            row,
+            "cancel_pending_orders_at_replay_end",
+        ),
         "arrival_queue_initialization_enabled": _to_bool(
             row.get("arrival_queue_initialization_enabled", False)
         ),
@@ -539,6 +566,10 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
         "cancel_lifecycle_tracking_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    order_horizon_tracking_enabled = folds.get(
+        "order_horizon_tracking_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     arrival_queue_enabled = folds.get(
         "arrival_queue_initialization_enabled",
         pd.Series(False, index=folds.index),
@@ -636,6 +667,47 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                     folds,
                     "cancel_inflight_filled_qty",
                     "sum",
+                ),
+                "order_horizon_tracking_enabled_folds": int(
+                    order_horizon_tracking_enabled.sum()
+                ),
+                "total_open_orders_at_replay_end": _numeric_reduce(
+                    folds,
+                    "open_orders_at_replay_end",
+                    "sum",
+                ),
+                "total_open_order_qty_at_replay_end": _numeric_reduce(
+                    folds,
+                    "open_order_qty_at_replay_end",
+                    "sum",
+                ),
+                "total_pending_activation_orders_at_replay_end": (
+                    _numeric_reduce(
+                        folds,
+                        "pending_activation_orders_at_replay_end",
+                        "sum",
+                    )
+                ),
+                "total_active_ioc_orders_at_replay_end": (
+                    _numeric_reduce(
+                        folds,
+                        "active_ioc_orders_at_replay_end",
+                        "sum",
+                    )
+                ),
+                "total_active_limit_orders_at_replay_end": (
+                    _numeric_reduce(
+                        folds,
+                        "active_limit_orders_at_replay_end",
+                        "sum",
+                    )
+                ),
+                "total_cancel_pending_orders_at_replay_end": (
+                    _numeric_reduce(
+                        folds,
+                        "cancel_pending_orders_at_replay_end",
+                        "sum",
+                    )
                 ),
                 "arrival_queue_initialization_enabled_folds": int(
                     arrival_queue_enabled.sum()
@@ -893,6 +965,29 @@ def _candidate_config(
         ),
         "total_cancel_inflight_filled_qty": _jsonable(
             summary.get("total_cancel_inflight_filled_qty")
+        ),
+        "order_horizon_tracking_enabled_folds": _jsonable(
+            summary.get("order_horizon_tracking_enabled_folds")
+        ),
+        "total_open_orders_at_replay_end": _jsonable(
+            summary.get("total_open_orders_at_replay_end")
+        ),
+        "total_open_order_qty_at_replay_end": _jsonable(
+            summary.get("total_open_order_qty_at_replay_end")
+        ),
+        "total_pending_activation_orders_at_replay_end": _jsonable(
+            summary.get(
+                "total_pending_activation_orders_at_replay_end"
+            )
+        ),
+        "total_active_ioc_orders_at_replay_end": _jsonable(
+            summary.get("total_active_ioc_orders_at_replay_end")
+        ),
+        "total_active_limit_orders_at_replay_end": _jsonable(
+            summary.get("total_active_limit_orders_at_replay_end")
+        ),
+        "total_cancel_pending_orders_at_replay_end": _jsonable(
+            summary.get("total_cancel_pending_orders_at_replay_end")
         ),
         "arrival_queue_initialization_enabled_folds": _jsonable(
             summary.get("arrival_queue_initialization_enabled_folds")

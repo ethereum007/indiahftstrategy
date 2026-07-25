@@ -213,6 +213,40 @@ def venue(feed_us=0.0, order_us=0.0, skew_ns=0):
     )
 
 
+def test_multi_engine_reports_ioc_live_at_replay_horizon():
+    strategy = RiskProbeStrategy(75)
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert len(result.order_horizon_states) == 1
+    horizon_state = result.order_horizon_states.iloc[0]
+    assert horizon_state["instrument_id"] == "A"
+    assert horizon_state["oid"] == strategy.oid
+    assert horizon_state["remaining_qty"] == 75
+    assert bool(horizon_state["active_at_horizon"])
+    assert horizon_state["state"] == "active_ioc"
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["order_horizon_tracking_enabled"])
+    assert int(summary["open_orders_at_replay_end"]) == 1
+    assert int(summary["open_order_qty_at_replay_end"]) == 75
+    assert int(summary["pending_activation_orders_at_replay_end"]) == 0
+    assert int(summary["active_ioc_orders_at_replay_end"]) == 1
+    assert int(summary["active_limit_orders_at_replay_end"]) == 0
+    assert int(summary["cancel_pending_orders_at_replay_end"]) == 0
+
+
 def test_global_clock_interleaves_other_instrument_before_fill():
     strategy = InterleaveStrategy()
     engine = MultiInstrumentEngine(

@@ -871,8 +871,9 @@ python -m hft_cli replay-parity `
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
-`order_cancellations.csv`, `liquidity_shortfalls.csv`,
-`queue_initializations.csv`, and `terminal_liquidations.csv`.
+`order_cancellations.csv`, `order_horizon_states.csv`,
+`liquidity_shortfalls.csv`, `queue_initializations.csv`, and
+`terminal_liquidations.csv`.
 
 All shared-clock replays reserve the remaining quantity of live and
 cancel-pending orders when applying instrument position, portfolio gross
@@ -909,6 +910,17 @@ quantity; and one of `effective`, `effective_after_partial_fill`,
 evidence retain cancel-request and race-outcome counts plus in-flight filled
 quantity. A lifecycle-enabled proof fails when any cancel is still pending at
 the replay horizon.
+
+Replay also snapshots every order that remains live after the final logical
+event and strategy `on_end` callback. `order_horizon_states.csv` records the
+evidence horizon, instrument and order identity, side, price, type, original
+and filled quantity, residual quantity, send and activation timestamps,
+activation and cancel-pending flags, any cancel deadline, and one of
+`pending_activation`, `active_ioc`, `active_limit`, or `cancel_pending`.
+`summary.csv` carries live-order and residual-quantity totals plus a count for
+each state. Proof rejects a horizon-tracked run with any live order rather than
+assuming an unobserved post-data fill or cancellation. Walk-forward candidates,
+strategy sweeps, and cross-sweep comparisons preserve the same evidence.
 
 Displayed bid and ask quantities are event-scoped budgets: concurrent IOC or
 marketable limit orders cannot each claim the full same L1 depth. Passive
