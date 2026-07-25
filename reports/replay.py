@@ -156,7 +156,7 @@ def replay_summary(
                 "limit_orders_sent": limit_orders_sent,
                 "queue_initialization_events": queue_initialization_events,
                 "deferred_queue_initialization_events": int(
-                    (queue_modes == "arrival_snapshot").sum()
+                    (queue_modes != "send_snapshot").sum()
                 ),
                 "uninitialized_limit_orders": max(
                     limit_orders_sent - queue_initialization_events,

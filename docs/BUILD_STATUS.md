@@ -6,10 +6,10 @@
   cancels, depth-constrained terminal liquidation, OTR reporting, shared
   per-event displayed liquidity, persistent same-level depletion across L1
   snapshots, own-order queue priority initialized from the first market
-  snapshot at venue arrival, liquidity-shortfall and residual-inventory
-  evidence, and tests. Unchanged snapshots do not restore consumed depth; only
-  an observed size increase replenishes its delta, while a price or
-  timestamp-day change starts a fresh level.
+  snapshot at venue arrival or first observable touch, liquidity-shortfall and
+  residual-inventory evidence, and tests. Unchanged snapshots do not restore
+  consumed depth; only an observed size increase replenishes its delta, while
+  a price or timestamp-day change starts a fresh level.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local
   event and cross-snapshot liquidity conservation, including horizon-causal
@@ -7285,6 +7285,25 @@ promotion, and strategy-evidence regressions pass (`252` tests). Repository
 collection is healthy at `2660 tests` across `164` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
+
+Latest observable-touch passive-queue proof: L1 limit orders submitted away
+from the displayed touch no longer receive an invented zero public queue at
+arrival. The single- and multi-instrument engines record the first venue
+snapshot and its book relation, keep the queue unresolved while that price
+remains unobservable, ignore stale trade prints at the away level, and
+initialize deterministic public plus own-order priority when the price first
+reaches the touch or becomes visible inside the spread. A resting order's
+maker/taker history is now explicit and independent of numeric queue depth, so
+`queue_conservatism=0` can no longer turn a later market price-through into a
+taker fill at a better touch. `queue_initializations.csv` now separates
+arrival timestamp/lag/relation from queue initialization
+timestamp/lag/relation and identifies first-touch or resting-transition
+snapshots. Replay deferred-initialization counts include every initialization
+after the send snapshot, while never-observable orders remain visible in the
+uninitialized count. Engine, replay, proof, walk-forward, and sweep regressions
+pass (`73` tests). Repository collection is healthy at `2663 tests` across
+`164` files. The full suite was not rerun because recent complete runs exceed
+40 minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 

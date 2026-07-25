@@ -397,6 +397,9 @@ def test_limit_order_waits_for_queue_burn_before_fill():
     initialization = res.queue_initializations.iloc[0]
     assert initialization["mode"] == "send_snapshot"
     assert initialization["ts_ns"] == 0
+    assert initialization["arrival_ts_ns"] == 0
+    assert initialization["arrival_lag_ns"] == 0
+    assert initialization["arrival_book_relation"] == "bid_touch"
     assert initialization["initialization_lag_ns"] == 0
     assert initialization["observed_qty"] == 150
 
@@ -428,6 +431,9 @@ def test_delayed_limit_uses_arrival_snapshot_for_public_queue():
     assert initialization["mode"] == "arrival_snapshot"
     assert initialization["ts_ns"] == 200_000
     assert initialization["ts_active_ns"] == 100_000
+    assert initialization["arrival_ts_ns"] == 200_000
+    assert initialization["arrival_lag_ns"] == 100_000
+    assert initialization["arrival_book_relation"] == "bid_touch"
     assert initialization["initialization_lag_ns"] == 100_000
     assert initialization["book_relation"] == "bid_touch"
     assert initialization["observed_qty"] == 225
@@ -461,9 +467,76 @@ def test_delayed_limit_that_moves_through_before_arrival_is_taker():
     assert not bool(fill["maker"])
     initialization = result.queue_initializations.iloc[0]
     assert initialization["mode"] == "arrival_snapshot"
+    assert initialization["arrival_book_relation"] == "marketable"
     assert initialization["book_relation"] == "marketable"
     assert initialization["observed_qty"] == 0
     assert initialization["queue_ahead"] == 0
+
+
+def test_away_limit_defers_queue_until_first_observable_touch():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 150, 75, np.nan, 0),
+            (1_000, 100.00, 100.05, 150, 75, 99.95, 1_000),
+            (2_000, 99.95, 100.00, 225, 75, np.nan, 0),
+            (3_000, 99.95, 100.00, 225, 75, 99.95, 225),
+            (4_000, 99.95, 100.00, 225, 75, 99.95, 75),
+        ]
+    )
+    strategy = SendOnce(+1, 75, 99.95, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    fill = result.fills.loc[result.fills["side"] > 0].iloc[0]
+    assert fill["ts_ns"] == 4_000
+    assert fill["qty"] == 75
+    assert bool(fill["maker"])
+    initialization = result.queue_initializations.iloc[0]
+    assert initialization["mode"] == "first_touch_snapshot"
+    assert initialization["arrival_ts_ns"] == 0
+    assert initialization["arrival_lag_ns"] == 0
+    assert initialization["arrival_book_relation"] == "away_from_touch"
+    assert initialization["ts_ns"] == 2_000
+    assert initialization["initialization_lag_ns"] == 2_000
+    assert initialization["book_relation"] == "bid_touch"
+    assert initialization["observed_qty"] == 225
+    assert initialization["public_queue_ahead"] == 225
+    assert initialization["queue_ahead"] == 225
+
+
+def test_zero_queue_resting_limit_keeps_maker_status_when_market_trades_through():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 150, 75, np.nan, 0),
+            (1_000, 99.90, 99.95, 150, 75, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 75, 100.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    fill = result.fills.loc[result.fills["side"] > 0].iloc[0]
+    assert fill["ts_ns"] == 1_000
+    assert fill["price"] == 100.00
+    assert fill["qty"] == 75
+    assert bool(fill["maker"])
+    assert result.queue_initializations.iloc[0]["queue_ahead"] == 0
 
 
 def test_deferred_orders_keep_earlier_order_queue_priority():

@@ -25,6 +25,7 @@ from engine.hft_backtest import (
     QUEUE_INITIALIZATION_COLUMNS,
     TerminalLiquidation,
     TERMINAL_LIQUIDATION_COLUMNS,
+    _limit_book_relation,
     _nonnegative_qty,
 )
 
@@ -312,24 +313,30 @@ class MultiInstrumentEngine:
         if order.otype != OrderType.LIMIT or order.queue_initialized:
             return
 
-        bid = float(tick["bid"])
-        ask = float(tick["ask"])
+        relation = _limit_book_relation(order, tick)
+        if not order.arrival_observed:
+            order.arrival_observed = True
+            order.arrival_ts_ns = int(snapshot_ts)
+            order.arrival_book_relation = relation
+            order.resting_at_venue = relation != "marketable"
+        elif relation == "bid_touch" or relation == "ask_touch":
+            mode = "first_touch_snapshot"
+        elif relation == "price_improving":
+            mode = "resting_price_improvement_snapshot"
+        elif relation == "marketable":
+            mode = "resting_marketable_snapshot"
+
+        if relation == "away_from_touch":
+            return
+
         public_queue = 0.0
         observed_qty = 0.0
-        if order.side > 0 and order.price >= ask:
-            relation = "marketable"
-        elif order.side < 0 and order.price <= bid:
-            relation = "marketable"
-        elif order.side > 0 and abs(order.price - bid) < 1e-9:
-            relation = "bid_touch"
+        if relation == "bid_touch":
             observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
             public_queue = self.qcons * observed_qty
-        elif order.side < 0 and abs(order.price - ask) < 1e-9:
-            relation = "ask_touch"
+        elif relation == "ask_touch":
             observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
             public_queue = self.qcons * observed_qty
-        else:
-            relation = "off_touch"
 
         own_queue_tail = self._own_queue_tail(
             instrument_id=instrument_id,
@@ -353,6 +360,21 @@ class MultiInstrumentEngine:
                 price=float(order.price),
                 ts_sent_ns=int(order.ts_sent_ns),
                 ts_active_ns=int(order.ts_active_ns),
+                arrival_ts_ns=int(
+                    order.arrival_ts_ns
+                    if order.arrival_ts_ns is not None
+                    else snapshot_ts
+                ),
+                arrival_lag_ns=max(
+                    int(
+                        order.arrival_ts_ns
+                        if order.arrival_ts_ns is not None
+                        else snapshot_ts
+                    )
+                    - int(order.ts_active_ns),
+                    0,
+                ),
+                arrival_book_relation=order.arrival_book_relation,
                 initialization_lag_ns=max(
                     int(snapshot_ts) - int(order.ts_active_ns),
                     0,
@@ -832,6 +854,8 @@ class MultiInstrumentEngine:
                 snapshot_ts=int(ts),
                 mode="arrival_snapshot",
             )
+            if not order.queue_initialized:
+                return
 
         bid, ask = tick["bid"], tick["ask"]
         remaining = order.qty - order.filled
@@ -860,7 +884,7 @@ class MultiInstrumentEngine:
             self._remove_order(instrument_id, order)
             return
 
-        if order.queue_ahead > 0 and (
+        if order.resting_at_venue and (
             (order.side > 0 and ask < order.price)
             or (order.side < 0 and bid > order.price)
         ):
@@ -870,7 +894,11 @@ class MultiInstrumentEngine:
                 remaining,
             )
             self._execute(instrument_id, order, remaining, order.price, ts, maker=True)
-        elif order.side > 0 and order.price >= ask:
+        elif (
+            not order.resting_at_venue
+            and order.side > 0
+            and order.price >= ask
+        ):
             self._fill_from_displayed(
                 instrument_id,
                 order,
@@ -879,7 +907,11 @@ class MultiInstrumentEngine:
                 ts_ns=ts,
                 requested_qty=remaining,
             )
-        elif order.side < 0 and order.price <= bid:
+        elif (
+            not order.resting_at_venue
+            and order.side < 0
+            and order.price <= bid
+        ):
             self._fill_from_displayed(
                 instrument_id,
                 order,
@@ -889,16 +921,7 @@ class MultiInstrumentEngine:
                 requested_qty=remaining,
             )
         else:
-            if (order.side > 0 and ask < order.price) or (
-                order.side < 0 and bid > order.price
-            ):
-                self._advance_later_own_queue(
-                    instrument_id,
-                    order,
-                    remaining,
-                )
-                self._execute(instrument_id, order, remaining, order.price, ts, maker=True)
-            elif (
+            if (
                 not math.isnan(tick.get("last", np.nan))
                 and abs(tick["last"] - order.price) < 1e-9
                 and liquidity.last_qty > 0

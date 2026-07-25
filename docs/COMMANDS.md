@@ -907,9 +907,15 @@ order uses the contemporaneous visible book; a delayed order waits for the
 first market snapshot at or after `ts_active_ns`. Earlier own orders at the
 same price remain ahead according to `(ts_active_ns, oid)`. If the limit is
 already marketable when it arrives, replay treats it as a taker at the current
-touch. `queue_initializations.csv` records the initialization timestamp and
-lag, `send_snapshot` or `arrival_snapshot` mode, touch/marketable/off-touch
-relation, observed public depth, earlier own-order tail, and resulting queue.
+touch. An order resting away from the L1 touch keeps its queue unresolved
+until its price first becomes visible at the touch, improves the spread, or is
+traded through; stale off-touch prints cannot fill it against an invented
+zero queue. Once a limit has rested, a later price-through remains a maker
+fill even when `queue_conservatism=0`. `queue_initializations.csv` records
+separate arrival and initialization timestamps/lags, the arrival and
+initialization book relations, `send_snapshot`, `arrival_snapshot`,
+`first_touch_snapshot`, or resting-transition mode, observed public depth,
+earlier own-order tail, and resulting queue.
 `summary.csv` carries the enabled flag, accepted limit-order count,
 initialization and deferred-initialization counts, uninitialized limit count,
 and maximum initialization lag; proof, walk-forward, and sweep outputs retain

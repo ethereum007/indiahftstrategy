@@ -181,6 +181,10 @@ class Order:
     filled: int = 0
     alive: bool = True
     queue_initialized: bool = False
+    arrival_observed: bool = False
+    arrival_ts_ns: int | None = None
+    arrival_book_relation: str = ""
+    resting_at_venue: bool = False
 
 
 @dataclass
@@ -237,6 +241,9 @@ class QueueInitialization:
     price: float
     ts_sent_ns: int
     ts_active_ns: int
+    arrival_ts_ns: int
+    arrival_lag_ns: int
+    arrival_book_relation: str
     initialization_lag_ns: int
     mode: str
     book_relation: str
@@ -447,6 +454,9 @@ QUEUE_INITIALIZATION_COLUMNS = [
     "price",
     "ts_sent_ns",
     "ts_active_ns",
+    "arrival_ts_ns",
+    "arrival_lag_ns",
+    "arrival_book_relation",
     "initialization_lag_ns",
     "mode",
     "book_relation",
@@ -481,6 +491,26 @@ def _nonnegative_qty(value: object) -> float:
     except (TypeError, ValueError):
         return 0.0
     return qty if math.isfinite(qty) and qty > 0 else 0.0
+
+
+def _limit_book_relation(order: Order, tick: dict) -> str:
+    bid = float(tick["bid"])
+    ask = float(tick["ask"])
+    if order.side > 0:
+        if order.price >= ask:
+            return "marketable"
+        if abs(order.price - bid) < 1e-9:
+            return "bid_touch"
+        if bid < order.price < ask:
+            return "price_improving"
+    else:
+        if order.price <= bid:
+            return "marketable"
+        if abs(order.price - ask) < 1e-9:
+            return "ask_touch"
+        if bid < order.price < ask:
+            return "price_improving"
+    return "away_from_touch"
 
 
 # ----------------------------------------------------------------------------
@@ -661,24 +691,32 @@ class BacktestEngine:
         if order.otype != OrderType.LIMIT or order.queue_initialized:
             return
 
-        bid = float(tick["bid"])
-        ask = float(tick["ask"])
+        relation = _limit_book_relation(order, tick)
+        if not order.arrival_observed:
+            order.arrival_observed = True
+            order.arrival_ts_ns = int(snapshot_ts)
+            order.arrival_book_relation = relation
+            order.resting_at_venue = relation != "marketable"
+        elif relation == "bid_touch" or relation == "ask_touch":
+            mode = "first_touch_snapshot"
+        elif relation == "price_improving":
+            mode = "resting_price_improvement_snapshot"
+        elif relation == "marketable":
+            mode = "resting_marketable_snapshot"
+
+        # L1 has no public depth for an away order. Keep its queue unresolved
+        # until the order price first becomes observable at or inside the touch.
+        if relation == "away_from_touch":
+            return
+
         public_queue = 0.0
         observed_qty = 0.0
-        if order.side > 0 and order.price >= ask:
-            relation = "marketable"
-        elif order.side < 0 and order.price <= bid:
-            relation = "marketable"
-        elif order.side > 0 and abs(order.price - bid) < 1e-9:
-            relation = "bid_touch"
+        if relation == "bid_touch":
             observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
             public_queue = self.qcons * observed_qty
-        elif order.side < 0 and abs(order.price - ask) < 1e-9:
-            relation = "ask_touch"
+        elif relation == "ask_touch":
             observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
             public_queue = self.qcons * observed_qty
-        else:
-            relation = "off_touch"
 
         own_queue_tail = self._own_queue_tail(
             side=order.side,
@@ -701,6 +739,21 @@ class BacktestEngine:
                 price=float(order.price),
                 ts_sent_ns=int(order.ts_sent_ns),
                 ts_active_ns=int(order.ts_active_ns),
+                arrival_ts_ns=int(
+                    order.arrival_ts_ns
+                    if order.arrival_ts_ns is not None
+                    else snapshot_ts
+                ),
+                arrival_lag_ns=max(
+                    int(
+                        order.arrival_ts_ns
+                        if order.arrival_ts_ns is not None
+                        else snapshot_ts
+                    )
+                    - int(order.ts_active_ns),
+                    0,
+                ),
+                arrival_book_relation=order.arrival_book_relation,
                 initialization_lag_ns=max(
                     int(snapshot_ts) - int(order.ts_active_ns),
                     0,
@@ -952,6 +1005,8 @@ class BacktestEngine:
                 snapshot_ts=int(ts),
                 mode="arrival_snapshot",
             )
+            if not o.queue_initialized:
+                return
 
         bid, ask = tick["bid"], tick["ask"]
         remaining = o.qty - o.filled
@@ -978,16 +1033,16 @@ class BacktestEngine:
             return
 
         # LIMIT maker logic
-        # 1) price trades THROUGH a queued resting level -> assume full fill.
-        # If the order had queue ahead, it was intended as a passive quote at
-        # the touch, not as a freshly marketable order crossing the spread.
-        if o.queue_ahead > 0 and (
+        # A resting order remains maker even when configured queue depth is
+        # zero; queue quantity is not evidence of whether the order crossed.
+        if o.resting_at_venue and (
             (o.side > 0 and ask < o.price) or (o.side < 0 and bid > o.price)
         ):
             self._advance_later_own_queue(o, remaining)
             self._execute(o, remaining, o.price, ts, maker=True)
-        # 2) marketable on arrival -> trade as taker
-        elif o.side > 0 and o.price >= ask:
+        # A limit that was already marketable at its first venue snapshot is
+        # aggressive and consumes displayed touch depth as a taker.
+        elif not o.resting_at_venue and o.side > 0 and o.price >= ask:
             self._fill_from_displayed(
                 o,
                 liquidity=liquidity,
@@ -995,7 +1050,7 @@ class BacktestEngine:
                 ts_ns=ts,
                 requested_qty=remaining,
             )
-        elif o.side < 0 and o.price <= bid:
+        elif not o.resting_at_venue and o.side < 0 and o.price <= bid:
             self._fill_from_displayed(
                 o,
                 liquidity=liquidity,
@@ -1004,12 +1059,8 @@ class BacktestEngine:
                 requested_qty=remaining,
             )
         else:
-            # 3) price trades THROUGH our level -> assume full fill
-            if (o.side > 0 and ask < o.price) or (o.side < 0 and bid > o.price):
-                self._advance_later_own_queue(o, remaining)
-                self._execute(o, remaining, o.price, ts, maker=True)
-            # 4) trade prints AT our level -> burn queue, then fill
-            elif not math.isnan(tick.get("last", np.nan)) and \
+            # Trade prints at a resting level burn public and own queue first.
+            if not math.isnan(tick.get("last", np.nan)) and \
                     abs(tick["last"] - o.price) < 1e-9 and liquidity.last_qty > 0:
                 queue_before = max(float(o.queue_ahead), 0.0)
                 queue_consumed = min(liquidity.last_qty, queue_before)

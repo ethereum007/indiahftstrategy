@@ -333,12 +333,63 @@ def test_multi_engine_uses_arrival_snapshot_for_limit_queue():
     assert initialization["instrument_id"] == "A"
     assert initialization["mode"] == "arrival_snapshot"
     assert initialization["ts_ns"] == 200_000
+    assert initialization["arrival_ts_ns"] == 200_000
+    assert initialization["arrival_lag_ns"] == 100_000
+    assert initialization["arrival_book_relation"] == "bid_touch"
     assert initialization["initialization_lag_ns"] == 100_000
     assert initialization["observed_qty"] == 225
     assert initialization["queue_ahead"] == 225
     summary = replay_summary(result).iloc[0]
     assert int(summary["deferred_queue_initialization_events"]) == 1
     assert int(summary["max_queue_initialization_lag_ns"]) == 100_000
+
+
+def test_multi_engine_defers_away_limit_queue_until_first_touch():
+    strategy = BurstRiskStrategy(
+        {"A": [(+1, 75, 99.95, OrderType.LIMIT)]}
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 150, 75, np.nan, 0),
+                        (1_000, 100.00, 100.05, 150, 75, 99.95, 1_000),
+                        (2_000, 99.95, 100.00, 225, 75, np.nan, 0),
+                        (3_000, 99.95, 100.00, 225, 75, 99.95, 225),
+                        (4_000, 99.95, 100.00, 225, 75, 99.95, 75),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+        queue_conservatism=1.0,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["ts_ns"].tolist() == [4_000]
+    assert strategy_fills["maker"].tolist() == [True]
+    initialization = result.queue_initializations.iloc[0]
+    assert initialization["instrument_id"] == "A"
+    assert initialization["mode"] == "first_touch_snapshot"
+    assert initialization["arrival_ts_ns"] == 0
+    assert initialization["arrival_lag_ns"] == 0
+    assert initialization["arrival_book_relation"] == "away_from_touch"
+    assert initialization["ts_ns"] == 2_000
+    assert initialization["initialization_lag_ns"] == 2_000
+    assert initialization["book_relation"] == "bid_touch"
+    assert initialization["observed_qty"] == 225
+    assert initialization["queue_ahead"] == 225
+    summary = replay_summary(result).iloc[0]
+    assert int(summary["deferred_queue_initialization_events"]) == 1
+    assert int(summary["uninitialized_limit_orders"]) == 0
+    assert int(summary["max_queue_initialization_lag_ns"]) == 2_000
 
 
 def test_terminal_liquidation_reuses_no_depth_consumed_on_final_snapshot():

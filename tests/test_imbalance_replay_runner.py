@@ -137,6 +137,15 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "fills_by_regime.csv").exists()
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    queue_initializations = pd.read_csv(out_dir / "queue_initializations.csv")
+    assert {
+        "arrival_ts_ns",
+        "arrival_lag_ns",
+        "arrival_book_relation",
+        "initialization_lag_ns",
+        "mode",
+        "book_relation",
+    }.issubset(queue_initializations.columns)
     summary = replay.summary.iloc[0]
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
