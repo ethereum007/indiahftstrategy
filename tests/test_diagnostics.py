@@ -373,6 +373,9 @@ def test_tick_and_chain_diagnostics_report_daily_observation_spans():
     assert int(tick_summary["min_daily_observation_span_ns"]) == 2_000_000_000
     assert int(tick_summary["median_daily_observation_span_ns"]) == 3_000_000_000
     assert int(tick_summary["max_daily_observation_span_ns"]) == 4_000_000_000
+    assert int(tick_summary["min_daily_rows"]) == 2
+    assert float(tick_summary["median_daily_rows"]) == 2.0
+    assert int(tick_summary["max_daily_rows"]) == 2
     assert int(chain_overall["observation_days"]) == 2
     assert chain_overall["observation_dates"] == (
         "2026-06-10;2026-06-11"
@@ -380,15 +383,55 @@ def test_tick_and_chain_diagnostics_report_daily_observation_spans():
     assert int(chain_overall["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(chain_overall["median_daily_observation_span_ns"]) == 3_000_000_000
     assert int(chain_overall["max_daily_observation_span_ns"]) == 5_000_000_000
+    assert int(chain_overall["min_daily_snapshots"]) == 2
+    assert float(chain_overall["median_daily_snapshots"]) == 2.5
+    assert int(chain_overall["max_daily_snapshots"]) == 3
+    assert int(chain_overall["min_daily_snapshots_per_expiry"]) == 2
     assert int(june_expiry["observation_days"]) == 2
     assert june_expiry["observation_dates"] == (
         "2026-06-10;2026-06-11"
     )
     assert int(june_expiry["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(june_expiry["max_daily_observation_span_ns"]) == 5_000_000_000
+    assert int(june_expiry["min_daily_snapshots"]) == 2
     assert int(july_expiry["observation_days"]) == 1
     assert july_expiry["observation_dates"] == "2026-06-10"
     assert int(july_expiry["min_daily_observation_span_ns"]) == 3_000_000_000
+    assert int(july_expiry["min_daily_snapshots"]) == 2
+
+
+def test_chain_daily_density_counts_snapshots_instead_of_strike_rows():
+    rows = []
+    for timestamp in (
+        "2026-06-10 09:15:00",
+        "2026-06-10 09:15:01",
+    ):
+        for strike in (22500.0, 22550.0, 22600.0):
+            rows.append(
+                {
+                    "ts": ns_ist(timestamp),
+                    "expiry": "2026-06-25",
+                    "strike": strike,
+                    "call_bid": 100.0,
+                    "call_ask": 100.05,
+                    "call_bid_qty": 75,
+                    "call_ask_qty": 75,
+                    "put_bid": 90.0,
+                    "put_ask": 90.05,
+                    "put_bid_qty": 75,
+                    "put_ask_qty": 75,
+                }
+            )
+
+    summary = chain_diagnostics(pd.DataFrame(rows)).summary
+    overall = summary.loc[summary["scope"] == "overall"].iloc[0]
+    expiry = summary.loc[summary["scope"] == "expiry"].iloc[0]
+
+    assert int(overall["min_daily_rows"]) == 6
+    assert int(overall["min_daily_snapshots"]) == 2
+    assert int(overall["min_daily_snapshots_per_expiry"]) == 2
+    assert int(expiry["min_daily_rows"]) == 6
+    assert int(expiry["min_daily_snapshots"]) == 2
 
 
 def test_tick_and_chain_diagnostics_apply_timestamp_high_water():

@@ -9071,6 +9071,20 @@ delivery policy: diagnostics do not hard-code an NSE session length, so
 intentional open/close windows and later US-market captures remain usable.
 The `21600000000000` values in these examples are illustrative six-hour
 policies, not venue defaults.
+Daily span alone does not prove replay density: two observations can cover a
+long window. Diagnostics therefore also retain `min_daily_rows`,
+`median_daily_rows`, and `max_daily_rows`, plus the corresponding distinct
+timestamp counts as `min_daily_snapshots`, `median_daily_snapshots`, and
+`max_daily_snapshots`. Chain diagnostics retain these fields per expiry and
+publish the conservative overall `min_daily_snapshots_per_expiry`. Use
+`--min-daily-observations` on vendor, provider, batch, and broker-vendor
+pipelines; it means retained rows per local day for ticks and distinct
+snapshots per expiry per local day for chains. Direct readiness reports expose
+the explicit `--min-tick-daily-rows` and
+`--min-chain-daily-snapshots-per-expiry` policies. These opt-in gates prevent
+large strike cross-sections at one chain timestamp from impersonating temporal
+coverage. Thresholds must come from the reviewed vendor capture policy; the
+platform does not infer a sampling rate or manufacture missing observations.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The

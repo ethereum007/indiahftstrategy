@@ -40,6 +40,7 @@ class ProviderMarketDataPipelineConfig:
     timestamp_tz: str | None = None
     pipeline_min_rows: int = 1
     min_daily_observation_span_ns: int | None = None
+    min_daily_observations: int | None = None
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
@@ -135,6 +136,7 @@ def write_provider_market_data_pipeline(
                 min_daily_observation_span_ns=(
                     config.min_daily_observation_span_ns
                 ),
+                min_daily_observations=config.min_daily_observations,
                 max_null_rows=config.max_null_rows,
                 max_nonfinite_rows=config.max_nonfinite_rows,
                 max_nonintegral_rows=config.max_nonintegral_rows,
@@ -239,6 +241,11 @@ def _summary(
     config: ProviderMarketDataPipelineConfig,
 ) -> pd.DataFrame:
     capture_summary = capture.summary.iloc[0]
+    vendor_summary = (
+        vendor.summary.iloc[0]
+        if vendor is not None and not vendor.summary.empty
+        else pd.Series(dtype=object)
+    )
     vendor_ready = bool(vendor.ready) if vendor is not None else False
     failed_components = int((~components["ready"].astype(bool)).sum()) if not components.empty else 0
     blocked_actions = (
@@ -263,6 +270,13 @@ def _summary(
                 "kind": str(capture_summary["kind"]),
                 "capture_ready": bool(capture.ready),
                 "vendor_pipeline_ready": vendor_ready,
+                "min_daily_observations": int(
+                    _number(
+                        vendor_summary,
+                        "min_daily_observations",
+                        fallback=0.0,
+                    )
+                ),
                 "failed_components": failed_components,
                 "blocked_action_count": blocked_actions,
                 "ready_action_count": int((action_queue["queue_status"].astype(str) == "ready").sum())
@@ -415,6 +429,7 @@ def _runbook_markdown(summary: pd.Series, components: pd.DataFrame, action_queue
         f"- Market calendar: {summary['market_calendar_id'] or 'not provided'}",
         f"- Calendar SHA-256: {summary['market_calendar_sha256']}",
         f"- Kind: {summary['kind']}",
+        f"- Minimum daily observations: {int(_number(summary, 'min_daily_observations', fallback=0.0))}",
         "",
         "## Components",
     ]
@@ -448,6 +463,26 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
             out["priority"] = int(index)
         rows.append(out)
     return rows
+
+
+def _number(
+    row: pd.Series,
+    column: str,
+    *,
+    fallback: float = 0.0,
+) -> float:
+    if row.empty or column not in row:
+        return float(fallback)
+    value = row.get(column)
+    try:
+        if pd.isna(value):
+            return float(fallback)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(fallback)
 
 
 def _jsonable(value: object) -> object:

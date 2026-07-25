@@ -7175,6 +7175,25 @@ Repository collection is healthy at `2631 tests` across `164` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes. All
 outputs remain non-authorizing.
 
+Latest minimum daily observation-density gate: diagnostics now retain local
+day minimum, median, and maximum row counts plus distinct timestamp counts.
+For ticks, the opt-in proof metric is retained rows per local trading day. For
+option chains, readiness uses distinct snapshots per expiry per observed local
+day, so a large cross-section of strikes at one timestamp cannot impersonate
+temporal coverage. Vendor, provider, batch, and broker-vendor wrappers expose
+the normalized `--min-daily-observations` policy, while direct readiness keeps
+the explicit `--min-tick-daily-rows` and
+`--min-chain-daily-snapshots-per-expiry` gates. Diagnostics preserve the
+explicit `min_daily_rows`, `min_daily_snapshots`, and conservative
+`min_daily_snapshots_per_expiry` evidence, including per-expiry chain
+summaries. The policy is opt-in and does not infer a sampling rate, fill
+missing observations, or count strikes as time samples. Directly affected and
+downstream data-proof, broker/provider, manifest/catalog, live-ingest,
+cutover, strategy, quote-risk, scale-up, parity, and surface regressions pass
+(`723` tests). Repository collection is healthy at `2633 tests` across `164`
+files. The full suite was not rerun because recent complete runs exceed 40
+minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

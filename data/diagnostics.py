@@ -510,6 +510,18 @@ def chain_diagnostics(
     horizon_summary = _contract_horizon_summary(horizon_diagnostics)
     key_summary = _contract_key_summary(key_diagnostics)
     snapshot_summary = _chain_snapshot_summary(snapshot_diagnostics)
+    min_daily_snapshots_per_expiry = (
+        int(
+            pd.to_numeric(
+                observation_spans.by_group["min_daily_snapshots"],
+                errors="coerce",
+            )
+            .fillna(0)
+            .min()
+        )
+        if not observation_spans.by_group.empty
+        else 0
+    )
     overall = pd.DataFrame(
         [
             {
@@ -526,6 +538,9 @@ def chain_diagnostics(
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
                 **observation_spans.overall,
+                "min_daily_snapshots_per_expiry": (
+                    min_daily_snapshots_per_expiry
+                ),
                 "nonmonotonic_rows": int(frame["nonmonotonic_ts"].sum()),
                 "nonpositive_strike_rows": int(
                     frame["nonpositive_strike"].sum()
@@ -790,6 +805,12 @@ def _daily_observation_span_diagnostics(
         "min_daily_observation_span_ns",
         "median_daily_observation_span_ns",
         "max_daily_observation_span_ns",
+        "min_daily_rows",
+        "median_daily_rows",
+        "max_daily_rows",
+        "min_daily_snapshots",
+        "median_daily_snapshots",
+        "max_daily_snapshots",
     ]
     if group_column is None:
         by_group = pd.DataFrame(columns=summary_columns)
@@ -818,6 +839,12 @@ def _daily_observation_span_diagnostics(
                     "daily_observation_span_ns",
                     "max",
                 ),
+                min_daily_rows=("daily_rows", "min"),
+                median_daily_rows=("daily_rows", "median"),
+                max_daily_rows=("daily_rows", "max"),
+                min_daily_snapshots=("daily_snapshots", "min"),
+                median_daily_snapshots=("daily_snapshots", "median"),
+                max_daily_snapshots=("daily_snapshots", "max"),
             )
             .reset_index()
         )
@@ -834,19 +861,29 @@ def _daily_observation_spans(
 ) -> pd.DataFrame:
     if working.empty:
         return pd.DataFrame(
-            columns=[*group_columns, "daily_observation_span_ns"]
+            columns=[
+                *group_columns,
+                "daily_observation_span_ns",
+                "daily_rows",
+                "daily_snapshots",
+            ]
         )
     daily = (
         working.groupby(
             list(group_columns),
             dropna=False,
             sort=False,
-        )["ts_ns"]
-        .agg(["min", "max"])
+        )
+        .agg(
+            min_ts_ns=("ts_ns", "min"),
+            max_ts_ns=("ts_ns", "max"),
+            daily_rows=("ts_ns", "size"),
+            daily_snapshots=("ts_ns", "nunique"),
+        )
         .reset_index()
     )
     daily["daily_observation_span_ns"] = (
-        daily["max"] - daily["min"]
+        daily["max_ts_ns"] - daily["min_ts_ns"]
     ).astype("int64")
     return daily
 
@@ -861,8 +898,16 @@ def _daily_observation_span_summary(
             "min_daily_observation_span_ns": 0,
             "median_daily_observation_span_ns": 0.0,
             "max_daily_observation_span_ns": 0,
+            "min_daily_rows": 0,
+            "median_daily_rows": 0.0,
+            "max_daily_rows": 0,
+            "min_daily_snapshots": 0,
+            "median_daily_snapshots": 0.0,
+            "max_daily_snapshots": 0,
         }
     spans = daily["daily_observation_span_ns"]
+    rows = daily["daily_rows"]
+    snapshots = daily["daily_snapshots"]
     return {
         "observation_dates": _joined_observation_dates(
             daily["observation_date"]
@@ -871,6 +916,12 @@ def _daily_observation_span_summary(
         "min_daily_observation_span_ns": int(spans.min()),
         "median_daily_observation_span_ns": float(spans.median()),
         "max_daily_observation_span_ns": int(spans.max()),
+        "min_daily_rows": int(rows.min()),
+        "median_daily_rows": float(rows.median()),
+        "max_daily_rows": int(rows.max()),
+        "min_daily_snapshots": int(snapshots.min()),
+        "median_daily_snapshots": float(snapshots.median()),
+        "max_daily_snapshots": int(snapshots.max()),
     }
 
 

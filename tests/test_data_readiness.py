@@ -33,6 +33,9 @@ def tick_summary(**overrides):
         "min_daily_observation_span_ns": 3_600_000_000_000,
         "median_daily_observation_span_ns": 3_900_000_000_000.0,
         "max_daily_observation_span_ns": 4_200_000_000_000,
+        "min_daily_rows": 50,
+        "median_daily_rows": 50.0,
+        "max_daily_rows": 50,
         "nonmonotonic_rows": 0,
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
@@ -71,6 +74,7 @@ def chain_summary(**overrides):
         "min_daily_observation_span_ns": 7_200_000_000_000,
         "median_daily_observation_span_ns": 7_500_000_000_000.0,
         "max_daily_observation_span_ns": 7_800_000_000_000,
+        "min_daily_snapshots_per_expiry": 5,
         "p99_snapshot_gap_ns": 2_000.0,
         "nonmonotonic_rows": 0,
         "nonpositive_strike_rows": 0,
@@ -676,6 +680,59 @@ def test_data_readiness_gates_minimum_daily_observation_span():
     assert not missing_evidence.ready
 
 
+def test_data_readiness_gates_minimum_daily_observation_density():
+    sparse_tick = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(min_daily_rows=2),
+        thresholds=DataReadinessThresholds(min_tick_daily_rows=3),
+    )
+    sparse_chain = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(
+            rows=10_000,
+            min_daily_snapshots_per_expiry=1,
+        ),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            min_chain_daily_snapshots_per_expiry=2,
+        ),
+    )
+    allowed_chain = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(
+            min_daily_snapshots_per_expiry=2,
+        ),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            min_chain_daily_snapshots_per_expiry=2,
+        ),
+    )
+    missing_evidence = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary().drop(
+            columns=["min_daily_rows"]
+        ),
+        thresholds=DataReadinessThresholds(min_tick_daily_rows=0),
+    )
+
+    tick_failed = set(
+        sparse_tick.checks.loc[
+            ~sparse_tick.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    chain_failed = set(
+        sparse_chain.checks.loc[
+            ~sparse_chain.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not sparse_tick.ready
+    assert "tick_min_daily_rows" in tick_failed
+    assert not sparse_chain.ready
+    assert "chain_min_daily_snapshots_per_expiry" in chain_failed
+    assert allowed_chain.ready
+    assert not missing_evidence.ready
+
+
 def test_data_readiness_gates_declared_chain_strike_grid():
     off_grid = evaluate_data_readiness(
         chain_diagnostic_summary=chain_summary(off_grid_strike_rows=1),
@@ -742,6 +799,8 @@ def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
             "1",
             "--min-chain-daily-observation-span-ns",
             "7200000000000",
+            "--min-chain-daily-snapshots-per-expiry",
+            "5",
             "--fail-on-breach",
         ]
     )
@@ -754,6 +813,12 @@ def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
     assert (
         config["thresholds"]["min_chain_daily_observation_span_ns"]
         == 7_200_000_000_000
+    )
+    assert (
+        config["thresholds"][
+            "min_chain_daily_snapshots_per_expiry"
+        ]
+        == 5
     )
     components = {
         row["component"]: row for row in config["components"]
@@ -783,6 +848,8 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
             "1",
             "--min-tick-daily-observation-span-ns",
             "3600000000000",
+            "--min-tick-daily-rows",
+            "50",
             "--fail-on-breach",
         ]
     )
@@ -797,6 +864,7 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
         config["thresholds"]["min_tick_daily_observation_span_ns"]
         == 3_600_000_000_000
     )
+    assert config["thresholds"]["min_tick_daily_rows"] == 50
 
 
 def test_data_readiness_fails_on_filtered_mapped_data_quarantine():

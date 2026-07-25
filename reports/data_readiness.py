@@ -74,8 +74,10 @@ class DataReadinessThresholds:
     expected_vendor_data_kind: str | None = None
     min_tick_rows: int = 1
     min_tick_daily_observation_span_ns: int | None = None
+    min_tick_daily_rows: int | None = None
     min_chain_rows: int = 1
     min_chain_daily_observation_span_ns: int | None = None
+    min_chain_daily_snapshots_per_expiry: int | None = None
     min_chain_expiries: int = 1
     min_chain_strikes: int = 1
     min_chain_expiry_snapshots: int = 1
@@ -1701,6 +1703,19 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
                 thresholds.min_tick_daily_observation_span_ns,
             )
         )
+    if thresholds.min_tick_daily_rows is not None:
+        checks.append(
+            _threshold_check(
+                "tick_min_daily_rows",
+                _number(
+                    row,
+                    "min_daily_rows",
+                    fallback=float("nan"),
+                ),
+                ">=",
+                thresholds.min_tick_daily_rows,
+            )
+        )
     if thresholds.max_tick_median_spread_ticks is not None:
         checks.append(
             _threshold_check(
@@ -2138,6 +2153,19 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 ),
                 ">=",
                 thresholds.min_chain_daily_observation_span_ns,
+            )
+        )
+    if thresholds.min_chain_daily_snapshots_per_expiry is not None:
+        checks.append(
+            _threshold_check(
+                "chain_min_daily_snapshots_per_expiry",
+                _number(
+                    row,
+                    "min_daily_snapshots_per_expiry",
+                    fallback=float("nan"),
+                ),
+                ">=",
+                thresholds.min_chain_daily_snapshots_per_expiry,
             )
         )
     return checks
@@ -3414,7 +3442,9 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_stale_bbo_rows",
         "max_off_grid_strike_rows",
         "min_tick_daily_observation_span_ns",
+        "min_tick_daily_rows",
         "min_chain_daily_observation_span_ns",
+        "min_chain_daily_snapshots_per_expiry",
         "max_tick_p99_gap_ns",
         "max_tick_median_spread_ticks",
         "max_chain_median_spread_ticks",
