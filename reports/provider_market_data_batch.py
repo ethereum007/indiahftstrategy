@@ -63,6 +63,7 @@ class ProviderMarketDataBatchConfig:
     min_ready_rate: float = 1.0
     max_total_failed_checks: int = 0
     min_unique_source_files: int | None = None
+    min_unique_observation_dates: int | None = None
     min_source_file_fingerprint_coverage: float | None = 1.0
     min_mapping_coverage: float | None = 1.0
 
@@ -272,6 +273,9 @@ def _comparison_thresholds(config: ProviderMarketDataBatchConfig, capture_count:
         min_unique_source_files=config.min_unique_source_files
         if config.min_unique_source_files is not None
         else capture_count,
+        min_unique_observation_dates=(
+            config.min_unique_observation_dates
+        ),
         min_source_file_fingerprint_coverage=config.min_source_file_fingerprint_coverage,
         min_mapping_coverage=config.min_mapping_coverage,
         require_market_calendar=bool(config.market_calendar_path),
@@ -305,6 +309,7 @@ def _dataset_row(
         "kind": _text(root_row, "kind"),
         "normalized_rows": int(_number(vendor_row, "normalized_rows", fallback=0.0)),
         "failed_components": int(_number(root_row, "failed_components", fallback=1.0)),
+        "observation_dates": _text(vendor_row, "observation_dates"),
         "source_file_sha256": _text(vendor_row, "source_file_sha256"),
         "source_header_sha256": _text(vendor_row, "source_header_sha256"),
         "mapping_draft_sha256": _text(vendor_row, "mapping_draft_sha256"),
@@ -429,6 +434,29 @@ def _summary(
                 "failed_datasets": failed_datasets,
                 "ready_rate": float(ready_datasets / dataset_count) if dataset_count else 0.0,
                 "unique_source_files": _unique_count(datasets, "source_file_sha256"),
+                "observation_dates": _text(
+                    comparison_row,
+                    "observation_dates",
+                ),
+                "unique_observation_dates": int(
+                    _number(
+                        comparison_row,
+                        "unique_observation_dates",
+                        fallback=0.0,
+                    )
+                ),
+                "observation_date_coverage": _number(
+                    comparison_row,
+                    "observation_date_coverage",
+                    fallback=0.0,
+                ),
+                "overlapping_observation_date_memberships": int(
+                    _number(
+                        comparison_row,
+                        "overlapping_observation_date_memberships",
+                        fallback=0.0,
+                    )
+                ),
                 "source_file_fingerprint_coverage": _number(
                     comparison_row,
                     "source_file_fingerprint_coverage",
@@ -487,6 +515,22 @@ def _config(
         "failed_datasets": int(_number(row, "failed_datasets", fallback=0.0)),
         "ready_rate": _number(row, "ready_rate", fallback=0.0),
         "unique_source_files": int(_number(row, "unique_source_files", fallback=0.0)),
+        "observation_dates": _text(row, "observation_dates"),
+        "unique_observation_dates": int(
+            _number(row, "unique_observation_dates", fallback=0.0)
+        ),
+        "observation_date_coverage": _number(
+            row,
+            "observation_date_coverage",
+            fallback=0.0,
+        ),
+        "overlapping_observation_date_memberships": int(
+            _number(
+                row,
+                "overlapping_observation_date_memberships",
+                fallback=0.0,
+            )
+        ),
         "source_file_fingerprint_coverage": _number(row, "source_file_fingerprint_coverage", fallback=0.0),
         "min_mapping_coverage": _number(row, "min_mapping_coverage", fallback=0.0),
         "datasets": _records(datasets),
@@ -515,6 +559,9 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, action_queue: 
         f"- Dataset count: {int(_number(summary, 'dataset_count', fallback=0.0))}",
         f"- Ready datasets: {int(_number(summary, 'ready_datasets', fallback=0.0))}",
         f"- Failed datasets: {int(_number(summary, 'failed_datasets', fallback=0.0))}",
+        f"- Local observation dates: {_text(summary, 'observation_dates')}",
+        f"- Unique local observation dates: {int(_number(summary, 'unique_observation_dates', fallback=0.0))}",
+        f"- Observation-date coverage: {_number(summary, 'observation_date_coverage', fallback=0.0)}",
         f"- Primary next gate: `{summary['next_gate']}`" if str(summary["next_gate"]) else "- Primary next gate: ",
         "",
         "## Blocked Actions",
@@ -686,6 +733,13 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         )
     if not 0 <= config.min_ready_rate <= 1:
         raise ValueError("min_ready_rate must be between 0 and 1")
+    if (
+        config.min_unique_observation_dates is not None
+        and config.min_unique_observation_dates <= 0
+    ):
+        raise ValueError(
+            "min_unique_observation_dates must be positive"
+        )
     for name in (
         "max_missing_required_columns",
         "max_null_required_cells",

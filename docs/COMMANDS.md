@@ -8852,6 +8852,12 @@ reused capture files by source fingerprint, and writes
 `provider_market_data_batch_datasets.csv`,
 `provider_market_data_batch_action_queue.csv`,
 `provider_market_data_batch_config.json`, a runbook, and a root manifest.
+Distinct source files do not automatically prove distinct trading days. For a
+multi-day proof, add `--min-unique-observation-dates N`. Diagnostics derive
+canonical `YYYY-MM-DD` dates in the selected market timezone, every compared
+readiness report must carry valid date evidence, and the comparison counts the
+union across all files. Multiple open/close windows from one session remain
+valid inputs but count as one observation date.
 
 ## Vendor Market Data Onboarding Pipeline
 
@@ -9183,6 +9189,7 @@ python -m hft_cli pipeline-vendor-market-data-batch `
   --tick-size 0.05 `
   --min-daily-observation-span-ns 21600000000000 `
   --min-datasets 2 `
+  --min-unique-observation-dates 2 `
   --min-ready-rate 1 `
   --fail-on-blocked-actions `
   --fail-on-breach
@@ -9231,6 +9238,9 @@ manifest.json
 ```
 
 The batch summary adds `market`, `unique_source_files`,
+`observation_dates`, `unique_observation_dates`,
+`observation_date_coverage`,
+`overlapping_observation_date_memberships`,
 `unique_header_fingerprints`, `mapping_sources`, `mapping_application_count`,
 `unique_mapping_applications`, and `target_application_coverage`. The batch
 manifest fingerprints each dataset pipeline manifest plus the comparison
@@ -9270,6 +9280,7 @@ python -m hft_cli pipeline-broker-vendor-readiness `
   --dispatch-roundtrip runs\broker_dispatch_roundtrip `
   --allow-placeholder-schema `
   --require-dispatch-roundtrip `
+  --min-unique-observation-dates 2 `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -9319,8 +9330,8 @@ execution handoff. For chain inputs, the wrapper accepts the same
 `--market-calendar`, `--expiry-cycle`, `--underlying`, and `--lot-size`
 declaration as the vendor pipeline and carries both expiry and lot-size
 authority gates into every nested dataset. The root summary/config also
-surfaces source-file fingerprint
-coverage, minimum mapping coverage, and mapping-draft provenance, so operators
+surfaces source-file fingerprint coverage, exact local observation dates,
+unique-date coverage, minimum mapping coverage, and mapping-draft provenance, so operators
 can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
 ready. In application mode, the batch, broker-readiness, and wrapper
@@ -9701,6 +9712,7 @@ python -m hft_cli compare-data-readiness `
   --label 2026-06-11 `
   --out runs\data_readiness\india_nse_comparison `
   --min-datasets 2 `
+  --min-unique-observation-dates 2 `
   --min-ready-rate 1 `
   --require-market-calendar `
   --require-consistent-market-calendar `
@@ -9744,7 +9756,10 @@ rejected comparison remains distinguishable from altered or stale evidence.
 `data_readiness_comparison_action_queue.csv` maps failed multi-day checks to
 the next gate, such as `review-data-readiness` for failed dataset readiness or
 `pipeline-vendor-market-data-batch` for missing distinct source files,
-fingerprints, or mapping coverage. `data_readiness_comparison_config.json`
+fingerprints, exact local observation dates, or mapping coverage.
+`--min-unique-observation-dates` additionally requires date coverage for every
+dataset, rejects malformed non-canonical dates, and fails when multiple files
+reuse too few trading dates. `data_readiness_comparison_config.json`
 mirrors dataset rows, failed-check names, action counts, and
 `next_actions`/`ready_actions`/`blocked_actions` plus root-level
 `primary_action_status` and `primary_action` fields for schedulers.

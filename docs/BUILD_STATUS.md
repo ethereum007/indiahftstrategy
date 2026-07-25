@@ -7157,6 +7157,24 @@ surface regressions pass (`215` tests). Repository collection is healthy at
 `2624 tests` across `164` files. The full suite was not rerun because recent
 complete runs exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest distinct local trading-date proof gate: tick and option-chain
+diagnostics now retain the exact sorted `YYYY-MM-DD` dates derived in the
+selected market timezone, including per-expiry chain evidence. Data-readiness
+reports preserve the manifest-bound date union, and multi-run comparison
+normalizes it before reporting exact dates, unique-date count, dataset
+coverage, malformed-date count, and overlapping date memberships. The opt-in
+`--min-unique-observation-dates` threshold is available on direct comparison
+plus Arrow.money/iRage vendor batch, provider batch, and broker-vendor proof
+commands. When enabled it requires valid date evidence from every dataset and
+prevents multiple distinct files captured on one trading day from satisfying
+a multi-day proof. Same-day open/close windows remain valid and count as one
+date when the gate is not requested. Affected diagnostics, readiness,
+comparison, vendor, provider, broker-vendor, manifest/catalog, live-ingest,
+cutover, strategy, quote-risk, and scale-up regressions pass (`503` tests).
+Repository collection is healthy at `2631 tests` across `164` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All
+outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

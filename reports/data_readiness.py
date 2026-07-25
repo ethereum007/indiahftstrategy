@@ -746,6 +746,7 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "source_header_sha256": _text(row, "source_header_sha256"),
         "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
         "mapping_coverage": _number(row, "mapping_coverage"),
+        "observation_dates": _text(row, "observation_dates"),
         "market_calendar_provided": _to_bool(
             row.get("market_calendar_provided", False)
         ),
@@ -2369,6 +2370,12 @@ def _summary(
                 "expected_vendor_data_kind": _vendor_data_kind(thresholds.expected_vendor_data_kind),
                 "data_kinds": _joined_component_kinds(items),
                 "data_kind_count": _component_kind_count(items),
+                "observation_dates": _joined_component_observation_dates(
+                    items
+                ),
+                "unique_observation_dates": (
+                    _component_observation_date_count(items)
+                ),
                 "vendor_intake_kind": _component_text(items, "vendor_intake", "kind"),
                 "vendor_intake_kind_selection": _component_text(items, "vendor_intake", "kind_selection"),
                 "vendor_intake_selected_kind_ambiguous": _component_bool(
@@ -3098,6 +3105,34 @@ def _component_kind_count(items: pd.DataFrame) -> int:
     if not values:
         return 0
     return len(values.split(";"))
+
+
+def _joined_component_observation_dates(items: pd.DataFrame) -> str:
+    if (
+        items.empty
+        or "component" not in items.columns
+        or "observation_dates" not in items.columns
+    ):
+        return ""
+    dates: set[str] = set()
+    values = items.loc[
+        items["component"].isin(
+            ["tick_diagnostics", "chain_diagnostics"]
+        ),
+        "observation_dates",
+    ]
+    for value in values.tolist():
+        dates.update(
+            part.strip()
+            for part in str(value).split(";")
+            if part.strip()
+        )
+    return ";".join(sorted(dates))
+
+
+def _component_observation_date_count(items: pd.DataFrame) -> int:
+    value = _joined_component_observation_dates(items)
+    return len(value.split(";")) if value else 0
 
 
 def _overall_row(frame: pd.DataFrame) -> pd.Series:

@@ -248,6 +248,118 @@ def test_compare_data_readiness_can_require_unique_vendor_sources():
     )
 
 
+def test_compare_data_readiness_requires_distinct_local_observation_dates():
+    runs = readiness_runs()
+    runs["observation_dates"] = "2026-06-10"
+
+    blocked = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            min_unique_observation_dates=2,
+        ),
+    )
+
+    blocked_summary = blocked.summary.iloc[0]
+    failed = set(
+        blocked.checks.loc[
+            ~blocked.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not blocked.accepted
+    assert blocked_summary["observation_dates"] == "2026-06-10"
+    assert int(blocked_summary["unique_observation_dates"]) == 1
+    assert int(
+        blocked_summary["overlapping_observation_date_memberships"]
+    ) == 1
+    assert "unique_observation_dates" in failed
+    action = blocked.action_queue.set_index("check").loc[
+        "unique_observation_dates"
+    ]
+    assert action["next_gate"] == "pipeline-vendor-market-data-batch"
+    assert action["recommendation"] == "collect_additional_vendor_data_days"
+
+    runs.loc[1, "observation_dates"] = "2026-06-11"
+    accepted = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            min_unique_observation_dates=2,
+        ),
+    )
+
+    assert accepted.accepted
+    assert accepted.summary.loc[0, "observation_dates"] == (
+        "2026-06-10;2026-06-11"
+    )
+    assert int(accepted.summary.loc[0, "unique_observation_dates"]) == 2
+
+
+def test_compare_data_readiness_fails_closed_on_missing_or_invalid_dates():
+    runs = readiness_runs()
+    runs["observation_dates"] = ["2026-06-10", "not-a-date"]
+
+    report = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            min_unique_observation_dates=2,
+        ),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.accepted
+    assert report.summary.loc[0, "observation_date_coverage"] == 0.5
+    assert int(
+        report.summary.loc[0, "observation_date_parse_error_count"]
+    ) == 1
+    assert {
+        "observation_date_coverage",
+        "observation_date_parse_error_count",
+        "unique_observation_dates",
+    }.issubset(failed)
+
+
+def test_cli_comparison_requires_manifest_bound_observation_dates(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    write_readiness_dir(day1, source_hash="a" * 64)
+    write_readiness_dir(day2, source_hash="b" * 64)
+
+    code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(out_dir),
+            "--min-datasets",
+            "2",
+            "--min-unique-observation-dates",
+            "2",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(
+        out_dir / "data_readiness_comparison_checks.csv"
+    )
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert {
+        "observation_date_coverage",
+        "unique_observation_dates",
+    }.issubset(failed)
+
+
 def test_compare_data_readiness_can_require_source_fingerprint_coverage():
     runs = readiness_runs()
     runs.loc[0, "source_file_sha256"] = "a" * 64

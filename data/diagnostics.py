@@ -785,6 +785,7 @@ def _daily_observation_span_diagnostics(
     overall = _daily_observation_span_summary(overall_daily)
 
     summary_columns = [
+        "observation_dates",
         "observation_days",
         "min_daily_observation_span_ns",
         "median_daily_observation_span_ns",
@@ -800,6 +801,10 @@ def _daily_observation_span_diagnostics(
         by_group = (
             daily.groupby(group_column, dropna=False, sort=False)
             .agg(
+                observation_dates=(
+                    "observation_date",
+                    _joined_observation_dates,
+                ),
                 observation_days=("daily_observation_span_ns", "size"),
                 min_daily_observation_span_ns=(
                     "daily_observation_span_ns",
@@ -851,6 +856,7 @@ def _daily_observation_span_summary(
 ) -> dict[str, object]:
     if daily.empty:
         return {
+            "observation_dates": "",
             "observation_days": 0,
             "min_daily_observation_span_ns": 0,
             "median_daily_observation_span_ns": 0.0,
@@ -858,11 +864,26 @@ def _daily_observation_span_summary(
         }
     spans = daily["daily_observation_span_ns"]
     return {
+        "observation_dates": _joined_observation_dates(
+            daily["observation_date"]
+        ),
         "observation_days": int(len(daily)),
         "min_daily_observation_span_ns": int(spans.min()),
         "median_daily_observation_span_ns": float(spans.median()),
         "max_daily_observation_span_ns": int(spans.max()),
     }
+
+
+def _joined_observation_dates(values: pd.Series) -> str:
+    return ";".join(
+        sorted(
+            {
+                value.isoformat()
+                for value in values
+                if not pd.isna(value)
+            }
+        )
+    )
 
 
 def _bbo_staleness_diagnostics(

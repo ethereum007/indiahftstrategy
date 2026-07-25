@@ -571,6 +571,7 @@ def write_vendor_market_data_batch_pipeline(
                         fallback=0.0,
                     )
                 ),
+                "observation_dates": _text(row, "observation_dates"),
                 "observation_days": int(
                     _number(row, "observation_days", fallback=0.0)
                 ),
@@ -1188,6 +1189,10 @@ def _summary(
                         fallback=0.0,
                     )
                 ),
+                "observation_dates": _text(
+                    diagnostic_row,
+                    "observation_dates",
+                ),
                 "observation_days": int(
                     _number(
                         diagnostic_row,
@@ -1631,6 +1636,7 @@ def _pipeline_runbook_markdown(
         f"- Maximum unchanged BBO age (ns): {_value_text(summary_row.get('max_unchanged_bbo_ns')) or 'n/a'}",
         f"- Stale-BBO rows: {int(_number_from_value(summary_row.get('stale_bbo_rows', 0)))}",
         f"- Maximum observed BBO age (ns): {int(_number_from_value(summary_row.get('max_observed_bbo_age_ns', 0)))}",
+        f"- Local observation dates: {_value_text(summary_row.get('observation_dates'))}",
         f"- Local trading days observed: {int(_number_from_value(summary_row.get('observation_days', 0)))}",
         f"- Minimum daily observation span (ns): {int(_number_from_value(summary_row.get('min_daily_observation_span_ns', 0)))}",
         f"- Median daily observation span (ns): {_number_from_value(summary_row.get('median_daily_observation_span_ns', 0.0))}",
@@ -1723,6 +1729,10 @@ def _batch_runbook_markdown(
         f"- Maximum unchanged BBO age (ns): {_value_text(summary_row.get('max_unchanged_bbo_ns')) or 'n/a'}",
         f"- Stale-BBO rows: {int(_number_from_value(summary_row.get('stale_bbo_rows', 0)))}",
         f"- Maximum observed BBO age (ns): {int(_number_from_value(summary_row.get('max_observed_bbo_age_ns', 0)))}",
+        f"- Local observation dates: {_value_text(summary_row.get('observation_dates'))}",
+        f"- Unique local observation dates: {int(_number_from_value(summary_row.get('unique_observation_dates', 0)))}",
+        f"- Observation-date coverage: {_number_from_value(summary_row.get('observation_date_coverage', 0.0))}",
+        f"- Overlapping date memberships: {int(_number_from_value(summary_row.get('overlapping_observation_date_memberships', 0)))}",
         f"- Local trading days observed: {int(_number_from_value(summary_row.get('observation_days', 0)))}",
         f"- Minimum daily observation span (ns): {int(_number_from_value(summary_row.get('min_daily_observation_span_ns', 0)))}",
         f"- Median daily observation span (ns): {_number_from_value(summary_row.get('median_daily_observation_span_ns', 0.0))}",
@@ -2024,6 +2034,29 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "observation_dates": _text(
+                    comparison_row,
+                    "observation_dates",
+                ),
+                "unique_observation_dates": int(
+                    _number(
+                        comparison_row,
+                        "unique_observation_dates",
+                        fallback=0.0,
+                    )
+                ),
+                "observation_date_coverage": _number(
+                    comparison_row,
+                    "observation_date_coverage",
+                    fallback=0.0,
+                ),
+                "overlapping_observation_date_memberships": int(
+                    _number(
+                        comparison_row,
+                        "overlapping_observation_date_memberships",
+                        fallback=0.0,
+                    )
+                ),
                 "min_daily_observation_span_ns": (
                     int(
                         pd.to_numeric(
@@ -2285,6 +2318,7 @@ def _pipeline_config(
             "max_observed_bbo_age_ns": int(
                 _number(row, "max_observed_bbo_age_ns", fallback=0.0)
             ),
+            "observation_dates": _text(row, "observation_dates"),
             "observation_days": int(
                 _number(row, "observation_days", fallback=0.0)
             ),
@@ -2427,6 +2461,9 @@ def _batch_config(
                 _number_from_value(
                     item.get("max_observed_bbo_age_ns", 0)
                 )
+            ),
+            "observation_dates": str(
+                item.get("observation_dates", "")
             ),
             "observation_days": int(
                 _number_from_value(item.get("observation_days", 0))
@@ -2573,6 +2610,22 @@ def _batch_config(
         ),
         "observation_days": int(
             _number(row, "observation_days", fallback=0.0)
+        ),
+        "observation_dates": _text(row, "observation_dates"),
+        "unique_observation_dates": int(
+            _number(row, "unique_observation_dates", fallback=0.0)
+        ),
+        "observation_date_coverage": _number(
+            row,
+            "observation_date_coverage",
+            fallback=0.0,
+        ),
+        "overlapping_observation_date_memberships": int(
+            _number(
+                row,
+                "overlapping_observation_date_memberships",
+                fallback=0.0,
+            )
         ),
         "min_daily_observation_span_ns": int(
             _number(

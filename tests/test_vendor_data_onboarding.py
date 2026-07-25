@@ -1887,6 +1887,11 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert summary["price_grid_tick_size"] == pytest.approx(0.05)
     assert int(summary["off_tick_price_rows"]) == 0
     assert int(summary["observation_days"]) == 2
+    assert summary["observation_dates"] == (
+        "2026-06-10;2026-06-11"
+    )
+    assert int(summary["unique_observation_dates"]) == 2
+    assert summary["observation_date_coverage"] == 1.0
     assert int(summary["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(summary["max_daily_observation_span_ns"]) == 1_000_000_000
     assert summary["blocked_action_count"] == 0
@@ -2034,6 +2039,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
             "1000000000",
             "--min-datasets",
             "2",
+            "--min-unique-observation-dates",
+            "2",
             "--fail-on-blocked-actions",
             "--fail-on-actions",
         ]
@@ -2058,6 +2065,12 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert cli_config["data_readiness_thresholds"][
         "min_tick_daily_observation_span_ns"
     ] == 1_000_000_000
+    assert (
+        cli_config["comparison"]["thresholds"][
+            "min_unique_observation_dates"
+        ]
+        == 2
+    )
 
 
 def test_vendor_market_data_batch_uses_distinct_target_applications(tmp_path):

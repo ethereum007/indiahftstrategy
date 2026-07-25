@@ -497,6 +497,21 @@ def _summary(
                 "observation_days": _int(
                     vendor_row.get("observation_days", 0)
                 ),
+                "observation_dates": str(
+                    vendor_row.get("observation_dates", "")
+                ),
+                "unique_observation_dates": _int(
+                    vendor_row.get("unique_observation_dates", 0)
+                ),
+                "observation_date_coverage": _float(
+                    vendor_row.get("observation_date_coverage", 0.0)
+                ),
+                "overlapping_observation_date_memberships": _int(
+                    vendor_row.get(
+                        "overlapping_observation_date_memberships",
+                        0,
+                    )
+                ),
                 "min_daily_observation_span_ns": _int(
                     vendor_row.get(
                         "min_daily_observation_span_ns",
@@ -1207,6 +1222,10 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Maximum unchanged BBO age (ns): {_int(row.get('max_unchanged_bbo_ns', 0)) if _bool(row.get('bbo_staleness_validation_enabled', False)) else 'n/a'}",
         f"- Stale-BBO rows: {_int(row.get('stale_bbo_rows', 0))}",
         f"- Maximum observed BBO age (ns): {_int(row.get('max_observed_bbo_age_ns', 0))}",
+        f"- Local observation dates: {str(row.get('observation_dates', ''))}",
+        f"- Unique local observation dates: {_int(row.get('unique_observation_dates', 0))}",
+        f"- Observation-date coverage: {_float(row.get('observation_date_coverage', 0.0))}",
+        f"- Overlapping date memberships: {_int(row.get('overlapping_observation_date_memberships', 0))}",
         f"- Local trading days observed: {_int(row.get('observation_days', 0))}",
         f"- Minimum daily observation span (ns): {_int(row.get('min_daily_observation_span_ns', 0))}",
         f"- Median daily observation span (ns): {_float(row.get('median_daily_observation_span_ns', 0.0))}",
@@ -1401,6 +1420,21 @@ def _config(
             ),
             "observation_days": _int(
                 row.get("observation_days", 0)
+            ),
+            "observation_dates": str(
+                row.get("observation_dates", "")
+            ),
+            "unique_observation_dates": _int(
+                row.get("unique_observation_dates", 0)
+            ),
+            "observation_date_coverage": _float(
+                row.get("observation_date_coverage", 0.0)
+            ),
+            "overlapping_observation_date_memberships": _int(
+                row.get(
+                    "overlapping_observation_date_memberships",
+                    0,
+                )
             ),
             "min_daily_observation_span_ns": _int(
                 row.get("min_daily_observation_span_ns", 0)

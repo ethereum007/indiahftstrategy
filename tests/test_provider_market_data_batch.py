@@ -77,6 +77,7 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             pipeline_min_rows=2,
             tick_size=0.05,
             max_median_spread_ticks=2,
+            min_unique_observation_dates=2,
         ),
     )
 
@@ -88,6 +89,11 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
     assert summary["dataset_count"] == 2
     assert summary["ready_datasets"] == 2
     assert summary["unique_source_files"] == 2
+    assert summary["observation_dates"] == (
+        "2026-06-10;2026-06-11"
+    )
+    assert int(summary["unique_observation_dates"]) == 2
+    assert summary["observation_date_coverage"] == 1.0
     assert summary["source_file_fingerprint_coverage"] == 1.0
     assert summary["comparison_accepted"]
     assert summary["blocked_action_count"] == 0
@@ -152,6 +158,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "0",
             "--max-median-spread-ticks",
             "2",
+            "--min-unique-observation-dates",
+            "2",
             "--fail-on-breach",
             "--fail-on-blocked-actions",
             "--fail-on-actions",
@@ -181,7 +189,61 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
         cli_config["parameters"]["min_daily_observation_span_ns"]
         == 1_000_000_000
     )
+    assert (
+        cli_config["parameters"]["min_unique_observation_dates"]
+        == 2
+    )
+    assert (
+        cli_config["comparison"]["thresholds"][
+            "min_unique_observation_dates"
+        ]
+        == 2
+    )
     assert all(bool(row["ready"]) for row in cli_config["datasets"])
+
+
+def test_provider_market_data_batch_blocks_same_day_capture_reuse(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    first = _write_capture(
+        tmp_path / "arrow_capture_open.csv",
+        "2026-06-10",
+        base=100.0,
+    )
+    second = _write_capture(
+        tmp_path / "arrow_capture_close.csv",
+        "2026-06-10",
+        base=101.0,
+    )
+
+    report = write_provider_market_data_batch_pipeline(
+        client_packet,
+        [first, second],
+        output_dir=tmp_path / "same_day_batch",
+        labels=["open", "close"],
+        config=ProviderMarketDataBatchConfig(
+            min_capture_rows=2,
+            pipeline_min_rows=2,
+            tick_size=0.05,
+            min_unique_observation_dates=2,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert summary["observation_dates"] == "2026-06-10"
+    assert int(summary["unique_observation_dates"]) == 1
+    assert int(summary["overlapping_observation_date_memberships"]) == 1
+    assert report.comparison is not None
+    failed = set(
+        report.comparison.checks.loc[
+            ~report.comparison.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert "unique_observation_dates" in failed
+    assert "unique_observation_dates" in set(
+        report.action_queue["check"]
+    )
 
 
 def test_cli_provider_market_data_batch_carries_chain_strike_grid(tmp_path):

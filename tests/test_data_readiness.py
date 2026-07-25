@@ -28,6 +28,7 @@ def tick_summary(**overrides):
         "rows": 100,
         "start_ts": 1_000,
         "end_ts": 2_000,
+        "observation_dates": "2026-06-10;2026-06-11",
         "observation_days": 2,
         "min_daily_observation_span_ns": 3_600_000_000_000,
         "median_daily_observation_span_ns": 3_900_000_000_000.0,
@@ -65,6 +66,7 @@ def chain_summary(**overrides):
         "expiry_snapshots": 20,
         "min_snapshots_per_expiry": 10,
         "min_snapshot_strikes": 10,
+        "observation_dates": "2026-06-11;2026-06-12",
         "observation_days": 2,
         "min_daily_observation_span_ns": 7_200_000_000_000,
         "median_daily_observation_span_ns": 7_500_000_000_000.0,
@@ -299,8 +301,29 @@ def test_data_readiness_accepts_clean_tick_diagnostics():
     report = evaluate_data_readiness(tick_diagnostic_summary=tick_summary())
 
     assert report.ready
-    assert report.summary.iloc[0]["recommendation"] == "feed_strategy_research"
+    summary = report.summary.iloc[0]
+    assert summary["recommendation"] == "feed_strategy_research"
+    assert summary["observation_dates"] == "2026-06-10;2026-06-11"
+    assert int(summary["unique_observation_dates"]) == 2
     assert set(report.checks["passed"]) == {True}
+
+
+def test_data_readiness_unions_tick_and_chain_observation_dates():
+    report = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(),
+        chain_diagnostic_summary=chain_summary(),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=True,
+            require_chain_diagnostics=True,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert summary["observation_dates"] == (
+        "2026-06-10;2026-06-11;2026-06-12"
+    )
+    assert int(summary["unique_observation_dates"]) == 3
 
 
 def test_data_readiness_requires_and_binds_market_calendar_evidence():

@@ -367,17 +367,27 @@ def test_tick_and_chain_diagnostics_report_daily_observation_spans():
     ].iloc[0]
 
     assert int(tick_summary["observation_days"]) == 2
+    assert tick_summary["observation_dates"] == (
+        "2026-06-10;2026-06-11"
+    )
     assert int(tick_summary["min_daily_observation_span_ns"]) == 2_000_000_000
     assert int(tick_summary["median_daily_observation_span_ns"]) == 3_000_000_000
     assert int(tick_summary["max_daily_observation_span_ns"]) == 4_000_000_000
     assert int(chain_overall["observation_days"]) == 2
+    assert chain_overall["observation_dates"] == (
+        "2026-06-10;2026-06-11"
+    )
     assert int(chain_overall["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(chain_overall["median_daily_observation_span_ns"]) == 3_000_000_000
     assert int(chain_overall["max_daily_observation_span_ns"]) == 5_000_000_000
     assert int(june_expiry["observation_days"]) == 2
+    assert june_expiry["observation_dates"] == (
+        "2026-06-10;2026-06-11"
+    )
     assert int(june_expiry["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(june_expiry["max_daily_observation_span_ns"]) == 5_000_000_000
     assert int(july_expiry["observation_days"]) == 1
+    assert july_expiry["observation_dates"] == "2026-06-10"
     assert int(july_expiry["min_daily_observation_span_ns"]) == 3_000_000_000
 
 

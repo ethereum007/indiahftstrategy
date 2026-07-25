@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, fields
+from datetime import date
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,7 @@ class DataReadinessComparisonThresholds:
     min_ready_rate: float = 1.0
     max_total_failed_checks: int = 0
     min_unique_source_files: int | None = None
+    min_unique_observation_dates: int | None = None
     min_source_file_fingerprint_coverage: float | None = None
     min_mapping_coverage: float | None = None
     require_market_calendar: bool = False
@@ -410,6 +412,20 @@ def compare_data_readiness(
         if column not in runs.columns:
             runs[column] = ""
         runs[column] = runs[column].fillna("").astype(str).str.strip()
+    if "observation_dates" not in runs.columns:
+        runs["observation_dates"] = ""
+    normalized_observation_dates = runs["observation_dates"].map(
+        _normalize_observation_dates
+    )
+    runs["observation_dates"] = normalized_observation_dates.map(
+        lambda value: value[0]
+    )
+    runs["observation_date_count"] = normalized_observation_dates.map(
+        lambda value: value[1]
+    )
+    runs["observation_date_parse_error_count"] = (
+        normalized_observation_dates.map(lambda value: value[2])
+    )
     if "mapping_coverage" not in runs.columns:
         runs["mapping_coverage"] = np.nan
     runs["mapping_coverage"] = pd.to_numeric(runs["mapping_coverage"], errors="coerce")
@@ -1006,6 +1022,7 @@ def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] 
                     "vendor_intake_mapping_coverage",
                     fallback=_number(row, "mapping_coverage"),
                 ),
+                "observation_dates": _text(row, "observation_dates"),
                 "market_calendar_id": _text(row, "market_calendar_id"),
                 "market_calendar_sha256": _text(
                     row,
@@ -1062,6 +1079,21 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
     dataset_count = int(len(runs))
     ready_datasets = int(runs["ready"].sum()) if dataset_count else 0
     failed_datasets = dataset_count - ready_datasets
+    observation_dates = _joined_observation_dates(runs)
+    unique_observation_dates = (
+        len(observation_dates.split(";")) if observation_dates else 0
+    )
+    observation_date_memberships = int(
+        pd.to_numeric(
+            runs.get(
+                "observation_date_count",
+                pd.Series(dtype=float),
+            ),
+            errors="coerce",
+        )
+        .fillna(0)
+        .sum()
+    )
     lineage_required = bool(
         runs["data_readiness_manifest_required"].any()
         if "data_readiness_manifest_required" in runs.columns
@@ -1133,6 +1165,28 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_failed_checks": int(pd.to_numeric(runs["failed_checks"], errors="coerce").sum(skipna=True)),
                 "unique_source_files": _unique_text_count(runs, "source_file_sha256"),
                 "source_file_fingerprint_coverage": _text_coverage(runs, "source_file_sha256"),
+                "observation_dates": observation_dates,
+                "unique_observation_dates": unique_observation_dates,
+                "observation_date_coverage": _positive_number_coverage(
+                    runs,
+                    "observation_date_count",
+                ),
+                "observation_date_parse_error_count": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "observation_date_parse_error_count",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    )
+                    .fillna(0)
+                    .sum()
+                ),
+                "overlapping_observation_date_memberships": max(
+                    observation_date_memberships
+                    - unique_observation_dates,
+                    0,
+                ),
                 "unique_header_fingerprints": _unique_text_count(runs, "source_header_sha256"),
                 "unique_mapping_drafts": _unique_text_count(runs, "mapping_draft_sha256"),
                 "min_mapping_coverage": _min_number(runs, "mapping_coverage"),
@@ -1208,6 +1262,29 @@ def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd
                 ">=",
                 thresholds.min_unique_source_files,
             )
+        )
+    if thresholds.min_unique_observation_dates is not None:
+        checks.extend(
+            [
+                _threshold_check(
+                    "observation_date_coverage",
+                    row["observation_date_coverage"],
+                    ">=",
+                    1.0,
+                ),
+                _threshold_check(
+                    "observation_date_parse_error_count",
+                    row["observation_date_parse_error_count"],
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "unique_observation_dates",
+                    row["unique_observation_dates"],
+                    ">=",
+                    thresholds.min_unique_observation_dates,
+                ),
+            ]
         )
     if thresholds.min_source_file_fingerprint_coverage is not None:
         checks.append(
@@ -1464,6 +1541,9 @@ def _next_gate_for_check(check_name: str) -> str:
     if check_name in {
         "dataset_count",
         "unique_source_files",
+        "observation_date_coverage",
+        "observation_date_parse_error_count",
+        "unique_observation_dates",
         "source_file_fingerprint_coverage",
         "min_mapping_coverage",
     }:
@@ -1506,6 +1586,12 @@ def _action_recommendation(check_name: str) -> str:
         return "fix_failed_data_readiness_runs"
     if check_name == "unique_source_files":
         return "rerun_batch_with_distinct_raw_source_files"
+    if check_name == "observation_date_coverage":
+        return "regenerate_readiness_with_local_observation_dates"
+    if check_name == "observation_date_parse_error_count":
+        return "regenerate_canonical_local_observation_dates"
+    if check_name == "unique_observation_dates":
+        return "collect_additional_vendor_data_days"
     if check_name == "source_file_fingerprint_coverage":
         return "rerun_batch_with_source_file_fingerprints"
     if check_name == "min_mapping_coverage":
@@ -1543,6 +1629,10 @@ def _runbook_markdown(
         f"- Semantic readiness-report coverage: {_format_number(summary_row.get('data_readiness_report_verification_coverage'))}",
         f"- Semantic readiness-report errors: {_value_text(summary_row.get('data_readiness_report_verification_errors'))}",
         f"- Bound readiness dependencies: {int(_value_number(summary_row.get('data_readiness_dependency_count')))}",
+        f"- Local observation dates: {_value_text(summary_row.get('observation_dates'))}",
+        f"- Unique local observation dates: {int(_value_number(summary_row.get('unique_observation_dates')))}",
+        f"- Observation-date coverage: {_format_number(summary_row.get('observation_date_coverage'))}",
+        f"- Overlapping date memberships: {int(_value_number(summary_row.get('overlapping_observation_date_memberships')))}",
         f"- Market-calendar coverage: {_format_number(summary_row.get('market_calendar_coverage'))}",
         f"- Market-calendar IDs: {_value_text(summary_row.get('market_calendar_ids'))}",
         f"- Market-calendar fingerprints: {_value_text(summary_row.get('market_calendar_fingerprints'))}",
@@ -1596,6 +1686,7 @@ def _dataset_table(dataset_runs: pd.DataFrame) -> str:
             "Semantically verified",
             "Manifest error",
             "Failed checks",
+            "Observation dates",
             "Source hash",
             "Calendar ID",
             "Calendar hash",
@@ -1615,6 +1706,7 @@ def _dataset_table(dataset_runs: pd.DataFrame) -> str:
                 else "no",
                 _value_text(row.get("data_readiness_manifest_error")),
                 str(int(_value_number(row.get("failed_checks")))),
+                _value_text(row.get("observation_dates")),
                 _value_text(row.get("source_file_sha256")),
                 _value_text(row.get("market_calendar_id")),
                 _value_text(row.get("market_calendar_sha256")),
@@ -1701,6 +1793,11 @@ def _validate_thresholds(thresholds: DataReadinessComparisonThresholds) -> None:
         raise ValueError("max_total_failed_checks must be non-negative")
     if thresholds.min_unique_source_files is not None and thresholds.min_unique_source_files <= 0:
         raise ValueError("min_unique_source_files must be positive")
+    if (
+        thresholds.min_unique_observation_dates is not None
+        and thresholds.min_unique_observation_dates <= 0
+    ):
+        raise ValueError("min_unique_observation_dates must be positive")
     if (
         thresholds.min_source_file_fingerprint_coverage is not None
         and not 0 <= thresholds.min_source_file_fingerprint_coverage <= 1
@@ -1802,6 +1899,53 @@ def _text_coverage(frame: pd.DataFrame, column: str) -> float:
         return 0.0
     values = frame[column].fillna("").astype(str).str.strip()
     return float((values != "").sum() / len(values)) if len(values) else 0.0
+
+
+def _positive_number_coverage(
+    frame: pd.DataFrame,
+    column: str,
+) -> float:
+    if frame.empty or column not in frame.columns:
+        return 0.0
+    values = pd.to_numeric(frame[column], errors="coerce").fillna(0)
+    return float(values.gt(0).mean())
+
+
+def _normalize_observation_dates(value: object) -> tuple[str, int, int]:
+    if value is None:
+        return "", 0, 0
+    try:
+        if pd.isna(value):
+            return "", 0, 0
+    except (TypeError, ValueError):
+        pass
+    dates: set[str] = set()
+    parse_errors = 0
+    for raw_part in str(value).split(";"):
+        part = raw_part.strip()
+        if not part:
+            continue
+        try:
+            parsed = date.fromisoformat(part)
+        except ValueError:
+            parse_errors += 1
+            continue
+        if parsed.isoformat() != part:
+            parse_errors += 1
+            continue
+        dates.add(part)
+    normalized = ";".join(sorted(dates))
+    return normalized, len(dates), parse_errors
+
+
+def _joined_observation_dates(frame: pd.DataFrame) -> str:
+    if frame.empty or "observation_dates" not in frame.columns:
+        return ""
+    dates: set[str] = set()
+    for value in frame["observation_dates"].tolist():
+        normalized, _, _ = _normalize_observation_dates(value)
+        dates.update(normalized.split(";") if normalized else [])
+    return ";".join(sorted(dates))
 
 
 def _market_calendar_coverage(frame: pd.DataFrame) -> float:

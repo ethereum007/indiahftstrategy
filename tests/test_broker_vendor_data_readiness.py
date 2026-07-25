@@ -772,6 +772,8 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
             "0",
             "--min-daily-observation-span-ns",
             "1000000000",
+            "--min-unique-observation-dates",
+            "1",
             "--strike-step",
             "50",
             "--max-off-grid-strike-rows",
@@ -806,6 +808,8 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
     assert int(summary.loc[0, "max_unchanged_bbo_ns"]) == 5_000_000_000
     assert int(summary.loc[0, "stale_bbo_rows"]) == 0
     assert int(summary.loc[0, "observation_days"]) == 1
+    assert summary.loc[0, "observation_dates"] == "2026-06-10"
+    assert int(summary.loc[0, "unique_observation_dates"]) == 1
     assert (
         int(summary.loc[0, "min_daily_observation_span_ns"])
         == 1_000_000_000
@@ -840,6 +844,12 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
         == 5_000_000_000
     )
     assert manifest["parameters"]["config"]["max_stale_bbo_rows"] == 0
+    assert (
+        manifest["parameters"]["comparison_thresholds"][
+            "min_unique_observation_dates"
+        ]
+        == 1
+    )
     assert (
         manifest["parameters"]["config"][
             "min_daily_observation_span_ns"
