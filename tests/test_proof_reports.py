@@ -44,6 +44,11 @@ def write_run(
                 "order_to_trade_ratio": otr,
                 "otr_limit": 50.0,
                 "otr_breached": otr_breached,
+                "pending_order_risk_reservation_enabled": True,
+                "aggressive_self_cross_prevention_enabled": True,
+                "pretrade_rejections": 0,
+                "position_risk_rejections": 0,
+                "self_cross_rejections": 0,
                 "turnover": turnover,
                 "maker_share": maker_share,
                 "portfolio_delta": 0.0,
@@ -101,6 +106,13 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     assert report.metrics.iloc[0]["max_drawdown"] == 15.0
     assert report.metrics.iloc[0]["worst_regime_equity_change"] == 50.0
     assert report.metrics.iloc[0]["markout_mean"] == 4.0
+    assert bool(
+        report.metrics.iloc[0]["pending_order_risk_reservation_enabled"]
+    )
+    assert bool(
+        report.metrics.iloc[0]["aggressive_self_cross_prevention_enabled"]
+    )
+    assert int(report.metrics.iloc[0]["pretrade_rejections"]) == 0
     assert report.checks["passed"].all()
 
 

@@ -205,6 +205,9 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "worst_drawdown",
                 "total_signals",
                 "median_fill_rate",
+                "total_pretrade_rejections",
+                "total_position_risk_rejections",
+                "total_self_cross_rejections",
             ]
         )
     best = runs.sort_values(["robust_score", "net_pnl"], ascending=False).iloc[0]
@@ -223,6 +226,15 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "median_fill_rate": float(runs["fills"].median() / runs["orders_sent"].replace(0, pd.NA).median())
                 if runs["orders_sent"].replace(0, pd.NA).notna().any()
                 else 0.0,
+                "total_pretrade_rejections": int(
+                    runs["pretrade_rejections"].sum()
+                ),
+                "total_position_risk_rejections": int(
+                    runs["position_risk_rejections"].sum()
+                ),
+                "total_self_cross_rejections": int(
+                    runs["self_cross_rejections"].sum()
+                ),
             }
         ]
     )

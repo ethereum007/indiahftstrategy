@@ -122,6 +122,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert set(replay.signals["action"]) == {"entry", "exit_decay"}
     assert not replay.markouts.empty
     assert (out_dir / "fills.csv").exists()
+    assert (out_dir / "order_rejections.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "signals.csv").exists()
@@ -133,6 +134,53 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "fills_by_regime.csv").exists()
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    summary = replay.summary.iloc[0]
+    assert bool(summary["pending_order_risk_reservation_enabled"])
+    assert bool(summary["aggressive_self_cross_prevention_enabled"])
+    assert int(summary["pretrade_rejections"]) == 0
+    assert int(summary["position_risk_rejections"]) == 0
+    assert int(summary["self_cross_rejections"]) == 0
+
+
+def test_imbalance_replay_audits_inflight_position_rejections(tmp_path):
+    ticks_path = tmp_path / "ticks.csv"
+    out_dir = tmp_path / "imbalance_replay"
+    start = ns_ist("2026-06-10 09:15:00")
+    pd.DataFrame(
+        [
+            {
+                "ts": start + offset,
+                "bid": 100.00,
+                "ask": 100.05,
+                "bid_qty": 900,
+                "ask_qty": 100,
+            }
+            for offset in (0, 100_000, 200_000, 600_000)
+        ]
+    ).to_csv(ticks_path, index=False)
+
+    replay = run_imbalance_replay(
+        ticks_path=ticks_path,
+        output_dir=out_dir,
+        tick_size=0.05,
+        qty=75,
+        entry_imbalance=0.6,
+        min_microprice_edge_ticks=0.25,
+        order_latency_us=500.0,
+        max_position_lots=1,
+    )
+
+    rejections = pd.read_csv(out_dir / "order_rejections.csv")
+    summary = replay.summary.iloc[0]
+    assert int(summary["pretrade_rejections"]) == 2
+    assert int(summary["position_risk_rejections"]) == 2
+    assert int(summary["self_cross_rejections"]) == 0
+    assert rejections["reason"].tolist() == [
+        "instrument_position_limit",
+        "instrument_position_limit",
+    ]
+    assert rejections["projected_max"].tolist() == [150.0, 150.0]
+    assert rejections["limit"].tolist() == [75.0, 75.0]
 
 
 def test_cli_imbalance_replay_writes_summary(tmp_path):

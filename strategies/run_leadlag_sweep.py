@@ -183,6 +183,9 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "median_net_pnl",
                 "min_net_pnl",
                 "worst_drawdown",
+                "total_pretrade_rejections",
+                "total_position_risk_rejections",
+                "total_self_cross_rejections",
             ]
         )
     best = runs.sort_values(["robust_score", "net_pnl"], ascending=False).iloc[0]
@@ -197,6 +200,15 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "median_net_pnl": float(runs["net_pnl"].median()),
                 "min_net_pnl": float(runs["net_pnl"].min()),
                 "worst_drawdown": float(runs["max_drawdown"].max(skipna=True)),
+                "total_pretrade_rejections": int(
+                    runs["pretrade_rejections"].sum()
+                ),
+                "total_position_risk_rejections": int(
+                    runs["position_risk_rejections"].sum()
+                ),
+                "total_self_cross_rejections": int(
+                    runs["self_cross_rejections"].sum()
+                ),
             }
         ]
     )

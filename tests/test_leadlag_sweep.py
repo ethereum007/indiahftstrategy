@@ -70,6 +70,11 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert result.summary.iloc[0]["scenario_count"] == 2
     assert result.summary.iloc[0]["passed_scenarios"] == 1
     assert result.summary.iloc[0]["pass_rate"] == 0.5
+    assert int(result.summary.iloc[0]["total_pretrade_rejections"]) == 0
+    assert int(result.summary.iloc[0]["total_position_risk_rejections"]) == 0
+    assert int(result.summary.iloc[0]["total_self_cross_rejections"]) == 0
+    assert result.runs["pending_order_risk_reservation_enabled"].all()
+    assert result.runs["aggressive_self_cross_prevention_enabled"].all()
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "sweep_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()

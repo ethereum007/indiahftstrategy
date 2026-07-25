@@ -79,6 +79,31 @@ class BuyAndHold(Strategy):
         pass
 
 
+class SendBurst(Strategy):
+    def __init__(self, orders):
+        self.orders = orders
+        self.oids = []
+        self.sent = False
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, tick):
+        if self.sent:
+            return
+        self.oids = [
+            engine.send(side, qty, price, order_type)
+            for side, qty, price, order_type in self.orders
+        ]
+        self.sent = True
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
 def inst(kind=Kind.OPT):
     return Instrument("NIFTY-TEST", kind, lot_size=75, tick=0.05)
 
@@ -262,6 +287,83 @@ def test_terminal_flatten_happens_at_touch_with_taker_costs_and_final_equity():
     assert eng.position == 0
     assert res.equity.iloc[-1]["equity"] == eng.cash
     assert math.isclose(eng.cash, (100.20 - 100.25) * 75)
+
+
+def test_open_order_quantity_is_reserved_against_position_limit():
+    df = ticks([(0, 100.00, 100.05, 75, 75, np.nan, 0)])
+    strategy = SendBurst(
+        [
+            (+1, 75, 100.00, OrderType.LIMIT),
+            (+1, 75, 100.00, OrderType.LIMIT),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        max_position_lots=1,
+    )
+
+    result = eng.run()
+
+    assert strategy.oids == [1, None]
+    assert eng.orders_sent == 1
+    assert result.order_rejections["reason"].tolist() == [
+        "instrument_position_limit"
+    ]
+    rejection = result.order_rejections.iloc[0]
+    assert rejection["projected_min"] == 0
+    assert rejection["projected_max"] == 150
+    assert rejection["limit"] == 75
+
+
+def test_crossing_own_resting_order_is_rejected_and_audited():
+    df = ticks([(0, 100.00, 100.05, 75, 75, np.nan, 0)])
+    strategy = SendBurst(
+        [
+            (-1, 75, 100.05, OrderType.LIMIT),
+            (+1, 75, 100.05, OrderType.LIMIT),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    assert strategy.oids == [1, None]
+    rejection = result.order_rejections.iloc[0]
+    assert rejection["reason"] == "aggressive_self_cross"
+    assert rejection["conflicting_oid"] == 1
+
+
+def test_self_cross_prevention_can_be_disabled_explicitly():
+    df = ticks([(0, 100.00, 100.05, 75, 75, np.nan, 0)])
+    strategy = SendBurst(
+        [
+            (-1, 75, 100.05, OrderType.LIMIT),
+            (+1, 75, 100.05, OrderType.LIMIT),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        ban_aggressive_self_cross=False,
+    )
+
+    result = eng.run()
+
+    assert strategy.oids == [1, 2]
+    assert result.order_rejections.empty
 
 
 def test_determinism_same_seed_gives_identical_equity_curve():

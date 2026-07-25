@@ -74,6 +74,40 @@ class RiskProbeStrategy(MultiInstrumentStrategy):
         pass
 
 
+class BurstRiskStrategy(MultiInstrumentStrategy):
+    def __init__(self, orders_by_instrument):
+        self.orders_by_instrument = orders_by_instrument
+        self.oids = []
+        self.sent_instruments = set()
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, instrument_id, tick):
+        if instrument_id in self.sent_instruments:
+            return
+        for side, qty, price, order_type in self.orders_by_instrument.get(
+            instrument_id,
+            [],
+        ):
+            self.oids.append(
+                engine.send(
+                    instrument_id,
+                    side,
+                    qty,
+                    price,
+                    order_type,
+                )
+            )
+        self.sent_instruments.add(instrument_id)
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
 def frame(rows):
     return pd.DataFrame(
         rows,
@@ -216,3 +250,109 @@ def test_instrument_and_portfolio_risk_limits_reject_orders():
 
     assert too_much_delta.oid is None
     assert engine.orders_sent == 0
+
+
+def test_pending_orders_are_reserved_against_instrument_position_limit():
+    strategy = BurstRiskStrategy(
+        {
+            "A": [
+                (+1, 75, 100.00, OrderType.LIMIT),
+                (+1, 75, 100.00, OrderType.LIMIT),
+            ]
+        }
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+                max_position_lots=1,
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert strategy.oids == [1, None]
+    assert engine.orders_sent == 1
+    rejection = result.order_rejections.iloc[0]
+    assert rejection["reason"] == "instrument_position_limit"
+    assert rejection["projected_min"] == 0
+    assert rejection["projected_max"] == 150
+    assert rejection["limit"] == 75
+
+
+def test_pending_orders_are_reserved_against_portfolio_delta_limit():
+    strategy = BurstRiskStrategy(
+        {
+            "A": [(+1, 75, 100.00, OrderType.LIMIT)],
+            "B": [(+1, 75, 200.00, OrderType.LIMIT)],
+        }
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+                max_position_lots=10,
+                delta_per_unit=1.0,
+            ),
+            "B": InstrumentConfig(
+                option_inst("B"),
+                "NSE",
+                frame([(0, 200.00, 200.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+                max_position_lots=10,
+                delta_per_unit=1.0,
+            ),
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+        portfolio_limits=PortfolioLimits(max_abs_delta=100.0),
+    )
+
+    result = engine.run()
+
+    assert strategy.oids == [1, None]
+    rejection = result.order_rejections.iloc[0]
+    assert rejection["instrument_id"] == "B"
+    assert rejection["reason"] == "portfolio_delta_limit"
+    assert rejection["projected_min"] == 0
+    assert rejection["projected_max"] == 150
+    assert rejection["limit"] == 100
+
+
+def test_multi_engine_rejects_crossing_own_resting_order():
+    strategy = BurstRiskStrategy(
+        {
+            "A": [
+                (-1, 75, 100.05, OrderType.LIMIT),
+                (+1, 75, 100.05, OrderType.LIMIT),
+            ]
+        }
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert strategy.oids == [1, None]
+    rejection = result.order_rejections.iloc[0]
+    assert rejection["reason"] == "aggressive_self_cross"
+    assert rejection["conflicting_oid"] == 1

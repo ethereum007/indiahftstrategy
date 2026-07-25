@@ -66,6 +66,10 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert weak["pass_rate"] == 0.5
     assert not bool(weak["selection_passed"])
     assert comparison.summary.iloc[0]["selectable_scenarios"] == 1
+    assert int(best["total_pretrade_rejections"]) == 0
+    assert int(best["total_position_risk_rejections"]) == 0
+    assert int(best["total_self_cross_rejections"]) == 0
+    assert int(comparison.summary.iloc[0]["total_pretrade_rejections"]) == 0
 
 
 def test_write_sweep_comparison_outputs_selection_artifacts(tmp_path):

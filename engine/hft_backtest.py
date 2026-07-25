@@ -189,6 +189,36 @@ class Fill:
     maker: bool
 
 
+@dataclass
+class OrderRejection:
+    ts_ns: int
+    instrument_id: str
+    side: int
+    qty: int
+    price: float
+    order_type: str
+    reason: str
+    projected_min: float
+    projected_max: float
+    limit: float
+    conflicting_oid: int | None = None
+
+
+ORDER_REJECTION_COLUMNS = [
+    "ts_ns",
+    "instrument_id",
+    "side",
+    "qty",
+    "price",
+    "order_type",
+    "reason",
+    "projected_min",
+    "projected_max",
+    "limit",
+    "conflicting_oid",
+]
+
+
 # ----------------------------------------------------------------------------
 # Strategy interface
 # ----------------------------------------------------------------------------
@@ -211,7 +241,8 @@ class BacktestEngine:
                  latency: LatencyModel = None, costs: IndianCostModel = None,
                  max_position_lots: int = 20,
                  queue_conservatism: float = 1.5,
-                 ban_aggressive_self_cross: bool = True):
+                 ban_aggressive_self_cross: bool = True,
+                 reserve_open_order_risk: bool = True):
         self.df = self._prep(df)
         self.inst = inst
         self.strategy = strategy
@@ -219,10 +250,13 @@ class BacktestEngine:
         self.costs = costs or IndianCostModel.nse_index_options()
         self.max_pos = max_position_lots * inst.lot_size
         self.qcons = queue_conservatism  # >1 = assume more queue ahead of us
+        self.reserve_open_order_risk = reserve_open_order_risk
+        self.ban_aggressive_self_cross = ban_aggressive_self_cross
 
         self._oid = 0
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[Fill] = []
+        self.order_rejections: List[OrderRejection] = []
         self.position = 0
         self.cash = 0.0
         self.total_costs = 0.0
@@ -245,16 +279,54 @@ class BacktestEngine:
     # -- order API (called by strategy) --------------------------------------
     def send(self, side: int, qty: int, price: float,
              otype: OrderType = OrderType.LIMIT) -> Optional[int]:
-        # position guard
-        if side * qty + self.position > self.max_pos or \
-           side * qty + self.position < -self.max_pos:
-            return None
+        if side not in (-1, 1):
+            raise ValueError("side must be +1 buy or -1 sell")
+        if qty <= 0:
+            raise ValueError("qty must be positive")
+
         price = round(round(price / self.inst.tick) * self.inst.tick, 10)
+        now = int(self._tick["ts"])
+        projected_min, projected_max = self._position_envelope(side, qty)
+        if projected_min < -self.max_pos or projected_max > self.max_pos:
+            self._reject(
+                ts_ns=now,
+                side=side,
+                qty=qty,
+                price=price,
+                otype=otype,
+                reason="instrument_position_limit",
+                projected_min=projected_min,
+                projected_max=projected_max,
+                limit=self.max_pos,
+            )
+            return None
+
+        active_ns = now + self.latency.order_delay_ns()
+        conflict = self._self_cross_conflict(
+            side=side,
+            price=price,
+            otype=otype,
+            active_ns=active_ns,
+        )
+        if conflict is not None:
+            self._reject(
+                ts_ns=now,
+                side=side,
+                qty=qty,
+                price=price,
+                otype=otype,
+                reason="aggressive_self_cross",
+                projected_min=projected_min,
+                projected_max=projected_max,
+                limit=float("nan"),
+                conflicting_oid=conflict.oid,
+            )
+            return None
+
         self._oid += 1
-        now = self._tick["ts"]
         o = Order(self._oid, side, qty, price, otype,
                   ts_sent_ns=now,
-                  ts_active_ns=now + self.latency.order_delay_ns())
+                  ts_active_ns=active_ns)
         # queue estimate: displayed qty at our level when we arrive (we use the
         # current tick as proxy; conservative multiplier compensates)
         if otype == OrderType.LIMIT:
@@ -267,6 +339,93 @@ class BacktestEngine:
         self.open_orders[o.oid] = o
         self.orders_sent += 1
         return o.oid
+
+    def _position_envelope(self, side: int, qty: int) -> tuple[int, int]:
+        if not self.reserve_open_order_risk:
+            proposed = self.position + side * qty
+            return proposed, proposed
+
+        pending_buys = 0
+        pending_sells = 0
+        for order in self.open_orders.values():
+            if not order.alive:
+                continue
+            remaining = max(int(order.qty) - int(order.filled), 0)
+            if order.side > 0:
+                pending_buys += remaining
+            else:
+                pending_sells += remaining
+        if side > 0:
+            pending_buys += qty
+        else:
+            pending_sells += qty
+        return self.position - pending_sells, self.position + pending_buys
+
+    def _self_cross_conflict(
+        self,
+        *,
+        side: int,
+        price: float,
+        otype: OrderType,
+        active_ns: int,
+    ) -> Order | None:
+        if not self.ban_aggressive_self_cross:
+            return None
+        for order in self.open_orders.values():
+            if (
+                not order.alive
+                or order.side == side
+                or order.otype != OrderType.LIMIT
+                or order.filled >= order.qty
+            ):
+                continue
+            prices_cross = (
+                side > 0 and price >= order.price
+            ) or (
+                side < 0 and price <= order.price
+            )
+            if not prices_cross:
+                continue
+            if otype == OrderType.IOC and order.ts_active_ns > active_ns:
+                continue
+            overlap_ns = max(active_ns, order.ts_active_ns)
+            if (
+                getattr(order, "_pending_cancel", False)
+                and getattr(order, "cancel_at", np.inf) <= overlap_ns
+            ):
+                continue
+            return order
+        return None
+
+    def _reject(
+        self,
+        *,
+        ts_ns: int,
+        side: int,
+        qty: int,
+        price: float,
+        otype: OrderType,
+        reason: str,
+        projected_min: float,
+        projected_max: float,
+        limit: float,
+        conflicting_oid: int | None = None,
+    ) -> None:
+        self.order_rejections.append(
+            OrderRejection(
+                ts_ns=ts_ns,
+                instrument_id=self.inst.symbol,
+                side=side,
+                qty=qty,
+                price=price,
+                order_type=otype.value,
+                reason=reason,
+                projected_min=float(projected_min),
+                projected_max=float(projected_max),
+                limit=float(limit),
+                conflicting_oid=conflicting_oid,
+            )
+        )
 
     def cancel(self, oid: int):
         o = self.open_orders.get(oid)
@@ -400,6 +559,10 @@ class BacktestResult:
         self.eng = eng
         self.equity = pd.DataFrame(eng.equity_curve, columns=["ts", "equity"])
         self.fills = pd.DataFrame([f.__dict__ for f in eng.fills])
+        self.order_rejections = pd.DataFrame(
+            [rejection.__dict__ for rejection in eng.order_rejections],
+            columns=ORDER_REJECTION_COLUMNS,
+        )
 
     def report(self) -> str:
         e = self.equity["equity"].values
@@ -423,6 +586,7 @@ class BacktestResult:
             f"Total costs        : ₹{self.eng.total_costs:,.0f}"
             f"  ({100*self.eng.total_costs/max(abs(pnl)+self.eng.total_costs,1e-9):.1f}% of gross)",
             f"Fills / Orders     : {nf} / {self.eng.orders_sent}  (OTR {otr:.1f})",
+            f"Pre-trade rejects  : {len(self.order_rejections)}",
             f"Maker fill share   : {100*maker_share:.1f}%",
             f"Turnover           : ₹{turnover:,.0f}",
             f"Sharpe (annualized): {sharpe:.2f}",

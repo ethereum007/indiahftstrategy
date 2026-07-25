@@ -14,6 +14,8 @@ from engine.hft_backtest import (
     Kind,
     LatencyModel,
     Order,
+    OrderRejection,
+    ORDER_REJECTION_COLUMNS,
     OrderType,
 )
 
@@ -91,6 +93,8 @@ class MultiInstrumentEngine:
         strategy: MultiInstrumentStrategy,
         portfolio_limits: PortfolioLimits | None = None,
         queue_conservatism: float = 1.5,
+        reserve_open_order_risk: bool = True,
+        ban_aggressive_self_cross: bool = True,
     ):
         if not instruments:
             raise ValueError("at least one instrument is required")
@@ -99,6 +103,8 @@ class MultiInstrumentEngine:
         self.strategy = strategy
         self.portfolio_limits = portfolio_limits or PortfolioLimits()
         self.qcons = queue_conservatism
+        self.reserve_open_order_risk = reserve_open_order_risk
+        self.ban_aggressive_self_cross = ban_aggressive_self_cross
 
         for iid, cfg in self.instruments.items():
             if cfg.venue not in self.venues:
@@ -115,6 +121,7 @@ class MultiInstrumentEngine:
 
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[RoutedFill] = []
+        self.order_rejections: List[OrderRejection] = []
         self.positions: Dict[str, int] = {iid: 0 for iid in self.instruments}
         self.cash = 0.0
         self.total_costs = 0.0
@@ -156,8 +163,6 @@ class MultiInstrumentEngine:
             raise ValueError("side must be +1 buy or -1 sell")
         if qty <= 0:
             raise ValueError("qty must be positive")
-        if not self._passes_risk(instrument_id, side, qty):
-            return None
         visible = self._visible_ticks.get(instrument_id)
         if visible is None:
             return None
@@ -166,6 +171,50 @@ class MultiInstrumentEngine:
         venue = self.venues[cfg.venue]
         inst = cfg.instrument
         price = round(round(price / inst.tick) * inst.tick, 10)
+        risk_rejection = self._risk_rejection(instrument_id, side, qty)
+        if risk_rejection is not None:
+            reason, projected_min, projected_max, limit = risk_rejection
+            self._reject(
+                instrument_id=instrument_id,
+                side=side,
+                qty=qty,
+                price=price,
+                otype=otype,
+                reason=reason,
+                projected_min=projected_min,
+                projected_max=projected_max,
+                limit=limit,
+            )
+            return None
+
+        active_ns = self._now_ns + venue.latency.order_delay_ns()
+        conflict = self._self_cross_conflict(
+            instrument_id=instrument_id,
+            side=side,
+            price=price,
+            otype=otype,
+            active_ns=active_ns,
+        )
+        if conflict is not None:
+            inst_limit = cfg.max_position_lots * inst.lot_size
+            position_min, position_max = self._instrument_position_envelope(
+                instrument_id,
+                extra=(side, qty),
+            )
+            self._reject(
+                instrument_id=instrument_id,
+                side=side,
+                qty=qty,
+                price=price,
+                otype=otype,
+                reason="aggressive_self_cross",
+                projected_min=position_min,
+                projected_max=position_max,
+                limit=float("nan"),
+                conflicting_oid=conflict.oid,
+            )
+            return None
+
         self._oid += 1
         order = Order(
             self._oid,
@@ -174,7 +223,7 @@ class MultiInstrumentEngine:
             price,
             otype,
             ts_sent_ns=self._now_ns,
-            ts_active_ns=self._now_ns + venue.latency.order_delay_ns(),
+            ts_active_ns=active_ns,
         )
         if otype == OrderType.LIMIT:
             if side > 0 and abs(price - visible["bid"]) < 1e-9:
@@ -220,34 +269,240 @@ class MultiInstrumentEngine:
     def last_tick(self, instrument_id: str) -> Optional[dict]:
         return self._visible_ticks.get(instrument_id)
 
-    def _passes_risk(self, instrument_id: str, side: int, qty: int) -> bool:
+    def _risk_rejection(
+        self,
+        instrument_id: str,
+        side: int,
+        qty: int,
+    ) -> tuple[str, float, float, float] | None:
         cfg = self.instruments[instrument_id]
         inst_limit = cfg.max_position_lots * cfg.instrument.lot_size
-        proposed_positions = dict(self.positions)
-        proposed_positions[instrument_id] += side * qty
-        if abs(proposed_positions[instrument_id]) > inst_limit:
-            return False
+        if not self.reserve_open_order_risk:
+            proposed_positions = dict(self.positions)
+            proposed_positions[instrument_id] += side * qty
+            proposed = proposed_positions[instrument_id]
+            if abs(proposed) > inst_limit:
+                return (
+                    "instrument_position_limit",
+                    float(proposed),
+                    float(proposed),
+                    float(inst_limit),
+                )
+
+            limits = self.portfolio_limits
+            if limits.max_abs_position is not None:
+                gross = sum(abs(pos) for pos in proposed_positions.values())
+                if gross > limits.max_abs_position:
+                    return (
+                        "portfolio_gross_position_limit",
+                        float(gross),
+                        float(gross),
+                        float(limits.max_abs_position),
+                    )
+            if limits.max_abs_delta is not None:
+                delta = sum(
+                    proposed_positions[iid] * item.delta_per_unit
+                    for iid, item in self.instruments.items()
+                )
+                if abs(delta) > limits.max_abs_delta:
+                    return (
+                        "portfolio_delta_limit",
+                        float(delta),
+                        float(delta),
+                        float(limits.max_abs_delta),
+                    )
+            if limits.max_abs_vega is not None:
+                vega = sum(
+                    proposed_positions[iid] * item.vega_per_unit
+                    for iid, item in self.instruments.items()
+                )
+                if abs(vega) > limits.max_abs_vega:
+                    return (
+                        "portfolio_vega_limit",
+                        float(vega),
+                        float(vega),
+                        float(limits.max_abs_vega),
+                    )
+            return None
+
+        pending = self._pending_quantities(extra=(instrument_id, side, qty))
+        position_ranges = {
+            iid: (
+                self.positions[iid] - pending[iid][1],
+                self.positions[iid] + pending[iid][0],
+            )
+            for iid in self.instruments
+        }
+        position_min, position_max = position_ranges[instrument_id]
+        if position_min < -inst_limit or position_max > inst_limit:
+            return (
+                "instrument_position_limit",
+                float(position_min),
+                float(position_max),
+                float(inst_limit),
+            )
 
         limits = self.portfolio_limits
         if limits.max_abs_position is not None:
-            gross = sum(abs(pos) for pos in proposed_positions.values())
+            gross = sum(
+                max(abs(position_min), abs(position_max))
+                for position_min, position_max in position_ranges.values()
+            )
             if gross > limits.max_abs_position:
-                return False
+                return (
+                    "portfolio_gross_position_limit",
+                    0.0,
+                    float(gross),
+                    float(limits.max_abs_position),
+                )
         if limits.max_abs_delta is not None:
-            delta = sum(
-                proposed_positions[iid] * cfg.delta_per_unit
-                for iid, cfg in self.instruments.items()
+            delta_min, delta_max = self._portfolio_exposure_envelope(
+                pending,
+                exposure_name="delta_per_unit",
             )
-            if abs(delta) > limits.max_abs_delta:
-                return False
+            if delta_min < -limits.max_abs_delta or delta_max > limits.max_abs_delta:
+                return (
+                    "portfolio_delta_limit",
+                    float(delta_min),
+                    float(delta_max),
+                    float(limits.max_abs_delta),
+                )
         if limits.max_abs_vega is not None:
-            vega = sum(
-                proposed_positions[iid] * cfg.vega_per_unit
-                for iid, cfg in self.instruments.items()
+            vega_min, vega_max = self._portfolio_exposure_envelope(
+                pending,
+                exposure_name="vega_per_unit",
             )
-            if abs(vega) > limits.max_abs_vega:
-                return False
-        return True
+            if vega_min < -limits.max_abs_vega or vega_max > limits.max_abs_vega:
+                return (
+                    "portfolio_vega_limit",
+                    float(vega_min),
+                    float(vega_max),
+                    float(limits.max_abs_vega),
+                )
+        return None
+
+    def _pending_quantities(
+        self,
+        *,
+        extra: tuple[str, int, int] | None = None,
+    ) -> dict[str, list[int]]:
+        pending = {iid: [0, 0] for iid in self.instruments}
+        for oid, order in self.open_orders.items():
+            if not order.alive:
+                continue
+            instrument_id = self._order_instrument.get(oid)
+            if instrument_id is None:
+                continue
+            remaining = max(int(order.qty) - int(order.filled), 0)
+            pending[instrument_id][0 if order.side > 0 else 1] += remaining
+        if extra is not None:
+            instrument_id, side, qty = extra
+            pending[instrument_id][0 if side > 0 else 1] += qty
+        return pending
+
+    def _instrument_position_envelope(
+        self,
+        instrument_id: str,
+        *,
+        extra: tuple[int, int] | None = None,
+    ) -> tuple[int, int]:
+        pending_extra = (
+            (instrument_id, extra[0], extra[1])
+            if extra is not None
+            else None
+        )
+        pending = self._pending_quantities(extra=pending_extra)
+        buys, sells = pending[instrument_id]
+        position = self.positions[instrument_id]
+        return position - sells, position + buys
+
+    def _portfolio_exposure_envelope(
+        self,
+        pending: Mapping[str, list[int]],
+        *,
+        exposure_name: str,
+    ) -> tuple[float, float]:
+        current = 0.0
+        negative_pending = 0.0
+        positive_pending = 0.0
+        for instrument_id, cfg in self.instruments.items():
+            exposure = float(getattr(cfg, exposure_name))
+            current += self.positions[instrument_id] * exposure
+            buys, sells = pending[instrument_id]
+            for contribution in (buys * exposure, -sells * exposure):
+                if contribution < 0:
+                    negative_pending += contribution
+                else:
+                    positive_pending += contribution
+        return current + negative_pending, current + positive_pending
+
+    def _self_cross_conflict(
+        self,
+        *,
+        instrument_id: str,
+        side: int,
+        price: float,
+        otype: OrderType,
+        active_ns: int,
+    ) -> Order | None:
+        if not self.ban_aggressive_self_cross:
+            return None
+        for oid, order in self.open_orders.items():
+            if (
+                self._order_instrument.get(oid) != instrument_id
+                or not order.alive
+                or order.side == side
+                or order.otype != OrderType.LIMIT
+                or order.filled >= order.qty
+            ):
+                continue
+            prices_cross = (
+                side > 0 and price >= order.price
+            ) or (
+                side < 0 and price <= order.price
+            )
+            if not prices_cross:
+                continue
+            if otype == OrderType.IOC and order.ts_active_ns > active_ns:
+                continue
+            overlap_ns = max(active_ns, order.ts_active_ns)
+            if (
+                getattr(order, "_pending_cancel", False)
+                and getattr(order, "cancel_at", np.inf) <= overlap_ns
+            ):
+                continue
+            return order
+        return None
+
+    def _reject(
+        self,
+        *,
+        instrument_id: str,
+        side: int,
+        qty: int,
+        price: float,
+        otype: OrderType,
+        reason: str,
+        projected_min: float,
+        projected_max: float,
+        limit: float,
+        conflicting_oid: int | None = None,
+    ) -> None:
+        self.order_rejections.append(
+            OrderRejection(
+                ts_ns=int(self._now_ns),
+                instrument_id=instrument_id,
+                side=side,
+                qty=qty,
+                price=price,
+                order_type=otype.value,
+                reason=reason,
+                projected_min=float(projected_min),
+                projected_max=float(projected_max),
+                limit=float(limit),
+                conflicting_oid=conflicting_oid,
+            )
+        )
 
     def _events(self) -> list[_Event]:
         events: list[_Event] = []
@@ -430,6 +685,10 @@ class MultiBacktestResult:
         self.engine = engine
         self.equity = pd.DataFrame(engine.equity_curve, columns=["ts", "equity"])
         self.fills = pd.DataFrame([fill.__dict__ for fill in engine.fills])
+        self.order_rejections = pd.DataFrame(
+            [rejection.__dict__ for rejection in engine.order_rejections],
+            columns=ORDER_REJECTION_COLUMNS,
+        )
 
     def report(self) -> str:
         if self.equity.empty:
@@ -448,6 +707,7 @@ class MultiBacktestResult:
                 f"Net PnL          : Rs {pnl:,.0f}",
                 f"Total costs      : Rs {self.engine.total_costs:,.0f}",
                 f"Fills / Orders   : {fill_count} / {self.engine.orders_sent} (OTR {otr:.1f})",
+                f"Pre-trade rejects: {len(self.order_rejections)}",
                 f"Maker fill share : {100 * maker_share:.1f}%",
                 f"Turnover         : Rs {turnover:,.0f}",
                 f"Portfolio delta  : {self.engine.portfolio_delta():,.2f}",

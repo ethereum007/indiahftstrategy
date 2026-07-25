@@ -869,7 +869,20 @@ python -m hft_cli replay-parity `
 ```
 
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
-spread pairs, spread summary, residual inventory, signals, and legging report.
+spread pairs, spread summary, residual inventory, signals, legging report, and
+`order_rejections.csv`.
+
+All shared-clock replays reserve the remaining quantity of live and
+cancel-pending orders when applying instrument position, portfolio gross
+position, delta, and vega limits. The conservative envelope asks what happens
+if either side of every outstanding order fills before its opposite side; it
+does not net unfilled buys against unfilled sells. Replays also reject a new
+order that can overlap and cross an opposite resting limit order from the same
+strategy. `summary.csv` records whether both controls were enabled plus total,
+position-risk, and self-cross rejection counts. `order_rejections.csv` retains
+the attempted side, quantity, rounded price, order type, reason, projected
+exposure range, applicable limit, and conflicting order ID. Rejected attempts
+do not increment `orders_sent`, and the artifacts remain research-only.
 
 ## Parity Sweep
 

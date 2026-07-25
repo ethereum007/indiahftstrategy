@@ -7215,6 +7215,28 @@ collection is healthy at `2634 tests` across `164` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
 
+Latest pending-order admission-control proof: the single- and
+multi-instrument event engines now reserve every live order's remaining
+quantity when applying pre-trade position limits. Multi-instrument checks
+evaluate conservative pending-fill envelopes for per-instrument position,
+portfolio gross position, delta, and vega rather than netting unfilled buys
+against unfilled sells. Cancel-pending quantities remain at risk until
+cancellation is effective. The previously exposed single-engine
+`ban_aggressive_self_cross` policy is now enforced, and the shared-clock
+engine applies the same default protection when a new order can overlap and
+cross an opposite resting order from the strategy. Rejected attempts do not
+increment `orders_sent`; they are retained in `order_rejections.csv` with the
+attempt, reason, projected exposure range, applicable limit, and conflicting
+order ID. Replay summaries carry control-enabled flags plus total,
+position-risk, and self-cross rejection counts. Those fields propagate through
+proof metrics, lead-lag and imbalance walk-forward folds/candidates, strategy
+sweeps, and cross-sweep selection instead of disappearing at the leaf run.
+Focused and downstream engine, strategy, replay, walk-forward, sweep, proof,
+calibration, pipeline, and catalog regressions pass (`155` tests). Repository
+collection is healthy at `2641 tests` across `164` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

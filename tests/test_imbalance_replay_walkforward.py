@@ -135,6 +135,13 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert int(report.summary.loc[0, "fold_count"]) == 2
     assert int(report.summary.loc[0, "proof_passed_folds"]) == 2
     assert float(report.summary.loc[0, "proof_pass_rate"]) == 1.0
+    assert report.folds["pending_order_risk_reservation_enabled"].all()
+    assert report.folds["aggressive_self_cross_prevention_enabled"].all()
+    assert int(report.summary.loc[0, "pending_order_risk_reservation_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "aggressive_self_cross_prevention_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "total_pretrade_rejections"]) == 0
+    assert int(report.summary.loc[0, "total_position_risk_rejections"]) == 0
+    assert int(report.summary.loc[0, "total_self_cross_rejections"]) == 0
     assert config["ready"]
     assert config["source_run_type"] == "imbalance_replay_walkforward"
     assert config["replay_defaults"]["instrument_id"] == "BOOK"
@@ -147,6 +154,9 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert config["replay_defaults"]["min_depth"] == 1
     assert config["replay_defaults"]["hold_ns"] == 1_000_000
     assert config["replay_defaults"]["cooloff_ns"] == 1_000_000
+    assert config["replay_walkforward"]["pending_order_risk_reservation_enabled_folds"] == 2
+    assert config["replay_walkforward"]["aggressive_self_cross_prevention_enabled_folds"] == 2
+    assert config["replay_walkforward"]["total_pretrade_rejections"] == 0
     assert (out_dir / "imbalance_replay_walkforward_folds.csv").exists()
     assert (out_dir / "imbalance_replay_walkforward_checks.csv").exists()
     assert (out_dir / "imbalance_replay_walkforward_summary.csv").exists()

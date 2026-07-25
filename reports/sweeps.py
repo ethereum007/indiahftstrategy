@@ -25,6 +25,11 @@ KNOWN_NON_PARAM_COLUMNS = {
     "order_to_trade_ratio",
     "otr_limit",
     "otr_breached",
+    "pending_order_risk_reservation_enabled",
+    "aggressive_self_cross_prevention_enabled",
+    "pretrade_rejections",
+    "position_risk_rejections",
+    "self_cross_rejections",
     "portfolio_delta",
     "portfolio_vega",
     "max_drawdown",
@@ -187,6 +192,15 @@ def _score_scenarios(
         net_pnl = _numeric(group, "net_pnl")
         robust_score = _numeric(group, "robust_score")
         fills = _numeric(group, "fills")
+        pretrade_rejections = _numeric(group, "pretrade_rejections").fillna(0.0)
+        position_risk_rejections = _numeric(
+            group,
+            "position_risk_rejections",
+        ).fillna(0.0)
+        self_cross_rejections = _numeric(
+            group,
+            "self_cross_rejections",
+        ).fillna(0.0)
         worst_regime = _numeric(group, "worst_regime_equity_change")
         losing_regimes = _numeric(group, "losing_regimes")
 
@@ -219,6 +233,13 @@ def _score_scenarios(
                 "worst_drawdown": worst_drawdown,
                 "median_fills": float(fills.median(skipna=True)),
                 "min_fills": float(fills.min(skipna=True)),
+                "total_pretrade_rejections": int(pretrade_rejections.sum()),
+                "total_position_risk_rejections": int(
+                    position_risk_rejections.sum()
+                ),
+                "total_self_cross_rejections": int(
+                    self_cross_rejections.sum()
+                ),
                 "worst_regime_equity_change": float(worst_regime.min(skipna=True)),
                 "runs_with_losing_regimes": int((losing_regimes > 0).sum()),
                 "selection_passed": bool(selection_passed),
@@ -256,6 +277,9 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "best_median_net_pnl": np.nan,
                     "best_worst_drawdown": np.nan,
                     "total_runs": int(len(scenario_runs)),
+                    "total_pretrade_rejections": 0,
+                    "total_position_risk_rejections": 0,
+                    "total_self_cross_rejections": 0,
                 }
             ]
         )
@@ -272,6 +296,21 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                 "best_median_net_pnl": float(best["median_net_pnl"]),
                 "best_worst_drawdown": float(best["worst_drawdown"]),
                 "total_runs": int(len(scenario_runs)),
+                "total_pretrade_rejections": int(
+                    _numeric(scenario_runs, "pretrade_rejections")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_position_risk_rejections": int(
+                    _numeric(scenario_runs, "position_risk_rejections")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_self_cross_rejections": int(
+                    _numeric(scenario_runs, "self_cross_rejections")
+                    .fillna(0.0)
+                    .sum()
+                ),
             }
         ]
     )

@@ -281,6 +281,15 @@ def _fold_row(
         "order_to_trade_ratio": _float(row, "order_to_trade_ratio"),
         "otr_breached": _to_bool(row.get("otr_breached", False)),
         "maker_share": _float(row, "maker_share"),
+        "pending_order_risk_reservation_enabled": _to_bool(
+            row.get("pending_order_risk_reservation_enabled", False)
+        ),
+        "aggressive_self_cross_prevention_enabled": _to_bool(
+            row.get("aggressive_self_cross_prevention_enabled", False)
+        ),
+        "pretrade_rejections": _int(row, "pretrade_rejections"),
+        "position_risk_rejections": _int(row, "position_risk_rejections"),
+        "self_cross_rejections": _int(row, "self_cross_rejections"),
         "portfolio_delta": _float(row, "portfolio_delta"),
         "portfolio_vega": _float(row, "portfolio_vega"),
     }
@@ -338,6 +347,14 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     net_pnl = pd.to_numeric(folds.get("net_pnl", pd.Series(dtype=float)), errors="coerce")
     fills = pd.to_numeric(folds.get("fills", pd.Series(dtype=float)), errors="coerce")
+    pending_risk_enabled = folds.get(
+        "pending_order_risk_reservation_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
+    self_cross_prevention_enabled = folds.get(
+        "aggressive_self_cross_prevention_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     proof_pass_rate = float(folds["proof_passed"].map(_to_bool).mean()) if not folds.empty else 0.0
     return pd.DataFrame(
         [
@@ -353,6 +370,27 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "min_net_pnl": float(net_pnl.min(skipna=True)),
                 "total_fills": int(fills.fillna(0).sum()),
                 "median_fills": float(fills.median(skipna=True)),
+                "pending_order_risk_reservation_enabled_folds": int(
+                    pending_risk_enabled.sum()
+                ),
+                "aggressive_self_cross_prevention_enabled_folds": int(
+                    self_cross_prevention_enabled.sum()
+                ),
+                "total_pretrade_rejections": _numeric_reduce(
+                    folds,
+                    "pretrade_rejections",
+                    "sum",
+                ),
+                "total_position_risk_rejections": _numeric_reduce(
+                    folds,
+                    "position_risk_rejections",
+                    "sum",
+                ),
+                "total_self_cross_rejections": _numeric_reduce(
+                    folds,
+                    "self_cross_rejections",
+                    "sum",
+                ),
                 "worst_drawdown": _numeric_reduce(folds, "max_drawdown", "max"),
                 "median_markout_mean": _numeric_reduce(folds, "markout_mean", "median"),
                 "median_robust_score": _numeric_reduce(folds, "robust_score", "median"),
@@ -401,6 +439,21 @@ def _candidate_config(
         "proof_pass_rate": _jsonable(summary.get("proof_pass_rate")),
         "total_net_pnl": _jsonable(summary.get("total_net_pnl")),
         "total_fills": _jsonable(summary.get("total_fills")),
+        "pending_order_risk_reservation_enabled_folds": _jsonable(
+            summary.get("pending_order_risk_reservation_enabled_folds")
+        ),
+        "aggressive_self_cross_prevention_enabled_folds": _jsonable(
+            summary.get("aggressive_self_cross_prevention_enabled_folds")
+        ),
+        "total_pretrade_rejections": _jsonable(
+            summary.get("total_pretrade_rejections")
+        ),
+        "total_position_risk_rejections": _jsonable(
+            summary.get("total_position_risk_rejections")
+        ),
+        "total_self_cross_rejections": _jsonable(
+            summary.get("total_self_cross_rejections")
+        ),
         "worst_drawdown": _jsonable(summary.get("worst_drawdown")),
         "median_markout_mean": _jsonable(summary.get("median_markout_mean")),
     }
@@ -474,6 +527,8 @@ def _numeric_reduce(frame: pd.DataFrame, column: str, reducer: str) -> float:
         return float(values.max(skipna=True))
     if reducer == "median":
         return float(values.median(skipna=True))
+    if reducer == "sum":
+        return float(values.fillna(0.0).sum())
     raise ValueError(f"unsupported reducer {reducer!r}")
 
 

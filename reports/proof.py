@@ -552,6 +552,15 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     total_costs = _float(row, "total_costs")
     maker_share = _float(row, "maker_share")
     otr = _float(row, "order_to_trade_ratio")
+    pending_order_risk_reservation_enabled = _bool(
+        row.get("pending_order_risk_reservation_enabled", False)
+    )
+    aggressive_self_cross_prevention_enabled = _bool(
+        row.get("aggressive_self_cross_prevention_enabled", False)
+    )
+    pretrade_rejections = _int(row, "pretrade_rejections")
+    position_risk_rejections = _int(row, "position_risk_rejections")
+    self_cross_rejections = _int(row, "self_cross_rejections")
     max_drawdown = _max_drawdown(equity)
     worst_regime = _worst_regime_equity_change(equity_by_regime)
     markout_mean, markout_win_rate = _markout_quality(markouts)
@@ -570,6 +579,15 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "maker_share": maker_share,
         "order_to_trade_ratio": otr,
         "otr_breached": _bool(row.get("otr_breached", False)),
+        "pending_order_risk_reservation_enabled": (
+            pending_order_risk_reservation_enabled
+        ),
+        "aggressive_self_cross_prevention_enabled": (
+            aggressive_self_cross_prevention_enabled
+        ),
+        "pretrade_rejections": pretrade_rejections,
+        "position_risk_rejections": position_risk_rejections,
+        "self_cross_rejections": self_cross_rejections,
         "max_drawdown": max_drawdown,
         "regime_count": int(len(equity_by_regime)) if not equity_by_regime.empty else 0,
         "losing_regimes": _losing_regimes(equity_by_regime),

@@ -177,11 +177,21 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert report.output_dir == out_dir
     assert int(report.summary.loc[0, "fold_count"]) == 2
     assert int(report.summary.loc[0, "proof_passed_folds"]) == 2
+    assert report.folds["pending_order_risk_reservation_enabled"].all()
+    assert report.folds["aggressive_self_cross_prevention_enabled"].all()
+    assert int(report.summary.loc[0, "pending_order_risk_reservation_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "aggressive_self_cross_prevention_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "total_pretrade_rejections"]) == 0
+    assert int(report.summary.loc[0, "total_position_risk_rejections"]) == 0
+    assert int(report.summary.loc[0, "total_self_cross_rejections"]) == 0
     assert report.summary.loc[0, "strategy"] == "lead_lag_taker"
     assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert config["ready"]
     assert config["source_run_type"] == "leadlag_replay_walkforward"
     assert config["replay_defaults"]["trigger_ticks"] == 10.0
+    assert config["replay_walkforward"]["pending_order_risk_reservation_enabled_folds"] == 2
+    assert config["replay_walkforward"]["aggressive_self_cross_prevention_enabled_folds"] == 2
+    assert config["replay_walkforward"]["total_pretrade_rejections"] == 0
     assert walkforward_row["summary_file"] == "leadlag_replay_walkforward_summary.csv"
     assert bool(walkforward_row["summary_status"])
     assert bool(proof_row["summary_status"])

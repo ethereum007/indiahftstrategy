@@ -30,6 +30,12 @@ def replay_summary(
         else 0.0
     )
     maker_share = float(strategy_fills["maker"].mean()) if fill_count else 0.0
+    order_rejections = result.order_rejections
+    rejection_reasons = (
+        order_rejections["reason"]
+        if not order_rejections.empty
+        else pd.Series(dtype="object")
+    )
     otr = check_order_to_trade_ratio(
         orders_sent=result.engine.orders_sent,
         fills=fill_count,
@@ -47,6 +53,26 @@ def replay_summary(
                 "otr_breached": bool(otr.breached),
                 "turnover": turnover,
                 "maker_share": maker_share,
+                "pending_order_risk_reservation_enabled": bool(
+                    result.engine.reserve_open_order_risk
+                ),
+                "aggressive_self_cross_prevention_enabled": bool(
+                    result.engine.ban_aggressive_self_cross
+                ),
+                "pretrade_rejections": int(len(order_rejections)),
+                "position_risk_rejections": int(
+                    rejection_reasons.isin(
+                        {
+                            "instrument_position_limit",
+                            "portfolio_gross_position_limit",
+                            "portfolio_delta_limit",
+                            "portfolio_vega_limit",
+                        }
+                    ).sum()
+                ),
+                "self_cross_rejections": int(
+                    (rejection_reasons == "aggressive_self_cross").sum()
+                ),
                 "portfolio_delta": float(result.engine.portfolio_delta()),
                 "portfolio_vega": float(result.engine.portfolio_vega()),
             }
@@ -70,6 +96,7 @@ def write_replay_outputs(
     out.mkdir(parents=True, exist_ok=True)
     result.equity.to_csv(out / "equity.csv", index=False)
     result.fills.to_csv(out / "fills.csv", index=False)
+    result.order_rejections.to_csv(out / "order_rejections.csv", index=False)
     summary.to_csv(out / "summary.csv", index=False)
     pnl_decomposition(
         result.fills,
