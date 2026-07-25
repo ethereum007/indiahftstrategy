@@ -886,6 +886,17 @@ the attempted side, quantity, rounded price, order type, reason, projected
 exposure range, applicable limit, and conflicting order ID. Rejected attempts
 do not increment `orders_sent`, and the artifacts remain research-only.
 
+Replay uses one causal event clock for exchange-book updates and delayed
+strategy callbacks. A market event is processed before every feed callback
+that arrives at the same timestamp, and delayed callbacks cannot inspect or
+act on state until all earlier exchange events and fills have been applied.
+Single-instrument replay streams market rows while retaining only pending feed
+callbacks in memory; multi-instrument replay applies the same ordering across
+venue-aligned events. Configured latency components must be finite and
+nonnegative, and jitter samples are floored at zero so an event or order cannot
+travel backward in replay time. `summary.csv`, proof, walk-forward, and sweep
+evidence retain `causal_event_ordering_enabled`.
+
 Displayed bid and ask quantities are event-scoped budgets: concurrent IOC or
 marketable limit orders cannot each claim the full same L1 depth. Passive
 orders at one price receive deterministic queue priority behind earlier own
@@ -894,12 +905,15 @@ allocating more aggregate fills than the print quantity. Consumed displayed
 depth also persists across consecutive snapshots at the same price: an
 unchanged quantity does not replenish, and a size increase restores only the
 observed delta. A price change or timestamp-day transition starts a fresh
-level. `summary.csv` records whether shared event liquidity and persistent
-displayed depletion were enabled, plus displayed, trade-print, and
-carried-depletion shortfall counts and quantities. `liquidity_shortfalls.csv`
-retains the order, source, requested/available/filled quantities, observed
-size, carried depletion, and queue consumption behind each partial or missed
-eligible fill.
+level. Every execution path also floors eligible volume to the instrument's
+configured market lot; a sub-lot remainder stays unavailable until observed
+replenishment completes a lot instead of creating an impossible position.
+`summary.csv` records whether shared event liquidity, persistent displayed
+depletion, and lot-conserving fills were enabled, plus displayed, trade-print,
+and carried-depletion shortfall counts and quantities.
+`liquidity_shortfalls.csv` retains the order, source,
+requested/available/filled quantities, observed size, carried depletion, and
+queue consumption behind each partial or missed eligible fill.
 
 Passive limit queues are initialized against the market snapshot available at
 venue activation, not the older strategy-decision snapshot. A zero-latency

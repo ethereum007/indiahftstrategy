@@ -176,6 +176,36 @@ def fixed_latency(feed_us=0.0, order_us=0.0):
     return LatencyModel(feed_us=feed_us, order_us=order_us, jitter_us=0.0)
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"feed_us": -1},
+        {"order_us": float("nan")},
+        {"jitter_us": -1},
+    ],
+)
+def test_latency_model_rejects_invalid_configuration(kwargs):
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        LatencyModel(**kwargs)
+
+
+def test_latency_model_clamps_negative_jitter_samples_to_zero():
+    class MinimumRng:
+        @staticmethod
+        def uniform(low, high):
+            return low
+
+    latency = LatencyModel(
+        feed_us=0,
+        order_us=0,
+        jitter_us=10,
+        _rng=MinimumRng(),
+    )
+
+    assert latency.feed_delay_ns() == 0
+    assert latency.order_delay_ns() == 0
+
+
 def ticks(rows):
     return pd.DataFrame(
         rows,
@@ -486,6 +516,58 @@ def test_feed_latency_is_part_of_order_arrival_time():
 
     assert res.fills.iloc[0]["ts_ns"] == 220_000
     assert res.fills.iloc[0]["price"] == 100.35
+
+
+def test_delayed_feed_callback_observes_intervening_market_fill():
+    class PositionObserver(Strategy):
+        def __init__(self):
+            self.sent = False
+            self.positions = {}
+            self.timeline = []
+
+        def on_start(self, engine):
+            pass
+
+        def on_tick(self, engine, tick):
+            market_ts = int(tick["market_ts"])
+            self.positions[market_ts] = engine.position
+            self.timeline.append(("tick", market_ts, int(tick["ts"])))
+            if not self.sent:
+                engine.send(+1, 75, 100.00, OrderType.LIMIT)
+                self.sent = True
+
+        def on_fill(self, engine, fill):
+            self.timeline.append(("fill", int(fill.ts_ns), engine.position))
+
+        def on_end(self, engine):
+            pass
+
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (200_000, 100.00, 100.05, 75, 75, np.nan, 0),
+            (300_000, 100.00, 100.05, 75, 75, 100.00, 75),
+        ]
+    )
+    strategy = PositionObserver()
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(feed_us=150, order_us=0),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    assert strategy.positions[200_000] == 75
+    assert strategy.timeline[:3] == [
+        ("tick", 0, 150_000),
+        ("fill", 300_000, 75),
+        ("tick", 200_000, 350_000),
+    ]
+    assert result.fills["ts_ns"].tolist() == [300_000, 450_000]
 
 
 def test_limit_order_waits_for_queue_burn_before_fill():

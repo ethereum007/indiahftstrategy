@@ -31,6 +31,7 @@ KNOWN_NON_PARAM_COLUMNS = {
     "shared_event_liquidity_enabled",
     "persistent_displayed_liquidity_enabled",
     "lot_conserving_fills_enabled",
+    "causal_event_ordering_enabled",
     "arrival_queue_initialization_enabled",
     "limit_orders_sent",
     "queue_initialization_events",

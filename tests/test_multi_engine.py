@@ -290,6 +290,7 @@ def test_multi_engine_carries_depletion_until_size_replenishes():
     summary = replay_summary(result).iloc[0]
     assert bool(summary["persistent_displayed_liquidity_enabled"])
     assert bool(summary["lot_conserving_fills_enabled"])
+    assert bool(summary["causal_event_ordering_enabled"])
     assert int(summary["liquidity_shortfall_events"]) == 2
     assert int(summary["liquidity_shortfall_qty"]) == 100
     assert int(summary["carried_depletion_shortfall_events"]) == 1

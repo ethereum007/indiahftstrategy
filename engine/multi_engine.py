@@ -155,6 +155,7 @@ class MultiInstrumentEngine:
         self.arrival_queue_initialization_enabled = True
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
+        self.causal_event_ordering_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0

@@ -570,6 +570,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     lot_conserving_fills_enabled = _bool(
         row.get("lot_conserving_fills_enabled", False)
     )
+    causal_event_ordering_enabled = _bool(
+        row.get("causal_event_ordering_enabled", False)
+    )
     arrival_queue_initialization_enabled = _bool(
         row.get("arrival_queue_initialization_enabled", False)
     )
@@ -724,6 +727,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             persistent_displayed_liquidity_enabled
         ),
         "lot_conserving_fills_enabled": lot_conserving_fills_enabled,
+        "causal_event_ordering_enabled": causal_event_ordering_enabled,
         "arrival_queue_initialization_enabled": (
             arrival_queue_initialization_enabled
         ),

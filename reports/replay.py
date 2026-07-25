@@ -214,6 +214,9 @@ def replay_summary(
                 "lot_conserving_fills_enabled": bool(
                     result.engine.lot_conserving_fills_enabled
                 ),
+                "causal_event_ordering_enabled": bool(
+                    result.engine.causal_event_ordering_enabled
+                ),
                 "arrival_queue_initialization_enabled": bool(
                     result.engine.arrival_queue_initialization_enabled
                 ),

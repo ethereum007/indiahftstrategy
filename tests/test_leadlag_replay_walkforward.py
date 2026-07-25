@@ -182,12 +182,14 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert report.folds["venue_order_validation_enabled"].all()
     assert report.folds["persistent_displayed_liquidity_enabled"].all()
     assert report.folds["lot_conserving_fills_enabled"].all()
+    assert report.folds["causal_event_ordering_enabled"].all()
     assert report.folds["arrival_queue_initialization_enabled"].all()
     assert int(report.summary.loc[0, "pending_order_risk_reservation_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "aggressive_self_cross_prevention_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "venue_order_validation_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "persistent_displayed_liquidity_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "lot_conserving_fills_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "causal_event_ordering_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "arrival_queue_initialization_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "total_limit_orders_sent"]) == 0
     assert int(report.summary.loc[0, "total_queue_initialization_events"]) == 0
@@ -274,6 +276,7 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert config["replay_walkforward"]["venue_order_validation_enabled_folds"] == 2
     assert config["replay_walkforward"]["persistent_displayed_liquidity_enabled_folds"] == 2
     assert config["replay_walkforward"]["lot_conserving_fills_enabled_folds"] == 2
+    assert config["replay_walkforward"]["causal_event_ordering_enabled_folds"] == 2
     assert config["replay_walkforward"]["arrival_queue_initialization_enabled_folds"] == 2
     assert config["replay_walkforward"]["total_limit_orders_sent"] == 0
     assert config["replay_walkforward"]["total_queue_initialization_events"] == 0

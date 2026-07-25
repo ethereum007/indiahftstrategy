@@ -40,10 +40,11 @@ exchange drop-copy / order logs before believing any number it produces.
 
 from __future__ import annotations
 
+import heapq
 import math
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Dict, Callable
+from typing import Optional, List, Dict, Callable, Iterator
 
 import numpy as np
 import pandas as pd
@@ -151,11 +152,29 @@ class LatencyModel:
     jitter_us: float = 30.0
     _rng: np.random.Generator = field(default_factory=lambda: np.random.default_rng(7))
 
+    def __post_init__(self) -> None:
+        for name in ("feed_us", "order_us", "jitter_us"):
+            try:
+                value = float(getattr(self, name))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{name} must be numeric") from exc
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+            setattr(self, name, value)
+
     def feed_delay_ns(self) -> int:
-        return int((self.feed_us + self._rng.uniform(-self.jitter_us, self.jitter_us)) * 1000)
+        sampled_us = self.feed_us + self._rng.uniform(
+            -self.jitter_us,
+            self.jitter_us,
+        )
+        return int(max(sampled_us, 0.0) * 1000)
 
     def order_delay_ns(self) -> int:
-        return int((self.order_us + self._rng.uniform(-self.jitter_us, self.jitter_us)) * 1000)
+        sampled_us = self.order_us + self._rng.uniform(
+            -self.jitter_us,
+            self.jitter_us,
+        )
+        return int(max(sampled_us, 0.0) * 1000)
 
 
 # ----------------------------------------------------------------------------
@@ -678,6 +697,15 @@ class Strategy:
     def on_end(self, engine: "BacktestEngine"): ...
 
 
+@dataclass(order=True)
+class _ReplayEvent:
+    ts_ns: int
+    priority: int
+    seq: int
+    kind: str = field(compare=False)
+    tick: dict = field(compare=False)
+
+
 # ----------------------------------------------------------------------------
 # Engine
 # ----------------------------------------------------------------------------
@@ -717,6 +745,7 @@ class BacktestEngine:
         self.arrival_queue_initialization_enabled = True
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
+        self.causal_event_ordering_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -731,6 +760,7 @@ class BacktestEngine:
         self._tick: dict = {}
         self._horizon_ns = 0
         self._latest_liquidity: EventLiquidity | None = None
+        self._latest_book: dict = {}
 
     # -- data prep -----------------------------------------------------------
     @staticmethod
@@ -743,6 +773,18 @@ class BacktestEngine:
             if c not in df.columns:
                 df[c] = np.nan
         return df
+
+    def _market_events(self) -> Iterator[_ReplayEvent]:
+        cols = self.df.columns
+        for seq, row in enumerate(self.df.itertuples(index=False)):
+            tick = dict(zip(cols, row))
+            yield _ReplayEvent(
+                ts_ns=int(tick["ts"]),
+                priority=0,
+                seq=seq,
+                kind="market",
+                tick=tick,
+            )
 
     # -- order API (called by strategy) --------------------------------------
     def send(self, side: int, qty: int, price: float,
@@ -1537,13 +1579,29 @@ class BacktestEngine:
     # -- main loop ------------------------------------------------------------
     def run(self) -> "BacktestResult":
         self.strategy.on_start(self)
-        cols = self.df.columns
-        for row in self.df.itertuples(index=False):
-            tick = dict(zip(cols, row))
-            self._horizon_ns = max(self._horizon_ns, int(tick["ts"]))
-            # feed latency: strategy sees tick later; we shift its decision
-            # time, but fills check against the true book timestamp.
+        market_events = self._market_events()
+        next_market = next(market_events, None)
+        feed_events: list[_ReplayEvent] = []
+        while next_market is not None or feed_events:
+            if next_market is not None and (
+                not feed_events
+                or next_market.ts_ns <= feed_events[0].ts_ns
+            ):
+                event = next_market
+                next_market = next(market_events, None)
+            else:
+                event = heapq.heappop(feed_events)
+            tick = event.tick
+            self._horizon_ns = max(self._horizon_ns, event.ts_ns)
+            if event.kind == "feed":
+                self._tick = tick
+                self.strategy.on_tick(self, tick)
+                continue
+            if event.kind != "market":
+                raise RuntimeError(f"unknown replay event kind {event.kind}")
+
             self._tick = tick
+            self._latest_book = tick
             liquidity = self._displayed_liquidity.event_liquidity(tick)
             self._latest_liquidity = liquidity
             order_ids = sorted(
@@ -1557,19 +1615,26 @@ class BacktestEngine:
                 o = self.open_orders.get(oid)
                 if o:
                     self._try_fill(o, tick, liquidity)
-            seen = dict(tick)
-            seen["ts"] = tick["ts"] + self.latency.feed_delay_ns()
-            seen["market_ts"] = tick["ts"]
-            self._horizon_ns = max(self._horizon_ns, int(seen["ts"]))
-            self._tick = seen
-            self.strategy.on_tick(self, seen)
-            self._tick = tick
             mid = 0.5 * (tick["bid"] + tick["ask"])
             self.equity_curve.append(
                 (tick["ts"], self.cash + self.position * mid * self.inst.multiplier))
+
+            seen = dict(tick)
+            seen["ts"] = tick["ts"] + self.latency.feed_delay_ns()
+            seen["market_ts"] = tick["ts"]
+            heapq.heappush(
+                feed_events,
+                _ReplayEvent(
+                    ts_ns=int(seen["ts"]),
+                    priority=1,
+                    seq=event.seq,
+                    kind="feed",
+                    tick=seen,
+                ),
+            )
         # Attempt a terminal taker close against depth still available at the
         # final touch. Any remainder stays marked as residual inventory.
-        last = self._tick
+        last = self._latest_book
         if self.position != 0 and last:
             book_ts_ns = int(last["ts"])
             terminal_ts_ns = max(book_ts_ns, self._horizon_ns)

@@ -3,15 +3,15 @@
 ## Current State
 
 - Single-instrument event backtester with Indian costs, latency, queue fills,
-  cancels, depth-constrained terminal liquidation, OTR reporting, shared
-  per-event displayed liquidity, persistent same-level depletion across L1
-  snapshots, own-order queue priority initialized from the first market
-  snapshot at venue arrival or first observable touch, aggressive-limit
-  residual transitions into observable passive queues, depth-constrained
-  passive price-through fills, strict venue admission for configured lot and
-  tick sizes, lot-conserving fills across displayed depth, passive trade
-  prints, price-throughs, and terminal liquidation, liquidity-shortfall and
-  residual-inventory evidence, and tests.
+  cancels, a causal exchange/feed event clock, depth-constrained terminal
+  liquidation, OTR reporting, shared per-event displayed liquidity, persistent
+  same-level depletion across L1 snapshots, own-order queue priority initialized
+  from the first market snapshot at venue arrival or first observable touch,
+  aggressive-limit residual transitions into observable passive queues,
+  depth-constrained passive price-through fills, strict venue admission for
+  configured lot and tick sizes, lot-conserving fills across displayed depth,
+  passive trade prints, price-throughs, and terminal liquidation,
+  liquidity-shortfall and residual-inventory evidence, and tests.
   Invalid order intents are rejected before they receive an order ID or affect
   queue/OTR counters, with rejection totals carried through replay, proof,
   walk-forward, and sweep evidence. Unchanged snapshots do not restore consumed
@@ -7352,6 +7352,23 @@ edge-sweep regressions passing (`108` total focused tests). Repository
 collection is healthy at `2669 tests` across `164` files.
 The full suite was not rerun because recent complete runs exceed 40 minutes.
 All outputs remain non-authorizing.
+
+Latest causal event-clock proof: single-instrument replay no longer invokes a
+latency-shifted strategy callback inline before exchange events that occur
+earlier than that callback's receive time. Market rows now stream through one
+logical clock with pending feed callbacks, exchange events win timestamp ties,
+and fills from every intervening market event are applied before the delayed
+strategy view can inspect position or submit another order. Terminal close
+attempts still use the true final book while occurring at the full replay
+horizon. Both engines reject non-finite or negative configured latency
+components and floor negative jitter samples at zero, preventing events or
+orders from traveling backward in replay time. Replay summaries, proof,
+walk-forward candidate configs, and sweep evidence retain
+`causal_event_ordering_enabled`. Engine, strategy, replay, proof,
+walk-forward, calibration, pipeline, catalog, and sweep regressions pass
+(`193` targeted tests). Repository collection is healthy at `2676 tests`
+across `164` files. The full suite was not rerun because recent complete runs
+exceed 40 minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 
