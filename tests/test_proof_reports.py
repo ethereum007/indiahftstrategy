@@ -48,6 +48,12 @@ def write_run(
                 "aggressive_self_cross_prevention_enabled": True,
                 "shared_event_liquidity_enabled": True,
                 "persistent_displayed_liquidity_enabled": True,
+                "arrival_queue_initialization_enabled": True,
+                "limit_orders_sent": 4,
+                "queue_initialization_events": 4,
+                "deferred_queue_initialization_events": 3,
+                "uninitialized_limit_orders": 0,
+                "max_queue_initialization_lag_ns": 125_000,
                 "liquidity_shortfall_events": 2,
                 "liquidity_shortfall_qty": 75,
                 "displayed_liquidity_shortfall_events": 1,
@@ -126,6 +132,14 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     assert bool(
         report.metrics.iloc[0]["persistent_displayed_liquidity_enabled"]
     )
+    assert bool(report.metrics.iloc[0]["arrival_queue_initialization_enabled"])
+    assert int(report.metrics.iloc[0]["limit_orders_sent"]) == 4
+    assert int(report.metrics.iloc[0]["queue_initialization_events"]) == 4
+    assert int(
+        report.metrics.iloc[0]["deferred_queue_initialization_events"]
+    ) == 3
+    assert int(report.metrics.iloc[0]["uninitialized_limit_orders"]) == 0
+    assert int(report.metrics.iloc[0]["max_queue_initialization_lag_ns"]) == 125_000
     assert int(report.metrics.iloc[0]["liquidity_shortfall_events"]) == 2
     assert int(report.metrics.iloc[0]["liquidity_shortfall_qty"]) == 75
     assert int(report.metrics.iloc[0]["carried_depletion_shortfall_events"]) == 1

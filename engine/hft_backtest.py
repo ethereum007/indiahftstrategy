@@ -180,6 +180,7 @@ class Order:
     public_queue_ahead: float = 0.0  # floor unaffected by own-order cancels
     filled: int = 0
     alive: bool = True
+    queue_initialized: bool = False
 
 
 @dataclass
@@ -225,6 +226,24 @@ class LiquidityShortfall:
     queue_consumed: float = 0.0
     observed_qty: float = 0.0
     carried_depletion_qty: float = 0.0
+
+
+@dataclass
+class QueueInitialization:
+    ts_ns: int
+    instrument_id: str
+    oid: int
+    side: int
+    price: float
+    ts_sent_ns: int
+    ts_active_ns: int
+    initialization_lag_ns: int
+    mode: str
+    book_relation: str
+    observed_qty: float
+    public_queue_ahead: float
+    own_queue_tail: float
+    queue_ahead: float
 
 
 @dataclass
@@ -401,6 +420,23 @@ LIQUIDITY_SHORTFALL_COLUMNS = [
     "carried_depletion_qty",
 ]
 
+QUEUE_INITIALIZATION_COLUMNS = [
+    "ts_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "price",
+    "ts_sent_ns",
+    "ts_active_ns",
+    "initialization_lag_ns",
+    "mode",
+    "book_relation",
+    "observed_qty",
+    "public_queue_ahead",
+    "own_queue_tail",
+    "queue_ahead",
+]
+
 
 def _nonnegative_qty(value: object) -> float:
     try:
@@ -453,7 +489,10 @@ class BacktestEngine:
         self.fills: List[Fill] = []
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
+        self.queue_initializations: List[QueueInitialization] = []
         self.shared_event_liquidity_enabled = True
+        self.arrival_queue_initialization_enabled = True
+        self.limit_orders_sent = 0
         self._displayed_liquidity = DisplayedLiquidityLedger(
             enabled=persist_displayed_liquidity_depletion,
         )
@@ -527,28 +566,28 @@ class BacktestEngine:
         o = Order(self._oid, side, qty, price, otype,
                   ts_sent_ns=now,
                   ts_active_ns=active_ns)
-        # queue estimate: displayed qty at our level when we arrive (we use the
-        # current tick as proxy; conservative multiplier compensates)
         if otype == OrderType.LIMIT:
-            public_queue = 0.0
-            if side > 0 and abs(price - self._tick["bid"]) < 1e-9:
-                public_queue = self.qcons * self._tick["bid_qty"]
-            elif side < 0 and abs(price - self._tick["ask"]) < 1e-9:
-                public_queue = self.qcons * self._tick["ask_qty"]
-            o.public_queue_ahead = max(float(public_queue), 0.0)
-            o.queue_ahead = max(
-                o.public_queue_ahead,
-                self._own_queue_tail(
-                    side=side,
-                    price=price,
-                    active_ns=active_ns,
-                ),
-            )
+            self.limit_orders_sent += 1
+            market_ts = int(self._tick.get("market_ts", self._tick["ts"]))
+            if active_ns <= market_ts:
+                self._initialize_limit_queue(
+                    o,
+                    self._tick,
+                    snapshot_ts=market_ts,
+                    mode="send_snapshot",
+                )
         self.open_orders[o.oid] = o
         self.orders_sent += 1
         return o.oid
 
-    def _own_queue_tail(self, *, side: int, price: float, active_ns: int) -> float:
+    def _own_queue_tail(
+        self,
+        *,
+        side: int,
+        price: float,
+        active_ns: int,
+        priority_oid: int,
+    ) -> float:
         tail = 0.0
         for order in self.open_orders.values():
             if (
@@ -557,7 +596,8 @@ class BacktestEngine:
                 or order.side != side
                 or abs(order.price - price) >= 1e-9
                 or order.filled >= order.qty
-                or (order.ts_active_ns, order.oid) > (active_ns, self._oid)
+                or (order.ts_active_ns, order.oid)
+                >= (active_ns, priority_oid)
             ):
                 continue
             if (
@@ -568,6 +608,70 @@ class BacktestEngine:
             remaining = max(int(order.qty) - int(order.filled), 0)
             tail = max(tail, float(order.queue_ahead) + remaining)
         return tail
+
+    def _initialize_limit_queue(
+        self,
+        order: Order,
+        tick: dict,
+        *,
+        snapshot_ts: int,
+        mode: str,
+    ) -> None:
+        if order.otype != OrderType.LIMIT or order.queue_initialized:
+            return
+
+        bid = float(tick["bid"])
+        ask = float(tick["ask"])
+        public_queue = 0.0
+        observed_qty = 0.0
+        if order.side > 0 and order.price >= ask:
+            relation = "marketable"
+        elif order.side < 0 and order.price <= bid:
+            relation = "marketable"
+        elif order.side > 0 and abs(order.price - bid) < 1e-9:
+            relation = "bid_touch"
+            observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+            public_queue = self.qcons * observed_qty
+        elif order.side < 0 and abs(order.price - ask) < 1e-9:
+            relation = "ask_touch"
+            observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
+            public_queue = self.qcons * observed_qty
+        else:
+            relation = "off_touch"
+
+        own_queue_tail = self._own_queue_tail(
+            side=order.side,
+            price=order.price,
+            active_ns=order.ts_active_ns,
+            priority_oid=order.oid,
+        )
+        order.public_queue_ahead = max(float(public_queue), 0.0)
+        order.queue_ahead = max(
+            order.public_queue_ahead,
+            own_queue_tail,
+        )
+        order.queue_initialized = True
+        self.queue_initializations.append(
+            QueueInitialization(
+                ts_ns=int(snapshot_ts),
+                instrument_id=self.inst.symbol,
+                oid=order.oid,
+                side=order.side,
+                price=float(order.price),
+                ts_sent_ns=int(order.ts_sent_ns),
+                ts_active_ns=int(order.ts_active_ns),
+                initialization_lag_ns=max(
+                    int(snapshot_ts) - int(order.ts_active_ns),
+                    0,
+                ),
+                mode=mode,
+                book_relation=relation,
+                observed_qty=float(observed_qty),
+                public_queue_ahead=float(order.public_queue_ahead),
+                own_queue_tail=float(own_queue_tail),
+                queue_ahead=float(order.queue_ahead),
+            )
+        )
 
     def _position_envelope(self, side: int, qty: int) -> tuple[int, int]:
         if not self.reserve_open_order_risk:
@@ -796,6 +900,14 @@ class BacktestEngine:
             self._remove_order(o, release_queue=True)
             return
 
+        if o.otype == OrderType.LIMIT:
+            self._initialize_limit_queue(
+                o,
+                tick,
+                snapshot_ts=int(ts),
+                mode="arrival_snapshot",
+            )
+
         bid, ask = tick["bid"], tick["ask"]
         remaining = o.qty - o.filled
 
@@ -919,6 +1031,7 @@ class BacktestEngine:
                     self._try_fill(o, tick, liquidity)
             seen = dict(tick)
             seen["ts"] = tick["ts"] + self.latency.feed_delay_ns()
+            seen["market_ts"] = tick["ts"]
             self._tick = seen
             self.strategy.on_tick(self, seen)
             self._tick = tick
@@ -956,6 +1069,10 @@ class BacktestResult:
         self.liquidity_shortfalls = pd.DataFrame(
             [shortfall.__dict__ for shortfall in eng.liquidity_shortfalls],
             columns=LIQUIDITY_SHORTFALL_COLUMNS,
+        )
+        self.queue_initializations = pd.DataFrame(
+            [initialization.__dict__ for initialization in eng.queue_initializations],
+            columns=QUEUE_INITIALIZATION_COLUMNS,
         )
 
     def report(self) -> str:

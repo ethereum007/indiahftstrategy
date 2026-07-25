@@ -21,6 +21,9 @@ from engine.hft_backtest import (
     OrderRejection,
     ORDER_REJECTION_COLUMNS,
     OrderType,
+    QueueInitialization,
+    QUEUE_INITIALIZATION_COLUMNS,
+    _nonnegative_qty,
 )
 
 
@@ -131,7 +134,10 @@ class MultiInstrumentEngine:
         self.fills: List[RoutedFill] = []
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
+        self.queue_initializations: List[QueueInitialization] = []
         self.shared_event_liquidity_enabled = True
+        self.arrival_queue_initialization_enabled = True
+        self.limit_orders_sent = 0
         self._displayed_liquidity = {
             instrument_id: DisplayedLiquidityLedger(
                 enabled=persist_displayed_liquidity_depletion,
@@ -242,21 +248,16 @@ class MultiInstrumentEngine:
             ts_active_ns=active_ns,
         )
         if otype == OrderType.LIMIT:
-            public_queue = 0.0
-            if side > 0 and abs(price - visible["bid"]) < 1e-9:
-                public_queue = self.qcons * visible["bid_qty"]
-            elif side < 0 and abs(price - visible["ask"]) < 1e-9:
-                public_queue = self.qcons * visible["ask_qty"]
-            order.public_queue_ahead = max(float(public_queue), 0.0)
-            order.queue_ahead = max(
-                order.public_queue_ahead,
-                self._own_queue_tail(
-                    instrument_id=instrument_id,
-                    side=side,
-                    price=price,
-                    active_ns=active_ns,
-                ),
-            )
+            self.limit_orders_sent += 1
+            market_ts = int(visible.get("market_ts", visible["ts"]))
+            if active_ns <= market_ts:
+                self._initialize_limit_queue(
+                    instrument_id,
+                    order,
+                    visible,
+                    snapshot_ts=market_ts,
+                    mode="send_snapshot",
+                )
 
         self.open_orders[order.oid] = order
         self._order_instrument[order.oid] = instrument_id
@@ -270,6 +271,7 @@ class MultiInstrumentEngine:
         side: int,
         price: float,
         active_ns: int,
+        priority_oid: int,
     ) -> float:
         tail = 0.0
         for oid, order in self.open_orders.items():
@@ -280,7 +282,8 @@ class MultiInstrumentEngine:
                 or order.side != side
                 or abs(order.price - price) >= 1e-9
                 or order.filled >= order.qty
-                or (order.ts_active_ns, order.oid) > (active_ns, self._oid)
+                or (order.ts_active_ns, order.oid)
+                >= (active_ns, priority_oid)
             ):
                 continue
             if (
@@ -291,6 +294,72 @@ class MultiInstrumentEngine:
             remaining = max(int(order.qty) - int(order.filled), 0)
             tail = max(tail, float(order.queue_ahead) + remaining)
         return tail
+
+    def _initialize_limit_queue(
+        self,
+        instrument_id: str,
+        order: Order,
+        tick: dict,
+        *,
+        snapshot_ts: int,
+        mode: str,
+    ) -> None:
+        if order.otype != OrderType.LIMIT or order.queue_initialized:
+            return
+
+        bid = float(tick["bid"])
+        ask = float(tick["ask"])
+        public_queue = 0.0
+        observed_qty = 0.0
+        if order.side > 0 and order.price >= ask:
+            relation = "marketable"
+        elif order.side < 0 and order.price <= bid:
+            relation = "marketable"
+        elif order.side > 0 and abs(order.price - bid) < 1e-9:
+            relation = "bid_touch"
+            observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+            public_queue = self.qcons * observed_qty
+        elif order.side < 0 and abs(order.price - ask) < 1e-9:
+            relation = "ask_touch"
+            observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
+            public_queue = self.qcons * observed_qty
+        else:
+            relation = "off_touch"
+
+        own_queue_tail = self._own_queue_tail(
+            instrument_id=instrument_id,
+            side=order.side,
+            price=order.price,
+            active_ns=order.ts_active_ns,
+            priority_oid=order.oid,
+        )
+        order.public_queue_ahead = max(float(public_queue), 0.0)
+        order.queue_ahead = max(
+            order.public_queue_ahead,
+            own_queue_tail,
+        )
+        order.queue_initialized = True
+        self.queue_initializations.append(
+            QueueInitialization(
+                ts_ns=int(snapshot_ts),
+                instrument_id=instrument_id,
+                oid=order.oid,
+                side=order.side,
+                price=float(order.price),
+                ts_sent_ns=int(order.ts_sent_ns),
+                ts_active_ns=int(order.ts_active_ns),
+                initialization_lag_ns=max(
+                    int(snapshot_ts) - int(order.ts_active_ns),
+                    0,
+                ),
+                mode=mode,
+                book_relation=relation,
+                observed_qty=float(observed_qty),
+                public_queue_ahead=float(order.public_queue_ahead),
+                own_queue_tail=float(own_queue_tail),
+                queue_ahead=float(order.queue_ahead),
+            )
+        )
 
     def cancel(self, oid: int):
         order = self.open_orders.get(oid)
@@ -746,6 +815,15 @@ class MultiInstrumentEngine:
             )
             return
 
+        if order.otype == OrderType.LIMIT:
+            self._initialize_limit_queue(
+                instrument_id,
+                order,
+                tick,
+                snapshot_ts=int(ts),
+                mode="arrival_snapshot",
+            )
+
         bid, ask = tick["bid"], tick["ask"]
         remaining = order.qty - order.filled
         if remaining <= 0:
@@ -970,6 +1048,13 @@ class MultiBacktestResult:
         self.liquidity_shortfalls = pd.DataFrame(
             [shortfall.__dict__ for shortfall in engine.liquidity_shortfalls],
             columns=LIQUIDITY_SHORTFALL_COLUMNS,
+        )
+        self.queue_initializations = pd.DataFrame(
+            [
+                initialization.__dict__
+                for initialization in engine.queue_initializations
+            ],
+            columns=QUEUE_INITIALIZATION_COLUMNS,
         )
 
     def report(self) -> str:

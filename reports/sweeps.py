@@ -29,6 +29,12 @@ KNOWN_NON_PARAM_COLUMNS = {
     "aggressive_self_cross_prevention_enabled",
     "shared_event_liquidity_enabled",
     "persistent_displayed_liquidity_enabled",
+    "arrival_queue_initialization_enabled",
+    "limit_orders_sent",
+    "queue_initialization_events",
+    "deferred_queue_initialization_events",
+    "uninitialized_limit_orders",
+    "max_queue_initialization_lag_ns",
     "liquidity_shortfall_events",
     "liquidity_shortfall_qty",
     "displayed_liquidity_shortfall_events",
@@ -227,6 +233,23 @@ def _score_scenarios(
             group,
             "carried_depletion_shortfall_qty",
         ).fillna(0.0)
+        limit_orders_sent = _numeric(group, "limit_orders_sent").fillna(0.0)
+        queue_initialization_events = _numeric(
+            group,
+            "queue_initialization_events",
+        ).fillna(0.0)
+        deferred_queue_initialization_events = _numeric(
+            group,
+            "deferred_queue_initialization_events",
+        ).fillna(0.0)
+        uninitialized_limit_orders = _numeric(
+            group,
+            "uninitialized_limit_orders",
+        ).fillna(0.0)
+        queue_initialization_lag_ns = _numeric(
+            group,
+            "max_queue_initialization_lag_ns",
+        ).fillna(0.0)
         worst_regime = _numeric(group, "worst_regime_equity_change")
         losing_regimes = _numeric(group, "losing_regimes")
 
@@ -278,6 +301,19 @@ def _score_scenarios(
                 "total_carried_depletion_shortfall_qty": int(
                     carried_depletion_shortfall_qty.sum()
                 ),
+                "total_limit_orders_sent": int(limit_orders_sent.sum()),
+                "total_queue_initialization_events": int(
+                    queue_initialization_events.sum()
+                ),
+                "total_deferred_queue_initialization_events": int(
+                    deferred_queue_initialization_events.sum()
+                ),
+                "total_uninitialized_limit_orders": int(
+                    uninitialized_limit_orders.sum()
+                ),
+                "max_queue_initialization_lag_ns": int(
+                    queue_initialization_lag_ns.max()
+                ),
                 "worst_regime_equity_change": float(worst_regime.min(skipna=True)),
                 "runs_with_losing_regimes": int((losing_regimes > 0).sum()),
                 "selection_passed": bool(selection_passed),
@@ -322,6 +358,11 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_liquidity_shortfall_qty": 0,
                     "total_carried_depletion_shortfall_events": 0,
                     "total_carried_depletion_shortfall_qty": 0,
+                    "total_limit_orders_sent": 0,
+                    "total_queue_initialization_events": 0,
+                    "total_deferred_queue_initialization_events": 0,
+                    "total_uninitialized_limit_orders": 0,
+                    "max_queue_initialization_lag_ns": 0,
                 }
             ]
         )
@@ -378,6 +419,37 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     )
                     .fillna(0.0)
                     .sum()
+                ),
+                "total_limit_orders_sent": int(
+                    _numeric(scenario_runs, "limit_orders_sent")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_queue_initialization_events": int(
+                    _numeric(scenario_runs, "queue_initialization_events")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_deferred_queue_initialization_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "deferred_queue_initialization_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_uninitialized_limit_orders": int(
+                    _numeric(scenario_runs, "uninitialized_limit_orders")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "max_queue_initialization_lag_ns": int(
+                    _numeric(
+                        scenario_runs,
+                        "max_queue_initialization_lag_ns",
+                    )
+                    .fillna(0.0)
+                    .max()
                 ),
             }
         ]

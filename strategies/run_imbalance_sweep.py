@@ -209,6 +209,11 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_liquidity_shortfall_qty",
                 "total_carried_depletion_shortfall_events",
                 "total_carried_depletion_shortfall_qty",
+                "total_limit_orders_sent",
+                "total_queue_initialization_events",
+                "total_deferred_queue_initialization_events",
+                "total_uninitialized_limit_orders",
+                "max_queue_initialization_lag_ns",
                 "total_pretrade_rejections",
                 "total_position_risk_rejections",
                 "total_self_cross_rejections",
@@ -265,6 +270,51 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         ),
                         errors="coerce",
                     ).fillna(0).sum()
+                ),
+                "total_limit_orders_sent": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "limit_orders_sent",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_queue_initialization_events": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "queue_initialization_events",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_deferred_queue_initialization_events": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "deferred_queue_initialization_events",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_uninitialized_limit_orders": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "uninitialized_limit_orders",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "max_queue_initialization_lag_ns": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "max_queue_initialization_lag_ns",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).max()
                 ),
                 "total_pretrade_rejections": int(
                     runs["pretrade_rejections"].sum()

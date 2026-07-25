@@ -24,6 +24,12 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "losing_regimes": 0,
             "worst_regime_equity_change": 3.0,
             "persistent_displayed_liquidity_enabled": True,
+            "arrival_queue_initialization_enabled": True,
+            "limit_orders_sent": 1,
+            "queue_initialization_events": 1,
+            "deferred_queue_initialization_events": 1,
+            "uninitialized_limit_orders": 0,
+            "max_queue_initialization_lag_ns": 100_000,
             "carried_depletion_shortfall_events": 1,
             "carried_depletion_shortfall_qty": 25,
         },
@@ -40,6 +46,12 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "losing_regimes": 1,
             "worst_regime_equity_change": -1.0,
             "persistent_displayed_liquidity_enabled": True,
+            "arrival_queue_initialization_enabled": True,
+            "limit_orders_sent": 1,
+            "queue_initialization_events": 1,
+            "deferred_queue_initialization_events": 1,
+            "uninitialized_limit_orders": 0,
+            "max_queue_initialization_lag_ns": 100_000,
             "carried_depletion_shortfall_events": 1,
             "carried_depletion_shortfall_qty": 25,
         },
@@ -77,11 +89,27 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_self_cross_rejections"]) == 0
     assert int(best["total_carried_depletion_shortfall_events"]) == 2
     assert int(best["total_carried_depletion_shortfall_qty"]) == 50
+    assert int(best["total_limit_orders_sent"]) == 2
+    assert int(best["total_queue_initialization_events"]) == 2
+    assert int(best["total_deferred_queue_initialization_events"]) == 2
+    assert int(best["total_uninitialized_limit_orders"]) == 0
+    assert int(best["max_queue_initialization_lag_ns"]) == 100_000
     assert int(comparison.summary.iloc[0]["total_pretrade_rejections"]) == 0
     assert int(
         comparison.summary.iloc[0]["total_carried_depletion_shortfall_events"]
     ) == 4
     assert int(comparison.summary.iloc[0]["total_carried_depletion_shortfall_qty"]) == 100
+    assert int(comparison.summary.iloc[0]["total_limit_orders_sent"]) == 4
+    assert int(
+        comparison.summary.iloc[0]["total_queue_initialization_events"]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_deferred_queue_initialization_events"
+        ]
+    ) == 4
+    assert int(comparison.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
+    assert int(comparison.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 100_000
 
 
 def test_write_sweep_comparison_outputs_selection_artifacts(tmp_path):

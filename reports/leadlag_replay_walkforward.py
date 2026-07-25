@@ -411,6 +411,26 @@ def _fold_row(
         "persistent_displayed_liquidity_enabled": _to_bool(
             row.get("persistent_displayed_liquidity_enabled", False)
         ),
+        "arrival_queue_initialization_enabled": _to_bool(
+            row.get("arrival_queue_initialization_enabled", False)
+        ),
+        "limit_orders_sent": _int(row, "limit_orders_sent"),
+        "queue_initialization_events": _int(
+            row,
+            "queue_initialization_events",
+        ),
+        "deferred_queue_initialization_events": _int(
+            row,
+            "deferred_queue_initialization_events",
+        ),
+        "uninitialized_limit_orders": _int(
+            row,
+            "uninitialized_limit_orders",
+        ),
+        "max_queue_initialization_lag_ns": _int(
+            row,
+            "max_queue_initialization_lag_ns",
+        ),
         "liquidity_shortfall_events": _int(
             row,
             "liquidity_shortfall_events",
@@ -537,6 +557,10 @@ def _summary(
         "persistent_displayed_liquidity_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    arrival_queue_enabled = folds.get(
+        "arrival_queue_initialization_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     proof_pass_rate = float(folds["proof_passed"].map(_to_bool).mean()) if not folds.empty else 0.0
     latency_budget_ns = edge_latency_budget_ns(candidate)
     total_replay_latency_ns = replay_latency_ns(replay_params)
@@ -565,6 +589,34 @@ def _summary(
                 ),
                 "persistent_displayed_liquidity_enabled_folds": int(
                     persistent_liquidity_enabled.sum()
+                ),
+                "arrival_queue_initialization_enabled_folds": int(
+                    arrival_queue_enabled.sum()
+                ),
+                "total_limit_orders_sent": _numeric_reduce(
+                    folds,
+                    "limit_orders_sent",
+                    "sum",
+                ),
+                "total_queue_initialization_events": _numeric_reduce(
+                    folds,
+                    "queue_initialization_events",
+                    "sum",
+                ),
+                "total_deferred_queue_initialization_events": _numeric_reduce(
+                    folds,
+                    "deferred_queue_initialization_events",
+                    "sum",
+                ),
+                "total_uninitialized_limit_orders": _numeric_reduce(
+                    folds,
+                    "uninitialized_limit_orders",
+                    "sum",
+                ),
+                "max_queue_initialization_lag_ns": _numeric_reduce(
+                    folds,
+                    "max_queue_initialization_lag_ns",
+                    "max",
                 ),
                 "total_liquidity_shortfall_events": _numeric_reduce(
                     folds,
@@ -665,6 +717,24 @@ def _candidate_config(
         ),
         "persistent_displayed_liquidity_enabled_folds": _jsonable(
             summary.get("persistent_displayed_liquidity_enabled_folds")
+        ),
+        "arrival_queue_initialization_enabled_folds": _jsonable(
+            summary.get("arrival_queue_initialization_enabled_folds")
+        ),
+        "total_limit_orders_sent": _jsonable(
+            summary.get("total_limit_orders_sent")
+        ),
+        "total_queue_initialization_events": _jsonable(
+            summary.get("total_queue_initialization_events")
+        ),
+        "total_deferred_queue_initialization_events": _jsonable(
+            summary.get("total_deferred_queue_initialization_events")
+        ),
+        "total_uninitialized_limit_orders": _jsonable(
+            summary.get("total_uninitialized_limit_orders")
+        ),
+        "max_queue_initialization_lag_ns": _jsonable(
+            summary.get("max_queue_initialization_lag_ns")
         ),
         "total_liquidity_shortfall_events": _jsonable(
             summary.get("total_liquidity_shortfall_events")

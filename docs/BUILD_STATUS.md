@@ -5,9 +5,10 @@
 - Single-instrument event backtester with Indian costs, latency, queue fills,
   cancels, terminal flattening, OTR reporting, shared per-event displayed
   liquidity, persistent same-level depletion across L1 snapshots, own-order
-  queue priority, liquidity-shortfall evidence, and tests. Unchanged snapshots
-  do not restore consumed depth; only an observed size increase replenishes its
-  delta, while a price or timestamp-day change starts a fresh level.
+  queue priority initialized from the first market snapshot at venue arrival,
+  liquidity-shortfall evidence, and tests. Unchanged snapshots do not restore
+  consumed depth; only an observed size increase replenishes its delta, while a
+  price or timestamp-day change starts a fresh level.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local
   event and cross-snapshot liquidity conservation.
@@ -7241,6 +7242,27 @@ calibration, pipeline, and catalog regressions pass (`155` tests). Repository
 collection is healthy at `2641 tests` across `164` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
+
+Latest arrival-time passive-queue proof: delayed limit orders no longer inherit
+public depth from the strategy's decision snapshot. Zero-latency orders retain
+the contemporaneous visible book, while delayed orders initialize public depth
+and deterministic own-order priority from the first market snapshot at or
+after venue activation. Priority is bound to each order's exact
+`(ts_active_ns, oid)` tuple, so later same-time orders cannot move ahead of an
+earlier order. A limit that has become marketable before arrival is now
+classified as a taker at the current touch rather than receiving retrospective
+maker treatment at its limit. Every initialized limit writes
+`queue_initializations.csv` with send/active/initialization timestamps,
+initialization lag, send-versus-arrival mode, book relation, observed depth,
+public queue, own-order tail, and final queue ahead. Replay summaries, proof
+metrics, walk-forward folds/candidates, strategy sweeps, and cross-sweep
+selection retain the enabled flag, limit-order and initialization counts,
+deferred and uninitialized counts, and maximum initialization lag. Focused and
+downstream engine, replay, proof, calibration, walk-forward, and sweep
+regressions plus manifest/catalog and promotion/evidence checks pass (`236`
+tests). Repository collection is healthy at
+`2656 tests` across `164` files. The full suite was not rerun because recent
+complete runs exceed 40 minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 

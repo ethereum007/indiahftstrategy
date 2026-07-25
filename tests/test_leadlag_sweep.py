@@ -75,6 +75,11 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(result.summary.iloc[0]["total_self_cross_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_carried_depletion_shortfall_events"]) == 0
     assert int(result.summary.iloc[0]["total_carried_depletion_shortfall_qty"]) == 0
+    assert int(result.summary.iloc[0]["total_limit_orders_sent"]) == 0
+    assert int(result.summary.iloc[0]["total_queue_initialization_events"]) == 0
+    assert int(result.summary.iloc[0]["total_deferred_queue_initialization_events"]) == 0
+    assert int(result.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
+    assert int(result.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 0
     assert result.runs["pending_order_risk_reservation_enabled"].all()
     assert result.runs["aggressive_self_cross_prevention_enabled"].all()
     assert (out_dir / "sweep_runs.csv").exists()

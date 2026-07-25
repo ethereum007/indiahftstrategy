@@ -138,9 +138,16 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert report.folds["pending_order_risk_reservation_enabled"].all()
     assert report.folds["aggressive_self_cross_prevention_enabled"].all()
     assert report.folds["persistent_displayed_liquidity_enabled"].all()
+    assert report.folds["arrival_queue_initialization_enabled"].all()
     assert int(report.summary.loc[0, "pending_order_risk_reservation_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "aggressive_self_cross_prevention_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "persistent_displayed_liquidity_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "arrival_queue_initialization_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "total_limit_orders_sent"]) == 0
+    assert int(report.summary.loc[0, "total_queue_initialization_events"]) == 0
+    assert int(report.summary.loc[0, "total_deferred_queue_initialization_events"]) == 0
+    assert int(report.summary.loc[0, "total_uninitialized_limit_orders"]) == 0
+    assert int(report.summary.loc[0, "max_queue_initialization_lag_ns"]) == 0
     assert int(report.summary.loc[0, "total_carried_depletion_shortfall_events"]) == 0
     assert int(report.summary.loc[0, "total_carried_depletion_shortfall_qty"]) == 0
     assert int(report.summary.loc[0, "total_pretrade_rejections"]) == 0
@@ -161,6 +168,12 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert config["replay_walkforward"]["pending_order_risk_reservation_enabled_folds"] == 2
     assert config["replay_walkforward"]["aggressive_self_cross_prevention_enabled_folds"] == 2
     assert config["replay_walkforward"]["persistent_displayed_liquidity_enabled_folds"] == 2
+    assert config["replay_walkforward"]["arrival_queue_initialization_enabled_folds"] == 2
+    assert config["replay_walkforward"]["total_limit_orders_sent"] == 0
+    assert config["replay_walkforward"]["total_queue_initialization_events"] == 0
+    assert config["replay_walkforward"]["total_deferred_queue_initialization_events"] == 0
+    assert config["replay_walkforward"]["total_uninitialized_limit_orders"] == 0
+    assert config["replay_walkforward"]["max_queue_initialization_lag_ns"] == 0
     assert config["replay_walkforward"]["total_carried_depletion_shortfall_events"] == 0
     assert config["replay_walkforward"]["total_carried_depletion_shortfall_qty"] == 0
     assert config["replay_walkforward"]["total_pretrade_rejections"] == 0

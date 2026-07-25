@@ -61,6 +61,22 @@ def replay_summary(
         else pd.Series(dtype="float64")
     )
     carried_depletion_mask = displayed_mask & carried_depletion.gt(0)
+    queue_initializations = result.queue_initializations
+    queue_modes = (
+        queue_initializations["mode"]
+        if not queue_initializations.empty
+        else pd.Series(dtype="object")
+    )
+    queue_initialization_lag_ns = (
+        pd.to_numeric(
+            queue_initializations["initialization_lag_ns"],
+            errors="coerce",
+        ).fillna(0)
+        if not queue_initializations.empty
+        else pd.Series(dtype="float64")
+    )
+    limit_orders_sent = int(result.engine.limit_orders_sent)
+    queue_initialization_events = int(len(queue_initializations))
     otr = check_order_to_trade_ratio(
         orders_sent=result.engine.orders_sent,
         fills=fill_count,
@@ -89,6 +105,23 @@ def replay_summary(
                 ),
                 "persistent_displayed_liquidity_enabled": bool(
                     result.engine.persist_displayed_liquidity_depletion
+                ),
+                "arrival_queue_initialization_enabled": bool(
+                    result.engine.arrival_queue_initialization_enabled
+                ),
+                "limit_orders_sent": limit_orders_sent,
+                "queue_initialization_events": queue_initialization_events,
+                "deferred_queue_initialization_events": int(
+                    (queue_modes == "arrival_snapshot").sum()
+                ),
+                "uninitialized_limit_orders": max(
+                    limit_orders_sent - queue_initialization_events,
+                    0,
+                ),
+                "max_queue_initialization_lag_ns": int(
+                    queue_initialization_lag_ns.max()
+                    if not queue_initialization_lag_ns.empty
+                    else 0
                 ),
                 "liquidity_shortfall_events": int(len(liquidity_shortfalls)),
                 "liquidity_shortfall_qty": int(shortfall_qty.sum()),
@@ -148,6 +181,10 @@ def write_replay_outputs(
     result.order_rejections.to_csv(out / "order_rejections.csv", index=False)
     result.liquidity_shortfalls.to_csv(
         out / "liquidity_shortfalls.csv",
+        index=False,
+    )
+    result.queue_initializations.to_csv(
+        out / "queue_initializations.csv",
         index=False,
     )
     summary.to_csv(out / "summary.csv", index=False)

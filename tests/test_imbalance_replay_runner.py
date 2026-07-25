@@ -124,6 +124,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "fills.csv").exists()
     assert (out_dir / "order_rejections.csv").exists()
     assert (out_dir / "liquidity_shortfalls.csv").exists()
+    assert (out_dir / "queue_initializations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "signals.csv").exists()
@@ -140,6 +141,12 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
     assert bool(summary["shared_event_liquidity_enabled"])
     assert bool(summary["persistent_displayed_liquidity_enabled"])
+    assert bool(summary["arrival_queue_initialization_enabled"])
+    assert int(summary["limit_orders_sent"]) == 0
+    assert int(summary["queue_initialization_events"]) == 0
+    assert int(summary["deferred_queue_initialization_events"]) == 0
+    assert int(summary["uninitialized_limit_orders"]) == 0
+    assert int(summary["max_queue_initialization_lag_ns"]) == 0
     assert int(summary["liquidity_shortfall_events"]) == 0
     assert int(summary["liquidity_shortfall_qty"]) == 0
     assert int(summary["carried_depletion_shortfall_events"]) == 0

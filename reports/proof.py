@@ -564,6 +564,20 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     persistent_displayed_liquidity_enabled = _bool(
         row.get("persistent_displayed_liquidity_enabled", False)
     )
+    arrival_queue_initialization_enabled = _bool(
+        row.get("arrival_queue_initialization_enabled", False)
+    )
+    limit_orders_sent = _int(row, "limit_orders_sent")
+    queue_initialization_events = _int(row, "queue_initialization_events")
+    deferred_queue_initialization_events = _int(
+        row,
+        "deferred_queue_initialization_events",
+    )
+    uninitialized_limit_orders = _int(row, "uninitialized_limit_orders")
+    max_queue_initialization_lag_ns = _int(
+        row,
+        "max_queue_initialization_lag_ns",
+    )
     liquidity_shortfall_events = _int(row, "liquidity_shortfall_events")
     liquidity_shortfall_qty = _int(row, "liquidity_shortfall_qty")
     displayed_liquidity_shortfall_events = _int(
@@ -618,6 +632,16 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "persistent_displayed_liquidity_enabled": (
             persistent_displayed_liquidity_enabled
         ),
+        "arrival_queue_initialization_enabled": (
+            arrival_queue_initialization_enabled
+        ),
+        "limit_orders_sent": limit_orders_sent,
+        "queue_initialization_events": queue_initialization_events,
+        "deferred_queue_initialization_events": (
+            deferred_queue_initialization_events
+        ),
+        "uninitialized_limit_orders": uninitialized_limit_orders,
+        "max_queue_initialization_lag_ns": max_queue_initialization_lag_ns,
         "liquidity_shortfall_events": liquidity_shortfall_events,
         "liquidity_shortfall_qty": liquidity_shortfall_qty,
         "displayed_liquidity_shortfall_events": (

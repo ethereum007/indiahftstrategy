@@ -256,6 +256,53 @@ def test_multi_engine_carries_depletion_until_size_replenishes():
     assert int(summary["liquidity_shortfall_qty"]) == 100
     assert int(summary["carried_depletion_shortfall_events"]) == 1
     assert int(summary["carried_depletion_shortfall_qty"]) == 50
+    assert bool(summary["arrival_queue_initialization_enabled"])
+    assert int(summary["limit_orders_sent"]) == 1
+    assert int(summary["queue_initialization_events"]) == 1
+    assert int(summary["deferred_queue_initialization_events"]) == 0
+    assert int(summary["uninitialized_limit_orders"]) == 0
+    assert int(summary["max_queue_initialization_lag_ns"]) == 0
+
+
+def test_multi_engine_uses_arrival_snapshot_for_limit_queue():
+    strategy = BurstRiskStrategy(
+        {"A": [(+1, 75, 100.00, OrderType.LIMIT)]}
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 75, 75, np.nan, 0),
+                        (200_000, 100.00, 100.05, 225, 75, np.nan, 0),
+                        (300_000, 100.00, 100.05, 225, 75, 100.00, 225),
+                        (400_000, 100.00, 100.05, 225, 75, 100.00, 75),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue(order_us=100)},
+        strategy=strategy,
+        queue_conservatism=1.0,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["ts_ns"].tolist() == [400_000]
+    initialization = result.queue_initializations.iloc[0]
+    assert initialization["instrument_id"] == "A"
+    assert initialization["mode"] == "arrival_snapshot"
+    assert initialization["ts_ns"] == 200_000
+    assert initialization["initialization_lag_ns"] == 100_000
+    assert initialization["observed_qty"] == 225
+    assert initialization["queue_ahead"] == 225
+    summary = replay_summary(result).iloc[0]
+    assert int(summary["deferred_queue_initialization_events"]) == 1
+    assert int(summary["max_queue_initialization_lag_ns"]) == 100_000
 
 
 def test_feed_callbacks_are_ordered_by_latency_adjusted_global_time_and_skew():

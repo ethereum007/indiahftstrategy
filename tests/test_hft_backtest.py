@@ -394,6 +394,108 @@ def test_limit_order_waits_for_queue_burn_before_fill():
 
     assert list(res.fills["ts_ns"])[:1] == [3_000]
     assert res.fills.iloc[0]["qty"] == 75
+    initialization = res.queue_initializations.iloc[0]
+    assert initialization["mode"] == "send_snapshot"
+    assert initialization["ts_ns"] == 0
+    assert initialization["initialization_lag_ns"] == 0
+    assert initialization["observed_qty"] == 150
+
+
+def test_delayed_limit_uses_arrival_snapshot_for_public_queue():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (200_000, 100.00, 100.05, 225, 75, np.nan, 0),
+            (300_000, 100.00, 100.05, 225, 75, 100.00, 225),
+            (400_000, 100.00, 100.05, 225, 75, 100.00, 75),
+        ]
+    )
+    strategy = SendOnce(+1, 75, 100.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(order_us=100),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["ts_ns"].tolist() == [400_000]
+    initialization = result.queue_initializations.iloc[0]
+    assert initialization["mode"] == "arrival_snapshot"
+    assert initialization["ts_ns"] == 200_000
+    assert initialization["ts_active_ns"] == 100_000
+    assert initialization["initialization_lag_ns"] == 100_000
+    assert initialization["book_relation"] == "bid_touch"
+    assert initialization["observed_qty"] == 225
+    assert initialization["public_queue_ahead"] == 225
+    assert initialization["own_queue_tail"] == 0
+    assert initialization["queue_ahead"] == 225
+
+
+def test_delayed_limit_that_moves_through_before_arrival_is_taker():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 150, 75, np.nan, 0),
+            (200_000, 99.90, 99.95, 150, 75, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 75, 100.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(order_us=100),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    fill = result.fills.loc[result.fills["side"] > 0].iloc[0]
+    assert fill["ts_ns"] == 200_000
+    assert fill["price"] == 99.95
+    assert not bool(fill["maker"])
+    initialization = result.queue_initializations.iloc[0]
+    assert initialization["mode"] == "arrival_snapshot"
+    assert initialization["book_relation"] == "marketable"
+    assert initialization["observed_qty"] == 0
+    assert initialization["queue_ahead"] == 0
+
+
+def test_deferred_orders_keep_earlier_order_queue_priority():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 300, np.nan, 0),
+            (200_000, 100.00, 100.05, 300, 300, np.nan, 0),
+            (300_000, 100.00, 100.05, 300, 300, 100.00, 100),
+        ]
+    )
+    strategy = SendBurst(
+        [
+            (+1, 75, 100.00, OrderType.LIMIT),
+            (+1, 75, 100.00, OrderType.LIMIT),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(order_us=100),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [75, 25]
+    initialization = result.queue_initializations.set_index("oid")
+    assert initialization.loc[strategy.oids[0], "own_queue_tail"] == 0
+    assert initialization.loc[strategy.oids[1], "own_queue_tail"] == 75
 
 
 def test_resting_orders_share_trade_print_volume_in_queue_priority():

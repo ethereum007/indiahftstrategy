@@ -871,7 +871,7 @@ python -m hft_cli replay-parity `
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
-`liquidity_shortfalls.csv`.
+`liquidity_shortfalls.csv` and `queue_initializations.csv`.
 
 All shared-clock replays reserve the remaining quantity of live and
 cancel-pending orders when applying instrument position, portfolio gross
@@ -899,6 +899,20 @@ carried-depletion shortfall counts and quantities. `liquidity_shortfalls.csv`
 retains the order, source, requested/available/filled quantities, observed
 size, carried depletion, and queue consumption behind each partial or missed
 eligible fill.
+
+Passive limit queues are initialized against the market snapshot available at
+venue activation, not the older strategy-decision snapshot. A zero-latency
+order uses the contemporaneous visible book; a delayed order waits for the
+first market snapshot at or after `ts_active_ns`. Earlier own orders at the
+same price remain ahead according to `(ts_active_ns, oid)`. If the limit is
+already marketable when it arrives, replay treats it as a taker at the current
+touch. `queue_initializations.csv` records the initialization timestamp and
+lag, `send_snapshot` or `arrival_snapshot` mode, touch/marketable/off-touch
+relation, observed public depth, earlier own-order tail, and resulting queue.
+`summary.csv` carries the enabled flag, accepted limit-order count,
+initialization and deferred-initialization counts, uninitialized limit count,
+and maximum initialization lag; proof, walk-forward, and sweep outputs retain
+the same evidence.
 
 ## Parity Sweep
 
