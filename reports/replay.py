@@ -36,6 +36,22 @@ def replay_summary(
         if not order_rejections.empty
         else pd.Series(dtype="object")
     )
+    liquidity_shortfalls = result.liquidity_shortfalls
+    liquidity_sources = (
+        liquidity_shortfalls["liquidity_source"]
+        if not liquidity_shortfalls.empty
+        else pd.Series(dtype="object")
+    )
+    shortfall_qty = (
+        pd.to_numeric(
+            liquidity_shortfalls["shortfall_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not liquidity_shortfalls.empty
+        else pd.Series(dtype="float64")
+    )
+    displayed_mask = liquidity_sources.isin({"ask_display", "bid_display"})
+    trade_print_mask = liquidity_sources == "trade_print"
     otr = check_order_to_trade_ratio(
         orders_sent=result.engine.orders_sent,
         fills=fill_count,
@@ -58,6 +74,21 @@ def replay_summary(
                 ),
                 "aggressive_self_cross_prevention_enabled": bool(
                     result.engine.ban_aggressive_self_cross
+                ),
+                "shared_event_liquidity_enabled": bool(
+                    result.engine.shared_event_liquidity_enabled
+                ),
+                "liquidity_shortfall_events": int(len(liquidity_shortfalls)),
+                "liquidity_shortfall_qty": int(shortfall_qty.sum()),
+                "displayed_liquidity_shortfall_events": int(
+                    displayed_mask.sum()
+                ),
+                "displayed_liquidity_shortfall_qty": int(
+                    shortfall_qty.loc[displayed_mask].sum()
+                ),
+                "trade_print_shortfall_events": int(trade_print_mask.sum()),
+                "trade_print_shortfall_qty": int(
+                    shortfall_qty.loc[trade_print_mask].sum()
                 ),
                 "pretrade_rejections": int(len(order_rejections)),
                 "position_risk_rejections": int(
@@ -97,6 +128,10 @@ def write_replay_outputs(
     result.equity.to_csv(out / "equity.csv", index=False)
     result.fills.to_csv(out / "fills.csv", index=False)
     result.order_rejections.to_csv(out / "order_rejections.csv", index=False)
+    result.liquidity_shortfalls.to_csv(
+        out / "liquidity_shortfalls.csv",
+        index=False,
+    )
     summary.to_csv(out / "summary.csv", index=False)
     pnl_decomposition(
         result.fills,

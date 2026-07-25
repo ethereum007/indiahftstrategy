@@ -176,6 +176,46 @@ def test_global_clock_interleaves_other_instrument_before_fill():
     ]
 
 
+def test_multi_engine_orders_share_instrument_event_liquidity():
+    strategy = BurstRiskStrategy(
+        {
+            "A": [
+                (+1, 75, 101.00, OrderType.IOC),
+                (+1, 75, 101.00, OrderType.IOC),
+            ]
+        }
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 300, 300, np.nan, 0),
+                        (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [75, 25]
+    assert int(strategy_fills["qty"].sum()) == 100
+    shortfall = result.liquidity_shortfalls.iloc[0]
+    assert shortfall["instrument_id"] == "A"
+    assert shortfall["oid"] == strategy.oids[1]
+    assert shortfall["available_qty"] == 25
+    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["liquidity_source"] == "ask_display"
+
+
 def test_feed_callbacks_are_ordered_by_latency_adjusted_global_time_and_skew():
     strategy = LoggingStrategy()
     engine = MultiInstrumentEngine(

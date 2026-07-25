@@ -3,9 +3,11 @@
 ## Current State
 
 - Single-instrument event backtester with Indian costs, latency, queue fills,
-  cancels, terminal flattening, OTR reporting, and tests.
+  cancels, terminal flattening, OTR reporting, shared per-event displayed
+  liquidity, own-order queue priority, liquidity-shortfall evidence, and tests.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
-  per-instrument routing, portfolio limits, and shared equity.
+  per-instrument routing, portfolio limits, shared equity, and instrument-local
+  event-liquidity conservation.
 - Data normalization for top-of-book ticks and option-chain snapshots,
   including IST session filtering, quarantine reports, and regime tags.
 - NSE F&O chain diagnostics can validate declared weekly or monthly contract

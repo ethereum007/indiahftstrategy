@@ -123,6 +123,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert not replay.markouts.empty
     assert (out_dir / "fills.csv").exists()
     assert (out_dir / "order_rejections.csv").exists()
+    assert (out_dir / "liquidity_shortfalls.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "signals.csv").exists()
@@ -137,6 +138,9 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     summary = replay.summary.iloc[0]
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
+    assert bool(summary["shared_event_liquidity_enabled"])
+    assert int(summary["liquidity_shortfall_events"]) == 0
+    assert int(summary["liquidity_shortfall_qty"]) == 0
     assert int(summary["pretrade_rejections"]) == 0
     assert int(summary["position_risk_rejections"]) == 0
     assert int(summary["self_cross_rejections"]) == 0

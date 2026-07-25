@@ -205,6 +205,8 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "worst_drawdown",
                 "total_signals",
                 "median_fill_rate",
+                "total_liquidity_shortfall_events",
+                "total_liquidity_shortfall_qty",
                 "total_pretrade_rejections",
                 "total_position_risk_rejections",
                 "total_self_cross_rejections",
@@ -226,6 +228,24 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "median_fill_rate": float(runs["fills"].median() / runs["orders_sent"].replace(0, pd.NA).median())
                 if runs["orders_sent"].replace(0, pd.NA).notna().any()
                 else 0.0,
+                "total_liquidity_shortfall_events": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "liquidity_shortfall_events",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_liquidity_shortfall_qty": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "liquidity_shortfall_qty",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "total_pretrade_rejections": int(
                     runs["pretrade_rejections"].sum()
                 ),

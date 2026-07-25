@@ -27,6 +27,13 @@ KNOWN_NON_PARAM_COLUMNS = {
     "otr_breached",
     "pending_order_risk_reservation_enabled",
     "aggressive_self_cross_prevention_enabled",
+    "shared_event_liquidity_enabled",
+    "liquidity_shortfall_events",
+    "liquidity_shortfall_qty",
+    "displayed_liquidity_shortfall_events",
+    "displayed_liquidity_shortfall_qty",
+    "trade_print_shortfall_events",
+    "trade_print_shortfall_qty",
     "pretrade_rejections",
     "position_risk_rejections",
     "self_cross_rejections",
@@ -201,6 +208,14 @@ def _score_scenarios(
             group,
             "self_cross_rejections",
         ).fillna(0.0)
+        liquidity_shortfall_events = _numeric(
+            group,
+            "liquidity_shortfall_events",
+        ).fillna(0.0)
+        liquidity_shortfall_qty = _numeric(
+            group,
+            "liquidity_shortfall_qty",
+        ).fillna(0.0)
         worst_regime = _numeric(group, "worst_regime_equity_change")
         losing_regimes = _numeric(group, "losing_regimes")
 
@@ -239,6 +254,12 @@ def _score_scenarios(
                 ),
                 "total_self_cross_rejections": int(
                     self_cross_rejections.sum()
+                ),
+                "total_liquidity_shortfall_events": int(
+                    liquidity_shortfall_events.sum()
+                ),
+                "total_liquidity_shortfall_qty": int(
+                    liquidity_shortfall_qty.sum()
                 ),
                 "worst_regime_equity_change": float(worst_regime.min(skipna=True)),
                 "runs_with_losing_regimes": int((losing_regimes > 0).sum()),
@@ -280,6 +301,8 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_pretrade_rejections": 0,
                     "total_position_risk_rejections": 0,
                     "total_self_cross_rejections": 0,
+                    "total_liquidity_shortfall_events": 0,
+                    "total_liquidity_shortfall_qty": 0,
                 }
             ]
         )
@@ -308,6 +331,16 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                 ),
                 "total_self_cross_rejections": int(
                     _numeric(scenario_runs, "self_cross_rejections")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_liquidity_shortfall_events": int(
+                    _numeric(scenario_runs, "liquidity_shortfall_events")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_liquidity_shortfall_qty": int(
+                    _numeric(scenario_runs, "liquidity_shortfall_qty")
                     .fillna(0.0)
                     .sum()
                 ),

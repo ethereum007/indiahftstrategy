@@ -174,6 +174,7 @@ class Order:
     ts_sent_ns: int            # strategy decision time
     ts_active_ns: int = 0      # arrival at exchange (sent + order latency)
     queue_ahead: float = 0.0   # estimated qty ahead at our price level
+    public_queue_ahead: float = 0.0  # floor unaffected by own-order cancels
     filled: int = 0
     alive: bool = True
 
@@ -204,6 +205,53 @@ class OrderRejection:
     conflicting_oid: int | None = None
 
 
+@dataclass
+class LiquidityShortfall:
+    ts_ns: int
+    instrument_id: str
+    oid: int
+    side: int
+    order_type: str
+    requested_qty: int
+    available_qty: float
+    filled_qty: int
+    shortfall_qty: int
+    liquidity_source: str
+    reason: str
+    queue_ahead_before: float = 0.0
+    queue_consumed: float = 0.0
+
+
+@dataclass
+class EventLiquidity:
+    """Observed liquidity attached to one market-data event.
+
+    Displayed bid/ask depth is consumed once across all aggressive orders.
+    Trade-print volume is applied to absolute passive queue positions, which
+    lets one print advance multiple orders without allocating more fills than
+    the print contains.
+    """
+
+    bid_qty: float
+    ask_qty: float
+    last_qty: float
+
+    @classmethod
+    def from_tick(cls, tick: dict) -> "EventLiquidity":
+        return cls(
+            bid_qty=_nonnegative_qty(tick.get("bid_qty", 0)),
+            ask_qty=_nonnegative_qty(tick.get("ask_qty", 0)),
+            last_qty=_nonnegative_qty(tick.get("last_qty", 0)),
+        )
+
+    def consume_displayed(self, side: int, requested_qty: int) -> tuple[float, int]:
+        attr = "ask_qty" if side > 0 else "bid_qty"
+        available = float(getattr(self, attr))
+        filled = min(int(requested_qty), max(int(math.floor(available)), 0))
+        setattr(self, attr, max(available - filled, 0.0))
+        return available, filled
+
+
 ORDER_REJECTION_COLUMNS = [
     "ts_ns",
     "instrument_id",
@@ -217,6 +265,30 @@ ORDER_REJECTION_COLUMNS = [
     "limit",
     "conflicting_oid",
 ]
+
+LIQUIDITY_SHORTFALL_COLUMNS = [
+    "ts_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "order_type",
+    "requested_qty",
+    "available_qty",
+    "filled_qty",
+    "shortfall_qty",
+    "liquidity_source",
+    "reason",
+    "queue_ahead_before",
+    "queue_consumed",
+]
+
+
+def _nonnegative_qty(value: object) -> float:
+    try:
+        qty = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return qty if math.isfinite(qty) and qty > 0 else 0.0
 
 
 # ----------------------------------------------------------------------------
@@ -257,6 +329,8 @@ class BacktestEngine:
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[Fill] = []
         self.order_rejections: List[OrderRejection] = []
+        self.liquidity_shortfalls: List[LiquidityShortfall] = []
+        self.shared_event_liquidity_enabled = True
         self.position = 0
         self.cash = 0.0
         self.total_costs = 0.0
@@ -330,15 +404,44 @@ class BacktestEngine:
         # queue estimate: displayed qty at our level when we arrive (we use the
         # current tick as proxy; conservative multiplier compensates)
         if otype == OrderType.LIMIT:
+            public_queue = 0.0
             if side > 0 and abs(price - self._tick["bid"]) < 1e-9:
-                o.queue_ahead = self.qcons * self._tick["bid_qty"]
+                public_queue = self.qcons * self._tick["bid_qty"]
             elif side < 0 and abs(price - self._tick["ask"]) < 1e-9:
-                o.queue_ahead = self.qcons * self._tick["ask_qty"]
-            else:
-                o.queue_ahead = 0.0   # new level: front of queue
+                public_queue = self.qcons * self._tick["ask_qty"]
+            o.public_queue_ahead = max(float(public_queue), 0.0)
+            o.queue_ahead = max(
+                o.public_queue_ahead,
+                self._own_queue_tail(
+                    side=side,
+                    price=price,
+                    active_ns=active_ns,
+                ),
+            )
         self.open_orders[o.oid] = o
         self.orders_sent += 1
         return o.oid
+
+    def _own_queue_tail(self, *, side: int, price: float, active_ns: int) -> float:
+        tail = 0.0
+        for order in self.open_orders.values():
+            if (
+                not order.alive
+                or order.otype != OrderType.LIMIT
+                or order.side != side
+                or abs(order.price - price) >= 1e-9
+                or order.filled >= order.qty
+                or (order.ts_active_ns, order.oid) > (active_ns, self._oid)
+            ):
+                continue
+            if (
+                getattr(order, "_pending_cancel", False)
+                and getattr(order, "cancel_at", np.inf) <= active_ns
+            ):
+                continue
+            remaining = max(int(order.qty) - int(order.filled), 0)
+            tail = max(tail, float(order.queue_ahead) + remaining)
+        return tail
 
     def _position_envelope(self, side: int, qty: int) -> tuple[int, int]:
         if not self.reserve_open_order_risk:
@@ -431,22 +534,131 @@ class BacktestEngine:
         o = self.open_orders.get(oid)
         if o:
             # cancel also takes order latency; fills can still occur in flight.
+            o.cancel_sent_ns = self._tick["ts"]
             o.cancel_at = self._tick["ts"] + self.latency.order_delay_ns()
-            o.alive = False if getattr(o, "cancel_at", 0) <= self._tick["ts"] else o.alive
             o._pending_cancel = True
+            if o.cancel_at <= self._tick["ts"]:
+                self._remove_order(o, release_queue=True)
 
     def cancel_all(self):
         for oid in list(self.open_orders):
             self.cancel(oid)
 
     # -- fill simulation ------------------------------------------------------
-    def _try_fill(self, o: Order, tick: dict):
+    def _advance_later_own_queue(
+        self,
+        order: Order,
+        qty: int,
+        *,
+        pending_after_ns: int | None = None,
+        exclude_post_cancel_orders: bool = False,
+    ) -> None:
+        if qty <= 0 or order.otype != OrderType.LIMIT:
+            return
+        priority = (order.ts_active_ns, order.oid)
+        for later in self.open_orders.values():
+            if (
+                later.oid == order.oid
+                or not later.alive
+                or later.otype != OrderType.LIMIT
+                or later.side != order.side
+                or abs(later.price - order.price) >= 1e-9
+                or (later.ts_active_ns, later.oid) <= priority
+            ):
+                continue
+            if pending_after_ns is not None and later.ts_active_ns <= pending_after_ns:
+                continue
+            if (
+                exclude_post_cancel_orders
+                and later.ts_sent_ns >= getattr(order, "cancel_sent_ns", np.inf)
+                and later.ts_active_ns >= getattr(order, "cancel_at", np.inf)
+            ):
+                continue
+            later.queue_ahead = max(
+                float(later.public_queue_ahead),
+                float(later.queue_ahead) - qty,
+            )
+
+    def _release_own_queue(self, order: Order) -> None:
+        remaining = max(int(order.qty) - int(order.filled), 0)
+        self._advance_later_own_queue(
+            order,
+            remaining,
+            exclude_post_cancel_orders=True,
+        )
+
+    def _remove_order(self, order: Order, *, release_queue: bool = False) -> None:
+        if release_queue:
+            self._release_own_queue(order)
+        order.alive = False
+        self.open_orders.pop(order.oid, None)
+
+    def _record_liquidity_shortfall(
+        self,
+        *,
+        order: Order,
+        ts_ns: int,
+        requested_qty: int,
+        available_qty: float,
+        filled_qty: int,
+        liquidity_source: str,
+        queue_ahead_before: float = 0.0,
+        queue_consumed: float = 0.0,
+    ) -> None:
+        shortfall = int(requested_qty) - int(filled_qty)
+        if shortfall <= 0:
+            return
+        state = "exhausted" if available_qty < 1 else "partial"
+        self.liquidity_shortfalls.append(
+            LiquidityShortfall(
+                ts_ns=int(ts_ns),
+                instrument_id=self.inst.symbol,
+                oid=order.oid,
+                side=order.side,
+                order_type=order.otype.value,
+                requested_qty=int(requested_qty),
+                available_qty=float(available_qty),
+                filled_qty=int(filled_qty),
+                shortfall_qty=shortfall,
+                liquidity_source=liquidity_source,
+                reason=f"{liquidity_source}_liquidity_{state}",
+                queue_ahead_before=float(queue_ahead_before),
+                queue_consumed=float(queue_consumed),
+            )
+        )
+
+    def _fill_from_displayed(
+        self,
+        order: Order,
+        *,
+        liquidity: EventLiquidity,
+        price: float,
+        ts_ns: int,
+        requested_qty: int,
+    ) -> None:
+        source = "ask_display" if order.side > 0 else "bid_display"
+        available, fill_qty = liquidity.consume_displayed(
+            order.side,
+            requested_qty,
+        )
+        if fill_qty > 0:
+            self._advance_later_own_queue(order, fill_qty)
+            self._execute(order, fill_qty, price, ts_ns, maker=False)
+        self._record_liquidity_shortfall(
+            order=order,
+            ts_ns=ts_ns,
+            requested_qty=requested_qty,
+            available_qty=available,
+            filled_qty=fill_qty,
+            liquidity_source=source,
+        )
+
+    def _try_fill(self, o: Order, tick: dict, liquidity: EventLiquidity):
         ts = tick["ts"]
         if ts < o.ts_active_ns:
             return
         if getattr(o, "_pending_cancel", False) and ts >= getattr(o, "cancel_at", np.inf):
-            o.alive = False
-            del self.open_orders[o.oid]
+            self._remove_order(o, release_queue=True)
             return
 
         bid, ask = tick["bid"], tick["ask"]
@@ -455,15 +667,22 @@ class BacktestEngine:
         if o.otype == OrderType.IOC:
             # taker: cross the spread against displayed qty at arrival
             if o.side > 0 and o.price >= ask:
-                fq = min(remaining, int(tick["ask_qty"]))
-                if fq > 0:
-                    self._execute(o, fq, ask, ts, maker=False)
+                self._fill_from_displayed(
+                    o,
+                    liquidity=liquidity,
+                    price=ask,
+                    ts_ns=ts,
+                    requested_qty=remaining,
+                )
             elif o.side < 0 and o.price <= bid:
-                fq = min(remaining, int(tick["bid_qty"]))
-                if fq > 0:
-                    self._execute(o, fq, bid, ts, maker=False)
-            o.alive = False
-            self.open_orders.pop(o.oid, None)
+                self._fill_from_displayed(
+                    o,
+                    liquidity=liquidity,
+                    price=bid,
+                    ts_ns=ts,
+                    requested_qty=remaining,
+                )
+            self._remove_order(o)
             return
 
         # LIMIT maker logic
@@ -473,35 +692,63 @@ class BacktestEngine:
         if o.queue_ahead > 0 and (
             (o.side > 0 and ask < o.price) or (o.side < 0 and bid > o.price)
         ):
+            self._advance_later_own_queue(o, remaining)
             self._execute(o, remaining, o.price, ts, maker=True)
         # 2) marketable on arrival -> trade as taker
         elif o.side > 0 and o.price >= ask:
-            fq = min(remaining, int(tick["ask_qty"]))
-            if fq:
-                self._execute(o, fq, ask, ts, maker=False)
+            self._fill_from_displayed(
+                o,
+                liquidity=liquidity,
+                price=ask,
+                ts_ns=ts,
+                requested_qty=remaining,
+            )
         elif o.side < 0 and o.price <= bid:
-            fq = min(remaining, int(tick["bid_qty"]))
-            if fq:
-                self._execute(o, fq, bid, ts, maker=False)
+            self._fill_from_displayed(
+                o,
+                liquidity=liquidity,
+                price=bid,
+                ts_ns=ts,
+                requested_qty=remaining,
+            )
         else:
             # 3) price trades THROUGH our level -> assume full fill
             if (o.side > 0 and ask < o.price) or (o.side < 0 and bid > o.price):
+                self._advance_later_own_queue(o, remaining)
                 self._execute(o, remaining, o.price, ts, maker=True)
             # 4) trade prints AT our level -> burn queue, then fill
             elif not math.isnan(tick.get("last", np.nan)) and \
-                    abs(tick["last"] - o.price) < 1e-9 and tick.get("last_qty", 0) > 0:
-                burn = tick["last_qty"]
-                if o.queue_ahead > 0:
-                    used = min(burn, o.queue_ahead)
-                    o.queue_ahead -= used
-                    burn -= used
-                if burn > 0:
-                    fq = min(remaining, int(burn))
+                    abs(tick["last"] - o.price) < 1e-9 and liquidity.last_qty > 0:
+                queue_before = max(float(o.queue_ahead), 0.0)
+                queue_consumed = min(liquidity.last_qty, queue_before)
+                o.queue_ahead = max(queue_before - liquidity.last_qty, 0.0)
+                o.public_queue_ahead = max(
+                    float(o.public_queue_ahead) - liquidity.last_qty,
+                    0.0,
+                )
+                available = max(liquidity.last_qty - queue_before, 0.0)
+                fq = min(remaining, max(int(math.floor(available)), 0))
+                if fq > 0:
+                    self._advance_later_own_queue(
+                        o,
+                        fq,
+                        pending_after_ns=ts,
+                    )
                     self._execute(o, fq, o.price, ts, maker=True)
+                if 0 < fq < remaining:
+                    self._record_liquidity_shortfall(
+                        order=o,
+                        ts_ns=ts,
+                        requested_qty=remaining,
+                        available_qty=available,
+                        filled_qty=fq,
+                        liquidity_source="trade_print",
+                        queue_ahead_before=queue_before,
+                        queue_consumed=queue_consumed,
+                    )
 
         if o.filled >= o.qty:
-            o.alive = False
-            self.open_orders.pop(o.oid, None)
+            self._remove_order(o)
 
     def _execute(self, o: Order, qty: int, price: float, ts: int, maker: bool):
         cost = self.costs.cost(o.side, price, qty, self.inst)
@@ -523,10 +770,18 @@ class BacktestEngine:
             # feed latency: strategy sees tick later; we shift its decision
             # time, but fills check against the true book timestamp.
             self._tick = tick
-            for oid in list(self.open_orders):
+            liquidity = EventLiquidity.from_tick(tick)
+            order_ids = sorted(
+                self.open_orders,
+                key=lambda oid: (
+                    self.open_orders[oid].ts_active_ns,
+                    oid,
+                ),
+            )
+            for oid in order_ids:
                 o = self.open_orders.get(oid)
                 if o:
-                    self._try_fill(o, tick)
+                    self._try_fill(o, tick, liquidity)
             seen = dict(tick)
             seen["ts"] = tick["ts"] + self.latency.feed_delay_ns()
             self._tick = seen
@@ -563,6 +818,10 @@ class BacktestResult:
             [rejection.__dict__ for rejection in eng.order_rejections],
             columns=ORDER_REJECTION_COLUMNS,
         )
+        self.liquidity_shortfalls = pd.DataFrame(
+            [shortfall.__dict__ for shortfall in eng.liquidity_shortfalls],
+            columns=LIQUIDITY_SHORTFALL_COLUMNS,
+        )
 
     def report(self) -> str:
         e = self.equity["equity"].values
@@ -587,6 +846,7 @@ class BacktestResult:
             f"  ({100*self.eng.total_costs/max(abs(pnl)+self.eng.total_costs,1e-9):.1f}% of gross)",
             f"Fills / Orders     : {nf} / {self.eng.orders_sent}  (OTR {otr:.1f})",
             f"Pre-trade rejects  : {len(self.order_rejections)}",
+            f"Liquidity shortfall: {len(self.liquidity_shortfalls)} events",
             f"Maker fill share   : {100*maker_share:.1f}%",
             f"Turnover           : ₹{turnover:,.0f}",
             f"Sharpe (annualized): {sharpe:.2f}",

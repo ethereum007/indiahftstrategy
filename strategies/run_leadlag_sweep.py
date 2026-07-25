@@ -183,6 +183,8 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "median_net_pnl",
                 "min_net_pnl",
                 "worst_drawdown",
+                "total_liquidity_shortfall_events",
+                "total_liquidity_shortfall_qty",
                 "total_pretrade_rejections",
                 "total_position_risk_rejections",
                 "total_self_cross_rejections",
@@ -200,6 +202,24 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "median_net_pnl": float(runs["net_pnl"].median()),
                 "min_net_pnl": float(runs["net_pnl"].min()),
                 "worst_drawdown": float(runs["max_drawdown"].max(skipna=True)),
+                "total_liquidity_shortfall_events": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "liquidity_shortfall_events",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_liquidity_shortfall_qty": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "liquidity_shortfall_qty",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "total_pretrade_rejections": int(
                     runs["pretrade_rejections"].sum()
                 ),

@@ -870,7 +870,8 @@ python -m hft_cli replay-parity `
 
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
-`order_rejections.csv`.
+`order_rejections.csv`. Every replay also writes
+`liquidity_shortfalls.csv`.
 
 All shared-clock replays reserve the remaining quantity of live and
 cancel-pending orders when applying instrument position, portfolio gross
@@ -883,6 +884,16 @@ position-risk, and self-cross rejection counts. `order_rejections.csv` retains
 the attempted side, quantity, rounded price, order type, reason, projected
 exposure range, applicable limit, and conflicting order ID. Rejected attempts
 do not increment `orders_sent`, and the artifacts remain research-only.
+
+Displayed bid and ask quantities are event-scoped budgets: concurrent IOC or
+marketable limit orders cannot each claim the full same L1 depth. Passive
+orders at one price receive deterministic queue priority behind earlier own
+orders, and one trade print advances those absolute queue positions without
+allocating more aggregate fills than the print quantity. `summary.csv` records
+whether shared event liquidity was enabled plus displayed and trade-print
+shortfall counts and quantities. `liquidity_shortfalls.csv` retains the order,
+source, requested/available/filled quantities, and queue consumption behind
+each partial or missed eligible fill.
 
 ## Parity Sweep
 

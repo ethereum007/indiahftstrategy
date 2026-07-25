@@ -104,6 +104,65 @@ class SendBurst(Strategy):
         pass
 
 
+class CancelFirstOfPair(Strategy):
+    def __init__(self, price):
+        self.price = price
+        self.oids = []
+        self.cancelled = False
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, tick):
+        if not self.oids:
+            self.oids = [
+                engine.send(+1, 75, self.price, OrderType.LIMIT),
+                engine.send(+1, 75, self.price, OrderType.LIMIT),
+            ]
+        elif not self.cancelled:
+            engine.cancel(self.oids[0])
+            self.cancelled = True
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
+class CancelThenReplace(Strategy):
+    def __init__(self, price):
+        self.price = price
+        self.first_oid = None
+        self.replacement_oid = None
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, tick):
+        if self.first_oid is None:
+            self.first_oid = engine.send(
+                +1,
+                75,
+                self.price,
+                OrderType.LIMIT,
+            )
+        elif self.replacement_oid is None:
+            engine.cancel(self.first_oid)
+            self.replacement_oid = engine.send(
+                +1,
+                75,
+                self.price,
+                OrderType.LIMIT,
+            )
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
 def inst(kind=Kind.OPT):
     return Instrument("NIFTY-TEST", kind, lot_size=75, tick=0.05)
 
@@ -143,6 +202,42 @@ def test_ioc_fill_uses_arrival_time_book_not_decision_time():
 
     assert res.fills.iloc[0]["ts_ns"] == 200_000
     assert res.fills.iloc[0]["price"] == 100.25
+
+
+def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 300, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+        ]
+    )
+    strategy = SendBurst(
+        [
+            (+1, 75, 101.00, OrderType.IOC),
+            (+1, 75, 101.00, OrderType.IOC),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [75, 25]
+    assert int(strategy_fills["qty"].sum()) == 100
+    assert len(result.liquidity_shortfalls) == 1
+    shortfall = result.liquidity_shortfalls.iloc[0]
+    assert shortfall["oid"] == strategy.oids[1]
+    assert shortfall["requested_qty"] == 75
+    assert shortfall["available_qty"] == 25
+    assert shortfall["filled_qty"] == 25
+    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["liquidity_source"] == "ask_display"
 
 
 def test_feed_latency_is_part_of_order_arrival_time():
@@ -191,6 +286,116 @@ def test_limit_order_waits_for_queue_burn_before_fill():
 
     assert list(res.fills["ts_ns"])[:1] == [3_000]
     assert res.fills.iloc[0]["qty"] == 75
+
+
+def test_resting_orders_share_trade_print_volume_in_queue_priority():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 300, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 300, 100.00, 100),
+        ]
+    )
+    strategy = SendBurst(
+        [
+            (+1, 75, 100.00, OrderType.LIMIT),
+            (+1, 75, 100.00, OrderType.LIMIT),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [75, 25]
+    assert int(strategy_fills["qty"].sum()) == 100
+    shortfall = result.liquidity_shortfalls.iloc[0]
+    assert shortfall["oid"] == strategy.oids[1]
+    assert shortfall["queue_ahead_before"] == 75
+    assert shortfall["queue_consumed"] == 75
+    assert shortfall["available_qty"] == 25
+    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["liquidity_source"] == "trade_print"
+
+
+def test_cancelled_own_order_releases_later_queue_position():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 300, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 300, np.nan, 0),
+            (2_000, 100.00, 100.05, 300, 300, 100.00, 75),
+        ]
+    )
+    strategy = CancelFirstOfPair(100.00)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["oid"].tolist() == [strategy.oids[1]]
+    assert strategy_fills["qty"].tolist() == [75]
+    assert result.liquidity_shortfalls.empty
+
+
+def test_cancelled_own_order_does_not_erase_public_queue_floor():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 300, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 300, np.nan, 0),
+            (2_000, 100.00, 100.05, 300, 300, 100.00, 75),
+        ]
+    )
+    strategy = CancelFirstOfPair(100.00)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    assert result.fills.empty
+    assert eng.open_orders[strategy.oids[1]].queue_ahead == 225
+
+
+def test_replacement_excluded_from_pending_cancel_queue_is_not_released_twice():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 300, np.nan, 0),
+            (200_000, 100.00, 100.05, 300, 300, np.nan, 0),
+            (300_000, 100.00, 100.05, 300, 300, 100.00, 75),
+        ]
+    )
+    strategy = CancelThenReplace(100.00)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(order_us=100),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    assert result.fills.empty
+    assert eng.open_orders[strategy.replacement_oid].queue_ahead == 225
 
 
 def test_price_trading_through_limit_level_fills_full_order():
