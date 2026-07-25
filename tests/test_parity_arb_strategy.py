@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel
 from engine.multi_engine import InstrumentConfig, MultiInstrumentEngine, VenueConfig
@@ -128,7 +129,160 @@ def test_parity_arb_taker_resets_run_state_when_reused():
     assert strategy.legging_report().iloc[0]["fill_count"] == 3
 
 
-def _parity_engine(strategy):
+def test_parity_arb_taker_defers_stale_cached_leg_books():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 100,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+        ParityArbConfig(
+            max_signal_age_ns=1_000,
+            max_leg_book_age_ns=50,
+            max_leg_book_skew_ns=1_000,
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        call_timestamps=[0],
+        put_timestamps=[0, 100],
+        future_timestamps=[0, 100],
+    )
+
+    engine.run()
+
+    guard = strategy.execution_guard_report()
+    assert engine.orders_sent == 0
+    assert not guard["guard_passed"].any()
+    assert set(guard["guard_reason"]) == {"stale_leg_book"}
+    assert guard.iloc[-1]["affected_legs"] == "call"
+    assert int(guard.iloc[-1]["call_book_age_ns"]) == 100
+
+
+def test_parity_arb_taker_defers_cross_leg_book_skew():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 100,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+        ParityArbConfig(
+            max_signal_age_ns=1_000,
+            max_leg_book_age_ns=1_000,
+            max_leg_book_skew_ns=50,
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        call_timestamps=[0],
+        put_timestamps=[0, 100],
+        future_timestamps=[0, 100],
+    )
+
+    engine.run()
+
+    guard = strategy.execution_guard_report()
+    assert engine.orders_sent == 0
+    assert set(guard["guard_reason"]) == {"leg_book_skew_exceeded"}
+    assert set(guard["leg_book_skew_ns"]) == {100}
+
+
+def test_parity_arb_taker_marks_rejected_third_leg_incomplete():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        future_max_position_lots=0,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin([1, 2])]
+    guard = strategy.execution_guard_report()
+    legging = strategy.legging_report()
+    assert engine.orders_sent == 2
+    assert len(strategy_fills) == 2
+    assert guard.loc[guard["guard_passed"]].iloc[0][
+        "routing_status"
+    ] == "partial"
+    assert int(guard.loc[guard["guard_passed"]].iloc[0][
+        "orders_accepted"
+    ]) == 2
+    assert bool(legging.iloc[0]["partial"])
+    assert not bool(legging.iloc[0]["routing_complete"])
+    assert int(legging.iloc[0]["route_rejection_count"]) == 1
+    assert int(legging.iloc[0]["fully_filled_leg_count"]) == 2
+    assert int(legging.iloc[0]["unfilled_leg_count"]) == 1
+
+
+def test_parity_arb_taker_rejects_negative_execution_guard_limits():
+    with pytest.raises(
+        ValueError,
+        match="max_leg_book_age_ns must be a non-negative integer",
+    ):
+        ParityArbTakerStrategy(
+            pd.DataFrame(
+                [
+                    {
+                        "ts": 0,
+                        "strike": 1000.0,
+                        "direction": "buy_synthetic_sell_future",
+                        "qty": 75,
+                    }
+                ]
+            ),
+            ParityLegMap(
+                future_id="FUT",
+                call_by_strike={1000.0: "CALL1000"},
+                put_by_strike={1000.0: "PUT1000"},
+            ),
+            ParityArbConfig(max_leg_book_age_ns=-1),
+        )
+
+
+def _parity_engine(
+    strategy,
+    *,
+    call_timestamps=(0, 100),
+    put_timestamps=(0, 100),
+    future_timestamps=(0, 100),
+    future_max_position_lots=20,
+):
     return MultiInstrumentEngine(
         instruments={
             "CALL1000": InstrumentConfig(
@@ -136,8 +290,16 @@ def _parity_engine(strategy):
                 "NSE",
                 book(
                     [
-                        (0, 54.0, 55.0, 75, 75, np.nan, 0),
-                        (100, 54.0, 55.0, 75, 75, np.nan, 0),
+                        (
+                            ts,
+                            54.0,
+                            55.0,
+                            75,
+                            75,
+                            np.nan,
+                            0,
+                        )
+                        for ts in call_timestamps
                     ]
                 ),
                 costs=no_costs(),
@@ -147,8 +309,16 @@ def _parity_engine(strategy):
                 "NSE",
                 book(
                     [
-                        (0, 60.0, 61.0, 75, 75, np.nan, 0),
-                        (100, 60.0, 61.0, 75, 75, np.nan, 0),
+                        (
+                            ts,
+                            60.0,
+                            61.0,
+                            75,
+                            75,
+                            np.nan,
+                            0,
+                        )
+                        for ts in put_timestamps
                     ]
                 ),
                 costs=no_costs(),
@@ -158,11 +328,20 @@ def _parity_engine(strategy):
                 "NSE",
                 book(
                     [
-                        (0, 1008.0, 1009.0, 75, 75, np.nan, 0),
-                        (100, 1008.0, 1009.0, 75, 75, np.nan, 0),
+                        (
+                            ts,
+                            1008.0,
+                            1009.0,
+                            75,
+                            75,
+                            np.nan,
+                            0,
+                        )
+                        for ts in future_timestamps
                     ]
                 ),
                 costs=no_costs(),
+                max_position_lots=future_max_position_lots,
             ),
         },
         venues={"NSE": venue()},

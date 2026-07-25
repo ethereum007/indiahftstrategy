@@ -34,6 +34,12 @@
   leg costs. Every parity join now retains lookup/decision ages and a
   reason-coded audit; stale, unmatched, incomplete, or negative-age futures
   quotes cannot form signals.
+- Executable parity replay now gates all three IOC legs on source-market
+  call/put/future book age and cross-leg timestamp skew. Its reason-coded
+  execution audit preserves deferred and routed decisions, while legging
+  evidence requires all three orders to be accepted and fully filled before
+  an execution is complete. Proof, sweeps, comparisons, and candidate replay
+  defaults preserve and enforce the same limits.
 - Parity/box edge audit that gates scan outputs on opportunity count, net edge,
   persistence, direction coverage, and futures staleness before replay/sweep
   work.
@@ -7447,6 +7453,25 @@ promotion/order-plan/launch, and shared sweep regressions pass (`153` tests
 across `17` files). Repository collection is healthy at `2702 tests` across
 `164` files. The full suite was not rerun because recent complete runs exceed
 40 minutes. All outputs remain non-authorizing.
+
+Latest three-leg parity execution proof: parity replay now evaluates call,
+put, and future books at their source-market timestamps immediately before
+routing. Configurable age and cross-leg skew limits defer stale or
+asynchronous books, and feed latency consumes the same age budget.
+`parity_execution_guard.csv` preserves every reason-coded decision plus
+per-leg timestamps, ages, order acceptance, and routing status. The legging
+report counts a signal as complete only when all three orders were accepted
+and all three requested quantities filled, so a rejected third leg can no
+longer look complete after two fills. Proof independently reconstructs guard
+and legging consistency, fails missing evidence, expired signals, over-age or
+over-skew routed books, incomplete routing, rejected legs, and unfilled legs.
+Parity sweeps and cross-sweep comparison retain the counters, while promotion
+preserves the selected age/skew limits in replay defaults. Strategy, scanner,
+replay, proof, proof-refresh, sweep-family, promotion, parity
+order-plan/launch, and strategy-evidence regressions pass (`166` tests).
+Repository collection is healthy at `2708 tests` across `164` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All
+outputs remain non-authorizing.
 
 ## Next Build Targets
 

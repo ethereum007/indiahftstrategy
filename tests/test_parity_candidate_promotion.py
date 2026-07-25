@@ -118,6 +118,8 @@ def sweep_runs(*, proof_passed=True):
                 "depth_fraction": 0.25,
                 "asof_latency_ns": 0,
                 "parity_futures_max_quote_age_ns": 100_000,
+                "parity_execution_max_leg_book_age_ns": 200_000,
+                "parity_execution_max_leg_book_skew_ns": 50_000,
                 "feed_latency_us": 0.0,
                 "order_latency_us": 0.0,
                 "signal_count": 1,
@@ -173,6 +175,8 @@ def test_parity_candidate_promotion_passes_and_feeds_order_plan():
     assert config["parameters"]["future_decision_age_ns"] == 0
     assert config["replay_defaults"]["depth_fraction"] == 0.25
     assert config["replay_defaults"]["max_futures_quote_age_ns"] == 100_000
+    assert config["replay_defaults"]["max_leg_book_age_ns"] == 200_000
+    assert config["replay_defaults"]["max_leg_book_skew_ns"] == 50_000
 
     order_plan = build_parity_order_plan(
         report.summary,

@@ -98,6 +98,137 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(
         result.summary.iloc[0]["max_parity_futures_signal_age_ns"]
     ) == 0
+    assert result.runs["parity_execution_guard_enabled"].all()
+    assert int(
+        result.summary.iloc[0]["parity_execution_guard_enabled_runs"]
+    ) == 2
+    assert int(
+        result.summary.iloc[0]["parity_execution_guard_declared_runs"]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_guard_artifact_present_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_legging_artifact_present_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0]["total_parity_execution_guard_attempts"]
+    ) == 3
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_passed_attempts"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_deferred_attempts"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_unclassified_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_stale_book_attempts"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_negative_book_age_attempts"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_parity_execution_skew_attempts"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_routing_complete_attempts"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_routing_incomplete_attempts"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_signal_expiry_events"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_passed_missing_age_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_age_violations"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_guard_skew_violations"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "max_parity_execution_routed_book_age_ns"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "max_parity_execution_routed_book_skew_ns"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_parity_execution_count"]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_legging_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_legging_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_complete_count"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_incomplete_count"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_route_rejected_legs"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_unfilled_legs"
+        ]
+    ) == 0
     assert int(result.summary.iloc[0]["total_pretrade_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_venue_rule_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_position_risk_rejections"]) == 0
@@ -174,6 +305,12 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
         / "depth_0p25__asof_0ns__feed_0us__order_0us"
         / "parity_futures_join_audit.csv"
     ).exists()
+    assert (
+        out_dir
+        / "runs"
+        / "depth_0p25__asof_0ns__feed_0us__order_0us"
+        / "parity_execution_guard.csv"
+    ).exists()
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "summary.csv").exists()
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "manifest.json").exists()
 
@@ -198,6 +335,10 @@ def test_unified_cli_sweep_parity_dispatches_and_can_fail_on_breach(tmp_path):
             "200000",
             "--signal-limit",
             "1",
+            "--max-leg-book-age-ns",
+            "500000",
+            "--max-leg-book-skew-ns",
+            "250000",
             "--min-net-pnl",
             "-1000000",
             "--min-fills",
@@ -209,3 +350,6 @@ def test_unified_cli_sweep_parity_dispatches_and_can_fail_on_breach(tmp_path):
     assert code == 2
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "proof" / "proof_summary.csv").exists()
+    runs = pd.read_csv(out_dir / "sweep_runs.csv")
+    assert set(runs["parity_execution_max_leg_book_age_ns"]) == {500_000}
+    assert set(runs["parity_execution_max_leg_book_skew_ns"]) == {250_000}

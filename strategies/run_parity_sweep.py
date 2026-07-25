@@ -37,6 +37,8 @@ def run_parity_sweep(
     future_tick: float = 0.05,
     max_futures_quote_age_ns: int = 1_000_000,
     max_signal_age_ns: int = 1_000_000,
+    max_leg_book_age_ns: int = 1_000_000,
+    max_leg_book_skew_ns: int = 1_000_000,
     max_qty: int | None = None,
     max_position_lots: int = 20,
     signal_limit: int | None = None,
@@ -82,6 +84,8 @@ def run_parity_sweep(
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
             max_signal_age_ns=max_signal_age_ns,
+            max_leg_book_age_ns=max_leg_book_age_ns,
+            max_leg_book_skew_ns=max_leg_book_skew_ns,
             max_qty=max_qty,
             max_position_lots=max_position_lots,
             signal_limit=signal_limit,
@@ -131,6 +135,8 @@ def run_parity_sweep(
             "future_tick": future_tick,
             "max_futures_quote_age_ns": max_futures_quote_age_ns,
             "max_signal_age_ns": max_signal_age_ns,
+            "max_leg_book_age_ns": max_leg_book_age_ns,
+            "max_leg_book_skew_ns": max_leg_book_skew_ns,
             "max_qty": max_qty,
             "max_position_lots": max_position_lots,
             "signal_limit": signal_limit,
@@ -196,6 +202,34 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_futures_signals_without_age",
                 "total_parity_futures_signal_age_violations",
                 "max_parity_futures_signal_age_ns",
+                "parity_execution_guard_enabled_runs",
+                "parity_execution_guard_declared_runs",
+                "parity_execution_guard_artifact_present_runs",
+                "parity_execution_legging_artifact_present_runs",
+                "total_parity_execution_guard_attempts",
+                "total_parity_execution_guard_passed_attempts",
+                "total_parity_execution_guard_deferred_attempts",
+                "total_parity_execution_guard_missing_evidence_rows",
+                "total_parity_execution_guard_unclassified_rows",
+                "total_parity_execution_guard_consistency_violations",
+                "total_parity_execution_stale_book_attempts",
+                "total_parity_execution_negative_book_age_attempts",
+                "total_parity_execution_skew_attempts",
+                "total_parity_execution_routing_complete_attempts",
+                "total_parity_execution_routing_incomplete_attempts",
+                "total_parity_execution_signal_expiry_events",
+                "total_parity_execution_guard_passed_missing_age_rows",
+                "total_parity_execution_guard_age_violations",
+                "total_parity_execution_guard_skew_violations",
+                "max_parity_execution_routed_book_age_ns",
+                "max_parity_execution_routed_book_skew_ns",
+                "total_parity_execution_count",
+                "total_parity_execution_legging_missing_evidence_rows",
+                "total_parity_execution_legging_consistency_violations",
+                "total_parity_execution_complete_count",
+                "total_parity_execution_incomplete_count",
+                "total_parity_execution_route_rejected_legs",
+                "total_parity_execution_unfilled_legs",
                 "total_liquidity_shortfall_events",
                 "total_liquidity_shortfall_qty",
                 "total_carried_depletion_shortfall_events",
@@ -282,6 +316,158 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "max_parity_futures_signal_age_ns": _max_int_metric(
                     runs,
                     "parity_futures_max_signal_age_ns",
+                ),
+                "parity_execution_guard_enabled_runs": _sum_bool_metric(
+                    runs,
+                    "parity_execution_guard_enabled",
+                ),
+                "parity_execution_guard_declared_runs": _sum_bool_metric(
+                    runs,
+                    "parity_execution_guard_declared",
+                ),
+                "parity_execution_guard_artifact_present_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_guard_present",
+                    )
+                ),
+                "parity_execution_legging_artifact_present_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_legging_present",
+                    )
+                ),
+                "total_parity_execution_guard_attempts": _sum_int_metric(
+                    runs,
+                    "parity_execution_guard_attempts",
+                ),
+                "total_parity_execution_guard_passed_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_passed_attempts",
+                    )
+                ),
+                "total_parity_execution_guard_deferred_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_deferred_attempts",
+                    )
+                ),
+                "total_parity_execution_guard_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_guard_unclassified_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_unclassified_rows",
+                    )
+                ),
+                "total_parity_execution_guard_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_consistency_violations",
+                    )
+                ),
+                "total_parity_execution_stale_book_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_stale_book_attempts",
+                    )
+                ),
+                "total_parity_execution_negative_book_age_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_negative_book_age_attempts",
+                    )
+                ),
+                "total_parity_execution_skew_attempts": _sum_int_metric(
+                    runs,
+                    "parity_execution_skew_attempts",
+                ),
+                "total_parity_execution_routing_complete_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_routing_complete_attempts",
+                    )
+                ),
+                "total_parity_execution_routing_incomplete_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_routing_incomplete_attempts",
+                    )
+                ),
+                "total_parity_execution_signal_expiry_events": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_signal_expiry_events",
+                    )
+                ),
+                "total_parity_execution_guard_passed_missing_age_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_passed_missing_age_rows",
+                    )
+                ),
+                "total_parity_execution_guard_age_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_age_violations",
+                    )
+                ),
+                "total_parity_execution_guard_skew_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_guard_skew_violations",
+                    )
+                ),
+                "max_parity_execution_routed_book_age_ns": (
+                    _max_int_metric(
+                        runs,
+                        "parity_execution_max_routed_book_age_ns",
+                    )
+                ),
+                "max_parity_execution_routed_book_skew_ns": (
+                    _max_int_metric(
+                        runs,
+                        "parity_execution_max_routed_book_skew_ns",
+                    )
+                ),
+                "total_parity_execution_count": _sum_int_metric(
+                    runs,
+                    "parity_execution_count",
+                ),
+                "total_parity_execution_legging_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_legging_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_legging_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_legging_consistency_violations",
+                    )
+                ),
+                "total_parity_execution_complete_count": _sum_int_metric(
+                    runs,
+                    "parity_execution_complete_count",
+                ),
+                "total_parity_execution_incomplete_count": _sum_int_metric(
+                    runs,
+                    "parity_execution_incomplete_count",
+                ),
+                "total_parity_execution_route_rejected_legs": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_route_rejected_legs",
+                    )
+                ),
+                "total_parity_execution_unfilled_legs": _sum_int_metric(
+                    runs,
+                    "parity_execution_unfilled_legs",
                 ),
                 "total_liquidity_shortfall_events": int(
                     pd.to_numeric(
@@ -465,6 +651,21 @@ def _max_int_metric(runs: pd.DataFrame, column: str) -> int:
     return int(pd.to_numeric(values, errors="coerce").fillna(0).max())
 
 
+def _sum_bool_metric(runs: pd.DataFrame, column: str) -> int:
+    values = runs.get(column, pd.Series(False, index=runs.index))
+    if values.dtype == bool:
+        return int(values.fillna(False).sum())
+    return int(
+        values.map(
+            lambda value: (
+                value.strip().lower() in {"1", "true", "yes", "y"}
+                if isinstance(value, str)
+                else bool(value) if not pd.isna(value) else False
+            )
+        ).sum()
+    )
+
+
 def _run_name(
     depth_fraction: float,
     asof_latency_ns: int,
@@ -513,6 +714,16 @@ def main(argv: list[str] | None = None) -> int:
         default=1_000_000,
     )
     parser.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
+    parser.add_argument(
+        "--max-leg-book-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    parser.add_argument(
+        "--max-leg-book-skew-ns",
+        type=int,
+        default=1_000_000,
+    )
     parser.add_argument("--max-qty", type=int, default=None)
     parser.add_argument("--signal-limit", type=int, default=None)
     parser.add_argument("--min-net-pnl", type=float, default=0.0)
@@ -539,6 +750,8 @@ def main(argv: list[str] | None = None) -> int:
         future_tick=args.future_tick,
         max_futures_quote_age_ns=args.max_futures_quote_age_ns,
         max_signal_age_ns=args.max_signal_age_ns,
+        max_leg_book_age_ns=args.max_leg_book_age_ns,
+        max_leg_book_skew_ns=args.max_leg_book_skew_ns,
         max_qty=args.max_qty,
         signal_limit=args.signal_limit,
         proof_thresholds=ProofThresholds(

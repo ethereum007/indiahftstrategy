@@ -551,6 +551,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_futures_join_audit = _read_optional(
         parity_futures_join_audit_path
     )
+    parity_execution_guard_path = (
+        run_dir / "parity_execution_guard.csv"
+    )
+    parity_legging_path = run_dir / "legging.csv"
+    parity_execution_guard = _read_optional(
+        parity_execution_guard_path
+    )
+    parity_legging = _read_optional(parity_legging_path)
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
     market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
 
@@ -627,6 +635,327 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             parity_signal_ages.lt(0)
             | parity_signal_ages.gt(parity_futures_max_quote_age_ns)
         ).sum()
+    )
+    parity_execution_guard_declared = _bool(
+        row.get("parity_execution_guard_enabled", False)
+    )
+    parity_execution_run_detected = (
+        str(manifest.get("run_type", "")).strip().lower()
+        == "parity_replay"
+    )
+    parity_execution_guard_enabled = bool(
+        parity_execution_guard_declared
+        or parity_execution_run_detected
+        or parity_execution_guard_path.exists()
+        or parity_legging_path.exists()
+    )
+    parity_execution_max_leg_book_age_ns = _int(
+        row,
+        "parity_execution_max_leg_book_age_ns",
+    )
+    parity_execution_max_leg_book_skew_ns = _int(
+        row,
+        "parity_execution_max_leg_book_skew_ns",
+    )
+    parity_guard_passed_raw = parity_execution_guard.get(
+        "guard_passed",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_guard_passed = parity_guard_passed_raw.map(_bool)
+    parity_guard_routing_complete_raw = parity_execution_guard.get(
+        "routing_complete",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_guard_routing_complete = (
+        parity_guard_routing_complete_raw.map(_bool)
+    )
+    parity_guard_reason_raw = parity_execution_guard.get(
+        "guard_reason",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_guard_reasons = (
+        parity_guard_reason_raw.astype("string").fillna("").str.strip()
+    )
+    parity_routing_status_raw = parity_execution_guard.get(
+        "routing_status",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_routing_status = (
+        parity_routing_status_raw.astype("string").fillna("").str.strip()
+    )
+    parity_guard_orders_requested = pd.to_numeric(
+        parity_execution_guard.get(
+            "orders_requested",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
+    parity_guard_orders_accepted = pd.to_numeric(
+        parity_execution_guard.get(
+            "orders_accepted",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
+    parity_known_guard_reasons = {
+        "signal_age_exceeded",
+        "nonpositive_quantity",
+        "unsupported_direction",
+        "missing_leg_mapping",
+        "unknown_leg_instrument",
+        "missing_leg_book",
+        "negative_leg_book_age",
+        "stale_leg_book",
+        "leg_book_skew_exceeded",
+        "ready",
+    }
+    parity_known_routing_statuses = {
+        "not_attempted",
+        "complete",
+        "partial",
+        "rejected",
+    }
+    parity_execution_guard_unclassified_rows = int(
+        (
+            ~parity_guard_reasons.isin(parity_known_guard_reasons)
+            | ~parity_routing_status.isin(
+                parity_known_routing_statuses
+            )
+        ).sum()
+    )
+    parity_guard_missing_evidence = (
+        _boolean_evidence_missing(parity_guard_passed_raw)
+        | _boolean_evidence_missing(
+            parity_guard_routing_complete_raw
+        )
+        | parity_guard_reason_raw.isna()
+        | parity_guard_reasons.eq("")
+        | parity_routing_status_raw.isna()
+        | parity_routing_status.eq("")
+        | parity_guard_orders_requested.isna()
+        | parity_guard_orders_accepted.isna()
+    )
+    parity_expected_routing_status = pd.Series(
+        "not_attempted",
+        index=parity_execution_guard.index,
+        dtype="object",
+    )
+    parity_expected_routing_status.loc[
+        parity_guard_passed & parity_guard_orders_accepted.eq(0)
+    ] = "rejected"
+    parity_expected_routing_status.loc[
+        parity_guard_passed
+        & parity_guard_orders_accepted.gt(0)
+        & parity_guard_orders_accepted.lt(3)
+    ] = "partial"
+    parity_expected_routing_status.loc[
+        parity_guard_passed & parity_guard_orders_accepted.eq(3)
+    ] = "complete"
+    parity_guard_consistency_violation = (
+        (parity_guard_passed & ~parity_guard_reasons.eq("ready"))
+        | (
+            parity_guard_passed
+            & parity_guard_orders_requested.ne(3)
+        )
+        | (
+            ~parity_guard_passed
+            & (
+                parity_guard_orders_requested.ne(0)
+                | parity_guard_orders_accepted.ne(0)
+                | parity_guard_routing_complete
+            )
+        )
+        | parity_guard_orders_accepted.lt(0)
+        | parity_guard_orders_accepted.gt(3)
+        | parity_guard_orders_accepted.mod(1).ne(0)
+        | parity_guard_routing_complete.ne(
+            parity_guard_passed
+            & parity_guard_orders_accepted.eq(3)
+        )
+        | parity_routing_status.ne(parity_expected_routing_status)
+    )
+    parity_execution_guard_missing_evidence_rows = int(
+        parity_guard_missing_evidence.sum()
+    )
+    parity_execution_guard_consistency_violations = int(
+        (
+            parity_guard_consistency_violation
+            & ~parity_guard_missing_evidence
+        ).sum()
+    )
+    parity_passed_guard_rows = parity_execution_guard.loc[
+        parity_guard_passed
+    ]
+    parity_guard_leg_ages = pd.DataFrame(
+        {
+            column: pd.to_numeric(
+                parity_passed_guard_rows.get(
+                    column,
+                    pd.Series(
+                        index=parity_passed_guard_rows.index,
+                        dtype="float64",
+                    ),
+                ),
+                errors="coerce",
+            )
+            for column in [
+                "call_book_age_ns",
+                "put_book_age_ns",
+                "future_book_age_ns",
+            ]
+        },
+        index=parity_passed_guard_rows.index,
+    )
+    parity_guard_skew = pd.to_numeric(
+        parity_passed_guard_rows.get(
+            "leg_book_skew_ns",
+            pd.Series(
+                index=parity_passed_guard_rows.index,
+                dtype="float64",
+            ),
+        ),
+        errors="coerce",
+    )
+    parity_execution_guard_passed_missing_age_rows = int(
+        (
+            parity_guard_leg_ages.isna().any(axis=1)
+            | parity_guard_skew.isna()
+        ).sum()
+    )
+    parity_execution_guard_age_violations = int(
+        (
+            parity_guard_leg_ages.lt(0)
+            | parity_guard_leg_ages.gt(
+                parity_execution_max_leg_book_age_ns
+            )
+        ).any(axis=1).sum()
+    )
+    parity_execution_guard_skew_violations = int(
+        (
+            parity_guard_skew.lt(0)
+            | parity_guard_skew.gt(
+                parity_execution_max_leg_book_skew_ns
+            )
+        ).sum()
+    )
+    parity_guard_max_ages = (
+        parity_guard_leg_ages.max(axis=1).dropna()
+        if not parity_guard_leg_ages.empty
+        else pd.Series(dtype="float64")
+    )
+    parity_observed_guard_skew = parity_guard_skew.dropna()
+    parity_expected_order_count = pd.to_numeric(
+        parity_legging.get(
+            "expected_order_count",
+            pd.Series(np.nan, index=parity_legging.index),
+        ),
+        errors="coerce",
+    )
+    parity_order_count = pd.to_numeric(
+        parity_legging.get(
+            "order_count",
+            pd.Series(np.nan, index=parity_legging.index),
+        ),
+        errors="coerce",
+    )
+    parity_route_rejected_legs = pd.to_numeric(
+        parity_legging.get(
+            "route_rejection_count",
+            pd.Series(np.nan, index=parity_legging.index),
+        ),
+        errors="coerce",
+    )
+    parity_fully_filled_leg_count = pd.to_numeric(
+        parity_legging.get(
+            "fully_filled_leg_count",
+            pd.Series(np.nan, index=parity_legging.index),
+        ),
+        errors="coerce",
+    )
+    parity_unfilled_legs = pd.to_numeric(
+        parity_legging.get(
+            "unfilled_leg_count",
+            pd.Series(np.nan, index=parity_legging.index),
+        ),
+        errors="coerce",
+    )
+    parity_legging_routing_complete_raw = parity_legging.get(
+        "routing_complete",
+        pd.Series(np.nan, index=parity_legging.index),
+    )
+    parity_legging_routing_complete = (
+        parity_legging_routing_complete_raw.map(_bool)
+    )
+    parity_legging_fills_complete_raw = parity_legging.get(
+        "fills_complete",
+        pd.Series(np.nan, index=parity_legging.index),
+    )
+    parity_legging_fills_complete = (
+        parity_legging_fills_complete_raw.map(_bool)
+    )
+    parity_legging_partial_raw = parity_legging.get(
+        "partial",
+        pd.Series(np.nan, index=parity_legging.index),
+    )
+    parity_legging_partial = parity_legging_partial_raw.map(_bool)
+    parity_legging_missing_evidence = (
+        parity_expected_order_count.isna()
+        | parity_order_count.isna()
+        | parity_route_rejected_legs.isna()
+        | parity_fully_filled_leg_count.isna()
+        | parity_unfilled_legs.isna()
+        | _boolean_evidence_missing(
+            parity_legging_routing_complete_raw
+        )
+        | _boolean_evidence_missing(
+            parity_legging_fills_complete_raw
+        )
+        | _boolean_evidence_missing(parity_legging_partial_raw)
+    )
+    parity_legging_consistency_violation = (
+        parity_expected_order_count.ne(3)
+        | parity_order_count.lt(0)
+        | parity_order_count.gt(parity_expected_order_count)
+        | parity_order_count.mod(1).ne(0)
+        | parity_route_rejected_legs.ne(
+            parity_expected_order_count - parity_order_count
+        )
+        | parity_fully_filled_leg_count.lt(0)
+        | parity_fully_filled_leg_count.gt(parity_order_count)
+        | parity_fully_filled_leg_count.mod(1).ne(0)
+        | parity_unfilled_legs.ne(
+            parity_expected_order_count
+            - parity_fully_filled_leg_count
+        )
+        | parity_legging_routing_complete.ne(
+            parity_order_count.eq(parity_expected_order_count)
+        )
+        | parity_legging_fills_complete.ne(
+            parity_fully_filled_leg_count.eq(
+                parity_expected_order_count
+            )
+        )
+        | parity_legging_partial.ne(
+            ~(
+                parity_legging_routing_complete
+                & parity_legging_fills_complete
+            )
+        )
+    )
+    parity_execution_legging_missing_evidence_rows = int(
+        parity_legging_missing_evidence.sum()
+    )
+    parity_execution_legging_consistency_violations = int(
+        (
+            parity_legging_consistency_violation
+            & ~parity_legging_missing_evidence
+        ).sum()
+    )
+    parity_legging_complete = (
+        ~parity_legging_missing_evidence
+        & ~parity_legging_consistency_violation
+        & parity_legging_routing_complete
+        & parity_legging_fills_complete
     )
     pending_order_risk_reservation_enabled = _bool(
         row.get("pending_order_risk_reservation_enabled", False)
@@ -890,6 +1219,113 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         )
         if not parity_observed_signal_ages.empty
         else 0,
+        "parity_execution_guard_enabled": (
+            parity_execution_guard_enabled
+        ),
+        "parity_execution_guard_declared": (
+            parity_execution_guard_declared
+        ),
+        "parity_execution_run_detected": (
+            parity_execution_run_detected
+        ),
+        "parity_execution_max_leg_book_age_ns": (
+            parity_execution_max_leg_book_age_ns
+        ),
+        "parity_execution_max_leg_book_skew_ns": (
+            parity_execution_max_leg_book_skew_ns
+        ),
+        "parity_execution_guard_present": (
+            parity_execution_guard_path.exists()
+        ),
+        "parity_execution_legging_present": (
+            parity_legging_path.exists()
+        ),
+        "parity_execution_guard_rows": int(
+            len(parity_execution_guard)
+        ),
+        "parity_execution_guard_passed_attempts": int(
+            parity_guard_passed.sum()
+        ),
+        "parity_execution_guard_deferred_attempts": int(
+            (~parity_guard_passed).sum()
+        ),
+        "parity_execution_guard_missing_evidence_rows": (
+            parity_execution_guard_missing_evidence_rows
+        ),
+        "parity_execution_guard_unclassified_rows": (
+            parity_execution_guard_unclassified_rows
+        ),
+        "parity_execution_guard_consistency_violations": (
+            parity_execution_guard_consistency_violations
+        ),
+        "parity_execution_guard_passed_missing_age_rows": (
+            parity_execution_guard_passed_missing_age_rows
+        ),
+        "parity_execution_guard_age_violations": (
+            parity_execution_guard_age_violations
+        ),
+        "parity_execution_guard_skew_violations": (
+            parity_execution_guard_skew_violations
+        ),
+        "parity_execution_routing_incomplete_attempts": int(
+            (
+                parity_guard_passed
+                & ~parity_routing_status.eq("complete")
+            ).sum()
+        ),
+        "parity_execution_routing_complete_attempts": int(
+            (
+                parity_guard_passed
+                & parity_routing_status.eq("complete")
+            ).sum()
+        ),
+        "parity_execution_signal_expiry_events": int(
+            (parity_guard_reasons == "signal_age_exceeded").sum()
+        ),
+        "parity_execution_stale_book_attempts": int(
+            (parity_guard_reasons == "stale_leg_book").sum()
+        ),
+        "parity_execution_negative_book_age_attempts": int(
+            (
+                parity_guard_reasons
+                == "negative_leg_book_age"
+            ).sum()
+        ),
+        "parity_execution_skew_attempts": int(
+            (
+                parity_guard_reasons
+                == "leg_book_skew_exceeded"
+            ).sum()
+        ),
+        "parity_execution_max_routed_book_age_ns": int(
+            parity_guard_max_ages.max()
+        )
+        if not parity_guard_max_ages.empty
+        else 0,
+        "parity_execution_max_routed_book_skew_ns": int(
+            parity_observed_guard_skew.max()
+        )
+        if not parity_observed_guard_skew.empty
+        else 0,
+        "parity_execution_count": int(len(parity_legging)),
+        "parity_execution_legging_missing_evidence_rows": (
+            parity_execution_legging_missing_evidence_rows
+        ),
+        "parity_execution_legging_consistency_violations": (
+            parity_execution_legging_consistency_violations
+        ),
+        "parity_execution_complete_count": int(
+            parity_legging_complete.sum()
+        ),
+        "parity_execution_incomplete_count": int(
+            (~parity_legging_complete).sum()
+        ),
+        "parity_execution_route_rejected_legs": int(
+            parity_route_rejected_legs.fillna(0).sum()
+        ),
+        "parity_execution_unfilled_legs": int(
+            parity_unfilled_legs.fillna(0).sum()
+        ),
         "pending_order_risk_reservation_enabled": (
             pending_order_risk_reservation_enabled
         ),
@@ -1187,6 +1623,204 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+    if bool(metrics["parity_execution_guard_enabled"]):
+        declared = bool(metrics["parity_execution_guard_declared"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_guard_declared",
+                "value": declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": declared,
+                "reason": (
+                    ""
+                    if declared
+                    else (
+                        "parity execution artifacts exist without the "
+                        "summary safety declaration"
+                    )
+                ),
+            }
+        )
+        for metric in [
+            "parity_execution_max_leg_book_age_ns",
+            "parity_execution_max_leg_book_skew_ns",
+        ]:
+            value = int(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": value,
+                    "operator": ">=",
+                    "threshold": 0,
+                    "passed": value >= 0,
+                    "reason": (
+                        ""
+                        if value >= 0
+                        else "parity execution guard limit is negative"
+                    ),
+                }
+            )
+        for metric, reason in [
+            (
+                "parity_execution_guard_present",
+                "parity execution guard artifact is missing",
+            ),
+            (
+                "parity_execution_legging_present",
+                "parity legging artifact is missing",
+            ),
+        ]:
+            present = bool(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": present,
+                    "operator": "is",
+                    "threshold": True,
+                    "passed": present,
+                    "reason": "" if present else reason,
+                }
+            )
+        parity_signal_count = int(
+            metrics["parity_futures_signal_count"]
+        )
+        guard_rows = int(metrics["parity_execution_guard_rows"])
+        min_guard_rows = 1 if parity_signal_count > 0 else 0
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_guard_rows",
+                "value": guard_rows,
+                "operator": ">=",
+                "threshold": min_guard_rows,
+                "passed": guard_rows >= min_guard_rows,
+                "reason": (
+                    ""
+                    if guard_rows >= min_guard_rows
+                    else "parity signals have no execution-guard evidence"
+                ),
+            }
+        )
+        for metric, reason in [
+            (
+                "parity_execution_guard_missing_evidence_rows",
+                "parity execution guard lacks required routing evidence",
+            ),
+            (
+                "parity_execution_guard_unclassified_rows",
+                "parity execution guard contains unclassified rows",
+            ),
+            (
+                "parity_execution_guard_consistency_violations",
+                "parity execution guard status is internally inconsistent",
+            ),
+            (
+                "parity_execution_guard_passed_missing_age_rows",
+                "passed parity guard rows lack leg age or skew evidence",
+            ),
+            (
+                "parity_execution_guard_age_violations",
+                "passed parity guard rows exceed the leg-book age limit",
+            ),
+            (
+                "parity_execution_guard_skew_violations",
+                "passed parity guard rows exceed the leg-book skew limit",
+            ),
+            (
+                "parity_execution_routing_incomplete_attempts",
+                "parity execution routed fewer than all three legs",
+            ),
+            (
+                "parity_execution_signal_expiry_events",
+                "parity signals expired before guarded execution",
+            ),
+            (
+                "parity_execution_negative_book_age_attempts",
+                "parity execution observed a future-dated leg book",
+            ),
+            (
+                "parity_execution_legging_missing_evidence_rows",
+                "parity legging rows lack required completion evidence",
+            ),
+            (
+                "parity_execution_legging_consistency_violations",
+                "parity legging completion evidence is inconsistent",
+            ),
+            (
+                "parity_execution_incomplete_count",
+                "parity executions have incomplete routing or fills",
+            ),
+            (
+                "parity_execution_route_rejected_legs",
+                "parity execution legs were rejected before routing",
+            ),
+            (
+                "parity_execution_unfilled_legs",
+                "parity execution legs did not fill completely",
+            ),
+        ]:
+            value = int(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": value,
+                    "operator": "==",
+                    "threshold": 0,
+                    "passed": value == 0,
+                    "reason": "" if value == 0 else reason,
+                }
+            )
+        for metric, threshold_metric, reason in [
+            (
+                "parity_execution_max_routed_book_age_ns",
+                "parity_execution_max_leg_book_age_ns",
+                "routed parity execution used an over-age leg book",
+            ),
+            (
+                "parity_execution_max_routed_book_skew_ns",
+                "parity_execution_max_leg_book_skew_ns",
+                "routed parity execution used over-skewed leg books",
+            ),
+        ]:
+            value = int(metrics[metric])
+            threshold = int(metrics[threshold_metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": value,
+                    "operator": "<=",
+                    "threshold": threshold,
+                    "passed": value <= threshold,
+                    "reason": "" if value <= threshold else reason,
+                }
+            )
+        complete_executions = int(
+            metrics["parity_execution_complete_count"]
+        )
+        min_complete_executions = 1 if parity_signal_count > 0 else 0
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_complete_count",
+                "value": complete_executions,
+                "operator": ">=",
+                "threshold": min_complete_executions,
+                "passed": (
+                    complete_executions >= min_complete_executions
+                ),
+                "reason": (
+                    ""
+                    if complete_executions >= min_complete_executions
+                    else "parity signals produced no complete execution"
+                ),
+            }
+        )
     if bool(metrics["terminal_liquidation_depth_constrained_enabled"]):
         complete = bool(metrics["terminal_liquidation_complete"])
         rows.append(
@@ -1405,9 +2039,35 @@ def _int(row: pd.Series, column: str) -> int:
 
 
 def _bool(value: object) -> bool:
+    if pd.isna(value):
+        return False
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _boolean_evidence_missing(values: pd.Series) -> pd.Series:
+    def invalid(value: object) -> bool:
+        if pd.isna(value):
+            return True
+        if isinstance(value, (bool, np.bool_)):
+            return False
+        if isinstance(value, str):
+            return value.strip().lower() not in {
+                "0",
+                "1",
+                "false",
+                "true",
+                "no",
+                "yes",
+                "n",
+                "y",
+            }
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            return float(value) not in {0.0, 1.0}
+        return True
+
+    return values.map(invalid)
 
 
 def _max_drawdown(equity: pd.DataFrame) -> float:

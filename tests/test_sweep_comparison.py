@@ -40,6 +40,34 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_futures_signals_without_age": 0,
             "parity_futures_signal_age_violations": 0,
             "parity_futures_max_signal_age_ns": 20,
+            "parity_execution_guard_enabled": True,
+            "parity_execution_guard_declared": True,
+            "parity_execution_guard_present": True,
+            "parity_execution_legging_present": True,
+            "parity_execution_guard_attempts": 3,
+            "parity_execution_guard_passed_attempts": 1,
+            "parity_execution_guard_deferred_attempts": 2,
+            "parity_execution_guard_missing_evidence_rows": 0,
+            "parity_execution_guard_unclassified_rows": 0,
+            "parity_execution_guard_consistency_violations": 0,
+            "parity_execution_signal_expiry_events": 0,
+            "parity_execution_stale_book_attempts": 0,
+            "parity_execution_negative_book_age_attempts": 0,
+            "parity_execution_skew_attempts": 0,
+            "parity_execution_routing_complete_attempts": 1,
+            "parity_execution_routing_incomplete_attempts": 0,
+            "parity_execution_guard_passed_missing_age_rows": 0,
+            "parity_execution_guard_age_violations": 0,
+            "parity_execution_guard_skew_violations": 0,
+            "parity_execution_max_routed_book_age_ns": 20,
+            "parity_execution_max_routed_book_skew_ns": 10,
+            "parity_execution_count": 1,
+            "parity_execution_legging_missing_evidence_rows": 0,
+            "parity_execution_legging_consistency_violations": 0,
+            "parity_execution_complete_count": 1,
+            "parity_execution_incomplete_count": 0,
+            "parity_execution_route_rejected_legs": 0,
+            "parity_execution_unfilled_legs": 0,
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
@@ -108,6 +136,34 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_futures_signals_without_age": 0,
             "parity_futures_signal_age_violations": 1,
             "parity_futures_max_signal_age_ns": 150,
+            "parity_execution_guard_enabled": True,
+            "parity_execution_guard_declared": True,
+            "parity_execution_guard_present": True,
+            "parity_execution_legging_present": True,
+            "parity_execution_guard_attempts": 4,
+            "parity_execution_guard_passed_attempts": 1,
+            "parity_execution_guard_deferred_attempts": 3,
+            "parity_execution_guard_missing_evidence_rows": 1,
+            "parity_execution_guard_unclassified_rows": 1,
+            "parity_execution_guard_consistency_violations": 1,
+            "parity_execution_signal_expiry_events": 1,
+            "parity_execution_stale_book_attempts": 1,
+            "parity_execution_negative_book_age_attempts": 1,
+            "parity_execution_skew_attempts": 1,
+            "parity_execution_routing_complete_attempts": 0,
+            "parity_execution_routing_incomplete_attempts": 1,
+            "parity_execution_guard_passed_missing_age_rows": 1,
+            "parity_execution_guard_age_violations": 1,
+            "parity_execution_guard_skew_violations": 1,
+            "parity_execution_max_routed_book_age_ns": 150,
+            "parity_execution_max_routed_book_skew_ns": 60,
+            "parity_execution_count": 1,
+            "parity_execution_legging_missing_evidence_rows": 1,
+            "parity_execution_legging_consistency_violations": 1,
+            "parity_execution_complete_count": 0,
+            "parity_execution_incomplete_count": 1,
+            "parity_execution_route_rejected_legs": 1,
+            "parity_execution_unfilled_legs": 1,
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
@@ -201,6 +257,47 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(weak["total_parity_futures_stale_join_rows"]) == 2
     assert int(weak["total_parity_futures_signal_age_violations"]) == 2
     assert int(weak["max_parity_futures_signal_age_ns"]) == 150
+    assert int(best["parity_execution_guard_enabled_runs"]) == 2
+    assert int(best["parity_execution_guard_declared_runs"]) == 2
+    assert int(best["parity_execution_guard_artifact_present_runs"]) == 2
+    assert int(best["parity_execution_legging_artifact_present_runs"]) == 2
+    assert int(best["total_parity_execution_guard_attempts"]) == 6
+    assert int(best["total_parity_execution_guard_passed_attempts"]) == 2
+    assert int(best["total_parity_execution_guard_deferred_attempts"]) == 4
+    assert int(best["total_parity_execution_routing_complete_attempts"]) == 2
+    assert int(best["total_parity_execution_complete_count"]) == 2
+    assert int(best["total_parity_execution_incomplete_count"]) == 0
+    assert int(best["max_parity_execution_routed_book_age_ns"]) == 20
+    assert int(best["max_parity_execution_routed_book_skew_ns"]) == 10
+    assert int(weak["total_parity_execution_guard_unclassified_rows"]) == 2
+    assert int(
+        weak["total_parity_execution_guard_missing_evidence_rows"]
+    ) == 2
+    assert int(
+        weak["total_parity_execution_guard_consistency_violations"]
+    ) == 2
+    assert int(weak["total_parity_execution_signal_expiry_events"]) == 2
+    assert int(weak["total_parity_execution_stale_book_attempts"]) == 2
+    assert int(
+        weak["total_parity_execution_negative_book_age_attempts"]
+    ) == 2
+    assert int(weak["total_parity_execution_skew_attempts"]) == 2
+    assert int(
+        weak["total_parity_execution_routing_incomplete_attempts"]
+    ) == 2
+    assert int(weak["total_parity_execution_guard_age_violations"]) == 2
+    assert int(weak["total_parity_execution_guard_skew_violations"]) == 2
+    assert int(weak["total_parity_execution_incomplete_count"]) == 2
+    assert int(
+        weak["total_parity_execution_legging_missing_evidence_rows"]
+    ) == 2
+    assert int(
+        weak["total_parity_execution_legging_consistency_violations"]
+    ) == 2
+    assert int(weak["total_parity_execution_route_rejected_legs"]) == 2
+    assert int(weak["total_parity_execution_unfilled_legs"]) == 2
+    assert int(weak["max_parity_execution_routed_book_age_ns"]) == 150
+    assert int(weak["max_parity_execution_routed_book_skew_ns"]) == 60
     assert int(best["order_horizon_tracking_enabled_runs"]) == 2
     assert int(best["total_open_orders_at_replay_end"]) == 0
     assert int(best["total_open_order_qty_at_replay_end"]) == 0
@@ -283,6 +380,61 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
             "max_parity_futures_signal_age_ns"
         ]
     ) == 150
+    assert int(
+        comparison.summary.iloc[0][
+            "parity_execution_guard_enabled_runs"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "parity_execution_guard_declared_runs"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "parity_execution_guard_artifact_present_runs"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_guard_attempts"
+        ]
+    ) == 14
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_guard_passed_attempts"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_guard_deferred_attempts"
+        ]
+    ) == 10
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_routing_incomplete_attempts"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_complete_count"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_incomplete_count"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "max_parity_execution_routed_book_age_ns"
+        ]
+    ) == 150
+    assert int(
+        comparison.summary.iloc[0][
+            "max_parity_execution_routed_book_skew_ns"
+        ]
+    ) == 60
     assert int(
         comparison.summary.iloc[0]["order_horizon_tracking_enabled_runs"]
     ) == 4

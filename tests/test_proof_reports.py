@@ -446,6 +446,151 @@ def test_proof_report_recomputes_parity_futures_signal_freshness(tmp_path):
     ]
 
 
+def test_proof_report_recomputes_parity_execution_safety(tmp_path):
+    run_dir = tmp_path / "parity_execution_safety"
+    write_run(run_dir, strategy="parity_arb_taker", fills=3)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "parity_futures_asof_freshness_enabled"] = True
+    summary.loc[0, "parity_futures_max_quote_age_ns"] = 100
+    summary.loc[0, "parity_execution_guard_enabled"] = True
+    summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
+    summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
+    summary.to_csv(summary_path, index=False)
+    pd.DataFrame(
+        [{"ts": 200, "future_asof_age_ns": 0}]
+    ).to_csv(run_dir / "signals.csv", index=False)
+    pd.DataFrame(
+        [{"ts": 200, "reason": "fresh"}]
+    ).to_csv(run_dir / "parity_futures_join_audit.csv", index=False)
+    guard = pd.DataFrame(
+        [
+            {
+                "guard_passed": True,
+                "guard_reason": "ready",
+                "routing_status": "complete",
+                "orders_requested": 3,
+                "orders_accepted": 3,
+                "routing_complete": True,
+                "call_book_age_ns": 100,
+                "put_book_age_ns": 80,
+                "future_book_age_ns": 50,
+                "leg_book_skew_ns": 50,
+            }
+        ]
+    )
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    legging = pd.DataFrame(
+        [
+            {
+                "expected_order_count": 3,
+                "order_count": 3,
+                "partial": False,
+                "route_rejection_count": 0,
+                "fully_filled_leg_count": 3,
+                "unfilled_leg_count": 0,
+                "routing_complete": True,
+                "fills_complete": True,
+            }
+        ]
+    )
+    legging.to_csv(run_dir / "legging.csv", index=False)
+
+    valid = evaluate_replay_dirs([run_dir])
+
+    assert valid.passed
+    metrics = valid.metrics.iloc[0]
+    assert bool(metrics["parity_execution_guard_present"])
+    assert bool(metrics["parity_execution_legging_present"])
+    assert int(metrics["parity_execution_guard_passed_attempts"]) == 1
+    assert int(
+        metrics["parity_execution_guard_missing_evidence_rows"]
+    ) == 0
+    assert int(metrics["parity_execution_max_routed_book_age_ns"]) == 100
+    assert int(metrics["parity_execution_max_routed_book_skew_ns"]) == 50
+    assert int(
+        metrics["parity_execution_legging_missing_evidence_rows"]
+    ) == 0
+    assert int(
+        metrics["parity_execution_legging_consistency_violations"]
+    ) == 0
+    assert int(metrics["parity_execution_complete_count"]) == 1
+
+    summary.loc[0, "parity_execution_guard_enabled"] = False
+    summary.to_csv(summary_path, index=False)
+    undeclared = evaluate_replay_dirs([run_dir])
+
+    undeclared_failed = undeclared.checks.loc[
+        ~undeclared.checks["passed"]
+    ]
+    assert not undeclared.passed
+    assert undeclared_failed["check"].tolist() == [
+        "parity_execution_guard_declared"
+    ]
+    summary.loc[0, "parity_execution_guard_enabled"] = True
+    summary.to_csv(summary_path, index=False)
+
+    guard.loc[0, "call_book_age_ns"] = 101
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    stale = evaluate_replay_dirs([run_dir])
+
+    stale_failed = stale.checks.loc[~stale.checks["passed"]]
+    assert not stale.passed
+    assert stale_failed["check"].tolist() == [
+        "parity_execution_guard_age_violations",
+        "parity_execution_max_routed_book_age_ns",
+    ]
+
+    guard.loc[0, "call_book_age_ns"] = 100
+    guard.loc[0, "routing_status"] = "partial"
+    guard.loc[0, "orders_accepted"] = 2
+    guard.loc[0, "routing_complete"] = False
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    legging.loc[0, "order_count"] = 2
+    legging.loc[0, "partial"] = True
+    legging.loc[0, "route_rejection_count"] = 1
+    legging.loc[0, "fully_filled_leg_count"] = 2
+    legging.loc[0, "unfilled_leg_count"] = 1
+    legging.loc[0, "routing_complete"] = False
+    legging.loc[0, "fills_complete"] = False
+    legging.to_csv(run_dir / "legging.csv", index=False)
+    incomplete = evaluate_replay_dirs([run_dir])
+
+    incomplete_failed = incomplete.checks.loc[
+        ~incomplete.checks["passed"]
+    ]
+    assert not incomplete.passed
+    assert incomplete_failed["check"].tolist() == [
+        "parity_execution_routing_incomplete_attempts",
+        "parity_execution_incomplete_count",
+        "parity_execution_route_rejected_legs",
+        "parity_execution_unfilled_legs",
+        "parity_execution_complete_count",
+    ]
+
+    guard.loc[0, "routing_status"] = "complete"
+    guard.loc[0, "orders_accepted"] = 3
+    guard.loc[0, "routing_complete"] = True
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    legging.loc[0, "order_count"] = 3
+    legging.loc[0, "partial"] = False
+    legging.loc[0, "route_rejection_count"] = 0
+    legging.loc[0, "fully_filled_leg_count"] = 3
+    legging.loc[0, "unfilled_leg_count"] = 0
+    legging.loc[0, "routing_complete"] = True
+    legging = legging.drop(columns=["fills_complete"])
+    legging.to_csv(run_dir / "legging.csv", index=False)
+    missing = evaluate_replay_dirs([run_dir])
+
+    missing_failed = missing.checks.loc[~missing.checks["passed"]]
+    assert not missing.passed
+    assert missing_failed["check"].tolist() == [
+        "parity_execution_legging_missing_evidence_rows",
+        "parity_execution_incomplete_count",
+        "parity_execution_complete_count",
+    ]
+
+
 def test_write_proof_report_outputs_metrics_checks_and_summary(tmp_path):
     run_dir = tmp_path / "parity_pass"
     out_dir = tmp_path / "proof"

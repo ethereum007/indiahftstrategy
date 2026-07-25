@@ -30,6 +30,7 @@ class ParityReplayResult:
     signals: pd.DataFrame
     summary: pd.DataFrame
     legging: pd.DataFrame
+    execution_guard: pd.DataFrame
     input_quarantine: pd.DataFrame
     futures_join_audit: pd.DataFrame
     output_dir: Path | None = None
@@ -52,6 +53,8 @@ def run_parity_replay(
     feed_latency_us: float = 0.0,
     order_latency_us: float = 0.0,
     max_signal_age_ns: int = 1_000_000,
+    max_leg_book_age_ns: int = 1_000_000,
+    max_leg_book_skew_ns: int = 1_000_000,
     max_qty: int | None = None,
     max_position_lots: int = 20,
     signal_limit: int | None = None,
@@ -112,7 +115,12 @@ def run_parity_replay(
     strategy = ParityArbTakerStrategy(
         signals,
         leg_map,
-        ParityArbConfig(max_signal_age_ns=max_signal_age_ns, max_qty=max_qty),
+        ParityArbConfig(
+            max_signal_age_ns=max_signal_age_ns,
+            max_leg_book_age_ns=max_leg_book_age_ns,
+            max_leg_book_skew_ns=max_leg_book_skew_ns,
+            max_qty=max_qty,
+        ),
     )
     engine = MultiInstrumentEngine(
         instruments=instruments,
@@ -143,6 +151,14 @@ def run_parity_replay(
     ).items():
         summary[key] = value
     legging = strategy.legging_report()
+    execution_guard = strategy.execution_guard_report()
+    for key, value in _execution_guard_metrics(
+        execution_guard,
+        legging,
+        max_leg_book_age_ns=max_leg_book_age_ns,
+        max_leg_book_skew_ns=max_leg_book_skew_ns,
+    ).items():
+        summary[key] = value
     out_dir = Path(output_dir) if output_dir else None
     if out_dir:
         write_replay_outputs(
@@ -153,6 +169,7 @@ def run_parity_replay(
             extra_frames={
                 "signals": signals,
                 "legging": legging,
+                "parity_execution_guard": execution_guard,
                 "input_quarantine": input_quarantine,
                 "parity_futures_join_audit": futures_join_audit,
             },
@@ -171,6 +188,8 @@ def run_parity_replay(
                 "feed_latency_us": feed_latency_us,
                 "order_latency_us": order_latency_us,
                 "max_signal_age_ns": max_signal_age_ns,
+                "max_leg_book_age_ns": max_leg_book_age_ns,
+                "max_leg_book_skew_ns": max_leg_book_skew_ns,
                 "max_qty": max_qty,
                 "max_position_lots": max_position_lots,
                 "signal_limit": signal_limit,
@@ -181,6 +200,7 @@ def run_parity_replay(
         signals=signals,
         summary=summary,
         legging=legging,
+        execution_guard=execution_guard,
         input_quarantine=input_quarantine,
         futures_join_audit=futures_join_audit,
         output_dir=out_dir,
@@ -254,6 +274,146 @@ def _futures_freshness_metrics(
         )
         if not observed_signal_ages.empty
         else 0,
+    }
+
+
+def _execution_guard_metrics(
+    guard: pd.DataFrame,
+    legging: pd.DataFrame,
+    *,
+    max_leg_book_age_ns: int,
+    max_leg_book_skew_ns: int,
+) -> dict[str, int | bool]:
+    passed = (
+        guard["guard_passed"].fillna(False).astype(bool)
+        if "guard_passed" in guard.columns
+        else pd.Series(False, index=guard.index)
+    )
+    reasons = (
+        guard["guard_reason"].astype(str)
+        if "guard_reason" in guard.columns
+        else pd.Series("", index=guard.index)
+    )
+    routing_status = (
+        guard["routing_status"].astype(str)
+        if "routing_status" in guard.columns
+        else pd.Series("", index=guard.index)
+    )
+    passed_rows = guard.loc[passed]
+    leg_age_columns = [
+        "call_book_age_ns",
+        "put_book_age_ns",
+        "future_book_age_ns",
+    ]
+    leg_ages = pd.DataFrame(
+        {
+            column: pd.to_numeric(
+                passed_rows.get(
+                    column,
+                    pd.Series(index=passed_rows.index, dtype="float64"),
+                ),
+                errors="coerce",
+            )
+            for column in leg_age_columns
+        },
+        index=passed_rows.index,
+    )
+    skew = pd.to_numeric(
+        passed_rows.get(
+            "leg_book_skew_ns",
+            pd.Series(index=passed_rows.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+    observed_max_age = (
+        leg_ages.max(axis=1).dropna()
+        if not leg_ages.empty
+        else pd.Series(dtype="float64")
+    )
+    observed_skew = skew.dropna()
+    missing_guard_age_rows = (
+        leg_ages.isna().any(axis=1) | skew.isna()
+    )
+    partial = (
+        legging["partial"].fillna(True).astype(bool)
+        if "partial" in legging.columns
+        else pd.Series(True, index=legging.index)
+    )
+    route_rejections = pd.to_numeric(
+        legging.get(
+            "route_rejection_count",
+            pd.Series(index=legging.index, dtype="float64"),
+        ),
+        errors="coerce",
+    ).fillna(0)
+    unfilled_legs = pd.to_numeric(
+        legging.get(
+            "unfilled_leg_count",
+            pd.Series(index=legging.index, dtype="float64"),
+        ),
+        errors="coerce",
+    ).fillna(0)
+    return {
+        "parity_execution_guard_enabled": True,
+        "parity_execution_max_leg_book_age_ns": int(
+            max_leg_book_age_ns
+        ),
+        "parity_execution_max_leg_book_skew_ns": int(
+            max_leg_book_skew_ns
+        ),
+        "parity_execution_guard_attempts": int(len(guard)),
+        "parity_execution_guard_passed_attempts": int(passed.sum()),
+        "parity_execution_guard_deferred_attempts": int((~passed).sum()),
+        "parity_execution_signal_expiry_events": int(
+            (reasons == "signal_age_exceeded").sum()
+        ),
+        "parity_execution_stale_book_attempts": int(
+            (reasons == "stale_leg_book").sum()
+        ),
+        "parity_execution_negative_book_age_attempts": int(
+            (reasons == "negative_leg_book_age").sum()
+        ),
+        "parity_execution_skew_attempts": int(
+            (reasons == "leg_book_skew_exceeded").sum()
+        ),
+        "parity_execution_routing_complete_attempts": int(
+            (passed & routing_status.eq("complete")).sum()
+        ),
+        "parity_execution_routing_incomplete_attempts": int(
+            (passed & ~routing_status.eq("complete")).sum()
+        ),
+        "parity_execution_guard_passed_missing_age_rows": int(
+            missing_guard_age_rows.sum()
+        ),
+        "parity_execution_guard_age_violations": int(
+            (
+                leg_ages.lt(0)
+                | leg_ages.gt(max_leg_book_age_ns)
+            ).any(axis=1).sum()
+        ),
+        "parity_execution_guard_skew_violations": int(
+            (
+                skew.lt(0)
+                | skew.gt(max_leg_book_skew_ns)
+            ).sum()
+        ),
+        "parity_execution_max_routed_book_age_ns": int(
+            observed_max_age.max()
+        )
+        if not observed_max_age.empty
+        else 0,
+        "parity_execution_max_routed_book_skew_ns": int(
+            observed_skew.max()
+        )
+        if not observed_skew.empty
+        else 0,
+        "parity_execution_count": int(len(legging)),
+        "parity_execution_complete_count": int((~partial).sum()),
+        "parity_execution_incomplete_count": int(partial.sum()),
+        "parity_execution_route_rejected_legs": int(
+            route_rejections.sum()
+        ),
+        "parity_execution_unfilled_legs": int(unfilled_legs.sum()),
     }
 
 
@@ -339,6 +499,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--feed-latency-us", type=float, default=0.0)
     parser.add_argument("--order-latency-us", type=float, default=0.0)
     parser.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
+    parser.add_argument(
+        "--max-leg-book-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    parser.add_argument(
+        "--max-leg-book-skew-ns",
+        type=int,
+        default=1_000_000,
+    )
     parser.add_argument("--max-qty", type=int, default=None)
     parser.add_argument("--signal-limit", type=int, default=None)
     args = parser.parse_args(argv)
@@ -356,6 +526,8 @@ def main(argv: list[str] | None = None) -> int:
         feed_latency_us=args.feed_latency_us,
         order_latency_us=args.order_latency_us,
         max_signal_age_ns=args.max_signal_age_ns,
+        max_leg_book_age_ns=args.max_leg_book_age_ns,
+        max_leg_book_skew_ns=args.max_leg_book_skew_ns,
         max_qty=args.max_qty,
         signal_limit=args.signal_limit,
     )

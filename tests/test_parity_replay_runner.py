@@ -1,5 +1,9 @@
+from types import SimpleNamespace
+from unittest.mock import patch
+
 import pandas as pd
 
+from hft_cli import main
 from strategies.run_parity_replay import run_parity_replay
 
 
@@ -51,6 +55,11 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert not replay.signals.empty
     assert replay.result.engine.orders_sent == 3
     assert replay.legging.iloc[0]["fill_count"] == 3
+    assert not bool(replay.legging.iloc[0]["partial"])
+    assert bool(replay.legging.iloc[0]["routing_complete"])
+    assert bool(replay.legging.iloc[0]["fills_complete"])
+    assert int(replay.legging.iloc[0]["fully_filled_leg_count"]) == 3
+    assert int(replay.legging.iloc[0]["unfilled_leg_count"]) == 0
     assert replay.summary.iloc[0]["fills"] == 3
     assert (out_dir / "fills.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
@@ -64,6 +73,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "signals.csv").exists()
     assert (out_dir / "legging.csv").exists()
+    assert (out_dir / "parity_execution_guard.csv").exists()
     assert (out_dir / "input_quarantine.csv").exists()
     assert (out_dir / "parity_futures_join_audit.csv").exists()
     assert (out_dir / "manifest.json").exists()
@@ -91,6 +101,32 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["parity_futures_signal_age_violations"]) == 0
     assert int(summary["parity_futures_max_signal_age_ns"]) == 0
     assert set(replay.futures_join_audit["reason"]) == {"fresh"}
+    assert bool(summary["parity_execution_guard_enabled"])
+    assert int(summary["parity_execution_max_leg_book_age_ns"]) == 1_000_000
+    assert int(summary["parity_execution_max_leg_book_skew_ns"]) == 1_000_000
+    assert int(summary["parity_execution_guard_attempts"]) == 3
+    assert int(summary["parity_execution_guard_passed_attempts"]) == 1
+    assert int(summary["parity_execution_guard_deferred_attempts"]) == 2
+    assert int(summary["parity_execution_signal_expiry_events"]) == 0
+    assert int(summary["parity_execution_stale_book_attempts"]) == 0
+    assert int(summary["parity_execution_negative_book_age_attempts"]) == 0
+    assert int(summary["parity_execution_skew_attempts"]) == 0
+    assert int(summary["parity_execution_routing_complete_attempts"]) == 1
+    assert int(summary["parity_execution_routing_incomplete_attempts"]) == 0
+    assert int(summary["parity_execution_guard_passed_missing_age_rows"]) == 0
+    assert int(summary["parity_execution_guard_age_violations"]) == 0
+    assert int(summary["parity_execution_guard_skew_violations"]) == 0
+    assert int(summary["parity_execution_max_routed_book_age_ns"]) == 0
+    assert int(summary["parity_execution_max_routed_book_skew_ns"]) == 0
+    assert int(summary["parity_execution_count"]) == 1
+    assert int(summary["parity_execution_complete_count"]) == 1
+    assert int(summary["parity_execution_incomplete_count"]) == 0
+    assert int(summary["parity_execution_route_rejected_legs"]) == 0
+    assert int(summary["parity_execution_unfilled_legs"]) == 0
+    assert set(replay.execution_guard["guard_reason"]) == {
+        "missing_leg_book",
+        "ready",
+    }
 
 
 def test_run_parity_replay_quarantines_stale_futures_join(tmp_path):
@@ -151,3 +187,39 @@ def test_run_parity_replay_quarantines_stale_futures_join(tmp_path):
     assert int(summary["parity_futures_stale_join_rows"]) == 1
     assert int(summary["parity_futures_signal_count"]) == 0
     assert int(summary["parity_futures_signal_age_violations"]) == 0
+    assert int(summary["parity_execution_guard_attempts"]) == 0
+    assert int(summary["parity_execution_count"]) == 0
+    assert replay.execution_guard.empty
+
+
+def test_unified_cli_replay_parity_forwards_execution_guard_limits(
+    tmp_path,
+):
+    fake_result = SimpleNamespace(summary=pd.DataFrame([{"fills": 0}]))
+    with patch(
+        "hft_cli.run_parity_replay",
+        return_value=fake_result,
+    ) as replay:
+        code = main(
+            [
+                "replay-parity",
+                "--chain",
+                str(tmp_path / "chain.csv"),
+                "--futures",
+                str(tmp_path / "futures.csv"),
+                "--out",
+                str(tmp_path / "out"),
+                "--max-signal-age-ns",
+                "400000",
+                "--max-leg-book-age-ns",
+                "300000",
+                "--max-leg-book-skew-ns",
+                "200000",
+            ]
+        )
+
+    assert code == 0
+    kwargs = replay.call_args.kwargs
+    assert kwargs["max_signal_age_ns"] == 400_000
+    assert kwargs["max_leg_book_age_ns"] == 300_000
+    assert kwargs["max_leg_book_skew_ns"] == 200_000

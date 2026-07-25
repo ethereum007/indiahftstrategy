@@ -305,6 +305,20 @@ def _candidate_record(
                 sweep_run.get("parity_futures_max_quote_age_ns"),
             )
         )
+    for target, source in [
+        (
+            "max_leg_book_age_ns",
+            "parity_execution_max_leg_book_age_ns",
+        ),
+        (
+            "max_leg_book_skew_ns",
+            "parity_execution_max_leg_book_skew_ns",
+        ),
+    ]:
+        if target in sweep_run.index or source in sweep_run.index:
+            record[target] = _jsonable(
+                sweep_run.get(target, sweep_run.get(source))
+            )
     if direction in BOX_DIRECTIONS or scanner == "box":
         record.update(
             {
@@ -415,6 +429,8 @@ def _promotion_candidate_config(
             "depth_fraction",
             "asof_latency_ns",
             "max_futures_quote_age_ns",
+            "max_leg_book_age_ns",
+            "max_leg_book_skew_ns",
             "feed_latency_us",
             "order_latency_us",
         ]

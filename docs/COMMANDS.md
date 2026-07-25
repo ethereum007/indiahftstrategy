@@ -866,6 +866,9 @@ python -m hft_cli replay-parity `
   --out runs\parity_replay_2026_06_10 `
   --signal-limit 100 `
   --max-futures-quote-age-ns 1000000 `
+  --max-signal-age-ns 1000000 `
+  --max-leg-book-age-ns 1000000 `
+  --max-leg-book-skew-ns 250000 `
   --feed-latency-us 50 `
   --order-latency-us 250 `
   --fill-model runs\fill_model\leadlag_shadow_latest
@@ -876,8 +879,8 @@ spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
 `order_cancellations.csv`, `order_horizon_states.csv`,
 `input_quarantine.csv`, `liquidity_shortfalls.csv`,
-`queue_initializations.csv`, `parity_futures_join_audit.csv`, and
-`terminal_liquidations.csv`.
+`queue_initializations.csv`, `parity_futures_join_audit.csv`,
+`parity_execution_guard.csv`, and `terminal_liquidations.csv`.
 
 Parity signal formation uses a backward as-of futures join with a safe default
 maximum quote age of 1 ms. `parity_futures_join_audit.csv` retains every
@@ -891,6 +894,17 @@ artifacts, and rejects missing, negative, or over-limit futures age evidence
 on any emitted signal. The same counters remain visible in parity sweeps and
 cross-sweep comparisons. All outputs remain research-only and
 non-authorizing.
+
+Before routing any parity signal, replay now requires fresh source-market
+books for the call, put, and future and bounds the timestamp skew across all
+three legs. Feed delay therefore consumes the configured book-age budget
+instead of resetting it. `parity_execution_guard.csv` records every deferred,
+expired, rejected, partial, or complete routing decision with per-leg book
+timestamps and ages. `legging.csv` treats the execution as complete only when
+all three orders are accepted and every leg fills its requested quantity;
+two fills plus a rejected third leg remains partial. Proof independently
+recomputes these constraints and rejects over-age or over-skew routed books,
+expired signals, incomplete routing, rejected legs, and unfilled legs.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows
@@ -1048,6 +1062,8 @@ python -m hft_cli sweep-parity `
   --order-latency-us 100 250 500 `
   --signal-limit 100 `
   --max-futures-quote-age-ns 1000000 `
+  --max-leg-book-age-ns 1000000 `
+  --max-leg-book-skew-ns 250000 `
   --min-net-pnl 1 `
   --min-fills 10 `
   --max-drawdown 5000 `
@@ -1070,9 +1086,10 @@ Promote a passed parity/box scan, edge audit, and replay sweep into the
 launch-compatible `promotion_report` shape. This bridge preserves the selected
 opportunity's executable leg prices so `plan-parity-orders` can generate the
 multi-leg order template without manually re-entering prices. It also binds
-the selected futures quote-age limit and the opportunity's observed as-of and
-decision ages into `candidate_config.json`, preventing a later handoff from
-silently relaxing the researched freshness assumption:
+the selected futures quote-age limit, three-leg book-age/skew limits, and the
+opportunity's observed as-of and decision ages into `candidate_config.json`,
+preventing a later handoff from silently relaxing the researched freshness
+assumption:
 
 ```powershell
 python -m hft_cli promote-parity-candidate `

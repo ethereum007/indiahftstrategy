@@ -708,6 +708,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     parity.add_argument("--feed-latency-us", type=float, default=0.0)
     parity.add_argument("--order-latency-us", type=float, default=0.0)
+    parity.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
+    parity.add_argument(
+        "--max-leg-book-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    parity.add_argument(
+        "--max-leg-book-skew-ns",
+        type=int,
+        default=1_000_000,
+    )
     parity.add_argument("--fill-model", default=None)
     parity.add_argument("--allow-unready-fill-model", action="store_true")
 
@@ -4116,6 +4127,16 @@ def main(argv: list[str] | None = None) -> int:
         default=1_000_000,
     )
     parity_sweep.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
+    parity_sweep.add_argument(
+        "--max-leg-book-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    parity_sweep.add_argument(
+        "--max-leg-book-skew-ns",
+        type=int,
+        default=1_000_000,
+    )
     parity_sweep.add_argument("--max-qty", type=int, default=None)
     parity_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
     parity_sweep.add_argument("--min-fills", type=int, default=1)
@@ -5439,6 +5460,9 @@ def main(argv: list[str] | None = None) -> int:
             max_futures_quote_age_ns=args.max_futures_quote_age_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
+            max_signal_age_ns=args.max_signal_age_ns,
+            max_leg_book_age_ns=args.max_leg_book_age_ns,
+            max_leg_book_skew_ns=args.max_leg_book_skew_ns,
         )
         print(result.summary.to_string(index=False))
         return 0
@@ -9262,6 +9286,8 @@ def main(argv: list[str] | None = None) -> int:
             signal_limit=args.signal_limit,
             max_futures_quote_age_ns=args.max_futures_quote_age_ns,
             max_signal_age_ns=args.max_signal_age_ns,
+            max_leg_book_age_ns=args.max_leg_book_age_ns,
+            max_leg_book_skew_ns=args.max_leg_book_skew_ns,
             max_qty=args.max_qty,
             proof_thresholds=ProofThresholds(
                 min_net_pnl=args.min_net_pnl,
