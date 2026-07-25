@@ -180,6 +180,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert bool(summary["venue_order_validation_enabled"])
     assert bool(summary["shared_event_liquidity_enabled"])
     assert bool(summary["persistent_displayed_liquidity_enabled"])
+    assert bool(summary["lot_conserving_fills_enabled"])
     assert bool(summary["arrival_queue_initialization_enabled"])
     assert int(summary["limit_orders_sent"]) == 0
     assert int(summary["queue_initialization_events"]) == 0

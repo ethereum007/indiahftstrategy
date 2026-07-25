@@ -414,6 +414,9 @@ def _fold_row(
         "persistent_displayed_liquidity_enabled": _to_bool(
             row.get("persistent_displayed_liquidity_enabled", False)
         ),
+        "lot_conserving_fills_enabled": _to_bool(
+            row.get("lot_conserving_fills_enabled", False)
+        ),
         "arrival_queue_initialization_enabled": _to_bool(
             row.get("arrival_queue_initialization_enabled", False)
         ),
@@ -648,6 +651,10 @@ def _summary(
         "persistent_displayed_liquidity_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    lot_conserving_fills_enabled = folds.get(
+        "lot_conserving_fills_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     arrival_queue_enabled = folds.get(
         "arrival_queue_initialization_enabled",
         pd.Series(False, index=folds.index),
@@ -695,6 +702,9 @@ def _summary(
                 ),
                 "persistent_displayed_liquidity_enabled_folds": int(
                     persistent_liquidity_enabled.sum()
+                ),
+                "lot_conserving_fills_enabled_folds": int(
+                    lot_conserving_fills_enabled.sum()
                 ),
                 "arrival_queue_initialization_enabled_folds": int(
                     arrival_queue_enabled.sum()
@@ -925,6 +935,9 @@ def _candidate_config(
         ),
         "persistent_displayed_liquidity_enabled_folds": _jsonable(
             summary.get("persistent_displayed_liquidity_enabled_folds")
+        ),
+        "lot_conserving_fills_enabled_folds": _jsonable(
+            summary.get("lot_conserving_fills_enabled_folds")
         ),
         "arrival_queue_initialization_enabled_folds": _jsonable(
             summary.get("arrival_queue_initialization_enabled_folds")

@@ -49,6 +49,7 @@ def write_run(
                 "venue_order_validation_enabled": True,
                 "shared_event_liquidity_enabled": True,
                 "persistent_displayed_liquidity_enabled": True,
+                "lot_conserving_fills_enabled": True,
                 "arrival_queue_initialization_enabled": True,
                 "limit_orders_sent": 4,
                 "queue_initialization_events": 4,
@@ -155,6 +156,7 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     assert bool(
         report.metrics.iloc[0]["persistent_displayed_liquidity_enabled"]
     )
+    assert bool(report.metrics.iloc[0]["lot_conserving_fills_enabled"])
     assert bool(report.metrics.iloc[0]["arrival_queue_initialization_enabled"])
     assert int(report.metrics.iloc[0]["limit_orders_sent"]) == 4
     assert int(report.metrics.iloc[0]["queue_initialization_events"]) == 4

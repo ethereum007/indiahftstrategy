@@ -351,10 +351,19 @@ class EventLiquidity:
             ask_observed_qty=ask_qty,
         )
 
-    def consume_displayed(self, side: int, requested_qty: int) -> tuple[float, int]:
+    def consume_displayed(
+        self,
+        side: int,
+        requested_qty: int,
+        *,
+        lot_size: int = 1,
+    ) -> tuple[float, int]:
         attr = "ask_qty" if side > 0 else "bid_qty"
         available = float(getattr(self, attr))
-        filled = min(int(requested_qty), max(int(math.floor(available)), 0))
+        filled = min(
+            int(requested_qty),
+            _floor_to_lot(available, lot_size),
+        )
         setattr(self, attr, max(available - filled, 0.0))
         if self._ledger is not None and filled > 0:
             self._ledger.consume(side, filled)
@@ -580,6 +589,11 @@ def _nonnegative_qty(value: object) -> float:
     return qty if math.isfinite(qty) and qty > 0 else 0.0
 
 
+def _floor_to_lot(quantity: object, lot_size: int) -> int:
+    units = max(int(math.floor(float(quantity))), 0)
+    return units - units % lot_size
+
+
 def _limit_book_relation(order: Order, tick: dict) -> str:
     bid = float(tick["bid"])
     ask = float(tick["ask"])
@@ -702,6 +716,7 @@ class BacktestEngine:
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
         self.venue_order_validation_enabled = True
+        self.lot_conserving_fills_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -1290,6 +1305,7 @@ class BacktestEngine:
         available, fill_qty = liquidity.consume_displayed(
             order.side,
             requested_qty,
+            lot_size=self.inst.lot_size,
         )
         if fill_qty > 0:
             self._advance_later_own_queue(order, fill_qty)
@@ -1479,7 +1495,10 @@ class BacktestEngine:
                     0.0,
                 )
                 available = max(liquidity.last_qty - queue_before, 0.0)
-                fq = min(remaining, max(int(math.floor(available)), 0))
+                fq = min(
+                    remaining,
+                    _floor_to_lot(available, self.inst.lot_size),
+                )
                 if fq > 0:
                     self._advance_later_own_queue(
                         o,
@@ -1487,7 +1506,7 @@ class BacktestEngine:
                         pending_after_ns=ts,
                     )
                     self._execute(o, fq, o.price, ts, maker=True)
-                if 0 < fq < remaining:
+                if available > 0 and fq < remaining:
                     self._record_liquidity_shortfall(
                         order=o,
                         ts_ns=ts,
@@ -1503,6 +1522,8 @@ class BacktestEngine:
             self._remove_order(o)
 
     def _execute(self, o: Order, qty: int, price: float, ts: int, maker: bool):
+        if qty % self.inst.lot_size != 0:
+            raise RuntimeError("fill quantity must preserve instrument lot size")
         cost = self.costs.cost(o.side, price, qty, self.inst)
         o.filled += qty
         self.position += o.side * qty

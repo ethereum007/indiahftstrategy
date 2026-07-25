@@ -152,8 +152,8 @@ def frame(rows):
     )
 
 
-def option_inst(symbol):
-    return Instrument(symbol, Kind.OPT, lot_size=75, tick=0.05)
+def option_inst(symbol, *, lot_size=75):
+    return Instrument(symbol, Kind.OPT, lot_size=lot_size, tick=0.05)
 
 
 def free_costs():
@@ -243,13 +243,14 @@ def test_multi_engine_orders_share_instrument_event_liquidity():
     result = engine.run()
 
     strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
-    assert strategy_fills["qty"].tolist() == [75, 25]
-    assert int(strategy_fills["qty"].sum()) == 100
+    assert strategy_fills["qty"].tolist() == [75]
+    assert int(strategy_fills["qty"].sum()) == 75
     shortfall = result.liquidity_shortfalls.iloc[0]
     assert shortfall["instrument_id"] == "A"
     assert shortfall["oid"] == strategy.oids[1]
     assert shortfall["available_qty"] == 25
-    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["filled_qty"] == 0
+    assert shortfall["shortfall_qty"] == 75
     assert shortfall["liquidity_source"] == "ask_display"
 
 
@@ -260,7 +261,7 @@ def test_multi_engine_carries_depletion_until_size_replenishes():
     engine = MultiInstrumentEngine(
         instruments={
             "A": InstrumentConfig(
-                option_inst("A"),
+                option_inst("A", lot_size=25),
                 "NSE",
                 frame(
                     [
@@ -288,6 +289,7 @@ def test_multi_engine_carries_depletion_until_size_replenishes():
     ]
     summary = replay_summary(result).iloc[0]
     assert bool(summary["persistent_displayed_liquidity_enabled"])
+    assert bool(summary["lot_conserving_fills_enabled"])
     assert int(summary["liquidity_shortfall_events"]) == 2
     assert int(summary["liquidity_shortfall_qty"]) == 100
     assert int(summary["carried_depletion_shortfall_events"]) == 1
@@ -307,7 +309,7 @@ def test_multi_engine_marketable_residual_defers_until_resting_touch():
     engine = MultiInstrumentEngine(
         instruments={
             "A": InstrumentConfig(
-                option_inst("A"),
+                option_inst("A", lot_size=25),
                 "NSE",
                 frame(
                     [
@@ -361,7 +363,7 @@ def test_multi_engine_reports_residual_queue_unresolved_at_replay_end():
     engine = MultiInstrumentEngine(
         instruments={
             "A": InstrumentConfig(
-                option_inst("A"),
+                option_inst("A", lot_size=25),
                 "NSE",
                 frame(
                     [
@@ -428,19 +430,16 @@ def test_multi_engine_price_through_depth_is_shared_in_own_order_priority():
     result = engine.run()
 
     strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
-    assert strategy_fills["oid"].tolist() == [
-        strategy.oids[0],
-        strategy.oids[1],
-    ]
-    assert strategy_fills["qty"].tolist() == [75, 25]
-    assert strategy_fills["maker"].tolist() == [True, True]
-    assert int(strategy_fills["qty"].sum()) == 100
+    assert strategy_fills["oid"].tolist() == [strategy.oids[0]]
+    assert strategy_fills["qty"].tolist() == [75]
+    assert strategy_fills["maker"].tolist() == [True]
+    assert int(strategy_fills["qty"].sum()) == 75
     price_throughs = result.passive_price_throughs
     assert price_throughs["instrument_id"].tolist() == ["A", "A"]
     assert price_throughs["oid"].tolist() == strategy.oids
     assert price_throughs["available_qty"].tolist() == [100, 25]
-    assert price_throughs["filled_qty"].tolist() == [75, 25]
-    assert price_throughs["shortfall_qty"].tolist() == [0, 50]
+    assert price_throughs["filled_qty"].tolist() == [75, 0]
+    assert price_throughs["shortfall_qty"].tolist() == [0, 75]
     assert price_throughs["complete"].tolist() == [True, False]
     shortfall = result.liquidity_shortfalls.loc[
         result.liquidity_shortfalls["liquidity_source"]
@@ -448,16 +447,17 @@ def test_multi_engine_price_through_depth_is_shared_in_own_order_priority():
     ].iloc[0]
     assert shortfall["oid"] == strategy.oids[1]
     assert shortfall["available_qty"] == 25
-    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["filled_qty"] == 0
+    assert shortfall["shortfall_qty"] == 75
     summary = replay_summary(result).iloc[0]
     assert bool(summary["passive_price_through_depth_constrained_enabled"])
     assert int(summary["passive_price_through_events"]) == 2
     assert int(summary["passive_price_through_requested_qty"]) == 150
-    assert int(summary["passive_price_through_filled_qty"]) == 100
-    assert int(summary["passive_price_through_shortfall_qty"]) == 50
+    assert int(summary["passive_price_through_filled_qty"]) == 75
+    assert int(summary["passive_price_through_shortfall_qty"]) == 75
     assert int(summary["passive_price_through_incomplete_events"]) == 1
     assert int(summary["displayed_liquidity_shortfall_events"]) == 1
-    assert int(summary["displayed_liquidity_shortfall_qty"]) == 50
+    assert int(summary["displayed_liquidity_shortfall_qty"]) == 75
 
 
 def test_multi_engine_uses_arrival_snapshot_for_limit_queue():

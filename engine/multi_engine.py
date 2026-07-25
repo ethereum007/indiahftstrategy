@@ -29,6 +29,7 @@ from engine.hft_backtest import (
     RESTING_TRANSITION_COLUMNS,
     TerminalLiquidation,
     TERMINAL_LIQUIDATION_COLUMNS,
+    _floor_to_lot,
     _limit_book_relation,
     _nonnegative_qty,
     _quantize_price,
@@ -153,6 +154,7 @@ class MultiInstrumentEngine:
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
         self.venue_order_validation_enabled = True
+        self.lot_conserving_fills_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -991,6 +993,7 @@ class MultiInstrumentEngine:
         available, fill_qty = liquidity.consume_displayed(
             order.side,
             requested_qty,
+            lot_size=self.instruments[instrument_id].instrument.lot_size,
         )
         if fill_qty > 0:
             self._advance_later_own_queue(
@@ -1225,7 +1228,10 @@ class MultiInstrumentEngine:
                 available = max(liquidity.last_qty - queue_before, 0.0)
                 fill_qty = min(
                     remaining,
-                    max(int(math.floor(available)), 0),
+                    _floor_to_lot(
+                        available,
+                        self.instruments[instrument_id].instrument.lot_size,
+                    ),
                 )
                 if fill_qty > 0:
                     self._advance_later_own_queue(
@@ -1242,7 +1248,7 @@ class MultiInstrumentEngine:
                         ts,
                         maker=True,
                     )
-                if 0 < fill_qty < remaining:
+                if available > 0 and fill_qty < remaining:
                     self._record_liquidity_shortfall(
                         instrument_id=instrument_id,
                         order=order,
@@ -1268,6 +1274,8 @@ class MultiInstrumentEngine:
         maker: bool,
     ):
         cfg = self.instruments[instrument_id]
+        if qty % cfg.instrument.lot_size != 0:
+            raise RuntimeError("fill quantity must preserve instrument lot size")
         cost = cfg.costs.cost(order.side, price, qty, cfg.instrument)
         order.filled += qty
         self.positions[instrument_id] += order.side * qty

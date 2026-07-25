@@ -30,6 +30,7 @@ KNOWN_NON_PARAM_COLUMNS = {
     "venue_order_validation_enabled",
     "shared_event_liquidity_enabled",
     "persistent_displayed_liquidity_enabled",
+    "lot_conserving_fills_enabled",
     "arrival_queue_initialization_enabled",
     "limit_orders_sent",
     "queue_initialization_events",

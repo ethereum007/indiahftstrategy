@@ -567,6 +567,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     persistent_displayed_liquidity_enabled = _bool(
         row.get("persistent_displayed_liquidity_enabled", False)
     )
+    lot_conserving_fills_enabled = _bool(
+        row.get("lot_conserving_fills_enabled", False)
+    )
     arrival_queue_initialization_enabled = _bool(
         row.get("arrival_queue_initialization_enabled", False)
     )
@@ -720,6 +723,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "persistent_displayed_liquidity_enabled": (
             persistent_displayed_liquidity_enabled
         ),
+        "lot_conserving_fills_enabled": lot_conserving_fills_enabled,
         "arrival_queue_initialization_enabled": (
             arrival_queue_initialization_enabled
         ),

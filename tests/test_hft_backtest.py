@@ -164,8 +164,8 @@ class CancelThenReplace(Strategy):
         pass
 
 
-def inst(kind=Kind.OPT):
-    return Instrument("NIFTY-TEST", kind, lot_size=75, tick=0.05)
+def inst(kind=Kind.OPT, *, lot_size=75):
+    return Instrument("NIFTY-TEST", kind, lot_size=lot_size, tick=0.05)
 
 
 def no_costs():
@@ -229,19 +229,50 @@ def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
     result = eng.run()
 
     strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
-    assert strategy_fills["qty"].tolist() == [75, 25]
-    assert int(strategy_fills["qty"].sum()) == 100
+    assert strategy_fills["qty"].tolist() == [75]
+    assert int(strategy_fills["qty"].sum()) == 75
     assert len(result.liquidity_shortfalls) == 1
     shortfall = result.liquidity_shortfalls.iloc[0]
     assert shortfall["oid"] == strategy.oids[1]
     assert shortfall["requested_qty"] == 75
     assert shortfall["available_qty"] == 25
-    assert shortfall["filled_qty"] == 25
-    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["filled_qty"] == 0
+    assert shortfall["shortfall_qty"] == 75
     assert shortfall["liquidity_source"] == "ask_display"
 
 
 def test_marketable_limit_waits_for_observed_depth_replenishment():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (2_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (3_000, 100.00, 100.05, 300, 150, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(lot_size=25),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 3_000]
+    assert result.liquidity_shortfalls["available_qty"].tolist() == [100, 0]
+    assert result.liquidity_shortfalls["observed_qty"].tolist() == [100, 100]
+    assert result.liquidity_shortfalls["carried_depletion_qty"].tolist() == [
+        0,
+        100,
+    ]
+
+
+def test_marketable_limit_waits_until_replenishment_completes_a_market_lot():
     df = ticks(
         [
             (0, 100.00, 100.05, 300, 100, np.nan, 0),
@@ -262,13 +293,13 @@ def test_marketable_limit_waits_for_observed_depth_replenishment():
     result = eng.run()
 
     strategy_fills = result.fills.loc[result.fills["side"] > 0]
-    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["qty"].tolist() == [75, 75]
     assert strategy_fills["ts_ns"].tolist() == [1_000, 3_000]
-    assert result.liquidity_shortfalls["available_qty"].tolist() == [100, 0]
-    assert result.liquidity_shortfalls["observed_qty"].tolist() == [100, 100]
+    assert result.liquidity_shortfalls["available_qty"].tolist() == [100, 25]
+    assert result.liquidity_shortfalls["filled_qty"].tolist() == [75, 0]
     assert result.liquidity_shortfalls["carried_depletion_qty"].tolist() == [
         0,
-        100,
+        75,
     ]
 
 
@@ -285,7 +316,7 @@ def test_marketable_limit_residual_joins_visible_resting_queue():
     strategy = SendOnce(+1, 150, 100.05, OrderType.LIMIT)
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -330,7 +361,7 @@ def test_off_touch_marketable_residual_defers_queue_and_ignores_stale_print():
     strategy = SendOnce(+1, 150, 100.05, OrderType.LIMIT)
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -368,7 +399,7 @@ def test_price_change_resets_persistent_displayed_liquidity():
     strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -394,7 +425,7 @@ def test_session_change_resets_persistent_displayed_liquidity():
     strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -419,7 +450,7 @@ def test_persistent_displayed_liquidity_can_be_disabled_for_sensitivity():
     strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -641,7 +672,7 @@ def test_deferred_orders_keep_earlier_order_queue_priority():
     )
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(order_us=100),
         costs=no_costs(),
@@ -672,7 +703,7 @@ def test_resting_orders_share_trade_print_volume_in_queue_priority():
     )
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -691,6 +722,36 @@ def test_resting_orders_share_trade_print_volume_in_queue_priority():
     assert shortfall["available_qty"] == 25
     assert shortfall["shortfall_qty"] == 50
     assert shortfall["liquidity_source"] == "trade_print"
+
+
+def test_trade_print_fill_waits_for_a_complete_market_lot():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (1_000, 100.00, 100.05, 75, 75, 100.00, 50),
+            (2_000, 100.00, 100.05, 75, 75, 100.00, 75),
+        ]
+    )
+    strategy = SendOnce(+1, 75, 100.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=0.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [75]
+    assert strategy_fills["ts_ns"].tolist() == [2_000]
+    shortfall = result.liquidity_shortfalls.iloc[0]
+    assert shortfall["liquidity_source"] == "trade_print"
+    assert shortfall["available_qty"] == 50
+    assert shortfall["filled_qty"] == 0
+    assert shortfall["shortfall_qty"] == 75
 
 
 def test_cancelled_own_order_releases_later_queue_position():
@@ -824,7 +885,7 @@ def test_sell_price_through_consumes_bid_depth_as_maker():
     strategy = SendOnce(-1, 150, 100.05, OrderType.LIMIT)
     eng = BacktestEngine(
         df,
-        inst(),
+        inst(lot_size=25),
         strategy,
         latency=fixed_latency(),
         costs=no_costs(),
@@ -947,22 +1008,22 @@ def test_terminal_flatten_preserves_residual_when_final_depth_is_insufficient():
 
     result = eng.run()
 
-    assert result.fills["qty"].tolist() == [75, 25]
-    assert result.fills["side"].tolist() == [1, -1]
-    assert eng.position == 50
+    assert result.fills["qty"].tolist() == [75]
+    assert result.fills["side"].tolist() == [1]
+    assert eng.position == 75
     liquidation = result.terminal_liquidations.iloc[0]
     assert liquidation["liquidity_source"] == "terminal_bid_display"
     assert liquidation["requested_qty"] == 75
     assert liquidation["available_qty"] == 25
-    assert liquidation["filled_qty"] == 25
-    assert liquidation["shortfall_qty"] == 50
-    assert liquidation["residual_position"] == 50
+    assert liquidation["filled_qty"] == 0
+    assert liquidation["shortfall_qty"] == 75
+    assert liquidation["residual_position"] == 75
     assert not bool(liquidation["complete"])
     shortfall = result.liquidity_shortfalls.iloc[0]
     assert shortfall["liquidity_source"] == "terminal_bid_display"
     assert shortfall["requested_qty"] == 75
-    assert shortfall["filled_qty"] == 25
-    assert shortfall["shortfall_qty"] == 50
+    assert shortfall["filled_qty"] == 0
+    assert shortfall["shortfall_qty"] == 75
 
 
 def test_terminal_liquidation_uses_replay_horizon_and_retains_book_timestamp():

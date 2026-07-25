@@ -211,6 +211,9 @@ def replay_summary(
                 "persistent_displayed_liquidity_enabled": bool(
                     result.engine.persist_displayed_liquidity_depletion
                 ),
+                "lot_conserving_fills_enabled": bool(
+                    result.engine.lot_conserving_fills_enabled
+                ),
                 "arrival_queue_initialization_enabled": bool(
                     result.engine.arrival_queue_initialization_enabled
                 ),

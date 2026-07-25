@@ -9,12 +9,16 @@
   snapshot at venue arrival or first observable touch, aggressive-limit
   residual transitions into observable passive queues, depth-constrained
   passive price-through fills, strict venue admission for configured lot and
-  tick sizes, liquidity-shortfall and residual-inventory evidence, and tests.
+  tick sizes, lot-conserving fills across displayed depth, passive trade
+  prints, price-throughs, and terminal liquidation, liquidity-shortfall and
+  residual-inventory evidence, and tests.
   Invalid order intents are rejected before they receive an order ID or affect
   queue/OTR counters, with rejection totals carried through replay, proof,
   walk-forward, and sweep evidence. Unchanged snapshots do not restore consumed
   depth; only an observed size increase replenishes its delta, while a price or
-  timestamp-day change starts a fresh level.
+  timestamp-day change starts a fresh level. Sub-lot residual liquidity remains
+  unavailable until enough venue-valid quantity is observed and is reported as
+  a fill shortfall rather than creating an impossible fractional-lot position.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local
   event and cross-snapshot liquidity conservation, including horizon-causal
