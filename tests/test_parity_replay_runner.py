@@ -96,7 +96,15 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["input_empty_datasets"]) == 0
     assert bool(summary["parity_futures_asof_freshness_enabled"])
     assert bool(summary["ioc_arrival_audit_enabled"])
+    assert bool(summary["ioc_arrival_event_lineage_enabled"])
     assert int(summary["ioc_arrival_events"]) == 3
+    assert int(summary["ioc_arrival_market_events"]) == 3
+    assert int(summary["ioc_arrival_competing_depth_events"]) == 0
+    assert int(
+        summary[
+            "ioc_arrival_event_depth_consistency_violations"
+        ]
+    ) == 0
     assert int(summary["ioc_arrival_marketable_events"]) == 3
     assert int(summary["ioc_arrival_not_marketable_events"]) == 0
     assert int(summary["ioc_arrival_requested_qty"]) == 225
@@ -104,6 +112,11 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["ioc_arrival_shortfall_qty"]) == 0
     assert bool(
         summary["parity_execution_ioc_arrival_audit_enabled"]
+    )
+    assert bool(
+        summary[
+            "parity_execution_ioc_arrival_event_lineage_enabled"
+        ]
     )
     assert int(
         summary["parity_execution_ioc_arrival_evaluable_legs"]
@@ -116,6 +129,21 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(
         summary[
             "parity_execution_ioc_arrival_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_arrival_market_events"
+        ]
+    ) == 3
+    assert int(
+        summary[
+            "parity_execution_ioc_arrival_competing_depth_events"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_arrival_event_depth_consistency_violations"
         ]
     ) == 0
     assert float(
@@ -523,6 +551,21 @@ def test_run_parity_replay_proves_reverse_realized_package_edge(
     assert int(
         proof_metrics[
             "parity_execution_ioc_arrival_consistency_violations"
+        ]
+    ) == 0
+    assert bool(
+        proof_metrics[
+            "parity_execution_ioc_arrival_event_lineage_declared"
+        ]
+    )
+    assert int(
+        proof_metrics[
+            "parity_execution_ioc_arrival_market_events"
+        ]
+    ) == 3
+    assert int(
+        proof_metrics[
+            "parity_execution_ioc_arrival_event_depth_consistency_violations"
         ]
     ) == 0
     assert float(

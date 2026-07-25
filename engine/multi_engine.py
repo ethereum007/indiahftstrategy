@@ -199,6 +199,7 @@ class MultiInstrumentEngine:
         self.cancel_lifecycle_tracking_enabled = True
         self.order_horizon_tracking_enabled = True
         self.ioc_arrival_audit_enabled = True
+        self.ioc_arrival_event_lineage_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -1650,6 +1651,8 @@ class MultiInstrumentEngine:
         liquidity: EventLiquidity,
         *,
         requested_qty: int,
+        market_event_seq: int,
+        event_order_rank: int,
     ) -> None:
         arrival_ts_ns = int(tick["ts"])
         bid = float(tick["bid"])
@@ -1701,6 +1704,8 @@ class MultiInstrumentEngine:
         self.ioc_arrival_audit.append(
             IocArrivalAudit(
                 arrival_ts_ns=arrival_ts_ns,
+                market_event_seq=int(market_event_seq),
+                event_order_rank=int(event_order_rank),
                 instrument_id=instrument_id,
                 oid=order.oid,
                 side=order.side,
@@ -1816,6 +1821,9 @@ class MultiInstrumentEngine:
         order: Order,
         tick: dict,
         liquidity: EventLiquidity,
+        *,
+        market_event_seq: int,
+        event_order_rank: int,
     ):
         ts = tick["ts"]
         if ts < order.ts_active_ns:
@@ -1855,6 +1863,8 @@ class MultiInstrumentEngine:
                 tick,
                 liquidity,
                 requested_qty=remaining,
+                market_event_seq=market_event_seq,
+                event_order_rank=event_order_rank,
             )
             self._remove_order(
                 instrument_id,
@@ -2017,15 +2027,18 @@ class MultiInstrumentEngine:
                 ].event_liquidity(event.tick)
                 self._latest_liquidity[event.instrument_id] = liquidity
                 order_ids = sorted(
-                    self.open_orders,
+                    (
+                        oid
+                        for oid in self.open_orders
+                        if self._order_instrument.get(oid)
+                        == event.instrument_id
+                    ),
                     key=lambda oid: (
                         self.open_orders[oid].ts_active_ns,
                         oid,
                     ),
                 )
-                for oid in order_ids:
-                    if self._order_instrument.get(oid) != event.instrument_id:
-                        continue
+                for event_order_rank, oid in enumerate(order_ids):
                     order = self.open_orders.get(oid)
                     if order is not None:
                         self._try_fill(
@@ -2033,6 +2046,8 @@ class MultiInstrumentEngine:
                             order,
                             event.tick,
                             liquidity,
+                            market_event_seq=event.seq,
+                            event_order_rank=event_order_rank,
                         )
                 self._mark_equity(event.ts_ns)
             elif event.kind == "feed":

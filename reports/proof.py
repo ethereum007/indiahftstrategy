@@ -691,6 +691,12 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             False,
         )
     )
+    parity_execution_ioc_arrival_event_lineage_declared = _bool(
+        row.get(
+            "parity_execution_ioc_arrival_event_lineage_enabled",
+            False,
+        )
+    )
     parity_execution_ioc_batch_preflight_enabled = bool(
         parity_execution_guard_enabled
     )
@@ -1142,6 +1148,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         order_submissions,
         ioc_arrival_audit,
         enabled=parity_execution_ioc_arrival_audit_declared,
+        event_lineage_enabled=(
+            parity_execution_ioc_arrival_event_lineage_declared
+        ),
         audit_present=ioc_arrival_audit_path.exists(),
     )
     parity_routed_capacity_ratios = parity_capacity_ratio.loc[
@@ -1679,6 +1688,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         **parity_order_timing_metrics,
         "parity_execution_ioc_arrival_audit_declared": (
             parity_execution_ioc_arrival_audit_declared
+        ),
+        "parity_execution_ioc_arrival_event_lineage_declared": (
+            parity_execution_ioc_arrival_event_lineage_declared
         ),
         **parity_ioc_arrival_metrics,
         "parity_execution_ioc_batch_preflight_enabled": (
@@ -3186,6 +3198,7 @@ def _parity_ioc_arrival_metrics(
     ioc_arrival_audit: pd.DataFrame,
     *,
     enabled: bool,
+    event_lineage_enabled: bool,
     audit_present: bool,
 ) -> dict[str, int | float | bool]:
     evaluable_legs = 0
@@ -3196,6 +3209,7 @@ def _parity_ioc_arrival_metrics(
     negative_lag_legs = 0
     fill_ratios: list[float] = []
     arrival_lags: list[int] = []
+    event_rows_by_oid: dict[int, dict[str, int | float | str]] = {}
     audit_oids = pd.to_numeric(
         ioc_arrival_audit.get(
             "oid",
@@ -3260,6 +3274,8 @@ def _parity_ioc_arrival_metrics(
                 submission = submission_matches.iloc[0]
                 audit_number_names = [
                     "arrival_ts_ns",
+                    "market_event_seq",
+                    "event_order_rank",
                     "oid",
                     "side",
                     "limit_price",
@@ -3583,6 +3599,8 @@ def _parity_ioc_arrival_metrics(
 
                 integer_names = [
                     "arrival_ts_ns",
+                    "market_event_seq",
+                    "event_order_rank",
                     "oid",
                     "side",
                     "requested_qty",
@@ -3609,6 +3627,8 @@ def _parity_ioc_arrival_metrics(
                         ]
                     )
                     or oid != order_id
+                    or int(audit_numbers["market_event_seq"]) < 0
+                    or int(audit_numbers["event_order_rank"]) < 0
                     or side not in (-1, 1)
                     or requested_qty <= 0
                     or lot_size <= 0
@@ -3689,6 +3709,31 @@ def _parity_ioc_arrival_metrics(
                 )
                 evaluable_legs += 1
                 consistency_violations += int(violation)
+                if oid in event_rows_by_oid:
+                    consistency_violations += 1
+                else:
+                    event_rows_by_oid[oid] = {
+                        "instrument_id": audit_strings[
+                            "instrument_id"
+                        ],
+                        "arrival_ts_ns": arrival_ts_ns,
+                        "market_event_seq": int(
+                            audit_numbers["market_event_seq"]
+                        ),
+                        "event_order_rank": int(
+                            audit_numbers["event_order_rank"]
+                        ),
+                        "side": side,
+                        "bid": bid,
+                        "ask": ask,
+                        "bid_qty": bid_qty,
+                        "ask_qty": ask_qty,
+                        "observed_qty": observed_qty,
+                        "carried_depletion_qty": carried_qty,
+                        "event_consumed_qty": event_consumed_qty,
+                        "available_qty": available_qty,
+                        "filled_qty": filled_qty,
+                    }
                 not_marketable_legs += int(not marketable)
                 capacity_shortfall_legs += int(
                     marketable and shortfall_qty > 0
@@ -3702,9 +3747,15 @@ def _parity_ioc_arrival_metrics(
                 )
                 arrival_lags.append(arrival_lag_ns)
 
+    event_depth_metrics = _parity_ioc_event_depth_metrics(
+        list(event_rows_by_oid.values())
+    )
     return {
         "parity_execution_ioc_arrival_audit_enabled": bool(
             enabled
+        ),
+        "parity_execution_ioc_arrival_event_lineage_enabled": bool(
+            event_lineage_enabled
         ),
         "parity_execution_ioc_arrival_audit_present": bool(
             audit_present
@@ -3733,6 +3784,98 @@ def _parity_ioc_arrival_metrics(
         "parity_execution_max_ioc_arrival_lag_ns": (
             max(arrival_lags) if arrival_lags else 0
         ),
+        **event_depth_metrics,
+    }
+
+
+def _parity_ioc_event_depth_metrics(
+    rows: list[dict[str, int | float | str]],
+) -> dict[str, int]:
+    if not rows:
+        return {
+            "parity_execution_ioc_arrival_market_events": 0,
+            "parity_execution_ioc_arrival_competing_depth_events": 0,
+            (
+                "parity_execution_ioc_arrival_"
+                "event_depth_consistency_violations"
+            ): 0,
+        }
+
+    frame = pd.DataFrame(rows)
+    event_columns = ["instrument_id", "market_event_seq"]
+    side_columns = [*event_columns, "side"]
+    market_events = 0
+    competing_depth_events = 0
+    violations = 0
+    for _, event in frame.groupby(
+        event_columns,
+        sort=False,
+        dropna=False,
+    ):
+        market_events += 1
+        violations += int(
+            event["event_order_rank"].duplicated().any()
+            or event["arrival_ts_ns"].nunique(dropna=False) != 1
+            or event["bid"].nunique(dropna=False) != 1
+            or event["ask"].nunique(dropna=False) != 1
+            or event["bid_qty"].nunique(dropna=False) != 1
+            or event["ask_qty"].nunique(dropna=False) != 1
+        )
+    for _, event_side in frame.groupby(
+        side_columns,
+        sort=False,
+        dropna=False,
+    ):
+        competing_depth_events += int(len(event_side) > 1)
+        inconsistent = bool(
+            event_side["observed_qty"].nunique(dropna=False) != 1
+            or event_side["carried_depletion_qty"].nunique(
+                dropna=False
+            )
+            != 1
+        )
+        ordered = event_side.sort_values(
+            "event_order_rank",
+            kind="stable",
+        )
+        observed_qty = float(ordered.iloc[0]["observed_qty"])
+        carried_qty = float(
+            ordered.iloc[0]["carried_depletion_qty"]
+        )
+        cumulative_filled_qty = 0.0
+        for row in ordered.itertuples(index=False):
+            expected_available = max(
+                observed_qty
+                - carried_qty
+                - cumulative_filled_qty,
+                0.0,
+            )
+            inconsistent |= (
+                abs(
+                    float(row.event_consumed_qty)
+                    - cumulative_filled_qty
+                )
+                > 1e-9
+                or abs(
+                    float(row.available_qty)
+                    - expected_available
+                )
+                > 1e-9
+            )
+            cumulative_filled_qty += float(row.filled_qty)
+        violations += int(inconsistent)
+
+    return {
+        "parity_execution_ioc_arrival_market_events": (
+            market_events
+        ),
+        "parity_execution_ioc_arrival_competing_depth_events": (
+            competing_depth_events
+        ),
+        (
+            "parity_execution_ioc_arrival_"
+            "event_depth_consistency_violations"
+        ): violations,
     }
 
 
@@ -4046,6 +4189,32 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+        ioc_arrival_event_lineage_declared = bool(
+            metrics[
+                "parity_execution_ioc_arrival_event_lineage_declared"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_ioc_arrival_"
+                    "event_lineage_declared"
+                ),
+                "value": ioc_arrival_event_lineage_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": ioc_arrival_event_lineage_declared,
+                "reason": (
+                    ""
+                    if ioc_arrival_event_lineage_declared
+                    else (
+                        "parity execution lacks IOC market-event "
+                        "identity and processing-rank evidence"
+                    )
+                ),
+            }
+        )
         preflight_declared = bool(
             metrics[
                 "parity_execution_ioc_batch_preflight_declared"
@@ -4221,6 +4390,16 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_ioc_arrival_negative_lag_legs",
                 "a parity IOC arrival predates venue activation",
+            ),
+            (
+                (
+                    "parity_execution_ioc_arrival_"
+                    "event_depth_consistency_violations"
+                ),
+                (
+                    "parity IOC arrivals do not conserve shared "
+                    "displayed depth within a market event"
+                ),
             ),
             (
                 "parity_execution_ioc_batch_preflight_missing_evidence_rows",
@@ -4422,6 +4601,44 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     else (
                         "completed parity packages lack three-leg "
                         "arrival-book and displayed-depth evidence"
+                    )
+                ),
+            }
+        )
+        ioc_arrival_market_events = int(
+            metrics[
+                "parity_execution_ioc_arrival_market_events"
+            ]
+        )
+        required_ioc_arrival_market_events = (
+            1
+            if (
+                ioc_arrival_audit_declared
+                and ioc_arrival_event_lineage_declared
+                and complete_executions > 0
+            )
+            else 0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_ioc_arrival_market_events"
+                ),
+                "value": ioc_arrival_market_events,
+                "operator": ">=",
+                "threshold": required_ioc_arrival_market_events,
+                "passed": (
+                    ioc_arrival_market_events
+                    >= required_ioc_arrival_market_events
+                ),
+                "reason": (
+                    ""
+                    if ioc_arrival_market_events
+                    >= required_ioc_arrival_market_events
+                    else (
+                        "completed parity packages lack IOC "
+                        "market-event lineage"
                     )
                 ),
             }

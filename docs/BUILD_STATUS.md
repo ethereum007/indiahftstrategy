@@ -7617,6 +7617,25 @@ Source compilation succeeds. Repository collection is healthy at
 `2724 tests` across `164` files. The full suite was not rerun because recent
 complete runs exceed 40 minutes.
 
+Latest IOC market-event depth conservation proof: IOC arrival rows now carry
+the unique replay market-event sequence and deterministic order-processing
+rank from both engines. Replay summaries group arrivals by instrument, event,
+and side, expose market-event and competing-depth counts, and detect duplicate
+ranks, inconsistent quote snapshots, depth resets, and unexplained available
+quantity. Parity runtime metrics and independent proof sort every competing
+group by engine rank and require carried depletion plus cumulative earlier
+fills to explain the exact available depth before each IOC. Two rows can no
+longer pass by each claiming the same displayed quantity even when both remain
+internally plausible in isolation. Proof requires the event-lineage
+declaration, fails event-level conservation violations, and preserves the
+counts through parity sweeps and cross-sweep comparisons. All outputs remain
+research-only and non-authorizing. The `108`-test focused engine, replay,
+proof, and sweep set and the broader `233`-test shared-replay, parity,
+promotion, order-plan, launch, CLI, and strategy-evidence set pass. Source
+compilation succeeds. Repository collection is healthy at `2725 tests` across
+`164` files. The full suite was not rerun because recent complete runs exceed
+40 minutes.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

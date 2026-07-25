@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+import math
 from pathlib import Path
 from typing import Mapping
 
@@ -252,6 +253,9 @@ def replay_summary(
         if not ioc_arrival_audit.empty
         else pd.Series(dtype="float64")
     )
+    ioc_arrival_event_metrics = _ioc_arrival_event_metrics(
+        ioc_arrival_audit
+    )
     queue_initializations = result.queue_initializations
     queue_modes = (
         queue_initializations["mode"]
@@ -481,7 +485,11 @@ def replay_summary(
                 "ioc_arrival_audit_enabled": bool(
                     result.engine.ioc_arrival_audit_enabled
                 ),
+                "ioc_arrival_event_lineage_enabled": bool(
+                    result.engine.ioc_arrival_event_lineage_enabled
+                ),
                 "ioc_arrival_events": int(len(ioc_arrival_audit)),
+                **ioc_arrival_event_metrics,
                 "ioc_arrival_marketable_events": int(
                     ioc_arrival_marketable.sum()
                 ),
@@ -655,6 +663,162 @@ def _numeric_sum(frame: pd.DataFrame, column: str) -> int:
         .fillna(0)
         .sum()
     )
+
+
+def _ioc_arrival_event_metrics(
+    frame: pd.DataFrame,
+) -> dict[str, int]:
+    if frame.empty:
+        return {
+            "ioc_arrival_market_events": 0,
+            "ioc_arrival_competing_depth_events": 0,
+            "ioc_arrival_event_lineage_missing_rows": 0,
+            "ioc_arrival_event_depth_consistency_violations": 0,
+        }
+
+    number_names = [
+        "arrival_ts_ns",
+        "market_event_seq",
+        "event_order_rank",
+        "side",
+        "bid",
+        "ask",
+        "bid_qty",
+        "ask_qty",
+        "observed_qty",
+        "carried_depletion_qty",
+        "event_consumed_qty",
+        "available_qty",
+        "filled_qty",
+    ]
+    numbers = pd.DataFrame(
+        {
+            name: pd.to_numeric(
+                frame.get(
+                    name,
+                    pd.Series(index=frame.index, dtype="float64"),
+                ),
+                errors="coerce",
+            )
+            for name in number_names
+        },
+        index=frame.index,
+    )
+    invalid = numbers.isna().any(axis=1)
+    for name in number_names:
+        invalid |= ~numbers[name].map(
+            lambda value: math.isfinite(float(value))
+            if pd.notna(value)
+            else False
+        )
+    for name in [
+        "arrival_ts_ns",
+        "market_event_seq",
+        "event_order_rank",
+        "side",
+        "filled_qty",
+    ]:
+        invalid |= numbers[name].mod(1).ne(0)
+    instruments = frame.get(
+        "instrument_id",
+        pd.Series("", index=frame.index, dtype="object"),
+    ).fillna("").astype(str).str.strip()
+    invalid |= instruments.eq("")
+    invalid |= numbers["market_event_seq"].lt(0)
+    invalid |= numbers["event_order_rank"].lt(0)
+    invalid |= ~numbers["side"].isin([-1, 1])
+    invalid |= numbers["filled_qty"].lt(0)
+
+    valid = pd.DataFrame(
+        {
+            "instrument_id": instruments.loc[~invalid],
+            **{
+                name: numbers.loc[~invalid, name]
+                for name in number_names
+            },
+        }
+    )
+    event_columns = ["instrument_id", "market_event_seq"]
+    group_columns = [
+        *event_columns,
+        "side",
+    ]
+    grouped = valid.groupby(group_columns, sort=False, dropna=False)
+    competing_events = int(
+        sum(len(group) > 1 for _, group in grouped)
+    )
+    violations = int(invalid.sum())
+    market_events = 0
+    for _, event in valid.groupby(
+        event_columns,
+        sort=False,
+        dropna=False,
+    ):
+        market_events += 1
+        violations += int(
+            event["event_order_rank"].duplicated().any()
+            or event["arrival_ts_ns"].nunique(dropna=False) != 1
+            or event["bid"].nunique(dropna=False) != 1
+            or event["ask"].nunique(dropna=False) != 1
+            or event["bid_qty"].nunique(dropna=False) != 1
+            or event["ask_qty"].nunique(dropna=False) != 1
+        )
+    for _, group in valid.groupby(
+        group_columns,
+        sort=False,
+        dropna=False,
+    ):
+        inconsistent = bool(
+            group["observed_qty"].nunique(dropna=False) != 1
+            or group["carried_depletion_qty"].nunique(
+                dropna=False
+            )
+            != 1
+        )
+        ordered = group.sort_values(
+            ["event_order_rank"],
+            kind="stable",
+        )
+        observed_qty = float(ordered.iloc[0]["observed_qty"])
+        carried_qty = float(
+            ordered.iloc[0]["carried_depletion_qty"]
+        )
+        prior_consumed_qty: float | None = None
+        prior_filled_qty = 0.0
+        for row in ordered.itertuples(index=False):
+            consumed_qty = float(row.event_consumed_qty)
+            expected_available = max(
+                observed_qty
+                - carried_qty
+                - consumed_qty,
+                0.0,
+            )
+            inconsistent |= (
+                (
+                    prior_consumed_qty is not None
+                    and consumed_qty + 1e-9
+                    < prior_consumed_qty + prior_filled_qty
+                )
+                or abs(
+                    float(row.available_qty)
+                    - expected_available
+                )
+                > 1e-9
+            )
+            prior_consumed_qty = consumed_qty
+            prior_filled_qty = float(row.filled_qty)
+        violations += int(inconsistent)
+
+    return {
+        "ioc_arrival_market_events": market_events,
+        "ioc_arrival_competing_depth_events": competing_events,
+        "ioc_arrival_event_lineage_missing_rows": int(
+            invalid.sum()
+        ),
+        "ioc_arrival_event_depth_consistency_violations": (
+            violations
+        ),
+    }
 
 
 def write_replay_outputs(

@@ -6,6 +6,7 @@ from hft_cli import main
 from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 from reports.proof import (
     ProofThresholds,
+    _parity_ioc_event_depth_metrics,
     evaluate_replay_dirs,
     verify_proof_report,
     write_proof_report,
@@ -478,6 +479,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         0,
         "parity_execution_ioc_arrival_audit_enabled",
     ] = True
+    summary.loc[
+        0,
+        "parity_execution_ioc_arrival_event_lineage_enabled",
+    ] = True
     summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
     summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
     summary.to_csv(summary_path, index=False)
@@ -690,6 +695,8 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         [
             {
                 "arrival_ts_ns": 300,
+                "market_event_seq": 10,
+                "event_order_rank": 0,
                 "instrument_id": "CALL1000",
                 "oid": 1,
                 "side": 1,
@@ -720,6 +727,8 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
             },
             {
                 "arrival_ts_ns": 301,
+                "market_event_seq": 12,
+                "event_order_rank": 0,
                 "instrument_id": "PUT1000",
                 "oid": 2,
                 "side": -1,
@@ -750,6 +759,8 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
             },
             {
                 "arrival_ts_ns": 302,
+                "market_event_seq": 14,
+                "event_order_rank": 0,
                 "instrument_id": "FUT",
                 "oid": 3,
                 "side": -1,
@@ -957,6 +968,11 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     )
     assert bool(
         metrics[
+            "parity_execution_ioc_arrival_event_lineage_declared"
+        ]
+    )
+    assert bool(
+        metrics[
             "parity_execution_ioc_arrival_audit_present"
         ]
     )
@@ -995,6 +1011,21 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
             "parity_execution_max_ioc_arrival_lag_ns"
         ]
     ) == 52
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_market_events"
+        ]
+    ) == 3
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_competing_depth_events"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_event_depth_consistency_violations"
+        ]
+    ) == 0
     assert int(
         metrics[
             "parity_execution_ioc_visible_capacity_missing_evidence_rows"
@@ -1142,6 +1173,33 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
 
     summary.loc[
         0,
+        "parity_execution_ioc_arrival_event_lineage_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    ioc_event_lineage_undeclared = evaluate_replay_dirs(
+        [run_dir]
+    )
+
+    ioc_event_lineage_undeclared_failed = (
+        ioc_event_lineage_undeclared.checks.loc[
+            ~ioc_event_lineage_undeclared.checks["passed"]
+        ]
+    )
+    assert not ioc_event_lineage_undeclared.passed
+    assert (
+        ioc_event_lineage_undeclared_failed["check"].tolist()
+        == [
+            "parity_execution_ioc_arrival_event_lineage_declared"
+        ]
+    )
+    summary.loc[
+        0,
+        "parity_execution_ioc_arrival_event_lineage_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
         "parity_execution_signal_source_causality_enabled",
     ] = False
     summary.to_csv(summary_path, index=False)
@@ -1179,7 +1237,11 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     )
     assert not ioc_arrival_tampered.passed
     assert ioc_arrival_tampered_failed["check"].tolist() == [
-        "parity_execution_ioc_arrival_consistency_violations"
+        "parity_execution_ioc_arrival_consistency_violations",
+        (
+            "parity_execution_ioc_arrival_"
+            "event_depth_consistency_violations"
+        ),
     ]
     ioc_arrival_audit.loc[
         ioc_arrival_audit["instrument_id"].eq("FUT"),
@@ -1776,4 +1838,68 @@ def test_proof_verifier_rejects_resealed_outer_manifest_after_source_drift(
     assert not verification.verified
     assert verification.error == (
         "replay manifests are missing, stale, or unfingerprinted"
+    )
+
+
+def test_parity_ioc_event_depth_proof_rejects_collective_overbooking():
+    rows = [
+        {
+            "instrument_id": "NIFTY-FUT",
+            "arrival_ts_ns": 1_000,
+            "market_event_seq": 8,
+            "event_order_rank": 0,
+            "side": 1,
+            "bid": 99.95,
+            "ask": 100.0,
+            "bid_qty": 150,
+            "ask_qty": 150,
+            "observed_qty": 150,
+            "carried_depletion_qty": 0,
+            "event_consumed_qty": 0,
+            "available_qty": 150,
+            "filled_qty": 75,
+        },
+        {
+            "instrument_id": "NIFTY-FUT",
+            "arrival_ts_ns": 1_000,
+            "market_event_seq": 8,
+            "event_order_rank": 1,
+            "side": 1,
+            "bid": 99.95,
+            "ask": 100.0,
+            "bid_qty": 150,
+            "ask_qty": 150,
+            "observed_qty": 150,
+            "carried_depletion_qty": 0,
+            "event_consumed_qty": 75,
+            "available_qty": 75,
+            "filled_qty": 75,
+        },
+    ]
+
+    valid = _parity_ioc_event_depth_metrics(rows)
+
+    assert valid["parity_execution_ioc_arrival_market_events"] == 1
+    assert (
+        valid[
+            "parity_execution_ioc_arrival_competing_depth_events"
+        ]
+        == 1
+    )
+    assert (
+        valid[
+            "parity_execution_ioc_arrival_event_depth_consistency_violations"
+        ]
+        == 0
+    )
+
+    rows[1]["event_consumed_qty"] = 0
+    rows[1]["available_qty"] = 150
+    overbooked = _parity_ioc_event_depth_metrics(rows)
+
+    assert (
+        overbooked[
+            "parity_execution_ioc_arrival_event_depth_consistency_violations"
+        ]
+        == 1
     )

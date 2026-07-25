@@ -352,6 +352,8 @@ def test_ioc_fill_uses_arrival_time_book_not_decision_time():
     assert len(res.ioc_arrival_audit) == 1
     arrival = res.ioc_arrival_audit.iloc[0]
     assert arrival["arrival_ts_ns"] == 200_000
+    assert arrival["market_event_seq"] == 1
+    assert arrival["event_order_rank"] == 0
     assert arrival["arrival_lag_ns"] == 50_000
     assert arrival["instrument_id"] == "NIFTY-TEST"
     assert arrival["oid"] == submission["oid"]
@@ -402,6 +404,9 @@ def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
     assert shortfall["shortfall_qty"] == 75
     assert shortfall["liquidity_source"] == "ask_display"
     arrivals = result.ioc_arrival_audit.set_index("oid")
+    assert arrivals["market_event_seq"].nunique() == 1
+    assert arrivals.loc[strategy.oids[0], "event_order_rank"] == 0
+    assert arrivals.loc[strategy.oids[1], "event_order_rank"] == 1
     assert arrivals.loc[strategy.oids[0], "available_qty"] == 100
     assert arrivals.loc[strategy.oids[0], "available_after_qty"] == 25
     assert arrivals.loc[strategy.oids[0], "event_consumed_qty"] == 0

@@ -303,6 +303,8 @@ class LiquidityShortfall:
 @dataclass
 class IocArrivalAudit:
     arrival_ts_ns: int
+    market_event_seq: int
+    event_order_rank: int
     instrument_id: str
     oid: int
     side: int
@@ -646,6 +648,8 @@ LIQUIDITY_SHORTFALL_COLUMNS = [
 
 IOC_ARRIVAL_AUDIT_COLUMNS = [
     "arrival_ts_ns",
+    "market_event_seq",
+    "event_order_rank",
     "instrument_id",
     "oid",
     "side",
@@ -911,6 +915,7 @@ class BacktestEngine:
         self.cancel_lifecycle_tracking_enabled = True
         self.order_horizon_tracking_enabled = True
         self.ioc_arrival_audit_enabled = True
+        self.ioc_arrival_event_lineage_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -1736,6 +1741,8 @@ class BacktestEngine:
         liquidity: EventLiquidity,
         *,
         requested_qty: int,
+        market_event_seq: int,
+        event_order_rank: int,
     ) -> None:
         arrival_ts_ns = int(tick["ts"])
         bid = float(tick["bid"])
@@ -1783,6 +1790,8 @@ class BacktestEngine:
         self.ioc_arrival_audit.append(
             IocArrivalAudit(
                 arrival_ts_ns=arrival_ts_ns,
+                market_event_seq=int(market_event_seq),
+                event_order_rank=int(event_order_rank),
                 instrument_id=self.inst.symbol,
                 oid=order.oid,
                 side=order.side,
@@ -1889,7 +1898,15 @@ class BacktestEngine:
             )
         )
 
-    def _try_fill(self, o: Order, tick: dict, liquidity: EventLiquidity):
+    def _try_fill(
+        self,
+        o: Order,
+        tick: dict,
+        liquidity: EventLiquidity,
+        *,
+        market_event_seq: int,
+        event_order_rank: int,
+    ):
         ts = tick["ts"]
         if ts < o.ts_active_ns:
             return
@@ -1924,6 +1941,8 @@ class BacktestEngine:
                 tick,
                 liquidity,
                 requested_qty=remaining,
+                market_event_seq=market_event_seq,
+                event_order_rank=event_order_rank,
             )
             self._remove_order(o, close_ts_ns=int(ts))
             return
@@ -2056,10 +2075,16 @@ class BacktestEngine:
                     oid,
                 ),
             )
-            for oid in order_ids:
+            for event_order_rank, oid in enumerate(order_ids):
                 o = self.open_orders.get(oid)
                 if o:
-                    self._try_fill(o, tick, liquidity)
+                    self._try_fill(
+                        o,
+                        tick,
+                        liquidity,
+                        market_event_seq=event.seq,
+                        event_order_rank=event_order_rank,
+                    )
             mid = 0.5 * (tick["bid"] + tick["ask"])
             self.equity_curve.append(
                 (tick["ts"], self.cash + self.position * mid * self.inst.multiplier))

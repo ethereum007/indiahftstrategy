@@ -449,6 +449,10 @@ def test_multi_engine_orders_share_instrument_event_liquidity():
     assert shortfall["shortfall_qty"] == 75
     assert shortfall["liquidity_source"] == "ask_display"
     arrivals = result.ioc_arrival_audit.set_index("oid")
+    assert arrivals["market_event_seq"].nunique() == 1
+    assert arrivals.loc[strategy.oids[0], "market_event_seq"] == 2
+    assert arrivals.loc[strategy.oids[0], "event_order_rank"] == 0
+    assert arrivals.loc[strategy.oids[1], "event_order_rank"] == 1
     assert arrivals.loc[strategy.oids[0], "available_qty"] == 100
     assert arrivals.loc[strategy.oids[0], "available_after_qty"] == 25
     assert arrivals.loc[strategy.oids[0], "event_consumed_qty"] == 0
@@ -459,7 +463,15 @@ def test_multi_engine_orders_share_instrument_event_liquidity():
     assert arrivals.loc[strategy.oids[1], "outcome"] == "no_fill"
     summary = replay_summary(result).iloc[0]
     assert bool(summary["ioc_arrival_audit_enabled"])
+    assert bool(summary["ioc_arrival_event_lineage_enabled"])
     assert int(summary["ioc_arrival_events"]) == 2
+    assert int(summary["ioc_arrival_market_events"]) == 1
+    assert int(summary["ioc_arrival_competing_depth_events"]) == 1
+    assert int(
+        summary[
+            "ioc_arrival_event_depth_consistency_violations"
+        ]
+    ) == 0
     assert int(summary["ioc_arrival_marketable_events"]) == 2
     assert int(summary["ioc_arrival_not_marketable_events"]) == 0
     assert int(summary["ioc_arrival_requested_qty"]) == 150

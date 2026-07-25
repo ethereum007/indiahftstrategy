@@ -954,7 +954,8 @@ activation timestamp equals send plus latency.
 
 `ioc_arrival_audit.csv` is also engine-owned and records exactly one row when
 each IOC reaches its first eligible venue event. The row preserves send,
-activation, and arrival timestamps; arrival lag; the bid, ask, and displayed
+activation, and arrival timestamps; the unique market-event sequence and
+deterministic order-processing rank; arrival lag; the bid, ask, and displayed
 sizes; side-specific touch and book relation; lot size; displayed quantity
 still available after prior-event and same-event consumption; the resulting
 fill and residual; and the IOC outcome. Non-marketable IOCs therefore remain
@@ -971,7 +972,11 @@ order type, cost, and integer-exact nanosecond timing, and independently
 recomputes realized package economics. Arrival proof also recomputes
 marketability, touch selection, lot-floored fill capacity, prior-event and
 same-event depletion arithmetic, and the exact fill/outcome implied by the
-arrival book.
+arrival book. It groups arrivals by instrument, market event, and side,
+orders them by engine processing rank, and requires each earlier fill to
+reduce the next IOC's available depth. Duplicate ranks, inconsistent books,
+or rows that individually look plausible while collectively overbooking one
+displayed quote fail closed.
 Signal and decision timestamps must match the execution guard, the decision
 cannot predate the signal, no raw fill may predate the decision, and no fill
 may predate its own venue activation. Replay and proof report
@@ -993,9 +998,10 @@ maximum fill span, minimum first-fill latency, maximum completion latency,
 accepted-order timing counts, minimum activation-to-first-fill latency,
 maximum activation-to-completion latency, pre-activation fill counts,
 arrival-audit integrity, non-marketable and arrival-capacity-shortfall leg
-counts, minimum arrival fill ratio, maximum arrival lag, visible marketability
-and decision-time capacity-shortfall counts, and minimum routed visible fill
-ratio.
+counts, market-event and competing-depth counts, event-level conservation
+violations, minimum arrival fill ratio, maximum arrival lag, visible
+marketability and decision-time capacity-shortfall counts, and minimum routed
+visible fill ratio.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows
@@ -1075,7 +1081,9 @@ requested/available/filled quantities, observed size, carried depletion, and
 queue consumption behind each partial or missed eligible fill.
 `ioc_arrival_audit.csv` complements it for every IOC, including full fills and
 non-marketable cancellations, and separates depletion carried from prior
-snapshots from quantity consumed by earlier orders in the same event.
+snapshots from quantity consumed by earlier orders in the same event. Market
+event sequence and processing rank make the shared depth pool reconstructible
+across all competing IOC rows rather than merely checking each row alone.
 
 Passive limit queues are initialized against the market snapshot available at
 venue activation, not the older strategy-decision snapshot. A zero-latency

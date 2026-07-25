@@ -160,6 +160,8 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     )
     assert {
         "arrival_ts_ns",
+        "market_event_seq",
+        "event_order_rank",
         "ts_active_ns",
         "arrival_lag_ns",
         "bid",
