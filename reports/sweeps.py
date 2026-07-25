@@ -40,6 +40,12 @@ KNOWN_NON_PARAM_COLUMNS = {
     "deferred_residual_queue_events",
     "unresolved_residual_queue_events",
     "max_residual_queue_initialization_lag_ns",
+    "passive_price_through_depth_constrained_enabled",
+    "passive_price_through_events",
+    "passive_price_through_requested_qty",
+    "passive_price_through_filled_qty",
+    "passive_price_through_shortfall_qty",
+    "passive_price_through_incomplete_events",
     "terminal_liquidation_depth_constrained_enabled",
     "terminal_liquidation_events",
     "terminal_liquidation_requested_qty",
@@ -284,6 +290,26 @@ def _score_scenarios(
             group,
             "max_residual_queue_initialization_lag_ns",
         ).fillna(0.0)
+        passive_price_through_events = _numeric(
+            group,
+            "passive_price_through_events",
+        ).fillna(0.0)
+        passive_price_through_requested_qty = _numeric(
+            group,
+            "passive_price_through_requested_qty",
+        ).fillna(0.0)
+        passive_price_through_filled_qty = _numeric(
+            group,
+            "passive_price_through_filled_qty",
+        ).fillna(0.0)
+        passive_price_through_shortfall_qty = _numeric(
+            group,
+            "passive_price_through_shortfall_qty",
+        ).fillna(0.0)
+        passive_price_through_incomplete_events = _numeric(
+            group,
+            "passive_price_through_incomplete_events",
+        ).fillna(0.0)
         terminal_liquidation_events = _numeric(
             group,
             "terminal_liquidation_events",
@@ -391,6 +417,21 @@ def _score_scenarios(
                 "max_residual_queue_initialization_lag_ns": int(
                     residual_queue_initialization_lag_ns.max()
                 ),
+                "total_passive_price_through_events": int(
+                    passive_price_through_events.sum()
+                ),
+                "total_passive_price_through_requested_qty": int(
+                    passive_price_through_requested_qty.sum()
+                ),
+                "total_passive_price_through_filled_qty": int(
+                    passive_price_through_filled_qty.sum()
+                ),
+                "total_passive_price_through_shortfall_qty": int(
+                    passive_price_through_shortfall_qty.sum()
+                ),
+                "total_passive_price_through_incomplete_events": int(
+                    passive_price_through_incomplete_events.sum()
+                ),
                 "total_terminal_liquidation_events": int(
                     terminal_liquidation_events.sum()
                 ),
@@ -466,6 +507,11 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_deferred_residual_queue_events": 0,
                     "total_unresolved_residual_queue_events": 0,
                     "max_residual_queue_initialization_lag_ns": 0,
+                    "total_passive_price_through_events": 0,
+                    "total_passive_price_through_requested_qty": 0,
+                    "total_passive_price_through_filled_qty": 0,
+                    "total_passive_price_through_shortfall_qty": 0,
+                    "total_passive_price_through_incomplete_events": 0,
                     "total_terminal_liquidation_events": 0,
                     "total_terminal_liquidation_requested_qty": 0,
                     "total_terminal_liquidation_filled_qty": 0,
@@ -600,6 +646,46 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     )
                     .fillna(0.0)
                     .max()
+                ),
+                "total_passive_price_through_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "passive_price_through_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_passive_price_through_requested_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "passive_price_through_requested_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_passive_price_through_filled_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "passive_price_through_filled_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_passive_price_through_shortfall_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "passive_price_through_shortfall_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_passive_price_through_incomplete_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "passive_price_through_incomplete_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
                 ),
                 "total_terminal_liquidation_events": int(
                     _numeric(scenario_runs, "terminal_liquidation_events")

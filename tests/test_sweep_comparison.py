@@ -35,6 +35,12 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "deferred_residual_queue_events": 1,
             "unresolved_residual_queue_events": 0,
             "max_residual_queue_initialization_lag_ns": 2_000,
+            "passive_price_through_depth_constrained_enabled": True,
+            "passive_price_through_events": 1,
+            "passive_price_through_requested_qty": 75,
+            "passive_price_through_filled_qty": 50,
+            "passive_price_through_shortfall_qty": 25,
+            "passive_price_through_incomplete_events": 1,
             "terminal_liquidation_depth_constrained_enabled": True,
             "terminal_liquidation_events": 1,
             "terminal_liquidation_requested_qty": 75,
@@ -71,6 +77,12 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "deferred_residual_queue_events": 1,
             "unresolved_residual_queue_events": 0,
             "max_residual_queue_initialization_lag_ns": 2_000,
+            "passive_price_through_depth_constrained_enabled": True,
+            "passive_price_through_events": 1,
+            "passive_price_through_requested_qty": 75,
+            "passive_price_through_filled_qty": 50,
+            "passive_price_through_shortfall_qty": 25,
+            "passive_price_through_incomplete_events": 1,
             "terminal_liquidation_depth_constrained_enabled": True,
             "terminal_liquidation_events": 1,
             "terminal_liquidation_requested_qty": 75,
@@ -127,6 +139,11 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_deferred_residual_queue_events"]) == 2
     assert int(best["total_unresolved_residual_queue_events"]) == 0
     assert int(best["max_residual_queue_initialization_lag_ns"]) == 2_000
+    assert int(best["total_passive_price_through_events"]) == 2
+    assert int(best["total_passive_price_through_requested_qty"]) == 150
+    assert int(best["total_passive_price_through_filled_qty"]) == 100
+    assert int(best["total_passive_price_through_shortfall_qty"]) == 50
+    assert int(best["total_passive_price_through_incomplete_events"]) == 2
     assert int(best["total_terminal_liquidation_events"]) == 2
     assert int(best["total_terminal_liquidation_requested_qty"]) == 150
     assert int(best["total_terminal_liquidation_filled_qty"]) == 150
@@ -167,6 +184,27 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
             "max_residual_queue_initialization_lag_ns"
         ]
     ) == 2_000
+    assert int(
+        comparison.summary.iloc[0]["total_passive_price_through_events"]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_passive_price_through_requested_qty"
+        ]
+    ) == 300
+    assert int(
+        comparison.summary.iloc[0]["total_passive_price_through_filled_qty"]
+    ) == 200
+    assert int(
+        comparison.summary.iloc[0][
+            "total_passive_price_through_shortfall_qty"
+        ]
+    ) == 100
+    assert int(
+        comparison.summary.iloc[0][
+            "total_passive_price_through_incomplete_events"
+        ]
+    ) == 4
     assert int(
         comparison.summary.iloc[0]["total_terminal_liquidation_events"]
     ) == 4

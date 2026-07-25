@@ -598,6 +598,32 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         row,
         "max_residual_queue_initialization_lag_ns",
     )
+    passive_price_through_depth_constrained_enabled = _bool(
+        row.get(
+            "passive_price_through_depth_constrained_enabled",
+            False,
+        )
+    )
+    passive_price_through_events = _int(
+        row,
+        "passive_price_through_events",
+    )
+    passive_price_through_requested_qty = _int(
+        row,
+        "passive_price_through_requested_qty",
+    )
+    passive_price_through_filled_qty = _int(
+        row,
+        "passive_price_through_filled_qty",
+    )
+    passive_price_through_shortfall_qty = _int(
+        row,
+        "passive_price_through_shortfall_qty",
+    )
+    passive_price_through_incomplete_events = _int(
+        row,
+        "passive_price_through_incomplete_events",
+    )
     terminal_liquidation_depth_constrained_enabled = _bool(
         row.get(
             "terminal_liquidation_depth_constrained_enabled",
@@ -707,6 +733,20 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "unresolved_residual_queue_events": unresolved_residual_queue_events,
         "max_residual_queue_initialization_lag_ns": (
             max_residual_queue_initialization_lag_ns
+        ),
+        "passive_price_through_depth_constrained_enabled": (
+            passive_price_through_depth_constrained_enabled
+        ),
+        "passive_price_through_events": passive_price_through_events,
+        "passive_price_through_requested_qty": (
+            passive_price_through_requested_qty
+        ),
+        "passive_price_through_filled_qty": passive_price_through_filled_qty,
+        "passive_price_through_shortfall_qty": (
+            passive_price_through_shortfall_qty
+        ),
+        "passive_price_through_incomplete_events": (
+            passive_price_through_incomplete_events
         ),
         "terminal_liquidation_depth_constrained_enabled": (
             terminal_liquidation_depth_constrained_enabled

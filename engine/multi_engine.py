@@ -23,6 +23,8 @@ from engine.hft_backtest import (
     OrderType,
     QueueInitialization,
     QUEUE_INITIALIZATION_COLUMNS,
+    PassivePriceThrough,
+    PASSIVE_PRICE_THROUGH_COLUMNS,
     RestingTransition,
     RESTING_TRANSITION_COLUMNS,
     TerminalLiquidation,
@@ -142,9 +144,11 @@ class MultiInstrumentEngine:
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
         self.resting_transitions: List[RestingTransition] = []
+        self.passive_price_throughs: List[PassivePriceThrough] = []
         self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
+        self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
         self._displayed_liquidity = {
@@ -945,6 +949,9 @@ class MultiInstrumentEngine:
         ts_ns: int,
         requested_qty: int,
         liquidity_source: str | None = None,
+        maker: bool = False,
+        queue_ahead_before: float = 0.0,
+        queue_consumed: float = 0.0,
     ) -> tuple[float, int, float, float]:
         source = liquidity_source or (
             "ask_display" if order.side > 0 else "bid_display"
@@ -968,7 +975,7 @@ class MultiInstrumentEngine:
                 fill_qty,
                 price,
                 ts_ns,
-                maker=False,
+                maker=maker,
             )
         self._record_liquidity_shortfall(
             instrument_id=instrument_id,
@@ -978,10 +985,85 @@ class MultiInstrumentEngine:
             available_qty=available,
             filled_qty=fill_qty,
             liquidity_source=source,
+            queue_ahead_before=queue_ahead_before,
+            queue_consumed=queue_consumed,
             observed_qty=observed_qty,
             carried_depletion_qty=carried_depletion_qty,
         )
         return available, fill_qty, observed_qty, carried_depletion_qty
+
+    def _fill_resting_from_price_through(
+        self,
+        instrument_id: str,
+        order: Order,
+        tick: dict,
+        liquidity: EventLiquidity,
+        *,
+        ts_ns: int,
+        requested_qty: int,
+    ) -> None:
+        """Bound a maker price-through by shared opposite-touch L1 depth."""
+        queue_ahead_before = max(float(order.queue_ahead), 0.0)
+        own_queue_tail = self._own_queue_tail(
+            instrument_id=instrument_id,
+            side=order.side,
+            price=order.price,
+            active_ns=order.ts_active_ns,
+            priority_oid=order.oid,
+        )
+        order.public_queue_ahead = 0.0
+        order.queue_ahead = max(float(own_queue_tail), 0.0)
+        source = (
+            "passive_ask_price_through_display"
+            if order.side > 0
+            else "passive_bid_price_through_display"
+        )
+        contra_touch_price = (
+            float(tick["ask"])
+            if order.side > 0
+            else float(tick["bid"])
+        )
+        (
+            available_qty,
+            filled_qty,
+            observed_qty,
+            carried_depletion_qty,
+        ) = self._fill_from_displayed(
+            instrument_id,
+            order,
+            liquidity=liquidity,
+            price=float(order.price),
+            ts_ns=ts_ns,
+            requested_qty=requested_qty,
+            liquidity_source=source,
+            maker=True,
+            queue_ahead_before=queue_ahead_before,
+            queue_consumed=max(
+                queue_ahead_before - float(own_queue_tail),
+                0.0,
+            ),
+        )
+        shortfall_qty = int(requested_qty) - int(filled_qty)
+        self.passive_price_throughs.append(
+            PassivePriceThrough(
+                ts_ns=int(ts_ns),
+                instrument_id=instrument_id,
+                oid=order.oid,
+                side=order.side,
+                limit_price=float(order.price),
+                contra_touch_price=contra_touch_price,
+                requested_qty=int(requested_qty),
+                available_qty=float(available_qty),
+                filled_qty=int(filled_qty),
+                shortfall_qty=shortfall_qty,
+                observed_qty=float(observed_qty),
+                carried_depletion_qty=float(carried_depletion_qty),
+                queue_ahead_before=queue_ahead_before,
+                own_queue_tail=float(own_queue_tail),
+                liquidity_source=source,
+                complete=shortfall_qty == 0,
+            )
+        )
 
     def _try_fill(
         self,
@@ -1061,12 +1143,14 @@ class MultiInstrumentEngine:
             (order.side > 0 and ask < order.price)
             or (order.side < 0 and bid > order.price)
         ):
-            self._advance_later_own_queue(
+            self._fill_resting_from_price_through(
                 instrument_id,
                 order,
-                remaining,
+                tick,
+                liquidity,
+                ts_ns=int(ts),
+                requested_qty=remaining,
             )
-            self._execute(instrument_id, order, remaining, order.price, ts, maker=True)
         elif (
             not order.resting_at_venue
             and order.side > 0
@@ -1319,6 +1403,13 @@ class MultiBacktestResult:
                 for transition in engine.resting_transitions
             ],
             columns=RESTING_TRANSITION_COLUMNS,
+        )
+        self.passive_price_throughs = pd.DataFrame(
+            [
+                price_through.__dict__
+                for price_through in engine.passive_price_throughs
+            ],
+            columns=PASSIVE_PRICE_THROUGH_COLUMNS,
         )
         self.terminal_liquidations = pd.DataFrame(
             [

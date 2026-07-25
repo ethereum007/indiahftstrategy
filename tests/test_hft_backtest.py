@@ -766,11 +766,12 @@ def test_replacement_excluded_from_pending_cancel_queue_is_not_released_twice():
     assert eng.open_orders[strategy.replacement_oid].queue_ahead == 225
 
 
-def test_price_trading_through_limit_level_fills_full_order():
+def test_price_through_fill_is_constrained_to_persistent_displayed_depth():
     df = ticks(
         [
             (0, 100.00, 100.05, 150, 75, np.nan, 0),
             (1_000, 99.90, 99.95, 150, 75, np.nan, 0),
+            (2_000, 99.90, 99.95, 150, 75, np.nan, 0),
         ]
     )
     strategy = SendOnce(+1, 150, 100.00, OrderType.LIMIT)
@@ -785,9 +786,67 @@ def test_price_trading_through_limit_level_fills_full_order():
 
     res = eng.run()
 
-    assert res.fills.iloc[0]["ts_ns"] == 1_000
-    assert res.fills.iloc[0]["qty"] == 150
-    assert res.fills.iloc[0]["maker"]
+    strategy_fills = res.fills.loc[res.fills["side"] > 0]
+    assert strategy_fills["ts_ns"].tolist() == [1_000]
+    assert strategy_fills["qty"].tolist() == [75]
+    assert strategy_fills["maker"].tolist() == [True]
+    price_throughs = res.passive_price_throughs
+    assert price_throughs["requested_qty"].tolist() == [150, 75]
+    assert price_throughs["available_qty"].tolist() == [75, 0]
+    assert price_throughs["filled_qty"].tolist() == [75, 0]
+    assert price_throughs["shortfall_qty"].tolist() == [75, 75]
+    assert price_throughs["observed_qty"].tolist() == [75, 75]
+    assert price_throughs["carried_depletion_qty"].tolist() == [0, 75]
+    assert price_throughs["queue_ahead_before"].tolist() == [300, 0]
+    assert price_throughs["own_queue_tail"].tolist() == [0, 0]
+    assert price_throughs["contra_touch_price"].tolist() == [99.95, 99.95]
+    assert price_throughs["liquidity_source"].tolist() == [
+        "passive_ask_price_through_display",
+        "passive_ask_price_through_display",
+    ]
+    assert price_throughs["complete"].tolist() == [False, False]
+    shortfalls = res.liquidity_shortfalls.loc[
+        res.liquidity_shortfalls["liquidity_source"]
+        == "passive_ask_price_through_display"
+    ]
+    assert shortfalls["shortfall_qty"].tolist() == [75, 75]
+    assert shortfalls["carried_depletion_qty"].tolist() == [0, 75]
+
+
+def test_sell_price_through_consumes_bid_depth_as_maker():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 150, np.nan, 0),
+            (1_000, 100.10, 100.15, 50, 150, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(-1, 150, 100.05, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] < 0]
+    assert strategy_fills["ts_ns"].tolist() == [1_000]
+    assert strategy_fills["price"].tolist() == [100.05]
+    assert strategy_fills["qty"].tolist() == [50]
+    assert strategy_fills["maker"].tolist() == [True]
+    price_through = result.passive_price_throughs.iloc[0]
+    assert price_through["contra_touch_price"] == 100.10
+    assert price_through["available_qty"] == 50
+    assert price_through["filled_qty"] == 50
+    assert price_through["shortfall_qty"] == 100
+    assert (
+        price_through["liquidity_source"]
+        == "passive_bid_price_through_display"
+    )
+    assert not bool(price_through["complete"])
 
 
 def test_cancel_takes_latency_and_order_can_fill_in_flight():

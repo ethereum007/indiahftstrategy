@@ -936,6 +936,22 @@ downstream proof, walk-forward, sweep, and comparison outputs retain transition
 count/quantity, deferred and unresolved counts, and maximum initialization
 lag.
 
+Passive quote price-throughs are also depth constrained. A resting order keeps
+maker classification and executes at its own limit, but the replay can consume
+only opposite-touch depth still available in that exact event. Earlier
+strategy orders receive deterministic priority, and the shared persistent
+displayed-liquidity ledger prevents later orders or unchanged snapshots from
+reusing the same quantity. This is an intentionally conservative L1 proxy for
+otherwise unobserved swept volume. `passive_price_throughs.csv` records every
+full, partial, or missed attempt with limit and contra-touch prices,
+requested/available/filled/shortfall quantities, observed and previously
+depleted depth, prior queue, remaining earlier-own-order tail, source, and
+completion status. `liquidity_shortfalls.csv` classifies partial and missed
+attempts as displayed-depth shortfalls. Replay summaries and downstream proof,
+and walk-forward outputs retain the enabled flag. Those outputs plus strategy
+sweeps and cross-sweep comparisons retain event, requested, filled, shortfall,
+and incomplete counts.
+
 Terminal liquidation is constrained by depth still available in the exact
 final market event. It cannot reuse displayed quantity already consumed by a
 strategy order on that snapshot, even when cross-snapshot depletion

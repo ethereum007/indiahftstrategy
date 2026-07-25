@@ -219,6 +219,11 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_deferred_residual_queue_events",
                 "total_unresolved_residual_queue_events",
                 "max_residual_queue_initialization_lag_ns",
+                "total_passive_price_through_events",
+                "total_passive_price_through_requested_qty",
+                "total_passive_price_through_filled_qty",
+                "total_passive_price_through_shortfall_qty",
+                "total_passive_price_through_incomplete_events",
                 "total_terminal_liquidation_events",
                 "total_terminal_liquidation_requested_qty",
                 "total_terminal_liquidation_filled_qty",
@@ -352,6 +357,26 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         ),
                         errors="coerce",
                     ).fillna(0).max()
+                ),
+                "total_passive_price_through_events": _sum_int_metric(
+                    runs,
+                    "passive_price_through_events",
+                ),
+                "total_passive_price_through_requested_qty": _sum_int_metric(
+                    runs,
+                    "passive_price_through_requested_qty",
+                ),
+                "total_passive_price_through_filled_qty": _sum_int_metric(
+                    runs,
+                    "passive_price_through_filled_qty",
+                ),
+                "total_passive_price_through_shortfall_qty": _sum_int_metric(
+                    runs,
+                    "passive_price_through_shortfall_qty",
+                ),
+                "total_passive_price_through_incomplete_events": _sum_int_metric(
+                    runs,
+                    "passive_price_through_incomplete_events",
                 ),
                 "total_terminal_liquidation_events": _sum_int_metric(
                     runs,

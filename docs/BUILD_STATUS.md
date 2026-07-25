@@ -7,10 +7,11 @@
   per-event displayed liquidity, persistent same-level depletion across L1
   snapshots, own-order queue priority initialized from the first market
   snapshot at venue arrival or first observable touch, aggressive-limit
-  residual transitions into observable passive queues, liquidity-shortfall and
-  residual-inventory evidence, and tests. Unchanged snapshots do not restore
-  consumed depth; only an observed size increase replenishes its delta, while
-  a price or timestamp-day change starts a fresh level.
+  residual transitions into observable passive queues, depth-constrained
+  passive price-through fills, liquidity-shortfall and residual-inventory
+  evidence, and tests. Unchanged snapshots do not restore consumed depth; only
+  an observed size increase replenishes its delta, while a price or
+  timestamp-day change starts a fresh level.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local
   event and cross-snapshot liquidity conservation, including horizon-causal
@@ -7323,6 +7324,27 @@ lag. Broader engine, replay, proof, walk-forward, and sweep regressions pass
 (`77` tests). Repository collection is healthy at `2667 tests` across `164`
 files. The full suite was not rerun because recent complete runs exceed 40
 minutes. All outputs remain non-authorizing.
+
+Latest depth-constrained passive price-through proof: resting orders no longer
+receive an unbounded full maker fill merely because the displayed quote moves
+strictly through their limit. Both engines retain maker classification and the
+resting limit price, but allocate only opposite-touch depth still available in
+that exact event. Orders share the same event budget in deterministic
+venue-arrival priority, and persistent depletion prevents unchanged later
+snapshots from restoring consumed quantity. Public queue ahead is cleared by
+the observed price-through while earlier own residuals remain ahead. Every
+attempt writes `passive_price_throughs.csv` with limit and contra-touch prices,
+requested/available/filled/shortfall quantities, observed and carried-depleted
+depth, prior queue, own tail, source, and completion state. Replay, proof,
+and walk-forward outputs preserve the enabled flag; those outputs plus strategy
+sweeps and cross-sweep comparisons preserve aggregate attempt evidence.
+Buy-side, sell-side, shared-priority,
+depletion, artifact, proof, walk-forward, and sweep regressions pass (`79`
+tests), with an additional `29` market-making, calibration, proof-refresh, and
+edge-sweep regressions passing (`108` total focused tests). Repository
+collection is healthy at `2669 tests` across `164` files.
+The full suite was not rerun because recent complete runs exceed 40 minutes.
+All outputs remain non-authorizing.
 
 ## Next Build Targets
 

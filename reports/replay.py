@@ -54,6 +54,8 @@ def replay_summary(
         {
             "ask_display",
             "bid_display",
+            "passive_ask_price_through_display",
+            "passive_bid_price_through_display",
             "terminal_ask_display",
             "terminal_bid_display",
         }
@@ -109,6 +111,31 @@ def replay_summary(
             errors="coerce",
         ).fillna(0)
         if not resting_transitions.empty
+        else pd.Series(dtype="float64")
+    )
+    passive_price_throughs = result.passive_price_throughs
+    price_through_requested_qty = (
+        pd.to_numeric(
+            passive_price_throughs["requested_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not passive_price_throughs.empty
+        else pd.Series(dtype="float64")
+    )
+    price_through_filled_qty = (
+        pd.to_numeric(
+            passive_price_throughs["filled_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not passive_price_throughs.empty
+        else pd.Series(dtype="float64")
+    )
+    price_through_shortfall_qty = (
+        pd.to_numeric(
+            passive_price_throughs["shortfall_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not passive_price_throughs.empty
         else pd.Series(dtype="float64")
     )
     terminal_liquidations = result.terminal_liquidations
@@ -211,6 +238,25 @@ def replay_summary(
                     if not transition_initialization_lag_ns.empty
                     else 0
                 ),
+                "passive_price_through_depth_constrained_enabled": bool(
+                    result.engine
+                    .passive_price_through_depth_constrained_enabled
+                ),
+                "passive_price_through_events": int(
+                    len(passive_price_throughs)
+                ),
+                "passive_price_through_requested_qty": int(
+                    price_through_requested_qty.sum()
+                ),
+                "passive_price_through_filled_qty": int(
+                    price_through_filled_qty.sum()
+                ),
+                "passive_price_through_shortfall_qty": int(
+                    price_through_shortfall_qty.sum()
+                ),
+                "passive_price_through_incomplete_events": int(
+                    price_through_shortfall_qty.gt(0).sum()
+                ),
                 "terminal_liquidation_depth_constrained_enabled": bool(
                     result.engine.terminal_liquidation_depth_constrained_enabled
                 ),
@@ -302,6 +348,10 @@ def write_replay_outputs(
     )
     result.resting_transitions.to_csv(
         out / "resting_transitions.csv",
+        index=False,
+    )
+    result.passive_price_throughs.to_csv(
+        out / "passive_price_throughs.csv",
         index=False,
     )
     result.terminal_liquidations.to_csv(

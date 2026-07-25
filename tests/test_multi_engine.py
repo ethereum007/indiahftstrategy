@@ -397,6 +397,69 @@ def test_multi_engine_reports_residual_queue_unresolved_at_replay_end():
     assert int(summary["max_residual_queue_initialization_lag_ns"]) == 0
 
 
+def test_multi_engine_price_through_depth_is_shared_in_own_order_priority():
+    strategy = BurstRiskStrategy(
+        {
+            "A": [
+                (+1, 75, 100.00, OrderType.LIMIT),
+                (+1, 75, 100.00, OrderType.LIMIT),
+            ]
+        }
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 300, 300, np.nan, 0),
+                        (1_000, 99.90, 99.95, 300, 100, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+        queue_conservatism=1.0,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["oid"].tolist() == [
+        strategy.oids[0],
+        strategy.oids[1],
+    ]
+    assert strategy_fills["qty"].tolist() == [75, 25]
+    assert strategy_fills["maker"].tolist() == [True, True]
+    assert int(strategy_fills["qty"].sum()) == 100
+    price_throughs = result.passive_price_throughs
+    assert price_throughs["instrument_id"].tolist() == ["A", "A"]
+    assert price_throughs["oid"].tolist() == strategy.oids
+    assert price_throughs["available_qty"].tolist() == [100, 25]
+    assert price_throughs["filled_qty"].tolist() == [75, 25]
+    assert price_throughs["shortfall_qty"].tolist() == [0, 50]
+    assert price_throughs["complete"].tolist() == [True, False]
+    shortfall = result.liquidity_shortfalls.loc[
+        result.liquidity_shortfalls["liquidity_source"]
+        == "passive_ask_price_through_display"
+    ].iloc[0]
+    assert shortfall["oid"] == strategy.oids[1]
+    assert shortfall["available_qty"] == 25
+    assert shortfall["shortfall_qty"] == 50
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["passive_price_through_depth_constrained_enabled"])
+    assert int(summary["passive_price_through_events"]) == 2
+    assert int(summary["passive_price_through_requested_qty"]) == 150
+    assert int(summary["passive_price_through_filled_qty"]) == 100
+    assert int(summary["passive_price_through_shortfall_qty"]) == 50
+    assert int(summary["passive_price_through_incomplete_events"]) == 1
+    assert int(summary["displayed_liquidity_shortfall_events"]) == 1
+    assert int(summary["displayed_liquidity_shortfall_qty"]) == 50
+
+
 def test_multi_engine_uses_arrival_snapshot_for_limit_queue():
     strategy = BurstRiskStrategy(
         {"A": [(+1, 75, 100.00, OrderType.LIMIT)]}

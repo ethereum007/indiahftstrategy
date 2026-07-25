@@ -126,6 +126,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "liquidity_shortfalls.csv").exists()
     assert (out_dir / "queue_initializations.csv").exists()
     assert (out_dir / "resting_transitions.csv").exists()
+    assert (out_dir / "passive_price_throughs.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
@@ -158,6 +159,21 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
         "queue_initialization_lag_ns",
         "initialization_book_relation",
     }.issubset(resting_transitions.columns)
+    passive_price_throughs = pd.read_csv(
+        out_dir / "passive_price_throughs.csv"
+    )
+    assert {
+        "limit_price",
+        "contra_touch_price",
+        "requested_qty",
+        "available_qty",
+        "filled_qty",
+        "shortfall_qty",
+        "queue_ahead_before",
+        "own_queue_tail",
+        "liquidity_source",
+        "complete",
+    }.issubset(passive_price_throughs.columns)
     summary = replay.summary.iloc[0]
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
@@ -174,6 +190,12 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert int(summary["deferred_residual_queue_events"]) == 0
     assert int(summary["unresolved_residual_queue_events"]) == 0
     assert int(summary["max_residual_queue_initialization_lag_ns"]) == 0
+    assert bool(summary["passive_price_through_depth_constrained_enabled"])
+    assert int(summary["passive_price_through_events"]) == 0
+    assert int(summary["passive_price_through_requested_qty"]) == 0
+    assert int(summary["passive_price_through_filled_qty"]) == 0
+    assert int(summary["passive_price_through_shortfall_qty"]) == 0
+    assert int(summary["passive_price_through_incomplete_events"]) == 0
     assert bool(summary["terminal_liquidation_depth_constrained_enabled"])
     assert int(summary["terminal_liquidation_events"]) == 0
     assert int(summary["terminal_liquidation_requested_qty"]) == 0

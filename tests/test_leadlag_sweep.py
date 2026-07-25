@@ -96,6 +96,23 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
         result.summary.iloc[0]["max_residual_queue_initialization_lag_ns"]
     ) == 0
     assert int(
+        result.summary.iloc[0]["total_passive_price_through_events"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_passive_price_through_requested_qty"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_passive_price_through_filled_qty"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_passive_price_through_shortfall_qty"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_passive_price_through_incomplete_events"
+        ]
+    ) == 0
+    assert int(
         result.summary.iloc[0]["total_terminal_liquidation_events"]
     ) == int(result.runs["terminal_liquidation_events"].sum())
     assert int(

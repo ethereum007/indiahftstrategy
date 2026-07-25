@@ -164,6 +164,33 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
         report.summary.loc[0, "max_residual_queue_initialization_lag_ns"]
     ) == 0
     assert report.folds[
+        "passive_price_through_depth_constrained_enabled"
+    ].all()
+    assert int(
+        report.summary.loc[
+            0,
+            "passive_price_through_depth_constrained_folds",
+        ]
+    ) == 2
+    assert int(
+        report.summary.loc[0, "total_passive_price_through_events"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_passive_price_through_requested_qty"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_passive_price_through_filled_qty"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_passive_price_through_shortfall_qty"]
+    ) == 0
+    assert int(
+        report.summary.loc[
+            0,
+            "total_passive_price_through_incomplete_events",
+        ]
+    ) == 0
+    assert report.folds[
         "terminal_liquidation_depth_constrained_enabled"
     ].all()
     assert report.folds["terminal_liquidation_complete"].all()
@@ -232,6 +259,40 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert (
         config["replay_walkforward"][
             "max_residual_queue_initialization_lag_ns"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "passive_price_through_depth_constrained_folds"
+        ]
+        == 2
+    )
+    assert (
+        config["replay_walkforward"]["total_passive_price_through_events"]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_passive_price_through_requested_qty"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_passive_price_through_filled_qty"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_passive_price_through_shortfall_qty"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_passive_price_through_incomplete_events"
         ]
         == 0
     )

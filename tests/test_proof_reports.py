@@ -59,6 +59,12 @@ def write_run(
                 "deferred_residual_queue_events": 1,
                 "unresolved_residual_queue_events": 0,
                 "max_residual_queue_initialization_lag_ns": 2_000,
+                "passive_price_through_depth_constrained_enabled": True,
+                "passive_price_through_events": 3,
+                "passive_price_through_requested_qty": 225,
+                "passive_price_through_filled_qty": 150,
+                "passive_price_through_shortfall_qty": 75,
+                "passive_price_through_incomplete_events": 1,
                 "terminal_liquidation_depth_constrained_enabled": True,
                 "terminal_liquidation_events": 1,
                 "terminal_liquidation_requested_qty": 75,
@@ -163,6 +169,24 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     assert int(
         report.metrics.iloc[0]["max_residual_queue_initialization_lag_ns"]
     ) == 2_000
+    assert bool(
+        report.metrics.iloc[0][
+            "passive_price_through_depth_constrained_enabled"
+        ]
+    )
+    assert int(report.metrics.iloc[0]["passive_price_through_events"]) == 3
+    assert int(
+        report.metrics.iloc[0]["passive_price_through_requested_qty"]
+    ) == 225
+    assert int(
+        report.metrics.iloc[0]["passive_price_through_filled_qty"]
+    ) == 150
+    assert int(
+        report.metrics.iloc[0]["passive_price_through_shortfall_qty"]
+    ) == 75
+    assert int(
+        report.metrics.iloc[0]["passive_price_through_incomplete_events"]
+    ) == 1
     assert bool(
         report.metrics.iloc[0][
             "terminal_liquidation_depth_constrained_enabled"
