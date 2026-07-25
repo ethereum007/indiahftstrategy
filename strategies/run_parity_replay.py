@@ -283,7 +283,7 @@ def _execution_guard_metrics(
     *,
     max_leg_book_age_ns: int,
     max_leg_book_skew_ns: int,
-) -> dict[str, int | bool]:
+) -> dict[str, int | float | bool]:
     passed = (
         guard["guard_passed"].fillna(False).astype(bool)
         if "guard_passed" in guard.columns
@@ -327,6 +327,101 @@ def _execution_guard_metrics(
         bool
     )
     preflight_passed = preflight_passed_raw.fillna(False).astype(bool)
+    capacity_checked_raw = guard.get(
+        "ioc_batch_preflight_visible_capacity_checked",
+        pd.Series(np.nan, index=guard.index),
+    )
+    capacity_checked = capacity_checked_raw.fillna(False).astype(bool)
+    capacity_ratio = pd.to_numeric(
+        guard.get(
+            "ioc_batch_preflight_min_visible_fill_ratio",
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
+    capacity_instrument_raw = guard.get(
+        "ioc_batch_preflight_limiting_instrument_id",
+        pd.Series(pd.NA, index=guard.index, dtype="string"),
+    )
+    capacity_instruments = (
+        capacity_instrument_raw.astype("string").fillna("").str.strip()
+    )
+    capacity_requested = pd.to_numeric(
+        guard.get(
+            "ioc_batch_preflight_requested_qty",
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
+    capacity_available = pd.to_numeric(
+        guard.get(
+            "ioc_batch_preflight_available_qty",
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
+    capacity_touch_price = pd.to_numeric(
+        guard.get(
+            "ioc_batch_preflight_touch_price",
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
+    capacity_limit_price = pd.to_numeric(
+        guard.get(
+            "ioc_batch_preflight_limit_price",
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
+    capacity_passed = preflight_attempted & preflight_passed
+    capacity_not_marketable = preflight_reasons.eq(
+        "visible_ioc_not_marketable"
+    )
+    capacity_shortfall = preflight_reasons.eq(
+        "visible_ioc_capacity_shortfall"
+    )
+    capacity_relevant = (
+        capacity_passed
+        | capacity_not_marketable
+        | capacity_shortfall
+    )
+    capacity_missing_evidence = capacity_relevant & (
+        capacity_checked_raw.isna()
+        | capacity_ratio.isna()
+        | capacity_instrument_raw.isna()
+        | capacity_instruments.eq("")
+        | capacity_requested.isna()
+        | capacity_available.isna()
+        | capacity_touch_price.isna()
+        | capacity_limit_price.isna()
+    )
+    capacity_consistency_violation = (
+        ~capacity_checked
+        | capacity_requested.le(0)
+        | capacity_available.lt(0)
+        | (
+            capacity_passed
+            & (
+                capacity_ratio.lt(1.0)
+                | capacity_available.lt(capacity_requested)
+            )
+        )
+        | (
+            capacity_not_marketable
+            & capacity_ratio.ne(0.0)
+        )
+        | (
+            capacity_shortfall
+            & (
+                capacity_ratio.ge(1.0)
+                | capacity_available.ge(capacity_requested)
+            )
+        )
+    )
+    routed_capacity_ratios = capacity_ratio.loc[
+        capacity_passed
+    ].dropna()
     preflight_missing_evidence = (
         preflight_enabled_raw.isna()
         | preflight_attempted_raw.isna()
@@ -465,6 +560,29 @@ def _execution_guard_metrics(
                     & ~preflight_missing_evidence
                 ).sum()
             )
+        ),
+        "parity_execution_ioc_visible_not_marketable_attempts": int(
+            capacity_not_marketable.sum()
+        ),
+        "parity_execution_ioc_visible_capacity_shortfall_attempts": (
+            int(capacity_shortfall.sum())
+        ),
+        "parity_execution_ioc_visible_capacity_missing_evidence_rows": (
+            int(capacity_missing_evidence.sum())
+        ),
+        "parity_execution_ioc_visible_capacity_consistency_violations": (
+            int(
+                (
+                    capacity_relevant
+                    & capacity_consistency_violation
+                    & ~capacity_missing_evidence
+                ).sum()
+            )
+        ),
+        "parity_execution_min_routed_visible_fill_ratio": (
+            float(routed_capacity_ratios.min())
+            if not routed_capacity_ratios.empty
+            else 0.0
         ),
         "parity_execution_signal_expiry_events": int(
             (reasons == "signal_age_exceeded").sum()

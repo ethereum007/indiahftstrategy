@@ -216,6 +216,10 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_ioc_batch_preflight_rejected_attempts",
                 "total_parity_execution_ioc_batch_preflight_missing_evidence_rows",
                 "total_parity_execution_ioc_batch_preflight_consistency_violations",
+                "total_parity_execution_ioc_visible_not_marketable_attempts",
+                "total_parity_execution_ioc_visible_capacity_shortfall_attempts",
+                "total_parity_execution_ioc_visible_capacity_missing_evidence_rows",
+                "total_parity_execution_ioc_visible_capacity_consistency_violations",
                 "total_parity_execution_guard_missing_evidence_rows",
                 "total_parity_execution_guard_unclassified_rows",
                 "total_parity_execution_guard_consistency_violations",
@@ -230,6 +234,7 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_guard_skew_violations",
                 "max_parity_execution_routed_book_age_ns",
                 "max_parity_execution_routed_book_skew_ns",
+                "min_parity_execution_routed_visible_fill_ratio",
                 "total_parity_execution_count",
                 "total_parity_execution_legging_missing_evidence_rows",
                 "total_parity_execution_legging_consistency_violations",
@@ -402,6 +407,30 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         "parity_execution_ioc_batch_preflight_consistency_violations",
                     )
                 ),
+                "total_parity_execution_ioc_visible_not_marketable_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_visible_not_marketable_attempts",
+                    )
+                ),
+                "total_parity_execution_ioc_visible_capacity_shortfall_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_visible_capacity_shortfall_attempts",
+                    )
+                ),
+                "total_parity_execution_ioc_visible_capacity_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_visible_capacity_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_ioc_visible_capacity_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_visible_capacity_consistency_violations",
+                    )
+                ),
                 "total_parity_execution_guard_missing_evidence_rows": (
                     _sum_int_metric(
                         runs,
@@ -483,6 +512,9 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         runs,
                         "parity_execution_max_routed_book_skew_ns",
                     )
+                ),
+                "min_parity_execution_routed_visible_fill_ratio": (
+                    _min_routed_visible_fill_ratio_metric(runs)
                 ),
                 "total_parity_execution_count": _sum_int_metric(
                     runs,
@@ -698,6 +730,24 @@ def _sum_int_metric(runs: pd.DataFrame, column: str) -> int:
 def _max_int_metric(runs: pd.DataFrame, column: str) -> int:
     values = runs.get(column, pd.Series(0, index=runs.index))
     return int(pd.to_numeric(values, errors="coerce").fillna(0).max())
+
+
+def _min_routed_visible_fill_ratio_metric(runs: pd.DataFrame) -> float:
+    routed = pd.to_numeric(
+        runs.get(
+            "parity_execution_guard_passed_attempts",
+            pd.Series(0, index=runs.index),
+        ),
+        errors="coerce",
+    ).fillna(0).gt(0)
+    values = pd.to_numeric(
+        runs.get(
+            "parity_execution_min_routed_visible_fill_ratio",
+            pd.Series(float("nan"), index=runs.index),
+        ),
+        errors="coerce",
+    ).loc[routed].dropna()
+    return float(values.min()) if not values.empty else 0.0
 
 
 def _sum_bool_metric(runs: pd.DataFrame, column: str) -> int:

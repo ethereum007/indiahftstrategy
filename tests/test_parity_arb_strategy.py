@@ -100,6 +100,23 @@ def test_parity_arb_taker_routes_three_ioc_legs_and_tracks_fills():
     legging = strategy.legging_report()
     assert not bool(legging.iloc[0]["partial"])
     assert legging.iloc[0]["fill_count"] == 3
+    routed_guard = strategy.execution_guard_report().loc[
+        lambda frame: frame["guard_passed"]
+    ].iloc[0]
+    assert bool(
+        routed_guard[
+            "ioc_batch_preflight_visible_capacity_checked"
+        ]
+    )
+    assert routed_guard[
+        "ioc_batch_preflight_min_visible_fill_ratio"
+    ] == 1
+    assert (
+        routed_guard[
+            "ioc_batch_preflight_limiting_instrument_id"
+        ]
+        == "CALL1000"
+    )
 
 
 def test_parity_arb_taker_resets_run_state_when_reused():
@@ -259,6 +276,54 @@ def test_parity_arb_taker_preflights_rejected_third_leg_before_routing():
     assert strategy.legging_report().empty
 
 
+def test_parity_arb_taker_preflights_visible_third_leg_capacity():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        future_quote_qty=50,
+    )
+
+    result = engine.run()
+
+    guard = strategy.execution_guard_report()
+    rejected = guard.loc[
+        guard["guard_reason"].eq("ioc_batch_preflight_rejected")
+    ]
+    assert engine.orders_sent == 0
+    assert result.fills.empty
+    assert result.order_rejections.empty
+    assert not rejected.empty
+    assert set(rejected["ioc_batch_preflight_reason"]) == {
+        "visible_ioc_capacity_shortfall"
+    }
+    assert set(
+        rejected["ioc_batch_preflight_limiting_instrument_id"]
+    ) == {"FUT"}
+    assert set(
+        rejected["ioc_batch_preflight_requested_qty"]
+    ) == {75}
+    assert set(
+        rejected["ioc_batch_preflight_available_qty"]
+    ) == {0}
+    assert strategy.legging_report().empty
+
+
 def test_parity_arb_taker_marks_post_preflight_rejection_incomplete(
     monkeypatch,
 ):
@@ -289,6 +354,13 @@ def test_parity_arb_taker_marks_post_preflight_rejection_incomplete(
         lambda intents: IOCBatchPreflightResult(
             passed=True,
             reason="passed",
+            visible_capacity_checked=True,
+            min_visible_fill_ratio=1.0,
+            limiting_instrument_id="CALL1000",
+            requested_qty=75,
+            available_qty=75,
+            touch_price=55.0,
+            limit_price=55.0,
         ),
     )
 
@@ -344,6 +416,7 @@ def _parity_engine(
     put_timestamps=(0, 100),
     future_timestamps=(0, 100),
     future_max_position_lots=20,
+    future_quote_qty=75,
 ):
     return MultiInstrumentEngine(
         instruments={
@@ -394,8 +467,8 @@ def _parity_engine(
                             ts,
                             1008.0,
                             1009.0,
-                            75,
-                            75,
+                            future_quote_qty,
+                            future_quote_qty,
                             np.nan,
                             0,
                         )

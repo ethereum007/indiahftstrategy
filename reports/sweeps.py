@@ -65,6 +65,11 @@ KNOWN_NON_PARAM_COLUMNS = {
     "parity_execution_ioc_batch_preflight_rejected_attempts",
     "parity_execution_ioc_batch_preflight_missing_evidence_rows",
     "parity_execution_ioc_batch_preflight_consistency_violations",
+    "parity_execution_ioc_visible_not_marketable_attempts",
+    "parity_execution_ioc_visible_capacity_shortfall_attempts",
+    "parity_execution_ioc_visible_capacity_missing_evidence_rows",
+    "parity_execution_ioc_visible_capacity_consistency_violations",
+    "parity_execution_min_routed_visible_fill_ratio",
     "parity_execution_guard_missing_evidence_rows",
     "parity_execution_guard_unclassified_rows",
     "parity_execution_guard_consistency_violations",
@@ -1311,7 +1316,7 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
 
 def _parity_execution_aggregates(
     frame: pd.DataFrame,
-) -> dict[str, int]:
+) -> dict[str, int | float]:
     enabled = _bool_series(
         frame.get(
             "parity_execution_guard_enabled",
@@ -1372,6 +1377,18 @@ def _parity_execution_aggregates(
         ),
         "total_parity_execution_ioc_batch_preflight_consistency_violations": (
             "parity_execution_ioc_batch_preflight_consistency_violations"
+        ),
+        "total_parity_execution_ioc_visible_not_marketable_attempts": (
+            "parity_execution_ioc_visible_not_marketable_attempts"
+        ),
+        "total_parity_execution_ioc_visible_capacity_shortfall_attempts": (
+            "parity_execution_ioc_visible_capacity_shortfall_attempts"
+        ),
+        "total_parity_execution_ioc_visible_capacity_missing_evidence_rows": (
+            "parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ),
+        "total_parity_execution_ioc_visible_capacity_consistency_violations": (
+            "parity_execution_ioc_visible_capacity_consistency_violations"
         ),
         "total_parity_execution_guard_missing_evidence_rows": (
             "parity_execution_guard_missing_evidence_rows"
@@ -1457,7 +1474,22 @@ def _parity_execution_aggregates(
             frame,
             "parity_execution_max_routed_book_skew_ns",
         ),
+        "min_parity_execution_routed_visible_fill_ratio": (
+            _min_routed_visible_fill_ratio(frame)
+        ),
     }
+
+
+def _min_routed_visible_fill_ratio(frame: pd.DataFrame) -> float:
+    routed = _numeric(
+        frame,
+        "parity_execution_guard_passed_attempts",
+    ).fillna(0.0).gt(0.0)
+    values = _numeric(
+        frame,
+        "parity_execution_min_routed_visible_fill_ratio",
+    ).loc[routed].dropna()
+    return float(values.min()) if not values.empty else 0.0
 
 
 def _max_int(frame: pd.DataFrame, column: str) -> int:

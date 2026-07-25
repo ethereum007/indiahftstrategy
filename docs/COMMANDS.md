@@ -905,17 +905,27 @@ IOC intents as one non-mutating admission package. The preflight checks venue
 lot/tick rules, visible-book availability, conservative self-cross conflicts,
 and the package-wide instrument, gross-position, delta, and vega envelopes
 without allocating order IDs, consuming liquidity, or sampling order latency.
-The guard artifact retains whether preflight was attempted, its pass/fail
-reason, affected instrument, projected range, limit, and conflicting order
-when available. A predictable rejection therefore routes zero legs.
+Each IOC limit must also cross its strategy-visible touch. Displayed
+opposite-touch quantity is floored to the instrument lot size and reserved
+across same-instrument, same-side intents in the package, so legs cannot
+double-count the same visible depth. The guard artifact retains whether
+preflight was attempted, its pass/fail reason, affected instrument, projected
+range, limit, conflicting order, minimum visible fill ratio, limiting leg,
+requested and available quantity, and touch and limit prices when available.
+A predictable rejection therefore routes zero legs.
 
-This admission check does not make multi-leg fills atomic. Liquidity and
-latency can still produce a partial outcome after all three orders are
-accepted. `legging.csv` treats the execution as complete only when all three
-orders are accepted and every leg fills its requested quantity. Proof
-independently recomputes guard, preflight, and legging consistency and rejects
-over-age or over-skew routed books, expired signals, package-admission
-rejections, incomplete routing, rejected legs, and unfilled legs.
+This admission check is visible feasibility at the decision timestamp; it
+does not make multi-leg fills atomic or predict exchange state at arrival.
+Liquidity and latency can still produce a partial outcome after all three
+orders are accepted. `legging.csv` treats the execution as complete only when
+all three orders are accepted and every leg fills its requested quantity.
+Proof independently derives limiting-leg side, marketability, and fill ratio
+from the guard evidence, recomputes the other guard, preflight, and legging
+consistency checks, and rejects over-age or over-skew routed books, expired
+signals, package-admission rejections, incomplete routing, rejected legs, and
+unfilled legs. Parity sweeps and cross-sweep comparisons preserve visible
+marketability and capacity-shortfall counts, proof-integrity counts, and the
+minimum routed visible fill ratio.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows

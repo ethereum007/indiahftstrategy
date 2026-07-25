@@ -732,6 +732,58 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         .fillna("")
         .str.strip()
     )
+    parity_capacity_checked_raw = parity_execution_guard.get(
+        "ioc_batch_preflight_visible_capacity_checked",
+        pd.Series(np.nan, index=parity_execution_guard.index),
+    )
+    parity_capacity_checked = parity_capacity_checked_raw.map(_bool)
+    parity_capacity_ratio = pd.to_numeric(
+        parity_execution_guard.get(
+            "ioc_batch_preflight_min_visible_fill_ratio",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
+    parity_capacity_instrument_raw = parity_execution_guard.get(
+        "ioc_batch_preflight_limiting_instrument_id",
+        pd.Series(
+            np.nan,
+            index=parity_execution_guard.index,
+        ),
+    )
+    parity_capacity_instruments = (
+        parity_capacity_instrument_raw.astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    parity_capacity_requested = pd.to_numeric(
+        parity_execution_guard.get(
+            "ioc_batch_preflight_requested_qty",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
+    parity_capacity_available = pd.to_numeric(
+        parity_execution_guard.get(
+            "ioc_batch_preflight_available_qty",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
+    parity_capacity_touch_price = pd.to_numeric(
+        parity_execution_guard.get(
+            "ioc_batch_preflight_touch_price",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
+    parity_capacity_limit_price = pd.to_numeric(
+        parity_execution_guard.get(
+            "ioc_batch_preflight_limit_price",
+            pd.Series(np.nan, index=parity_execution_guard.index),
+        ),
+        errors="coerce",
+    )
     parity_known_guard_reasons = {
         "signal_age_exceeded",
         "nonpositive_quantity",
@@ -842,6 +894,191 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             ).sum()
         )
     )
+    parity_capacity_passed = (
+        parity_preflight_attempted & parity_preflight_passed
+    )
+    parity_capacity_not_marketable = parity_preflight_reasons.eq(
+        "visible_ioc_not_marketable"
+    )
+    parity_capacity_shortfall = parity_preflight_reasons.eq(
+        "visible_ioc_capacity_shortfall"
+    )
+    parity_capacity_relevant = (
+        parity_capacity_passed
+        | parity_capacity_not_marketable
+        | parity_capacity_shortfall
+    )
+    parity_capacity_missing_evidence = parity_capacity_relevant & (
+        _boolean_evidence_missing(parity_capacity_checked_raw)
+        | parity_capacity_ratio.isna()
+        | parity_capacity_instrument_raw.isna()
+        | parity_capacity_instruments.eq("")
+        | parity_capacity_requested.isna()
+        | parity_capacity_available.isna()
+        | parity_capacity_touch_price.isna()
+        | parity_capacity_limit_price.isna()
+    )
+    parity_directions = (
+        parity_execution_guard.get(
+            "direction",
+            pd.Series(
+                np.nan,
+                index=parity_execution_guard.index,
+            ),
+        )
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    parity_call_ids = (
+        parity_execution_guard.get(
+            "call_instrument_id",
+            pd.Series(
+                np.nan,
+                index=parity_execution_guard.index,
+            ),
+        )
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    parity_put_ids = (
+        parity_execution_guard.get(
+            "put_instrument_id",
+            pd.Series(
+                np.nan,
+                index=parity_execution_guard.index,
+            ),
+        )
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    parity_future_ids = (
+        parity_execution_guard.get(
+            "future_instrument_id",
+            pd.Series(
+                np.nan,
+                index=parity_execution_guard.index,
+            ),
+        )
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    parity_capacity_is_call = (
+        parity_capacity_instruments.eq(parity_call_ids)
+        & parity_capacity_instruments.ne("")
+    )
+    parity_capacity_is_put_or_future = (
+        (
+            parity_capacity_instruments.eq(parity_put_ids)
+            | parity_capacity_instruments.eq(parity_future_ids)
+        )
+        & parity_capacity_instruments.ne("")
+    )
+    parity_capacity_side = pd.Series(
+        0,
+        index=parity_execution_guard.index,
+        dtype="int64",
+    )
+    buy_synthetic = parity_directions.eq(
+        "buy_synthetic_sell_future"
+    )
+    sell_synthetic = parity_directions.eq(
+        "sell_synthetic_buy_future"
+    )
+    parity_capacity_side.loc[
+        (buy_synthetic & parity_capacity_is_call)
+        | (sell_synthetic & parity_capacity_is_put_or_future)
+    ] = 1
+    parity_capacity_side.loc[
+        (sell_synthetic & parity_capacity_is_call)
+        | (buy_synthetic & parity_capacity_is_put_or_future)
+    ] = -1
+    parity_capacity_marketable = (
+        (
+            parity_capacity_side.eq(1)
+            & parity_capacity_limit_price.ge(
+                parity_capacity_touch_price
+            )
+        )
+        | (
+            parity_capacity_side.eq(-1)
+            & parity_capacity_limit_price.le(
+                parity_capacity_touch_price
+            )
+        )
+    )
+    parity_capacity_expected_ratio = (
+        parity_capacity_available
+        / parity_capacity_requested.where(
+            parity_capacity_requested.gt(0)
+        )
+    )
+    parity_capacity_common_violation = (
+        ~parity_capacity_checked
+        | parity_capacity_side.eq(0)
+        | parity_capacity_requested.le(0)
+        | parity_capacity_requested.mod(1).ne(0)
+        | parity_capacity_available.lt(0)
+        | parity_capacity_ratio.lt(0)
+        | ~np.isfinite(parity_capacity_ratio)
+        | ~np.isfinite(parity_capacity_available)
+        | ~np.isfinite(parity_capacity_touch_price)
+        | ~np.isfinite(parity_capacity_limit_price)
+        | (
+            parity_capacity_ratio
+            .sub(parity_capacity_expected_ratio)
+            .abs()
+            .gt(1e-9)
+        )
+    )
+    parity_capacity_consistency_violation = (
+        parity_capacity_common_violation
+        | (
+            parity_capacity_passed
+            & (
+                ~parity_capacity_marketable
+                | parity_capacity_ratio.lt(1.0)
+                | parity_capacity_available.lt(
+                    parity_capacity_requested
+                )
+            )
+        )
+        | (
+            parity_capacity_not_marketable
+            & (
+                parity_capacity_marketable
+                | parity_capacity_ratio.ne(0.0)
+            )
+        )
+        | (
+            parity_capacity_shortfall
+            & (
+                ~parity_capacity_marketable
+                | parity_capacity_ratio.ge(1.0)
+                | parity_capacity_available.ge(
+                    parity_capacity_requested
+                )
+            )
+        )
+    )
+    parity_execution_ioc_visible_capacity_missing_evidence_rows = (
+        int(parity_capacity_missing_evidence.sum())
+    )
+    parity_execution_ioc_visible_capacity_consistency_violations = (
+        int(
+            (
+                parity_capacity_relevant
+                & parity_capacity_consistency_violation
+                & ~parity_capacity_missing_evidence
+            ).sum()
+        )
+    )
+    parity_routed_capacity_ratios = parity_capacity_ratio.loc[
+        parity_capacity_passed
+    ].dropna()
     parity_expected_routing_status = pd.Series(
         "not_attempted",
         index=parity_execution_guard.index,
@@ -1385,6 +1622,23 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "parity_execution_ioc_batch_preflight_consistency_violations": (
             parity_execution_ioc_batch_preflight_consistency_violations
         ),
+        "parity_execution_ioc_visible_not_marketable_attempts": int(
+            parity_capacity_not_marketable.sum()
+        ),
+        "parity_execution_ioc_visible_capacity_shortfall_attempts": (
+            int(parity_capacity_shortfall.sum())
+        ),
+        "parity_execution_ioc_visible_capacity_missing_evidence_rows": (
+            parity_execution_ioc_visible_capacity_missing_evidence_rows
+        ),
+        "parity_execution_ioc_visible_capacity_consistency_violations": (
+            parity_execution_ioc_visible_capacity_consistency_violations
+        ),
+        "parity_execution_min_routed_visible_fill_ratio": (
+            float(parity_routed_capacity_ratios.min())
+            if not parity_routed_capacity_ratios.empty
+            else 0.0
+        ),
         "parity_execution_guard_missing_evidence_rows": (
             parity_execution_guard_missing_evidence_rows
         ),
@@ -1886,6 +2140,14 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_ioc_batch_preflight_consistency_violations",
                 "parity IOC package preflight evidence is inconsistent",
+            ),
+            (
+                "parity_execution_ioc_visible_capacity_missing_evidence_rows",
+                "parity IOC visible-capacity evidence is missing",
+            ),
+            (
+                "parity_execution_ioc_visible_capacity_consistency_violations",
+                "parity IOC visible-capacity evidence is inconsistent",
             ),
             (
                 "parity_execution_ioc_batch_preflight_rejected_attempts",

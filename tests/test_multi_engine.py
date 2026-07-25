@@ -198,7 +198,12 @@ class IOCBatchPreflightStrategy(MultiInstrumentStrategy):
         pass
 
     def on_tick(self, engine, instrument_id, tick):
-        if instrument_id != "B" or self.preflight is not None:
+        if self.preflight is not None:
+            return
+        if any(
+            engine.last_tick(intent.instrument_id) is None
+            for intent in self.intents
+        ):
             return
         self.preflight = engine.preflight_ioc_batch(self.intents)
         if self.preflight.passed and self.route_on_pass:
@@ -1025,6 +1030,74 @@ def test_ioc_batch_preflight_reports_self_cross_without_rejecting():
     assert result.order_rejections.empty
 
 
+def test_ioc_batch_preflight_rejects_unmarketable_visible_price():
+    strategy = IOCBatchPreflightStrategy(
+        [IOCOrderIntent("A", +1, 75, 100.00)]
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert not strategy.preflight.passed
+    assert strategy.preflight.reason == "visible_ioc_not_marketable"
+    assert strategy.preflight.instrument_id == "A"
+    assert strategy.preflight.visible_capacity_checked
+    assert strategy.preflight.min_visible_fill_ratio == 0
+    assert strategy.preflight.requested_qty == 75
+    assert strategy.preflight.available_qty == 75
+    assert strategy.preflight.touch_price == 100.05
+    assert strategy.preflight.limit_price == 100.00
+    assert engine.orders_sent == 0
+    assert result.order_rejections.empty
+
+
+def test_ioc_batch_preflight_reserves_visible_capacity_across_intents():
+    strategy = IOCBatchPreflightStrategy(
+        [
+            IOCOrderIntent("A", +1, 75, 100.05),
+            IOCOrderIntent("A", +1, 75, 100.05),
+        ]
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert not strategy.preflight.passed
+    assert (
+        strategy.preflight.reason
+        == "visible_ioc_capacity_shortfall"
+    )
+    assert strategy.preflight.instrument_id == "A"
+    assert strategy.preflight.visible_capacity_checked
+    assert strategy.preflight.min_visible_fill_ratio == 0
+    assert strategy.preflight.requested_qty == 75
+    assert strategy.preflight.available_qty == 0
+    assert engine.orders_sent == 0
+    assert result.order_rejections.empty
+
+
 def test_ioc_batch_preflight_can_route_every_admitted_leg():
     strategy = IOCBatchPreflightStrategy(
         [
@@ -1066,6 +1139,13 @@ def test_ioc_batch_preflight_can_route_every_admitted_leg():
 
     assert strategy.preflight.passed
     assert strategy.preflight.reason == "passed"
+    assert strategy.preflight.visible_capacity_checked
+    assert strategy.preflight.min_visible_fill_ratio == 1
+    assert strategy.preflight.limiting_instrument_id == "A"
+    assert strategy.preflight.requested_qty == 75
+    assert strategy.preflight.available_qty == 75
+    assert strategy.preflight.touch_price == 100.05
+    assert strategy.preflight.limit_price == 100.05
     assert strategy.oids == [1, 2]
     assert engine.orders_sent == 2
     routed = result.fills[result.fills["oid"].isin(strategy.oids)]

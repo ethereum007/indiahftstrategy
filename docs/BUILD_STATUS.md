@@ -7495,6 +7495,26 @@ tests pass. Repository collection is healthy at `2714 tests` across `164`
 files. The full suite was not rerun because recent complete runs exceed 40
 minutes. All outputs remain non-authorizing.
 
+Latest strategy-visible parity IOC capacity proof: package admission now
+requires every IOC limit to cross the decision-time visible touch and enough
+opposite-touch quantity to cover the requested lot-conserving quantity.
+Displayed quantity is floored to the instrument lot and reserved across
+same-instrument, same-side intents within the package, preventing duplicate
+claims on one visible queue. A failure rejects all three legs before order ID
+allocation, latency sampling, or liquidity mutation, with distinct
+`visible_ioc_not_marketable` and `visible_ioc_capacity_shortfall` reasons.
+`parity_execution_guard.csv` retains the minimum fill ratio and limiting
+instrument, requested and available quantity, touch, and limit evidence.
+Replay summaries, proof, parity sweeps, and cross-sweep comparisons preserve
+the rejection and integrity counters plus the minimum routed ratio. Proof
+independently derives limiting-leg side, marketability, and available/requested
+ratio, so altered pass flags or prices fail closed. This remains
+decision-time feasibility rather than an atomic or arrival-time fill
+guarantee. All `96` multi-engine, parity, proof, promotion, order-plan, launch,
+and sweep regressions pass. Repository collection is healthy at `2717 tests`
+across `164` files. The full suite was not rerun because recent complete runs
+exceed 40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

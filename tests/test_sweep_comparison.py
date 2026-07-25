@@ -49,6 +49,11 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_ioc_batch_preflight_rejected_attempts": 0,
             "parity_execution_ioc_batch_preflight_missing_evidence_rows": 0,
             "parity_execution_ioc_batch_preflight_consistency_violations": 0,
+            "parity_execution_ioc_visible_not_marketable_attempts": 0,
+            "parity_execution_ioc_visible_capacity_shortfall_attempts": 0,
+            "parity_execution_ioc_visible_capacity_missing_evidence_rows": 0,
+            "parity_execution_ioc_visible_capacity_consistency_violations": 0,
+            "parity_execution_min_routed_visible_fill_ratio": 2.0,
             "parity_execution_guard_present": True,
             "parity_execution_legging_present": True,
             "parity_execution_guard_attempts": 3,
@@ -152,6 +157,11 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_ioc_batch_preflight_rejected_attempts": 1,
             "parity_execution_ioc_batch_preflight_missing_evidence_rows": 1,
             "parity_execution_ioc_batch_preflight_consistency_violations": 1,
+            "parity_execution_ioc_visible_not_marketable_attempts": 0,
+            "parity_execution_ioc_visible_capacity_shortfall_attempts": 1,
+            "parity_execution_ioc_visible_capacity_missing_evidence_rows": 1,
+            "parity_execution_ioc_visible_capacity_consistency_violations": 1,
+            "parity_execution_min_routed_visible_fill_ratio": 0.5,
             "parity_execution_guard_present": True,
             "parity_execution_legging_present": True,
             "parity_execution_guard_attempts": 4,
@@ -297,6 +307,25 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
             "total_parity_execution_ioc_batch_preflight_rejected_attempts"
         ]
     ) == 0
+    assert int(
+        best["total_parity_execution_ioc_visible_not_marketable_attempts"]
+    ) == 0
+    assert int(
+        best["total_parity_execution_ioc_visible_capacity_shortfall_attempts"]
+    ) == 0
+    assert int(
+        best[
+            "total_parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        best[
+            "total_parity_execution_ioc_visible_capacity_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        best["min_parity_execution_routed_visible_fill_ratio"]
+    ) == 2.0
     assert int(best["total_parity_execution_routing_complete_attempts"]) == 2
     assert int(best["total_parity_execution_complete_count"]) == 2
     assert int(best["total_parity_execution_incomplete_count"]) == 0
@@ -324,6 +353,24 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
             "total_parity_execution_ioc_batch_preflight_consistency_violations"
         ]
     ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_visible_capacity_shortfall_attempts"
+        ]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_visible_capacity_consistency_violations"
+        ]
+    ) == 2
+    assert float(
+        weak["min_parity_execution_routed_visible_fill_ratio"]
+    ) == 0.5
     assert int(weak["total_parity_execution_signal_expiry_events"]) == 2
     assert int(weak["total_parity_execution_stale_book_attempts"]) == 2
     assert int(
@@ -483,6 +530,26 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
             "total_parity_execution_ioc_batch_preflight_rejected_attempts"
         ]
     ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_ioc_visible_capacity_shortfall_attempts"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_execution_ioc_visible_capacity_consistency_violations"
+        ]
+    ) == 2
+    assert float(
+        comparison.summary.iloc[0][
+            "min_parity_execution_routed_visible_fill_ratio"
+        ]
+    ) == 0.5
     assert int(
         comparison.summary.iloc[0][
             "total_parity_execution_routing_incomplete_attempts"

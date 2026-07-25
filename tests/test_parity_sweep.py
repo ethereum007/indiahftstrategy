@@ -168,6 +168,34 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     ) == 0
     assert int(
         result.summary.iloc[0][
+            "total_parity_execution_ioc_visible_not_marketable_attempts"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_visible_capacity_shortfall_attempts"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_visible_capacity_consistency_violations"
+        ]
+    ) == 0
+    assert (
+        float(
+            result.summary.iloc[0][
+                "min_parity_execution_routed_visible_fill_ratio"
+            ]
+        )
+        == 4.0
+    )
+    assert int(
+        result.summary.iloc[0][
             "total_parity_execution_guard_missing_evidence_rows"
         ]
     ) == 0

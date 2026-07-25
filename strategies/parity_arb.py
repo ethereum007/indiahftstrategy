@@ -43,6 +43,13 @@ PARITY_EXECUTION_GUARD_COLUMNS = [
     "ioc_batch_preflight_projected_max",
     "ioc_batch_preflight_limit",
     "ioc_batch_preflight_conflicting_oid",
+    "ioc_batch_preflight_visible_capacity_checked",
+    "ioc_batch_preflight_min_visible_fill_ratio",
+    "ioc_batch_preflight_limiting_instrument_id",
+    "ioc_batch_preflight_requested_qty",
+    "ioc_batch_preflight_available_qty",
+    "ioc_batch_preflight_touch_price",
+    "ioc_batch_preflight_limit_price",
     "guard_passed",
     "guard_reason",
     "affected_legs",
@@ -382,6 +389,35 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
         guard["ioc_batch_preflight_conflicting_oid"] = (
             preflight.conflicting_oid
         )
+        guard["ioc_batch_preflight_visible_capacity_checked"] = (
+            preflight.visible_capacity_checked
+        )
+        guard["ioc_batch_preflight_min_visible_fill_ratio"] = (
+            None
+            if pd.isna(preflight.min_visible_fill_ratio)
+            else preflight.min_visible_fill_ratio
+        )
+        guard["ioc_batch_preflight_limiting_instrument_id"] = (
+            preflight.limiting_instrument_id
+        )
+        guard["ioc_batch_preflight_requested_qty"] = (
+            preflight.requested_qty
+        )
+        guard["ioc_batch_preflight_available_qty"] = (
+            None
+            if pd.isna(preflight.available_qty)
+            else preflight.available_qty
+        )
+        guard["ioc_batch_preflight_touch_price"] = (
+            None
+            if pd.isna(preflight.touch_price)
+            else preflight.touch_price
+        )
+        guard["ioc_batch_preflight_limit_price"] = (
+            None
+            if pd.isna(preflight.limit_price)
+            else preflight.limit_price
+        )
         if not preflight.passed:
             guard["guard_reason"] = "ioc_batch_preflight_rejected"
             instrument_to_leg = {
@@ -472,6 +508,13 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             "ioc_batch_preflight_projected_max": None,
             "ioc_batch_preflight_limit": None,
             "ioc_batch_preflight_conflicting_oid": None,
+            "ioc_batch_preflight_visible_capacity_checked": False,
+            "ioc_batch_preflight_min_visible_fill_ratio": None,
+            "ioc_batch_preflight_limiting_instrument_id": "",
+            "ioc_batch_preflight_requested_qty": 0,
+            "ioc_batch_preflight_available_qty": None,
+            "ioc_batch_preflight_touch_price": None,
+            "ioc_batch_preflight_limit_price": None,
             "guard_passed": False,
             "guard_reason": guard_reason,
             "affected_legs": "",

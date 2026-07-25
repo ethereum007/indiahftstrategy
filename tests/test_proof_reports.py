@@ -470,6 +470,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     guard = pd.DataFrame(
         [
             {
+                "direction": "buy_synthetic_sell_future",
+                "call_instrument_id": "CALL1000",
+                "put_instrument_id": "PUT1000",
+                "future_instrument_id": "FUT",
                 "guard_passed": True,
                 "guard_reason": "ready",
                 "routing_status": "complete",
@@ -480,6 +484,13 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
                 "ioc_batch_preflight_attempted": True,
                 "ioc_batch_preflight_passed": True,
                 "ioc_batch_preflight_reason": "passed",
+                "ioc_batch_preflight_visible_capacity_checked": True,
+                "ioc_batch_preflight_min_visible_fill_ratio": 2.0,
+                "ioc_batch_preflight_limiting_instrument_id": "CALL1000",
+                "ioc_batch_preflight_requested_qty": 75,
+                "ioc_batch_preflight_available_qty": 150,
+                "ioc_batch_preflight_touch_price": 55.0,
+                "ioc_batch_preflight_limit_price": 55.0,
                 "call_book_age_ns": 100,
                 "put_book_age_ns": 80,
                 "future_book_age_ns": 50,
@@ -535,6 +546,21 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
             "parity_execution_ioc_batch_preflight_missing_evidence_rows"
         ]
     ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_visible_capacity_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        metrics[
+            "parity_execution_min_routed_visible_fill_ratio"
+        ]
+    ) == 2.0
     assert int(metrics["parity_execution_max_routed_book_age_ns"]) == 100
     assert int(metrics["parity_execution_max_routed_book_skew_ns"]) == 50
     assert int(
@@ -609,6 +635,54 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     guard.loc[0, "routing_complete"] = True
     guard.loc[0, "ioc_batch_preflight_passed"] = True
     guard.loc[0, "ioc_batch_preflight_reason"] = "passed"
+
+    guard.loc[
+        0,
+        "ioc_batch_preflight_available_qty",
+    ] = float("nan")
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    capacity_missing = evaluate_replay_dirs([run_dir])
+
+    capacity_missing_failed = capacity_missing.checks.loc[
+        ~capacity_missing.checks["passed"]
+    ]
+    assert not capacity_missing.passed
+    assert capacity_missing_failed["check"].tolist() == [
+        "parity_execution_ioc_visible_capacity_missing_evidence_rows"
+    ]
+    guard.loc[0, "ioc_batch_preflight_available_qty"] = 150
+
+    guard.loc[
+        0,
+        "ioc_batch_preflight_min_visible_fill_ratio",
+    ] = 0.5
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    capacity_inconsistent = evaluate_replay_dirs([run_dir])
+
+    capacity_inconsistent_failed = capacity_inconsistent.checks.loc[
+        ~capacity_inconsistent.checks["passed"]
+    ]
+    assert not capacity_inconsistent.passed
+    assert capacity_inconsistent_failed["check"].tolist() == [
+        "parity_execution_ioc_visible_capacity_consistency_violations"
+    ]
+    guard.loc[
+        0,
+        "ioc_batch_preflight_min_visible_fill_ratio",
+    ] = 2.0
+
+    guard.loc[0, "ioc_batch_preflight_limit_price"] = 54.0
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    capacity_unmarketable = evaluate_replay_dirs([run_dir])
+
+    capacity_unmarketable_failed = capacity_unmarketable.checks.loc[
+        ~capacity_unmarketable.checks["passed"]
+    ]
+    assert not capacity_unmarketable.passed
+    assert capacity_unmarketable_failed["check"].tolist() == [
+        "parity_execution_ioc_visible_capacity_consistency_violations"
+    ]
+    guard.loc[0, "ioc_batch_preflight_limit_price"] = 55.0
 
     guard.loc[0, "call_book_age_ns"] = 101
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)

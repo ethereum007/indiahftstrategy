@@ -100,6 +100,13 @@ class IOCBatchPreflightResult:
     projected_max: float = float("nan")
     limit: float = float("nan")
     conflicting_oid: int | None = None
+    visible_capacity_checked: bool = False
+    min_visible_fill_ratio: float = float("nan")
+    limiting_instrument_id: str = ""
+    requested_qty: int = 0
+    available_qty: float = float("nan")
+    touch_price: float = float("nan")
+    limit_price: float = float("nan")
 
 
 class MultiInstrumentStrategy:
@@ -426,7 +433,7 @@ class MultiInstrumentEngine:
         risk_rejection = self._ioc_batch_risk_rejection(normalized)
         if risk_rejection is not None:
             return risk_rejection
-        return IOCBatchPreflightResult(passed=True, reason="passed")
+        return self._ioc_batch_visible_capacity(normalized)
 
     def _own_queue_tail(
         self,
@@ -1029,6 +1036,92 @@ class MultiInstrumentEngine:
                     limit=float(limits.max_abs_vega),
                 )
         return None
+
+    def _ioc_batch_visible_capacity(
+        self,
+        intents: list[IOCOrderIntent],
+    ) -> IOCBatchPreflightResult:
+        reserved: dict[tuple[str, int], int] = {}
+        limiting_instrument_id = ""
+        limiting_requested_qty = 0
+        limiting_available_qty = float("nan")
+        limiting_touch_price = float("nan")
+        limiting_limit_price = float("nan")
+        min_fill_ratio = float("inf")
+
+        for intent in intents:
+            cfg = self.instruments[intent.instrument_id]
+            visible = self._visible_ticks[intent.instrument_id]
+            if intent.side > 0:
+                touch_price = float(visible["ask"])
+                displayed_qty = visible.get("ask_qty", 0)
+                marketable = intent.price >= touch_price
+            else:
+                touch_price = float(visible["bid"])
+                displayed_qty = visible.get("bid_qty", 0)
+                marketable = intent.price <= touch_price
+
+            key = (intent.instrument_id, intent.side)
+            venue_qty = _floor_to_lot(
+                _nonnegative_qty(displayed_qty),
+                cfg.instrument.lot_size,
+            )
+            available_qty = max(
+                venue_qty - reserved.get(key, 0),
+                0,
+            )
+            fill_ratio = (
+                float(available_qty) / intent.qty
+                if marketable
+                else 0.0
+            )
+            if fill_ratio < min_fill_ratio:
+                min_fill_ratio = fill_ratio
+                limiting_instrument_id = intent.instrument_id
+                limiting_requested_qty = intent.qty
+                limiting_available_qty = float(available_qty)
+                limiting_touch_price = touch_price
+                limiting_limit_price = intent.price
+
+            if not marketable:
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="visible_ioc_not_marketable",
+                    instrument_id=intent.instrument_id,
+                    visible_capacity_checked=True,
+                    min_visible_fill_ratio=0.0,
+                    limiting_instrument_id=intent.instrument_id,
+                    requested_qty=intent.qty,
+                    available_qty=float(available_qty),
+                    touch_price=touch_price,
+                    limit_price=intent.price,
+                )
+            if available_qty < intent.qty:
+                return IOCBatchPreflightResult(
+                    passed=False,
+                    reason="visible_ioc_capacity_shortfall",
+                    instrument_id=intent.instrument_id,
+                    visible_capacity_checked=True,
+                    min_visible_fill_ratio=fill_ratio,
+                    limiting_instrument_id=intent.instrument_id,
+                    requested_qty=intent.qty,
+                    available_qty=float(available_qty),
+                    touch_price=touch_price,
+                    limit_price=intent.price,
+                )
+            reserved[key] = reserved.get(key, 0) + intent.qty
+
+        return IOCBatchPreflightResult(
+            passed=True,
+            reason="passed",
+            visible_capacity_checked=True,
+            min_visible_fill_ratio=min_fill_ratio,
+            limiting_instrument_id=limiting_instrument_id,
+            requested_qty=limiting_requested_qty,
+            available_qty=limiting_available_qty,
+            touch_price=limiting_touch_price,
+            limit_price=limiting_limit_price,
+        )
 
     def _pending_quantities(
         self,

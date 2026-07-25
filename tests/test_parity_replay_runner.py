@@ -133,6 +133,31 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
             "parity_execution_ioc_batch_preflight_consistency_violations"
         ]
     ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_visible_not_marketable_attempts"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_visible_capacity_shortfall_attempts"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_visible_capacity_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_visible_capacity_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        summary[
+            "parity_execution_min_routed_visible_fill_ratio"
+        ]
+    ) == 4.0
     assert int(summary["parity_execution_signal_expiry_events"]) == 0
     assert int(summary["parity_execution_stale_book_attempts"]) == 0
     assert int(summary["parity_execution_negative_book_age_attempts"]) == 0
@@ -160,6 +185,16 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert bool(routed_guard["ioc_batch_preflight_attempted"])
     assert bool(routed_guard["ioc_batch_preflight_passed"])
     assert routed_guard["ioc_batch_preflight_reason"] == "passed"
+    assert bool(
+        routed_guard[
+            "ioc_batch_preflight_visible_capacity_checked"
+        ]
+    )
+    assert float(
+        routed_guard[
+            "ioc_batch_preflight_min_visible_fill_ratio"
+        ]
+    ) == 4.0
 
 
 def test_run_parity_replay_quarantines_stale_futures_join(tmp_path):
