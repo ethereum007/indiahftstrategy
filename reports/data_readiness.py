@@ -91,6 +91,7 @@ class DataReadinessThresholds:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_wide_spread_rows: int | None = None
     max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
@@ -1637,6 +1638,28 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
                 ),
             ]
         )
+    if thresholds.max_wide_spread_rows is not None:
+        quote_spread_enabled = _to_bool(
+            row.get("quote_spread_validation_enabled", False)
+        )
+        checks.extend(
+            [
+                _check(
+                    "tick_quote_spread_validation_enabled",
+                    quote_spread_enabled,
+                    "is",
+                    True,
+                    quote_spread_enabled,
+                    "tick diagnostics did not validate the declared quote-spread limit",
+                ),
+                _threshold_check(
+                    "tick_wide_spread_rows",
+                    _number(row, "wide_spread_rows"),
+                    "<=",
+                    thresholds.max_wide_spread_rows,
+                ),
+            ]
+        )
     if thresholds.max_tick_p99_gap_ns is not None:
         checks.append(_threshold_check("tick_p99_gap_ns", _number(row, "p99_gap_ns"), "<=", thresholds.max_tick_p99_gap_ns))
     if thresholds.max_tick_median_spread_ticks is not None:
@@ -1763,6 +1786,28 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                     _number(row, "off_tick_price_rows"),
                     "<=",
                     thresholds.max_off_tick_price_rows,
+                ),
+            ]
+        )
+    if thresholds.max_wide_spread_rows is not None:
+        quote_spread_enabled = _to_bool(
+            row.get("quote_spread_validation_enabled", False)
+        )
+        checks.extend(
+            [
+                _check(
+                    "chain_quote_spread_validation_enabled",
+                    quote_spread_enabled,
+                    "is",
+                    True,
+                    quote_spread_enabled,
+                    "chain diagnostics did not validate the declared quote-spread limit",
+                ),
+                _threshold_check(
+                    "chain_wide_spread_rows",
+                    _number(row, "wide_spread_rows"),
+                    "<=",
+                    thresholds.max_wide_spread_rows,
                 ),
             ]
         )
@@ -3257,6 +3302,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
             raise ValueError(f"{name} must be non-negative")
     for name in (
         "max_off_tick_price_rows",
+        "max_wide_spread_rows",
         "max_off_grid_strike_rows",
         "max_tick_p99_gap_ns",
         "max_tick_median_spread_ticks",

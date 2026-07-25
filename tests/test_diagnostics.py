@@ -138,6 +138,86 @@ def test_tick_and_chain_diagnostics_report_off_tick_prices():
         tick_diagnostics(ticks, tick_size=0)
 
 
+def test_tick_and_chain_diagnostics_report_declared_wide_spreads():
+    ticks = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist("2026-06-10 09:15:00"),
+                "bid": 100.0,
+                "ask": 100.10,
+                "bid_qty": 75,
+                "ask_qty": 150,
+            },
+            {
+                "ts": ns_ist("2026-06-10 09:15:01"),
+                "bid": 100.0,
+                "ask": 100.25,
+                "bid_qty": 75,
+                "ask_qty": 150,
+            },
+        ]
+    )
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": ns_ist("2026-06-10 09:15:00"),
+                "expiry": "2026-06-25",
+                "strike": 22500.0,
+                "call_bid": 100.0,
+                "call_ask": 100.25,
+                "call_bid_qty": 75,
+                "call_ask_qty": 75,
+                "put_bid": 90.0,
+                "put_ask": 90.05,
+                "put_bid_qty": 75,
+                "put_ask_qty": 75,
+            }
+        ]
+    )
+
+    tick_result = tick_diagnostics(
+        ticks,
+        tick_size=0.05,
+        max_quote_spread_ticks=2,
+    )
+    chain_result = chain_diagnostics(
+        chain,
+        tick_size=0.05,
+        max_quote_spread_ticks=2,
+    )
+
+    tick_summary = tick_result.summary.iloc[0]
+    chain_overall = chain_result.summary.loc[
+        chain_result.summary["scope"] == "overall"
+    ].iloc[0]
+    chain_expiry = chain_result.summary.loc[
+        chain_result.summary["scope"] == "expiry"
+    ].iloc[0]
+    assert bool(tick_summary["quote_spread_validation_enabled"])
+    assert tick_summary["max_quote_spread_ticks"] == pytest.approx(2)
+    assert int(tick_summary["wide_spread_rows"]) == 1
+    assert list(
+        tick_result.issues.loc[
+            tick_result.issues["issue"] == "wide_spread",
+            "row_index",
+        ]
+    ) == [1]
+    assert bool(chain_overall["quote_spread_validation_enabled"])
+    assert chain_overall["max_quote_spread_ticks"] == pytest.approx(2)
+    assert int(chain_overall["wide_spread_rows"]) == 1
+    assert int(chain_expiry["wide_spread_rows"]) == 1
+    assert "wide_spread" in set(chain_result.issues["issue"])
+
+    with pytest.raises(ValueError, match="tick_size"):
+        tick_diagnostics(ticks, max_quote_spread_ticks=2)
+    with pytest.raises(ValueError, match="max_quote_spread_ticks"):
+        chain_diagnostics(
+            chain,
+            tick_size=0.05,
+            max_quote_spread_ticks=-1,
+        )
+
+
 def test_tick_and_chain_diagnostics_apply_timestamp_high_water():
     timestamps = [
         ns_ist("2026-06-10 09:15:04"),
@@ -389,8 +469,24 @@ def test_unified_cli_diagnose_ticks(tmp_path):
     out = tmp_path / "diag"
     ticks.to_csv(path, index=False)
 
-    code = main(["diagnose-ticks", "--ticks", str(path), "--out", str(out), "--tick-size", "0.05"])
+    code = main(
+        [
+            "diagnose-ticks",
+            "--ticks",
+            str(path),
+            "--out",
+            str(out),
+            "--tick-size",
+            "0.05",
+            "--max-quote-spread-ticks",
+            "1",
+        ]
+    )
 
     assert code == 0
     assert (out / "diagnostic_summary.csv").exists()
     assert (out / "diagnostic_issues.csv").exists()
+    summary = pd.read_csv(out / "diagnostic_summary.csv").iloc[0]
+    assert bool(summary["quote_spread_validation_enabled"])
+    assert summary["max_quote_spread_ticks"] == pytest.approx(1)
+    assert int(summary["wide_spread_rows"]) == 0

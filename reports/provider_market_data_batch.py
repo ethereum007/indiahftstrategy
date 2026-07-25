@@ -32,6 +32,7 @@ class ProviderMarketDataBatchConfig:
     expected_kind: str = "ticks"
     sample_rows: int = 1000
     tick_size: float | None = None
+    max_quote_spread_ticks: float | None = None
     strike_step: float | None = None
     timestamp_unit: str = "datetime"
     timestamp_tz: str | None = None
@@ -48,6 +49,7 @@ class ProviderMarketDataBatchConfig:
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
+    max_wide_spread_rows: int | None = None
     max_off_grid_strike_rows: int | None = None
     max_non_trading_day_rows: int = 0
     max_out_of_session_rows: int = 0
@@ -227,6 +229,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         expected_kind=config.expected_kind,
         sample_rows=config.sample_rows,
         tick_size=config.tick_size,
+        max_quote_spread_ticks=config.max_quote_spread_ticks,
         strike_step=config.strike_step,
         timestamp_unit=config.timestamp_unit,
         timestamp_tz=config.timestamp_tz,
@@ -243,6 +246,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
+        max_wide_spread_rows=config.max_wide_spread_rows,
         max_off_grid_strike_rows=config.max_off_grid_strike_rows,
         max_non_trading_day_rows=config.max_non_trading_day_rows,
         max_out_of_session_rows=config.max_out_of_session_rows,
@@ -625,6 +629,17 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         raise ValueError(
             "tick_size is required when max_off_tick_price_rows is set"
         )
+    if config.max_quote_spread_ticks is not None and config.tick_size is None:
+        raise ValueError(
+            "tick_size is required when max_quote_spread_ticks is set"
+        )
+    if (
+        config.max_wide_spread_rows is not None
+        and config.max_quote_spread_ticks is None
+    ):
+        raise ValueError(
+            "max_quote_spread_ticks is required when max_wide_spread_rows is set"
+        )
     if (
         config.max_off_grid_strike_rows is not None
         and config.strike_step is None
@@ -660,6 +675,11 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
     ):
         raise ValueError("max_off_tick_price_rows must be non-negative")
     if (
+        config.max_wide_spread_rows is not None
+        and config.max_wide_spread_rows < 0
+    ):
+        raise ValueError("max_wide_spread_rows must be non-negative")
+    if (
         config.max_off_grid_strike_rows is not None
         and config.max_off_grid_strike_rows < 0
     ):
@@ -675,6 +695,13 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         value = getattr(config, name)
         if value is not None and value <= 0:
             raise ValueError(f"{name} must be positive")
+    if (
+        config.max_quote_spread_ticks is not None
+        and config.max_quote_spread_ticks < 0
+    ):
+        raise ValueError(
+            "max_quote_spread_ticks must be non-negative"
+        )
 
 
 def _number(row: pd.Series, column: str, *, fallback: float = 0.0) -> float:

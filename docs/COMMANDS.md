@@ -8875,6 +8875,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-nonpositive-depth-rows 0 `
   --max-invalid-trade-rows 0 `
   --max-off-tick-price-rows 0 `
+  --max-quote-spread-ticks 2 `
+  --max-wide-spread-rows 0 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
   --fail-on-blocked-actions `
@@ -8909,6 +8911,8 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-off-grid-strike-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-off-tick-price-rows 0 `
+  --max-quote-spread-ticks 20 `
+  --max-wide-spread-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `
@@ -9013,6 +9017,15 @@ size evidence to be present. Use `0` for fail-closed exchange-grid proof.
 Diagnostics tolerate normal binary floating-point representation, but they do
 not round or rewrite a genuinely off-grid price because the data or the
 declared tick size may be wrong.
+When a reviewed data policy declares the largest acceptable top-of-book spread,
+pass `--max-quote-spread-ticks` with `--tick-size`. Diagnostics retain
+`quote_spread_validation_enabled`, `max_quote_spread_ticks`,
+`wide_spread_rows`, and row-level `wide_spread` issues. For chains, one row is
+wide when either the call or put spread breaches the limit, with counts also
+retained per expiry. `--max-wide-spread-rows` opts into readiness gating and
+requires the declared limit. Use `0` for fail-closed proof. This is diagnostic
+evidence only: it does not quarantine, narrow, or rewrite a quote, and the
+platform does not infer a spread limit from the observed file.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The
@@ -9447,6 +9460,7 @@ python -m hft_cli diagnose-ticks `
   --ticks data\futures.csv `
   --out runs\diagnostics\futures `
   --tick-size 0.05 `
+  --max-quote-spread-ticks 2 `
   --market india_nse_index_derivatives
 ```
 
@@ -9455,6 +9469,7 @@ python -m hft_cli diagnose-chain `
   --chain data\chain.csv `
   --out runs\diagnostics\chain `
   --tick-size 0.05 `
+  --max-quote-spread-ticks 20 `
   --strike-step 50 `
   --market india_nse_index_derivatives `
   --market-calendar runs\market_calendar\nse_fo_2026_h1\market_calendar.json `
@@ -9536,6 +9551,7 @@ python -m hft_cli review-data-readiness `
   --max-nonpositive-depth-rows 0 `
   --max-invalid-trade-rows 0 `
   --max-off-tick-price-rows 0 `
+  --max-wide-spread-rows 0 `
   --min-chain-expiry-snapshots 1000 `
   --min-chain-snapshots-per-expiry 1000 `
   --min-chain-snapshot-strikes 20 `

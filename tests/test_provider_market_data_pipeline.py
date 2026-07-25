@@ -170,6 +170,10 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
             "0.05",
             "--max-off-tick-price-rows",
             "0",
+            "--max-quote-spread-ticks",
+            "2",
+            "--max-wide-spread-rows",
+            "0",
             "--max-median-spread-ticks",
             "2",
             "--fail-on-breach",
@@ -197,6 +201,10 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
     assert config["parameters"]["max_nonmonotonic_rows"] == 7
     assert config["parameters"]["max_nonpositive_strike_rows"] == 8
     assert config["parameters"]["max_off_tick_price_rows"] == 0
+    assert config["parameters"]["max_quote_spread_ticks"] == 2.0
+    assert config["parameters"]["max_wide_spread_rows"] == 0
+    assert bool(vendor_summary.loc[0, "quote_spread_validation_enabled"])
+    assert int(vendor_summary.loc[0, "wide_spread_rows"]) == 0
 
 
 def test_cli_provider_market_data_pipeline_carries_chain_strike_grid(tmp_path):

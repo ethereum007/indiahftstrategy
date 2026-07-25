@@ -125,11 +125,16 @@ def tick_diagnostics(
     ticks: pd.DataFrame,
     *,
     tick_size: float | None = None,
+    max_quote_spread_ticks: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
 ) -> DiagnosticResult:
     _require(ticks, TICK_REQUIRED, "ticks")
     _validate_tick_size(tick_size)
+    _validate_quote_spread_limit(
+        tick_size=tick_size,
+        max_quote_spread_ticks=max_quote_spread_ticks,
+    )
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = ticks.copy()
     frame["spread"] = frame["ask"] - frame["bid"]
@@ -139,6 +144,10 @@ def tick_diagnostics(
         frame["spread_ticks"] = frame["spread"] / tick_size
     else:
         frame["spread_ticks"] = np.nan
+    wide_spread = _wide_spread_mask(
+        frame["spread_ticks"],
+        max_quote_spread_ticks=max_quote_spread_ticks,
+    )
     gaps = frame["ts"].sort_values().diff().dropna()
     nonmonotonic = ~_timestamp_at_high_water_mask(frame["ts"])
     invalid_trade = _invalid_trade_mask(frame)
@@ -168,6 +177,15 @@ def tick_diagnostics(
                 "price_grid_validation_enabled": tick_size is not None,
                 "price_grid_tick_size": float(tick_size) if tick_size is not None else np.nan,
                 "off_tick_price_rows": int(off_tick_price.sum()),
+                "quote_spread_validation_enabled": (
+                    max_quote_spread_ticks is not None
+                ),
+                "max_quote_spread_ticks": (
+                    float(max_quote_spread_ticks)
+                    if max_quote_spread_ticks is not None
+                    else np.nan
+                ),
+                "wide_spread_rows": int(wide_spread.sum()),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -191,6 +209,7 @@ def tick_diagnostics(
             out_of_session=out_of_session,
             invalid_trade=invalid_trade,
             off_tick_price=off_tick_price,
+            wide_spread=wide_spread,
         ),
     )
 
@@ -199,6 +218,7 @@ def chain_diagnostics(
     chain: pd.DataFrame,
     *,
     tick_size: float | None = None,
+    max_quote_spread_ticks: float | None = None,
     strike_step: float | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     market_calendar: MarketCalendar | str | Path | None = None,
@@ -208,6 +228,10 @@ def chain_diagnostics(
 ) -> DiagnosticResult:
     _require(chain, CHAIN_REQUIRED, "chain")
     _validate_tick_size(tick_size)
+    _validate_quote_spread_limit(
+        tick_size=tick_size,
+        max_quote_spread_ticks=max_quote_spread_ticks,
+    )
     _validate_strike_step(strike_step)
     calendar = resolve_market_calendar(market_calendar, market=market)
     frame = chain.copy()
@@ -219,6 +243,16 @@ def chain_diagnostics(
     else:
         frame["call_spread_ticks"] = np.nan
         frame["put_spread_ticks"] = np.nan
+    frame["wide_spread"] = (
+        _wide_spread_mask(
+            frame["call_spread_ticks"],
+            max_quote_spread_ticks=max_quote_spread_ticks,
+        )
+        | _wide_spread_mask(
+            frame["put_spread_ticks"],
+            max_quote_spread_ticks=max_quote_spread_ticks,
+        )
+    )
     frame["off_tick_price"] = _off_tick_price_mask(
         frame,
         ("call_bid", "call_ask", "put_bid", "put_ask"),
@@ -287,6 +321,7 @@ def chain_diagnostics(
             median_call_spread_ticks=("call_spread_ticks", "median"),
             median_put_spread_ticks=("put_spread_ticks", "median"),
             off_tick_price_rows=("off_tick_price", "sum"),
+            wide_spread_rows=("wide_spread", "sum"),
             nonmonotonic_rows=("nonmonotonic_ts", "sum"),
             nonpositive_strike_rows=("nonpositive_strike", "sum"),
             off_grid_strike_rows=("off_grid_strike", "sum"),
@@ -454,6 +489,15 @@ def chain_diagnostics(
                 "price_grid_validation_enabled": tick_size is not None,
                 "price_grid_tick_size": float(tick_size) if tick_size is not None else np.nan,
                 "off_tick_price_rows": int(frame["off_tick_price"].sum()),
+                "quote_spread_validation_enabled": (
+                    max_quote_spread_ticks is not None
+                ),
+                "max_quote_spread_ticks": (
+                    float(max_quote_spread_ticks)
+                    if max_quote_spread_ticks is not None
+                    else np.nan
+                ),
+                "wide_spread_rows": int(frame["wide_spread"].sum()),
                 "non_trading_day_rows": int(non_trading_days.sum()),
                 "calendar_closed_rows": int(calendar_closed.sum()),
                 "calendar_out_of_range_rows": int(calendar_out_of_range.sum()),
@@ -492,6 +536,7 @@ def chain_diagnostics(
             ),
             conflicting_contract=key_diagnostics.row_conflicting,
             off_tick_price=frame["off_tick_price"],
+            wide_spread=frame["wide_spread"],
         ),
     )
 
@@ -514,6 +559,7 @@ def _tick_issues(
     out_of_session: pd.Series,
     invalid_trade: pd.Series,
     off_tick_price: pd.Series,
+    wide_spread: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -523,6 +569,7 @@ def _tick_issues(
         "nonpositive_depth": (frame["bid_qty"] <= 0) | (frame["ask_qty"] <= 0),
         "invalid_trade": invalid_trade,
         "off_tick_price": off_tick_price,
+        "wide_spread": wide_spread,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days
@@ -602,12 +649,46 @@ def _off_grid_value_mask(
     return finite & ~on_grid
 
 
+def _wide_spread_mask(
+    spread_ticks: pd.Series,
+    *,
+    max_quote_spread_ticks: float | None,
+) -> pd.Series:
+    wide = pd.Series(False, index=spread_ticks.index, dtype=bool)
+    if max_quote_spread_ticks is None:
+        return wide
+    numeric = pd.to_numeric(spread_ticks, errors="coerce")
+    finite = numeric.notna() & np.isfinite(numeric)
+    return finite & (
+        numeric
+        > float(max_quote_spread_ticks) + PRICE_GRID_ATOL_TICKS
+    )
+
+
 def _validate_tick_size(tick_size: float | None) -> None:
     if tick_size is None:
         return
     value = float(tick_size)
     if not np.isfinite(value) or value <= 0:
         raise ValueError("tick_size must be positive and finite")
+
+
+def _validate_quote_spread_limit(
+    *,
+    tick_size: float | None,
+    max_quote_spread_ticks: float | None,
+) -> None:
+    if max_quote_spread_ticks is None:
+        return
+    value = float(max_quote_spread_ticks)
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(
+            "max_quote_spread_ticks must be non-negative and finite"
+        )
+    if tick_size is None:
+        raise ValueError(
+            "tick_size is required when max_quote_spread_ticks is set"
+        )
 
 
 def _validate_strike_step(strike_step: float | None) -> None:
@@ -635,6 +716,7 @@ def _chain_issues(
     exact_duplicate_contract: pd.Series,
     conflicting_contract: pd.Series,
     off_tick_price: pd.Series,
+    wide_spread: pd.Series,
 ) -> pd.DataFrame:
     rows = []
     checks = {
@@ -651,6 +733,7 @@ def _chain_issues(
         | (frame["put_bid_qty"] <= 0)
         | (frame["put_ask_qty"] <= 0),
         "off_tick_price": off_tick_price,
+        "wide_spread": wide_spread,
         "calendar_closed": calendar_closed,
         "calendar_out_of_range": calendar_out_of_range,
         "non_trading_day": non_trading_days

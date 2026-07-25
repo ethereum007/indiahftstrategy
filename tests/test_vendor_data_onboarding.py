@@ -1090,6 +1090,111 @@ def test_vendor_market_data_pipeline_gates_off_tick_prices(tmp_path):
     ] == 1
 
 
+def test_vendor_market_data_pipeline_gates_declared_wide_spreads(tmp_path):
+    raw = vendor_ticks("2026-06-12")
+    raw.loc[1, "best_ask"] = 100.30
+    raw_path = tmp_path / "wide_spread_ticks.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_wide_spread_pipeline"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            max_quote_spread_ticks=2,
+            max_wide_spread_rows=0,
+        ),
+    )
+
+    diagnostic_summary = blocked.diagnostics.summary.iloc[0]
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert blocked.mapped_data.ready
+    assert bool(diagnostic_summary["quote_spread_validation_enabled"])
+    assert diagnostic_summary["max_quote_spread_ticks"] == pytest.approx(2)
+    assert int(diagnostic_summary["wide_spread_rows"]) == 1
+    assert int(blocked.summary.loc[0, "wide_spread_rows"]) == 1
+    assert "tick_wide_spread_rows" in failed
+    assert blocked_config["diagnostics"][
+        "quote_spread_validation_enabled"
+    ]
+    assert blocked_config["diagnostics"][
+        "max_quote_spread_ticks"
+    ] == pytest.approx(2)
+    assert blocked_config["diagnostics"]["wide_spread_rows"] == 1
+    assert "- Wide-spread rows: 1" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_wide_spread_pipeline"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--max-quote-spread-ticks",
+            "2",
+            "--max-wide-spread-rows",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    allowed_summary = pd.read_csv(
+        allowed_dir / "vendor_market_data_pipeline_summary.csv"
+    ).iloc[0]
+
+    assert code == 0
+    assert bool(allowed_summary["ready"])
+    assert int(allowed_summary["wide_spread_rows"]) == 1
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_wide_spread_rows"
+    ] == 1
+
+    with pytest.raises(ValueError, match="max_quote_spread_ticks"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=tmp_path / "missing_spread_limit",
+            config=VendorMarketDataPipelineConfig(
+                adapter="arrow_money",
+                kind="ticks",
+                timestamp_unit="datetime",
+                tick_size=0.05,
+                max_wide_spread_rows=0,
+            ),
+        )
+
+
 def test_vendor_market_data_pipeline_gates_integer_overflow_rows(tmp_path):
     raw = vendor_ticks("2026-06-12")
     raw["bid_size"] = raw["bid_size"].astype("object")

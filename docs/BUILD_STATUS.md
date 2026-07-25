@@ -7102,6 +7102,23 @@ Repository collection is healthy at `2616 tests` across `164` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes. All outputs
 remain non-authorizing.
 
+Latest declared wide-spread gate: tick and option-chain diagnostics can now
+compare each top-of-book spread with an explicitly supplied
+`max_quote_spread_ticks`, which requires a declared tick size. Reports retain
+`quote_spread_validation_enabled`, `max_quote_spread_ticks`,
+`wide_spread_rows`, and row-level `wide_spread` evidence; chain reports also
+retain the count per expiry and treat either a call or put breach as one
+affected row. The opt-in `--max-wide-spread-rows` readiness budget requires the
+declared spread limit throughout vendor and provider configs. Policy and
+evidence propagate through Arrow.money/iRage single-day, batch, provider,
+broker-vendor, CLI, config, summary, manifest, and runbook surfaces. No spread
+limit is hard-coded or inferred, and quotes are neither narrowed nor removed.
+Changed-path and downstream diagnostics, readiness, vendor, provider,
+broker-vendor, live-ingest, chain, parity, and surface regressions pass (`170`
+tests). Repository collection is healthy at `2620 tests` across `164` files.
+The full suite was not rerun because recent complete runs exceed 40 minutes.
+All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

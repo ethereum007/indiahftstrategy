@@ -760,6 +760,12 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
             "chain",
             "--timestamp-unit",
             "datetime",
+            "--tick-size",
+            "0.05",
+            "--max-quote-spread-ticks",
+            "10",
+            "--max-wide-spread-rows",
+            "0",
             "--strike-step",
             "50",
             "--max-off-grid-strike-rows",
@@ -787,11 +793,20 @@ def test_cli_broker_vendor_data_readiness_carries_chain_strike_grid(tmp_path):
     assert bool(summary.loc[0, "strike_grid_validation_enabled"])
     assert summary.loc[0, "strike_grid_step"] == 50.0
     assert int(summary.loc[0, "off_grid_strike_rows"]) == 1
+    assert bool(summary.loc[0, "quote_spread_validation_enabled"])
+    assert summary.loc[0, "max_quote_spread_ticks"] == 10.0
+    assert int(summary.loc[0, "wide_spread_rows"]) == 0
     assert config["vendor_market_data_batch"][
         "strike_grid_validation_enabled"
     ]
     assert config["vendor_market_data_batch"]["off_grid_strike_rows"] == 1
+    assert config["vendor_market_data_batch"][
+        "quote_spread_validation_enabled"
+    ]
+    assert config["vendor_market_data_batch"]["wide_spread_rows"] == 0
     assert manifest["parameters"]["config"]["strike_step"] == 50.0
+    assert manifest["parameters"]["config"]["max_quote_spread_ticks"] == 10.0
+    assert manifest["parameters"]["config"]["max_wide_spread_rows"] == 0
     assert (
         manifest["parameters"]["config"]["max_off_grid_strike_rows"] == 1
     )
