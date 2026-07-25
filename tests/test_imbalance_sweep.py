@@ -70,6 +70,7 @@ def test_run_imbalance_sweep_writes_runs_summary_and_proof(tmp_path):
     assert int(sweep.summary.iloc[0]["scenario_count"]) == 2
     assert float(sweep.summary.iloc[0]["pass_rate"]) == 1.0
     assert int(sweep.summary.iloc[0]["total_pretrade_rejections"]) == 0
+    assert int(sweep.summary.iloc[0]["total_venue_rule_rejections"]) == 0
     assert int(sweep.summary.iloc[0]["total_position_risk_rejections"]) == 0
     assert int(sweep.summary.iloc[0]["total_self_cross_rejections"]) == 0
     assert int(sweep.summary.iloc[0]["total_carried_depletion_shortfall_events"]) == 0

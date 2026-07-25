@@ -65,6 +65,7 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert result.summary.iloc[0]["pass_rate"] == 0.5
     assert result.runs["signal_count"].sum() == 1
     assert int(result.summary.iloc[0]["total_pretrade_rejections"]) == 0
+    assert int(result.summary.iloc[0]["total_venue_rule_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_position_risk_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_self_cross_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_carried_depletion_shortfall_events"]) == 0

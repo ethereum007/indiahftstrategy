@@ -46,6 +46,7 @@ def write_run(
                 "otr_breached": otr_breached,
                 "pending_order_risk_reservation_enabled": True,
                 "aggressive_self_cross_prevention_enabled": True,
+                "venue_order_validation_enabled": True,
                 "shared_event_liquidity_enabled": True,
                 "persistent_displayed_liquidity_enabled": True,
                 "arrival_queue_initialization_enabled": True,
@@ -83,6 +84,7 @@ def write_run(
                 "carried_depletion_shortfall_events": 1,
                 "carried_depletion_shortfall_qty": 50,
                 "pretrade_rejections": 0,
+                "venue_rule_rejections": 0,
                 "position_risk_rejections": 0,
                 "self_cross_rejections": 0,
                 "turnover": turnover,
@@ -148,6 +150,7 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     assert bool(
         report.metrics.iloc[0]["aggressive_self_cross_prevention_enabled"]
     )
+    assert bool(report.metrics.iloc[0]["venue_order_validation_enabled"])
     assert bool(report.metrics.iloc[0]["shared_event_liquidity_enabled"])
     assert bool(
         report.metrics.iloc[0]["persistent_displayed_liquidity_enabled"]
@@ -206,6 +209,7 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     assert int(report.metrics.iloc[0]["carried_depletion_shortfall_events"]) == 1
     assert int(report.metrics.iloc[0]["carried_depletion_shortfall_qty"]) == 50
     assert int(report.metrics.iloc[0]["pretrade_rejections"]) == 0
+    assert int(report.metrics.iloc[0]["venue_rule_rejections"]) == 0
     assert report.checks["passed"].all()
 
 

@@ -177,6 +177,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     summary = replay.summary.iloc[0]
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
+    assert bool(summary["venue_order_validation_enabled"])
     assert bool(summary["shared_event_liquidity_enabled"])
     assert bool(summary["persistent_displayed_liquidity_enabled"])
     assert bool(summary["arrival_queue_initialization_enabled"])
@@ -210,6 +211,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert int(summary["carried_depletion_shortfall_events"]) == 0
     assert int(summary["carried_depletion_shortfall_qty"]) == 0
     assert int(summary["pretrade_rejections"]) == 0
+    assert int(summary["venue_rule_rejections"]) == 0
     assert int(summary["position_risk_rejections"]) == 0
     assert int(summary["self_cross_rejections"]) == 0
 
@@ -245,6 +247,7 @@ def test_imbalance_replay_audits_inflight_position_rejections(tmp_path):
     rejections = pd.read_csv(out_dir / "order_rejections.csv")
     summary = replay.summary.iloc[0]
     assert int(summary["pretrade_rejections"]) == 2
+    assert int(summary["venue_rule_rejections"]) == 0
     assert int(summary["position_risk_rejections"]) == 2
     assert int(summary["self_cross_rejections"]) == 0
     assert rejections["reason"].tolist() == [

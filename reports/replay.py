@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from engine.hft_backtest import VENUE_ORDER_REJECTION_REASONS
 from engine.multi_engine import MultiBacktestResult
 from reports.manifest import write_experiment_manifest
 from reports.pnl import pnl_decomposition
@@ -35,6 +36,9 @@ def replay_summary(
         order_rejections["reason"]
         if not order_rejections.empty
         else pd.Series(dtype="object")
+    )
+    venue_rule_rejections = rejection_reasons.isin(
+        VENUE_ORDER_REJECTION_REASONS
     )
     liquidity_shortfalls = result.liquidity_shortfalls
     liquidity_sources = (
@@ -198,6 +202,9 @@ def replay_summary(
                 "aggressive_self_cross_prevention_enabled": bool(
                     result.engine.ban_aggressive_self_cross
                 ),
+                "venue_order_validation_enabled": bool(
+                    result.engine.venue_order_validation_enabled
+                ),
                 "shared_event_liquidity_enabled": bool(
                     result.engine.shared_event_liquidity_enabled
                 ),
@@ -301,6 +308,7 @@ def replay_summary(
                     shortfall_qty.loc[carried_depletion_mask].sum()
                 ),
                 "pretrade_rejections": int(len(order_rejections)),
+                "venue_rule_rejections": int(venue_rule_rejections.sum()),
                 "position_risk_rejections": int(
                     rejection_reasons.isin(
                         {

@@ -2,6 +2,7 @@ import math
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from engine.hft_backtest import (
     BacktestEngine,
@@ -986,6 +987,66 @@ def test_terminal_liquidation_uses_replay_horizon_and_retains_book_timestamp():
     assert liquidation["ts_ns"] == 300_000
     assert liquidation["book_ts_ns"] == 200_000
     assert result.equity.iloc[-1]["ts"] == 300_000
+
+
+def test_venue_order_rules_reject_invalid_lot_and_tick_intents_before_admission():
+    df = ticks([(0, 100.00, 100.05, 75, 75, np.nan, 0)])
+    strategy = SendBurst(
+        [
+            (+1, 50, 100.00, OrderType.LIMIT),
+            (+1, 75, 100.03, OrderType.LIMIT),
+            (+1, 75, np.nan, OrderType.LIMIT),
+            (+1, 75, 100.00, OrderType.LIMIT),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    assert strategy.oids == [None, None, None, 1]
+    assert eng.orders_sent == 1
+    assert eng.limit_orders_sent == 1
+    assert eng.venue_order_validation_enabled
+    assert result.order_rejections["reason"].tolist() == [
+        "quantity_not_lot_multiple",
+        "price_not_tick_aligned",
+        "invalid_order_price",
+    ]
+    assert result.order_rejections["projected_min"].tolist() == [0, 0, 0]
+    assert result.order_rejections["projected_max"].tolist() == [0, 0, 0]
+    assert result.order_rejections["limit"].iloc[0] == 75
+    assert result.order_rejections["limit"].iloc[1] == 0.05
+    assert math.isnan(result.order_rejections["limit"].iloc[2])
+
+
+@pytest.mark.parametrize(
+    ("lot_size", "tick", "message"),
+    [
+        (0, 0.05, "lot_size"),
+        (75.5, 0.05, "lot_size"),
+        (75, 0.0, "tick"),
+        (75, np.inf, "tick"),
+    ],
+)
+def test_engine_fails_fast_on_invalid_venue_order_metadata(
+    lot_size,
+    tick,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        BacktestEngine(
+            ticks([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+            Instrument("INVALID", Kind.OPT, lot_size=lot_size, tick=tick),
+            SendOnce(+1, 75, 100.05),
+            latency=fixed_latency(),
+            costs=no_costs(),
+        )
 
 
 def test_open_order_quantity_is_reserved_against_position_limit():

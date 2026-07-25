@@ -27,6 +27,7 @@ KNOWN_NON_PARAM_COLUMNS = {
     "otr_breached",
     "pending_order_risk_reservation_enabled",
     "aggressive_self_cross_prevention_enabled",
+    "venue_order_validation_enabled",
     "shared_event_liquidity_enabled",
     "persistent_displayed_liquidity_enabled",
     "arrival_queue_initialization_enabled",
@@ -64,6 +65,7 @@ KNOWN_NON_PARAM_COLUMNS = {
     "carried_depletion_shortfall_events",
     "carried_depletion_shortfall_qty",
     "pretrade_rejections",
+    "venue_rule_rejections",
     "position_risk_rejections",
     "self_cross_rejections",
     "portfolio_delta",
@@ -229,6 +231,10 @@ def _score_scenarios(
         robust_score = _numeric(group, "robust_score")
         fills = _numeric(group, "fills")
         pretrade_rejections = _numeric(group, "pretrade_rejections").fillna(0.0)
+        venue_rule_rejections = _numeric(
+            group,
+            "venue_rule_rejections",
+        ).fillna(0.0)
         position_risk_rejections = _numeric(
             group,
             "position_risk_rejections",
@@ -371,6 +377,9 @@ def _score_scenarios(
                 "median_fills": float(fills.median(skipna=True)),
                 "min_fills": float(fills.min(skipna=True)),
                 "total_pretrade_rejections": int(pretrade_rejections.sum()),
+                "total_venue_rule_rejections": int(
+                    venue_rule_rejections.sum()
+                ),
                 "total_position_risk_rejections": int(
                     position_risk_rejections.sum()
                 ),
@@ -491,6 +500,7 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "best_worst_drawdown": np.nan,
                     "total_runs": int(len(scenario_runs)),
                     "total_pretrade_rejections": 0,
+                    "total_venue_rule_rejections": 0,
                     "total_position_risk_rejections": 0,
                     "total_self_cross_rejections": 0,
                     "total_liquidity_shortfall_events": 0,
@@ -537,6 +547,11 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                 "total_runs": int(len(scenario_runs)),
                 "total_pretrade_rejections": int(
                     _numeric(scenario_runs, "pretrade_rejections")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_venue_rule_rejections": int(
+                    _numeric(scenario_runs, "venue_rule_rejections")
                     .fillna(0.0)
                     .sum()
                 ),

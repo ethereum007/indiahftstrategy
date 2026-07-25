@@ -556,7 +556,7 @@ def test_terminal_liquidation_reuses_no_depth_consumed_on_final_snapshot():
     engine = MultiInstrumentEngine(
         instruments={
             "A": InstrumentConfig(
-                option_inst("A"),
+                Instrument("A", Kind.OPT, lot_size=25, tick=0.05),
                 "NSE",
                 frame(
                     [
@@ -604,6 +604,50 @@ def test_terminal_liquidation_reuses_no_depth_consumed_on_final_snapshot():
     assert not bool(summary["terminal_liquidation_complete"])
     assert int(summary["displayed_liquidity_shortfall_events"]) == 1
     assert int(summary["carried_depletion_shortfall_events"]) == 0
+
+
+def test_multi_engine_rejects_invalid_venue_order_intents_before_admission():
+    strategy = BurstRiskStrategy(
+        {
+            "A": [
+                (+1, 50, 100.00, OrderType.LIMIT),
+                (+1, 75, 100.03, OrderType.LIMIT),
+                (+1, 75, np.inf, OrderType.IOC),
+                (+1, 75, 100.00, OrderType.LIMIT),
+            ]
+        }
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame([(0, 100.00, 100.05, 75, 75, np.nan, 0)]),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert strategy.oids == [None, None, None, 1]
+    assert engine.orders_sent == 1
+    assert engine.limit_orders_sent == 1
+    assert engine.venue_order_validation_enabled
+    assert result.order_rejections["reason"].tolist() == [
+        "quantity_not_lot_multiple",
+        "price_not_tick_aligned",
+        "invalid_order_price",
+    ]
+    assert result.order_rejections["instrument_id"].tolist() == ["A", "A", "A"]
+    assert result.order_rejections["projected_min"].tolist() == [0, 0, 0]
+    assert result.order_rejections["projected_max"].tolist() == [0, 0, 0]
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["venue_order_validation_enabled"])
+    assert int(summary["pretrade_rejections"]) == 3
+    assert int(summary["venue_rule_rejections"]) == 3
 
 
 def test_feed_callbacks_are_ordered_by_latency_adjusted_global_time_and_skew():

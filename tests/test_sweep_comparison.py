@@ -125,6 +125,7 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert not bool(weak["selection_passed"])
     assert comparison.summary.iloc[0]["selectable_scenarios"] == 1
     assert int(best["total_pretrade_rejections"]) == 0
+    assert int(best["total_venue_rule_rejections"]) == 0
     assert int(best["total_position_risk_rejections"]) == 0
     assert int(best["total_self_cross_rejections"]) == 0
     assert int(best["total_carried_depletion_shortfall_events"]) == 2
@@ -150,6 +151,9 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_terminal_liquidation_shortfall_qty"]) == 0
     assert int(best["total_terminal_residual_position_qty"]) == 0
     assert int(comparison.summary.iloc[0]["total_pretrade_rejections"]) == 0
+    assert int(
+        comparison.summary.iloc[0]["total_venue_rule_rejections"]
+    ) == 0
     assert int(
         comparison.summary.iloc[0]["total_carried_depletion_shortfall_events"]
     ) == 4

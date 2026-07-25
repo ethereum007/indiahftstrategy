@@ -211,6 +211,7 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_terminal_residual_position_qty",
                 "total_terminal_residual_instruments",
                 "total_pretrade_rejections",
+                "total_venue_rule_rejections",
                 "total_position_risk_rejections",
                 "total_self_cross_rejections",
             ]
@@ -385,6 +386,10 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "total_pretrade_rejections": int(
                     runs["pretrade_rejections"].sum()
+                ),
+                "total_venue_rule_rejections": _sum_int_metric(
+                    runs,
+                    "venue_rule_rejections",
                 ),
                 "total_position_risk_rejections": int(
                     runs["position_risk_rejections"].sum()

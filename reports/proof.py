@@ -558,6 +558,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     aggressive_self_cross_prevention_enabled = _bool(
         row.get("aggressive_self_cross_prevention_enabled", False)
     )
+    venue_order_validation_enabled = _bool(
+        row.get("venue_order_validation_enabled", False)
+    )
     shared_event_liquidity_enabled = _bool(
         row.get("shared_event_liquidity_enabled", False)
     )
@@ -685,6 +688,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "carried_depletion_shortfall_qty",
     )
     pretrade_rejections = _int(row, "pretrade_rejections")
+    venue_rule_rejections = _int(row, "venue_rule_rejections")
     position_risk_rejections = _int(row, "position_risk_rejections")
     self_cross_rejections = _int(row, "self_cross_rejections")
     max_drawdown = _max_drawdown(equity)
@@ -711,6 +715,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "aggressive_self_cross_prevention_enabled": (
             aggressive_self_cross_prevention_enabled
         ),
+        "venue_order_validation_enabled": venue_order_validation_enabled,
         "shared_event_liquidity_enabled": shared_event_liquidity_enabled,
         "persistent_displayed_liquidity_enabled": (
             persistent_displayed_liquidity_enabled
@@ -778,6 +783,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         ),
         "carried_depletion_shortfall_qty": carried_depletion_shortfall_qty,
         "pretrade_rejections": pretrade_rejections,
+        "venue_rule_rejections": venue_rule_rejections,
         "position_risk_rejections": position_risk_rejections,
         "self_cross_rejections": self_cross_rejections,
         "max_drawdown": max_drawdown,

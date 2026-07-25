@@ -287,6 +287,9 @@ def _fold_row(
         "aggressive_self_cross_prevention_enabled": _to_bool(
             row.get("aggressive_self_cross_prevention_enabled", False)
         ),
+        "venue_order_validation_enabled": _to_bool(
+            row.get("venue_order_validation_enabled", False)
+        ),
         "shared_event_liquidity_enabled": _to_bool(
             row.get("shared_event_liquidity_enabled", False)
         ),
@@ -410,6 +413,7 @@ def _fold_row(
             "carried_depletion_shortfall_qty",
         ),
         "pretrade_rejections": _int(row, "pretrade_rejections"),
+        "venue_rule_rejections": _int(row, "venue_rule_rejections"),
         "position_risk_rejections": _int(row, "position_risk_rejections"),
         "self_cross_rejections": _int(row, "self_cross_rejections"),
         "portfolio_delta": _float(row, "portfolio_delta"),
@@ -477,6 +481,10 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
         "aggressive_self_cross_prevention_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    venue_order_validation_enabled = folds.get(
+        "venue_order_validation_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     shared_liquidity_enabled = folds.get(
         "shared_event_liquidity_enabled",
         pd.Series(False, index=folds.index),
@@ -521,6 +529,9 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "aggressive_self_cross_prevention_enabled_folds": int(
                     self_cross_prevention_enabled.sum()
+                ),
+                "venue_order_validation_enabled_folds": int(
+                    venue_order_validation_enabled.sum()
                 ),
                 "shared_event_liquidity_enabled_folds": int(
                     shared_liquidity_enabled.sum()
@@ -675,6 +686,11 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                     "pretrade_rejections",
                     "sum",
                 ),
+                "total_venue_rule_rejections": _numeric_reduce(
+                    folds,
+                    "venue_rule_rejections",
+                    "sum",
+                ),
                 "total_position_risk_rejections": _numeric_reduce(
                     folds,
                     "position_risk_rejections",
@@ -738,6 +754,9 @@ def _candidate_config(
         ),
         "aggressive_self_cross_prevention_enabled_folds": _jsonable(
             summary.get("aggressive_self_cross_prevention_enabled_folds")
+        ),
+        "venue_order_validation_enabled_folds": _jsonable(
+            summary.get("venue_order_validation_enabled_folds")
         ),
         "shared_event_liquidity_enabled_folds": _jsonable(
             summary.get("shared_event_liquidity_enabled_folds")
@@ -837,6 +856,9 @@ def _candidate_config(
         ),
         "total_pretrade_rejections": _jsonable(
             summary.get("total_pretrade_rejections")
+        ),
+        "total_venue_rule_rejections": _jsonable(
+            summary.get("total_venue_rule_rejections")
         ),
         "total_position_risk_rejections": _jsonable(
             summary.get("total_position_risk_rejections")

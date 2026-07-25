@@ -31,6 +31,9 @@ from engine.hft_backtest import (
     TERMINAL_LIQUIDATION_COLUMNS,
     _limit_book_relation,
     _nonnegative_qty,
+    _quantize_price,
+    _validate_venue_order_metadata,
+    _venue_order_rejection,
 )
 
 
@@ -127,6 +130,7 @@ class MultiInstrumentEngine:
         for iid, cfg in self.instruments.items():
             if cfg.venue not in self.venues:
                 raise ValueError(f"instrument {iid} references unknown venue {cfg.venue}")
+            _validate_venue_order_metadata(cfg.instrument)
             cfg.data = self._prep(cfg.data)
             if cfg.costs is None:
                 cfg.costs = self._default_costs(cfg.instrument)
@@ -148,6 +152,7 @@ class MultiInstrumentEngine:
         self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
+        self.venue_order_validation_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -196,16 +201,40 @@ class MultiInstrumentEngine:
             raise KeyError(f"unknown instrument_id {instrument_id}")
         if side not in (-1, 1):
             raise ValueError("side must be +1 buy or -1 sell")
+        if isinstance(qty, bool) or not isinstance(qty, (int, np.integer)):
+            raise ValueError("qty must be an integer")
         if qty <= 0:
             raise ValueError("qty must be positive")
-        visible = self._visible_ticks.get(instrument_id)
-        if visible is None:
-            return None
 
         cfg = self.instruments[instrument_id]
         venue = self.venues[cfg.venue]
         inst = cfg.instrument
-        price = round(round(price / inst.tick) * inst.tick, 10)
+        try:
+            price = float(price)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("price must be numeric") from exc
+        venue_rejection = _venue_order_rejection(inst, qty, price)
+        if venue_rejection is not None:
+            reason, limit = venue_rejection
+            position = self.positions[instrument_id]
+            self._reject(
+                instrument_id=instrument_id,
+                side=side,
+                qty=qty,
+                price=price,
+                otype=otype,
+                reason=reason,
+                projected_min=position,
+                projected_max=position,
+                limit=limit,
+            )
+            return None
+
+        visible = self._visible_ticks.get(instrument_id)
+        if visible is None:
+            return None
+
+        price = _quantize_price(price, inst.tick)
         risk_rejection = self._risk_rejection(instrument_id, side, qty)
         if risk_rejection is not None:
             reason, projected_min, projected_max, limit = risk_rejection

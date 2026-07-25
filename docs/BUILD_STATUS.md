@@ -8,9 +8,12 @@
   snapshots, own-order queue priority initialized from the first market
   snapshot at venue arrival or first observable touch, aggressive-limit
   residual transitions into observable passive queues, depth-constrained
-  passive price-through fills, liquidity-shortfall and residual-inventory
-  evidence, and tests. Unchanged snapshots do not restore consumed depth; only
-  an observed size increase replenishes its delta, while a price or
+  passive price-through fills, strict venue admission for configured lot and
+  tick sizes, liquidity-shortfall and residual-inventory evidence, and tests.
+  Invalid order intents are rejected before they receive an order ID or affect
+  queue/OTR counters, with rejection totals carried through replay, proof,
+  walk-forward, and sweep evidence. Unchanged snapshots do not restore consumed
+  depth; only an observed size increase replenishes its delta, while a price or
   timestamp-day change starts a fresh level.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local

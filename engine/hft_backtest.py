@@ -600,6 +600,57 @@ def _limit_book_relation(order: Order, tick: dict) -> str:
     return "away_from_touch"
 
 
+VENUE_ORDER_REJECTION_REASONS = frozenset(
+    {
+        "quantity_not_lot_multiple",
+        "invalid_order_price",
+        "price_not_tick_aligned",
+    }
+)
+
+
+def _quantize_price(price: float, tick: float) -> float:
+    return round(round(price / tick) * tick, 10)
+
+
+def _validate_venue_order_metadata(inst: Instrument) -> None:
+    if (
+        isinstance(inst.lot_size, bool)
+        or not isinstance(inst.lot_size, (int, np.integer))
+        or inst.lot_size <= 0
+    ):
+        raise ValueError("instrument lot_size must be a positive integer")
+    try:
+        tick = float(inst.tick)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("instrument tick must be positive and finite") from exc
+    if not math.isfinite(tick) or tick <= 0:
+        raise ValueError("instrument tick must be positive and finite")
+    inst.lot_size = int(inst.lot_size)
+    inst.tick = tick
+
+
+def _venue_order_rejection(
+    inst: Instrument,
+    qty: int,
+    price: float,
+) -> tuple[str, float] | None:
+    if qty % inst.lot_size != 0:
+        return "quantity_not_lot_multiple", float(inst.lot_size)
+    if not math.isfinite(price) or price <= 0:
+        return "invalid_order_price", float("nan")
+    tick_ratio = price / inst.tick
+    if not math.isfinite(tick_ratio):
+        return "invalid_order_price", float("nan")
+    quantized = _quantize_price(price, inst.tick)
+    if quantized <= 0:
+        return "invalid_order_price", float("nan")
+    tolerance = max(1e-9, abs(inst.tick) * 1e-9)
+    if not math.isclose(price, quantized, rel_tol=0.0, abs_tol=tolerance):
+        return "price_not_tick_aligned", float(inst.tick)
+    return None
+
+
 # ----------------------------------------------------------------------------
 # Strategy interface
 # ----------------------------------------------------------------------------
@@ -625,6 +676,7 @@ class BacktestEngine:
                  ban_aggressive_self_cross: bool = True,
                  reserve_open_order_risk: bool = True,
                  persist_displayed_liquidity_depletion: bool = True):
+        _validate_venue_order_metadata(inst)
         self.df = self._prep(df)
         self.inst = inst
         self.strategy = strategy
@@ -649,6 +701,7 @@ class BacktestEngine:
         self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
+        self.venue_order_validation_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -681,11 +734,33 @@ class BacktestEngine:
              otype: OrderType = OrderType.LIMIT) -> Optional[int]:
         if side not in (-1, 1):
             raise ValueError("side must be +1 buy or -1 sell")
+        if isinstance(qty, bool) or not isinstance(qty, (int, np.integer)):
+            raise ValueError("qty must be an integer")
         if qty <= 0:
             raise ValueError("qty must be positive")
 
-        price = round(round(price / self.inst.tick) * self.inst.tick, 10)
+        try:
+            price = float(price)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("price must be numeric") from exc
         now = int(self._tick["ts"])
+        venue_rejection = _venue_order_rejection(self.inst, qty, price)
+        if venue_rejection is not None:
+            reason, limit = venue_rejection
+            self._reject(
+                ts_ns=now,
+                side=side,
+                qty=qty,
+                price=price,
+                otype=otype,
+                reason=reason,
+                projected_min=self.position,
+                projected_max=self.position,
+                limit=limit,
+            )
+            return None
+
+        price = _quantize_price(price, self.inst.tick)
         projected_min, projected_max = self._position_envelope(side, qty)
         if projected_min < -self.max_pos or projected_max > self.max_pos:
             self._reject(
@@ -1684,8 +1759,14 @@ class InventoryMMStrategy(Strategy):
         e.cancel_all()
         inv_lots = e.position / e.inst.lot_size
         skew = self.skew * inv_lots * e.inst.tick     # long inventory -> quote lower
-        bid_px = micro - self.hs * e.inst.tick - skew
-        ask_px = micro + self.hs * e.inst.tick - skew
+        bid_px = _quantize_price(
+            micro - self.hs * e.inst.tick - skew,
+            e.inst.tick,
+        )
+        ask_px = _quantize_price(
+            micro + self.hs * e.inst.tick - skew,
+            e.inst.tick,
+        )
         q = self.lots * e.inst.lot_size
         if inv_lots < self.max_inv:
             self.bid_oid = e.send(+1, q, bid_px, OrderType.LIMIT)
