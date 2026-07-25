@@ -64,4 +64,18 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "signals.csv").exists()
     assert (out_dir / "legging.csv").exists()
+    assert (out_dir / "input_quarantine.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    input_quarantine = pd.read_csv(out_dir / "input_quarantine.csv")
+    assert input_quarantine["dataset"].tolist() == ["chain", "futures"]
+    assert input_quarantine["dataset_type"].tolist() == [
+        "option_chain",
+        "l1_ticks",
+    ]
+    summary = replay.summary.iloc[0]
+    assert bool(summary["input_quarantine_tracking_enabled"])
+    assert int(summary["input_dataset_count"]) == 2
+    assert int(summary["input_total_rows"]) == 4
+    assert int(summary["input_kept_rows"]) == 4
+    assert int(summary["input_integrity_dropped_rows"]) == 0
+    assert int(summary["input_empty_datasets"]) == 0

@@ -25,6 +25,14 @@ KNOWN_NON_PARAM_COLUMNS = {
     "order_to_trade_ratio",
     "otr_limit",
     "otr_breached",
+    "input_quarantine_tracking_enabled",
+    "input_dataset_count",
+    "input_total_rows",
+    "input_kept_rows",
+    "input_dropped_rows",
+    "input_integrity_dropped_rows",
+    "input_session_filtered_rows",
+    "input_empty_datasets",
     "pending_order_risk_reservation_enabled",
     "aggressive_self_cross_prevention_enabled",
     "venue_order_validation_enabled",
@@ -247,6 +255,40 @@ def _score_scenarios(
         net_pnl = _numeric(group, "net_pnl")
         robust_score = _numeric(group, "robust_score")
         fills = _numeric(group, "fills")
+        input_quarantine_tracking_enabled = _bool_series(
+            group.get(
+                "input_quarantine_tracking_enabled",
+                pd.Series(False, index=group.index),
+            )
+        )
+        input_dataset_count = _numeric(
+            group,
+            "input_dataset_count",
+        ).fillna(0.0)
+        input_total_rows = _numeric(
+            group,
+            "input_total_rows",
+        ).fillna(0.0)
+        input_kept_rows = _numeric(
+            group,
+            "input_kept_rows",
+        ).fillna(0.0)
+        input_dropped_rows = _numeric(
+            group,
+            "input_dropped_rows",
+        ).fillna(0.0)
+        input_integrity_dropped_rows = _numeric(
+            group,
+            "input_integrity_dropped_rows",
+        ).fillna(0.0)
+        input_session_filtered_rows = _numeric(
+            group,
+            "input_session_filtered_rows",
+        ).fillna(0.0)
+        input_empty_datasets = _numeric(
+            group,
+            "input_empty_datasets",
+        ).fillna(0.0)
         pretrade_rejections = _numeric(group, "pretrade_rejections").fillna(0.0)
         venue_rule_rejections = _numeric(
             group,
@@ -451,6 +493,22 @@ def _score_scenarios(
                 "worst_drawdown": worst_drawdown,
                 "median_fills": float(fills.median(skipna=True)),
                 "min_fills": float(fills.min(skipna=True)),
+                "input_quarantine_tracking_enabled_runs": int(
+                    input_quarantine_tracking_enabled.sum()
+                ),
+                "total_input_datasets": int(input_dataset_count.sum()),
+                "total_input_rows": int(input_total_rows.sum()),
+                "total_input_kept_rows": int(input_kept_rows.sum()),
+                "total_input_dropped_rows": int(input_dropped_rows.sum()),
+                "total_input_integrity_dropped_rows": int(
+                    input_integrity_dropped_rows.sum()
+                ),
+                "total_input_session_filtered_rows": int(
+                    input_session_filtered_rows.sum()
+                ),
+                "total_input_empty_datasets": int(
+                    input_empty_datasets.sum()
+                ),
                 "total_pretrade_rejections": int(pretrade_rejections.sum()),
                 "total_venue_rule_rejections": int(
                     venue_rule_rejections.sum()
@@ -614,6 +672,14 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "best_median_net_pnl": np.nan,
                     "best_worst_drawdown": np.nan,
                     "total_runs": int(len(scenario_runs)),
+                    "input_quarantine_tracking_enabled_runs": 0,
+                    "total_input_datasets": 0,
+                    "total_input_rows": 0,
+                    "total_input_kept_rows": 0,
+                    "total_input_dropped_rows": 0,
+                    "total_input_integrity_dropped_rows": 0,
+                    "total_input_session_filtered_rows": 0,
+                    "total_input_empty_datasets": 0,
                     "total_pretrade_rejections": 0,
                     "total_venue_rule_rejections": 0,
                     "total_position_risk_rejections": 0,
@@ -674,6 +740,55 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                 "best_median_net_pnl": float(best["median_net_pnl"]),
                 "best_worst_drawdown": float(best["worst_drawdown"]),
                 "total_runs": int(len(scenario_runs)),
+                "input_quarantine_tracking_enabled_runs": int(
+                    _bool_series(
+                        scenario_runs.get(
+                            "input_quarantine_tracking_enabled",
+                            pd.Series(False, index=scenario_runs.index),
+                        )
+                    ).sum()
+                ),
+                "total_input_datasets": int(
+                    _numeric(scenario_runs, "input_dataset_count")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_input_rows": int(
+                    _numeric(scenario_runs, "input_total_rows")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_input_kept_rows": int(
+                    _numeric(scenario_runs, "input_kept_rows")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_input_dropped_rows": int(
+                    _numeric(scenario_runs, "input_dropped_rows")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_input_integrity_dropped_rows": int(
+                    _numeric(
+                        scenario_runs,
+                        "input_integrity_dropped_rows",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_input_session_filtered_rows": int(
+                    _numeric(
+                        scenario_runs,
+                        "input_session_filtered_rows",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_input_empty_datasets": int(
+                    _numeric(scenario_runs, "input_empty_datasets")
+                    .fillna(0.0)
+                    .sum()
+                ),
                 "total_pretrade_rejections": int(
                     _numeric(scenario_runs, "pretrade_rejections")
                     .fillna(0.0)

@@ -177,6 +177,24 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert report.output_dir == out_dir
     assert int(report.summary.loc[0, "fold_count"]) == 2
     assert int(report.summary.loc[0, "proof_passed_folds"]) == 2
+    assert report.folds["input_quarantine_tracking_enabled"].all()
+    assert int(
+        report.summary.loc[
+            0,
+            "input_quarantine_tracking_enabled_folds",
+        ]
+    ) == 2
+    assert int(report.summary.loc[0, "total_input_datasets"]) == 4
+    assert int(report.summary.loc[0, "total_input_rows"]) == 20
+    assert int(report.summary.loc[0, "total_input_kept_rows"]) == 20
+    assert int(report.summary.loc[0, "total_input_dropped_rows"]) == 0
+    assert int(
+        report.summary.loc[0, "total_input_integrity_dropped_rows"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_input_session_filtered_rows"]
+    ) == 0
+    assert int(report.summary.loc[0, "total_input_empty_datasets"]) == 0
     assert report.folds["pending_order_risk_reservation_enabled"].all()
     assert report.folds["aggressive_self_cross_prevention_enabled"].all()
     assert report.folds["venue_order_validation_enabled"].all()
@@ -311,6 +329,24 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert config["ready"]
     assert config["source_run_type"] == "leadlag_replay_walkforward"
     assert config["replay_defaults"]["trigger_ticks"] == 10.0
+    assert (
+        config["replay_walkforward"][
+            "input_quarantine_tracking_enabled_folds"
+        ]
+        == 2
+    )
+    assert config["replay_walkforward"]["total_input_datasets"] == 4
+    assert config["replay_walkforward"]["total_input_rows"] == 20
+    assert (
+        config["replay_walkforward"][
+            "total_input_integrity_dropped_rows"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"]["total_input_empty_datasets"]
+        == 0
+    )
     assert config["replay_walkforward"]["pending_order_risk_reservation_enabled_folds"] == 2
     assert config["replay_walkforward"]["aggressive_self_cross_prevention_enabled_folds"] == 2
     assert config["replay_walkforward"]["venue_order_validation_enabled_folds"] == 2

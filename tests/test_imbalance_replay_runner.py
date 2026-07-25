@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.proof import evaluate_replay_dirs
 from strategies.run_imbalance_replay import run_imbalance_replay
 
 
@@ -133,6 +134,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "signals.csv").exists()
     assert (out_dir / "markouts.csv").exists()
+    assert (out_dir / "input_quarantine.csv").exists()
     assert (out_dir / "pnl_decomposition.csv").exists()
     assert (out_dir / "spread_pairs.csv").exists()
     assert (out_dir / "spread_summary.csv").exists()
@@ -188,6 +190,19 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
         "complete",
     }.issubset(passive_price_throughs.columns)
     summary = replay.summary.iloc[0]
+    input_quarantine = pd.read_csv(out_dir / "input_quarantine.csv")
+    assert input_quarantine["dataset"].tolist() == ["ticks"]
+    assert input_quarantine["dataset_type"].tolist() == ["l1_ticks"]
+    assert int(input_quarantine.loc[0, "integrity_dropped_rows"]) == 0
+    assert int(input_quarantine.loc[0, "session_filtered_rows"]) == 0
+    assert bool(summary["input_quarantine_tracking_enabled"])
+    assert int(summary["input_dataset_count"]) == 1
+    assert int(summary["input_total_rows"]) == 4
+    assert int(summary["input_kept_rows"]) == 4
+    assert int(summary["input_dropped_rows"]) == 0
+    assert int(summary["input_integrity_dropped_rows"]) == 0
+    assert int(summary["input_session_filtered_rows"]) == 0
+    assert int(summary["input_empty_datasets"]) == 0
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
     assert bool(summary["venue_order_validation_enabled"])
@@ -237,6 +252,48 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert int(summary["venue_rule_rejections"]) == 0
     assert int(summary["position_risk_rejections"]) == 0
     assert int(summary["self_cross_rejections"]) == 0
+
+
+def test_imbalance_replay_exposes_quarantined_integrity_rows(tmp_path):
+    ticks_path = tmp_path / "ticks_with_crossed_row.csv"
+    out_dir = tmp_path / "imbalance_replay"
+    source = imbalance_ticks()
+    source.loc[len(source)] = {
+        "ts": ns_ist("2026-06-10 09:15:00.000400"),
+        "bid": 101.00,
+        "ask": 100.00,
+        "bid_qty": 100,
+        "ask_qty": 100,
+    }
+    source.to_csv(ticks_path, index=False)
+
+    replay = run_imbalance_replay(
+        ticks_path=ticks_path,
+        output_dir=out_dir,
+        tick_size=0.05,
+        qty=75,
+        entry_imbalance=0.6,
+        exit_imbalance=0.15,
+        min_microprice_edge_ticks=0.25,
+        hold_ns=1_000_000,
+        cooloff_ns=1_000_000,
+    )
+
+    summary = replay.summary.iloc[0]
+    quarantine = replay.input_quarantine.iloc[0]
+    assert int(quarantine["dropped_crossed_quote_rows"]) == 1
+    assert int(quarantine["integrity_dropped_rows"]) == 1
+    assert int(summary["input_total_rows"]) == 5
+    assert int(summary["input_kept_rows"]) == 4
+    assert int(summary["input_dropped_rows"]) == 1
+    assert int(summary["input_integrity_dropped_rows"]) == 1
+    assert int(summary["input_session_filtered_rows"]) == 0
+    proof = evaluate_replay_dirs([out_dir])
+    failed = proof.checks.loc[~proof.checks["passed"].astype(bool)]
+    assert not proof.passed
+    assert failed["check"].tolist() == [
+        "input_integrity_dropped_rows"
+    ]
 
 
 def test_imbalance_replay_audits_inflight_position_rejections(tmp_path):
@@ -380,3 +437,8 @@ def test_cli_imbalance_replay_inherits_us_market_and_tick_size_from_candidate(tm
     assert manifest["parameters"]["market"] == "us_equities_regular"
     assert manifest["parameters"]["tick_size"] == 0.01
     assert manifest["parameters"]["generic_costs"]["per_order_fee"] == 0.01
+    assert int(summary.loc[0, "input_total_rows"]) == 5
+    assert int(summary.loc[0, "input_kept_rows"]) == 4
+    assert int(summary.loc[0, "input_dropped_rows"]) == 1
+    assert int(summary.loc[0, "input_integrity_dropped_rows"]) == 0
+    assert int(summary.loc[0, "input_session_filtered_rows"]) == 1

@@ -12,7 +12,11 @@ from engine.costs import GenericCostModel
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel
 from engine.multi_engine import InstrumentConfig, MultiBacktestResult, MultiInstrumentEngine, VenueConfig
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.replay import replay_summary, write_replay_outputs
+from reports.replay import (
+    input_quarantine_frame,
+    replay_summary,
+    write_replay_outputs,
+)
 from research.markouts import compute_markouts
 from strategies.microprice_imbalance import MicropriceImbalanceConfig, MicropriceImbalanceStrategy
 
@@ -23,6 +27,7 @@ class ImbalanceReplayResult:
     signals: pd.DataFrame
     summary: pd.DataFrame
     markouts: pd.DataFrame
+    input_quarantine: pd.DataFrame
     output_dir: Path | None = None
 
 
@@ -56,13 +61,18 @@ def run_imbalance_replay(
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
 ) -> ImbalanceReplayResult:
-    ticks = load_tick_csv(
+    normalized_ticks = load_tick_csv(
         ticks_path,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
         market=market,
-    ).data
+    )
+    ticks = normalized_ticks.data
+    input_quarantine = input_quarantine_frame(
+        {"ticks": normalized_ticks.quarantine},
+        dataset_types={"ticks": "l1_ticks"},
+    )
     kind = _kind(instrument_kind)
     venue = _venue(market)
     strategy = MicropriceImbalanceStrategy(
@@ -112,7 +122,11 @@ def run_imbalance_replay(
     )
     result = engine.run()
     strategy_orders = strategy.entry_orders + strategy.exit_orders
-    summary = replay_summary(result, strategy_orders=strategy_orders)
+    summary = replay_summary(
+        result,
+        strategy_orders=strategy_orders,
+        input_quarantine=input_quarantine,
+    )
     signals = pd.DataFrame(strategy.signals)
     strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy_orders)] if not result.fills.empty else result.fills
     markouts = (
@@ -132,7 +146,11 @@ def run_imbalance_replay(
             output_dir=out_dir,
             summary=summary,
             strategy_order_ids=strategy_orders,
-            extra_frames={"signals": signals, "markouts": markouts},
+            extra_frames={
+                "signals": signals,
+                "markouts": markouts,
+                "input_quarantine": input_quarantine,
+            },
             manifest_run_type="imbalance_replay",
             manifest_inputs={"ticks": ticks_path},
             manifest_parameters={
@@ -165,7 +183,14 @@ def run_imbalance_replay(
                 "markout_horizons_ns": markout_horizons_ns or [100_000_000, 1_000_000_000],
             },
         )
-    return ImbalanceReplayResult(result, signals, summary, markouts, out_dir)
+    return ImbalanceReplayResult(
+        result=result,
+        signals=signals,
+        summary=summary,
+        markouts=markouts,
+        input_quarantine=input_quarantine,
+        output_dir=out_dir,
+    )
 
 
 def _kind(value: str) -> Kind:

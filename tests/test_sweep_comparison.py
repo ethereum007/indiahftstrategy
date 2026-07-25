@@ -23,6 +23,14 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "max_drawdown": 2.0,
             "losing_regimes": 0,
             "worst_regime_equity_change": 3.0,
+            "input_quarantine_tracking_enabled": True,
+            "input_dataset_count": 1,
+            "input_total_rows": 10,
+            "input_kept_rows": 9,
+            "input_dropped_rows": 1,
+            "input_integrity_dropped_rows": 0,
+            "input_session_filtered_rows": 1,
+            "input_empty_datasets": 0,
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
@@ -74,6 +82,14 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "max_drawdown": 4.0,
             "losing_regimes": 1,
             "worst_regime_equity_change": -1.0,
+            "input_quarantine_tracking_enabled": True,
+            "input_dataset_count": 1,
+            "input_total_rows": 10,
+            "input_kept_rows": 9,
+            "input_dropped_rows": 1,
+            "input_integrity_dropped_rows": 1,
+            "input_session_filtered_rows": 0,
+            "input_empty_datasets": 0,
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
@@ -146,6 +162,15 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_venue_rule_rejections"]) == 0
     assert int(best["total_position_risk_rejections"]) == 0
     assert int(best["total_self_cross_rejections"]) == 0
+    assert int(best["input_quarantine_tracking_enabled_runs"]) == 2
+    assert int(best["total_input_datasets"]) == 2
+    assert int(best["total_input_rows"]) == 20
+    assert int(best["total_input_kept_rows"]) == 18
+    assert int(best["total_input_dropped_rows"]) == 2
+    assert int(best["total_input_integrity_dropped_rows"]) == 0
+    assert int(best["total_input_session_filtered_rows"]) == 2
+    assert int(best["total_input_empty_datasets"]) == 0
+    assert int(weak["total_input_integrity_dropped_rows"]) == 2
     assert int(best["order_horizon_tracking_enabled_runs"]) == 2
     assert int(best["total_open_orders_at_replay_end"]) == 0
     assert int(best["total_open_order_qty_at_replay_end"]) == 0
@@ -177,6 +202,28 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(comparison.summary.iloc[0]["total_pretrade_rejections"]) == 0
     assert int(
         comparison.summary.iloc[0]["total_venue_rule_rejections"]
+    ) == 0
+    assert int(
+        comparison.summary.iloc[0][
+            "input_quarantine_tracking_enabled_runs"
+        ]
+    ) == 4
+    assert int(comparison.summary.iloc[0]["total_input_datasets"]) == 4
+    assert int(comparison.summary.iloc[0]["total_input_rows"]) == 40
+    assert int(comparison.summary.iloc[0]["total_input_kept_rows"]) == 36
+    assert int(comparison.summary.iloc[0]["total_input_dropped_rows"]) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_input_integrity_dropped_rows"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_input_session_filtered_rows"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0]["total_input_empty_datasets"]
     ) == 0
     assert int(
         comparison.summary.iloc[0]["order_horizon_tracking_enabled_runs"]

@@ -70,6 +70,7 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert (out_dir / "fills_by_regime.csv").exists()
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "markouts.csv").exists()
+    assert (out_dir / "input_quarantine.csv").exists()
     assert (out_dir / "manifest.json").exists()
     summary = pd.read_csv(out_dir / "summary.csv")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -77,6 +78,14 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert manifest["parameters"]["strategy"] == "lead_lag_taker"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    input_quarantine = pd.read_csv(out_dir / "input_quarantine.csv")
+    assert input_quarantine["dataset"].tolist() == ["leader", "laggard"]
+    assert bool(summary.loc[0, "input_quarantine_tracking_enabled"])
+    assert int(summary.loc[0, "input_dataset_count"]) == 2
+    assert int(summary.loc[0, "input_total_rows"]) == 10
+    assert int(summary.loc[0, "input_kept_rows"]) == 10
+    assert int(summary.loc[0, "input_integrity_dropped_rows"]) == 0
+    assert int(summary.loc[0, "input_empty_datasets"]) == 0
     assert bool(summary.loc[0, "terminal_liquidation_depth_constrained_enabled"])
     assert bool(summary.loc[0, "terminal_liquidation_complete"])
     assert int(summary.loc[0, "terminal_residual_position_qty"]) == 0

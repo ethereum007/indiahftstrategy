@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
+from typing import Mapping
 
 import pandas as pd
 
@@ -13,11 +15,105 @@ from reports.spread import pair_round_trips, residual_inventory, spread_capture_
 from risk.compliance import check_order_to_trade_ratio
 
 
+INPUT_INTEGRITY_DROP_COLUMNS = [
+    "dropped_null_rows",
+    "dropped_nonfinite_rows",
+    "dropped_nonintegral_rows",
+    "dropped_duplicate_rows",
+    "dropped_integer_overflow_rows",
+    "dropped_negative_depth_rows",
+    "dropped_invalid_trade_rows",
+    "dropped_nonpositive_strike_rows",
+    "dropped_nonpositive_quote_rows",
+    "dropped_crossed_quote_rows",
+    "dropped_nonmonotonic_rows",
+]
+INPUT_SESSION_FILTER_COLUMNS = [
+    "dropped_non_trading_day_rows",
+    "dropped_out_of_session_rows",
+]
+INPUT_QUARANTINE_DIAGNOSTIC_COLUMNS = [
+    "dropped_calendar_closed_rows",
+    "dropped_calendar_out_of_range_rows",
+]
+INPUT_QUARANTINE_COLUMNS = [
+    "dataset",
+    "dataset_type",
+    "total_rows",
+    "kept_rows",
+    "dropped_rows",
+    "integrity_dropped_rows",
+    "session_filtered_rows",
+    "unclassified_dropped_rows",
+    "empty_after_normalization",
+    *INPUT_INTEGRITY_DROP_COLUMNS,
+    *INPUT_SESSION_FILTER_COLUMNS,
+    *INPUT_QUARANTINE_DIAGNOSTIC_COLUMNS,
+]
+
+
+def input_quarantine_frame(
+    reports: Mapping[str, object],
+    *,
+    dataset_types: Mapping[str, str] | None = None,
+) -> pd.DataFrame:
+    rows = []
+    for dataset, report in reports.items():
+        if not is_dataclass(report):
+            raise TypeError(
+                "input quarantine reports must be dataclass instances"
+            )
+        values = asdict(report)
+        total_rows = int(values.get("total_rows", 0))
+        kept_rows = int(values.get("kept_rows", 0))
+        dropped_rows = max(total_rows - kept_rows, 0)
+        drops = {
+            column: int(values.get(column, 0))
+            for column in (
+                INPUT_INTEGRITY_DROP_COLUMNS
+                + INPUT_SESSION_FILTER_COLUMNS
+                + INPUT_QUARANTINE_DIAGNOSTIC_COLUMNS
+            )
+        }
+        classified_integrity = sum(
+            drops[column]
+            for column in INPUT_INTEGRITY_DROP_COLUMNS
+        )
+        session_filtered = sum(
+            drops[column]
+            for column in INPUT_SESSION_FILTER_COLUMNS
+        )
+        unclassified = max(
+            dropped_rows - classified_integrity - session_filtered,
+            0,
+        )
+        rows.append(
+            {
+                "dataset": str(dataset),
+                "dataset_type": str(
+                    (dataset_types or {}).get(dataset, "unknown")
+                ),
+                "total_rows": total_rows,
+                "kept_rows": kept_rows,
+                "dropped_rows": dropped_rows,
+                "integrity_dropped_rows": (
+                    classified_integrity + unclassified
+                ),
+                "session_filtered_rows": session_filtered,
+                "unclassified_dropped_rows": unclassified,
+                "empty_after_normalization": kept_rows == 0,
+                **drops,
+            }
+        )
+    return pd.DataFrame(rows, columns=INPUT_QUARANTINE_COLUMNS)
+
+
 def replay_summary(
     result: MultiBacktestResult,
     *,
     otr_limit: float = 50.0,
     strategy_orders: list[int] | None = None,
+    input_quarantine: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     fills = result.fills
     strategy_fills = fills
@@ -207,6 +303,33 @@ def replay_summary(
         terminal_shortfall_qty.gt(0)
         | terminal_residual_positions.ne(0)
     )
+    input_quarantine_tracking_enabled = input_quarantine is not None
+    input_quarantine = (
+        input_quarantine
+        if input_quarantine is not None
+        else pd.DataFrame(columns=INPUT_QUARANTINE_COLUMNS)
+    )
+    input_total_rows = _numeric_sum(input_quarantine, "total_rows")
+    input_kept_rows = _numeric_sum(input_quarantine, "kept_rows")
+    input_dropped_rows = _numeric_sum(input_quarantine, "dropped_rows")
+    input_integrity_dropped_rows = _numeric_sum(
+        input_quarantine,
+        "integrity_dropped_rows",
+    )
+    input_session_filtered_rows = _numeric_sum(
+        input_quarantine,
+        "session_filtered_rows",
+    )
+    input_empty_datasets = (
+        int(
+            input_quarantine["empty_after_normalization"]
+            .fillna(False)
+            .astype(bool)
+            .sum()
+        )
+        if "empty_after_normalization" in input_quarantine.columns
+        else 0
+    )
     otr = check_order_to_trade_ratio(
         orders_sent=result.engine.orders_sent,
         fills=fill_count,
@@ -224,6 +347,20 @@ def replay_summary(
                 "otr_breached": bool(otr.breached),
                 "turnover": turnover,
                 "maker_share": maker_share,
+                "input_quarantine_tracking_enabled": bool(
+                    input_quarantine_tracking_enabled
+                ),
+                "input_dataset_count": int(len(input_quarantine)),
+                "input_total_rows": input_total_rows,
+                "input_kept_rows": input_kept_rows,
+                "input_dropped_rows": input_dropped_rows,
+                "input_integrity_dropped_rows": (
+                    input_integrity_dropped_rows
+                ),
+                "input_session_filtered_rows": (
+                    input_session_filtered_rows
+                ),
+                "input_empty_datasets": input_empty_datasets,
                 "pending_order_risk_reservation_enabled": bool(
                     result.engine.reserve_open_order_risk
                 ),
@@ -423,6 +560,16 @@ def replay_summary(
                 "portfolio_vega": float(result.engine.portfolio_vega()),
             }
         ]
+    )
+
+
+def _numeric_sum(frame: pd.DataFrame, column: str) -> int:
+    if column not in frame.columns or frame.empty:
+        return 0
+    return int(
+        pd.to_numeric(frame[column], errors="coerce")
+        .fillna(0)
+        .sum()
     )
 
 

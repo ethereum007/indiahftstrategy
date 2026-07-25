@@ -872,8 +872,20 @@ Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
 `order_cancellations.csv`, `order_horizon_states.csv`,
-`liquidity_shortfalls.csv`, `queue_initializations.csv`, and
-`terminal_liquidations.csv`.
+`input_quarantine.csv`, `liquidity_shortfalls.csv`,
+`queue_initializations.csv`, and `terminal_liquidations.csv`.
+
+`input_quarantine.csv` retains one row per source dataset before the engine
+sees it. It records raw and kept rows, all loader quarantine reasons, rows
+removed only by calendar/session policy, rows requiring integrity repair, and
+whether normalization left the dataset empty. Exact duplicate L1 packets and
+option-chain snapshots are quarantined consistently. `summary.csv` aggregates
+dataset and row counts while preserving the distinction between expected
+session filtering and malformed, non-monotonic, crossed, duplicate, or
+otherwise invalid input. Proof permits session exclusions, but rejects any
+integrity-repaired row, an empty tracked dataset set, or a source left empty
+after normalization. Walk-forward candidates, strategy sweeps, and cross-sweep
+comparisons retain the same evidence.
 
 All shared-clock replays reserve the remaining quantity of live and
 cancel-pending orders when applying instrument position, portfolio gross

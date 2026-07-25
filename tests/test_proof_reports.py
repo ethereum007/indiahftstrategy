@@ -44,6 +44,14 @@ def write_run(
                 "order_to_trade_ratio": otr,
                 "otr_limit": 50.0,
                 "otr_breached": otr_breached,
+                "input_quarantine_tracking_enabled": True,
+                "input_dataset_count": 1,
+                "input_total_rows": 20,
+                "input_kept_rows": 18,
+                "input_dropped_rows": 2,
+                "input_integrity_dropped_rows": 0,
+                "input_session_filtered_rows": 2,
+                "input_empty_datasets": 0,
                 "pending_order_risk_reservation_enabled": True,
                 "aggressive_self_cross_prevention_enabled": True,
                 "venue_order_validation_enabled": True,
@@ -189,6 +197,20 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
         report.metrics.iloc[0]["cancel_pending_at_replay_end_events"]
     ) == 0
     assert int(report.metrics.iloc[0]["cancel_inflight_filled_qty"]) == 75
+    assert bool(
+        report.metrics.iloc[0]["input_quarantine_tracking_enabled"]
+    )
+    assert int(report.metrics.iloc[0]["input_dataset_count"]) == 1
+    assert int(report.metrics.iloc[0]["input_total_rows"]) == 20
+    assert int(report.metrics.iloc[0]["input_kept_rows"]) == 18
+    assert int(report.metrics.iloc[0]["input_dropped_rows"]) == 2
+    assert int(
+        report.metrics.iloc[0]["input_integrity_dropped_rows"]
+    ) == 0
+    assert int(
+        report.metrics.iloc[0]["input_session_filtered_rows"]
+    ) == 2
+    assert int(report.metrics.iloc[0]["input_empty_datasets"]) == 0
     assert bool(report.metrics.iloc[0]["order_horizon_tracking_enabled"])
     assert int(report.metrics.iloc[0]["open_orders_at_replay_end"]) == 0
     assert int(report.metrics.iloc[0]["open_order_qty_at_replay_end"]) == 0
@@ -320,6 +342,67 @@ def test_proof_report_rejects_orders_live_beyond_replay_horizon(tmp_path):
     assert failed["check"].tolist() == ["open_orders_at_replay_end"]
     assert failed.iloc[0]["reason"] == (
         "1 order(s) remained live beyond the replay evidence horizon"
+    )
+
+
+def test_proof_report_rejects_input_integrity_repairs(tmp_path):
+    run_dir = tmp_path / "input_repairs"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "input_dropped_rows"] = 2
+    summary.loc[0, "input_integrity_dropped_rows"] = 2
+    summary.loc[0, "input_session_filtered_rows"] = 0
+    summary.to_csv(summary_path, index=False)
+
+    report = evaluate_replay_dirs([run_dir])
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.passed
+    assert failed["check"].tolist() == [
+        "input_integrity_dropped_rows"
+    ]
+    assert failed.iloc[0]["reason"] == (
+        "2 input row(s) required integrity repair before replay"
+    )
+
+
+def test_proof_report_rejects_enabled_input_tracking_without_datasets(tmp_path):
+    run_dir = tmp_path / "no_tracked_input"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "input_dataset_count"] = 0
+    summary.to_csv(summary_path, index=False)
+
+    report = evaluate_replay_dirs([run_dir])
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.passed
+    assert failed["check"].tolist() == ["input_dataset_count"]
+    assert failed.iloc[0]["reason"] == (
+        "input quarantine tracking contains no datasets"
+    )
+
+
+def test_proof_report_rejects_empty_normalized_input(tmp_path):
+    run_dir = tmp_path / "empty_normalized_input"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "input_kept_rows"] = 0
+    summary.loc[0, "input_dropped_rows"] = 20
+    summary.loc[0, "input_session_filtered_rows"] = 20
+    summary.loc[0, "input_empty_datasets"] = 1
+    summary.to_csv(summary_path, index=False)
+
+    report = evaluate_replay_dirs([run_dir])
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.passed
+    assert failed["check"].tolist() == ["input_empty_datasets"]
+    assert failed.iloc[0]["reason"] == (
+        "1 input dataset(s) were empty after normalization"
     )
 
 

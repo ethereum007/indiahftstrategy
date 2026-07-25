@@ -11,7 +11,11 @@ from data.chains import load_option_chain_csv, normalize_option_chain
 from data.loaders import load_tick_csv
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel
 from engine.multi_engine import InstrumentConfig, MultiBacktestResult, MultiInstrumentEngine, VenueConfig
-from reports.replay import replay_summary, write_replay_outputs
+from reports.replay import (
+    input_quarantine_frame,
+    replay_summary,
+    write_replay_outputs,
+)
 from scanners.parity_box import ScannerCosts, ScannerInstruments, scan_parity
 from strategies.parity_arb import ParityArbConfig, ParityArbTakerStrategy, ParityLegMap
 
@@ -22,6 +26,7 @@ class ParityReplayResult:
     signals: pd.DataFrame
     summary: pd.DataFrame
     legging: pd.DataFrame
+    input_quarantine: pd.DataFrame
     output_dir: Path | None = None
 
 
@@ -45,18 +50,30 @@ def run_parity_replay(
     max_position_lots: int = 20,
     signal_limit: int | None = None,
 ) -> ParityReplayResult:
-    chain = load_option_chain_csv(
+    normalized_chain = load_option_chain_csv(
         chain_path,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
-    ).data
-    futures = load_tick_csv(
+    )
+    normalized_futures = load_tick_csv(
         futures_path,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
-    ).data
+    )
+    chain = normalized_chain.data
+    futures = normalized_futures.data
+    input_quarantine = input_quarantine_frame(
+        {
+            "chain": normalized_chain.quarantine,
+            "futures": normalized_futures.quarantine,
+        },
+        dataset_types={
+            "chain": "option_chain",
+            "futures": "l1_ticks",
+        },
+    )
 
     option = Instrument("INDEX-OPT", Kind.OPT, lot_size=lot_size, tick=option_tick)
     future = Instrument("INDEX-FUT", Kind.FUT, lot_size=lot_size, tick=future_tick)
@@ -105,7 +122,11 @@ def run_parity_replay(
     )
     result = engine.run()
     strategy_order_ids = [oid for execution in strategy.executions for oid in execution.order_ids]
-    summary = replay_summary(result, strategy_orders=strategy_order_ids)
+    summary = replay_summary(
+        result,
+        strategy_orders=strategy_order_ids,
+        input_quarantine=input_quarantine,
+    )
     legging = strategy.legging_report()
     out_dir = Path(output_dir) if output_dir else None
     if out_dir:
@@ -114,7 +135,11 @@ def run_parity_replay(
             output_dir=out_dir,
             summary=summary,
             strategy_order_ids=strategy_order_ids,
-            extra_frames={"signals": signals, "legging": legging},
+            extra_frames={
+                "signals": signals,
+                "legging": legging,
+                "input_quarantine": input_quarantine,
+            },
             manifest_run_type="parity_replay",
             manifest_inputs={"chain": chain_path, "futures": futures_path},
             manifest_parameters={
@@ -134,7 +159,14 @@ def run_parity_replay(
                 "signal_limit": signal_limit,
             },
         )
-    return ParityReplayResult(result, signals, summary, legging, out_dir)
+    return ParityReplayResult(
+        result=result,
+        signals=signals,
+        summary=summary,
+        legging=legging,
+        input_quarantine=input_quarantine,
+        output_dir=out_dir,
+    )
 
 
 def _build_instruments(

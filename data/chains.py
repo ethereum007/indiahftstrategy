@@ -49,6 +49,7 @@ class ChainQuarantineReport:
     dropped_null_rows: int = 0
     dropped_nonfinite_rows: int = 0
     dropped_nonintegral_rows: int = 0
+    dropped_duplicate_rows: int = 0
     dropped_integer_overflow_rows: int = 0
     dropped_nonpositive_strike_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
@@ -196,6 +197,13 @@ def normalize_option_chain(
         session_count = int((trading_days & ~session_times).sum())
         out = out.loc[trading_days & session_times].copy()
 
+    duplicate_mask = out.duplicated(
+        subset=CHAIN_COLUMNS,
+        keep="first",
+    )
+    duplicate_count = int(duplicate_mask.sum())
+    out = out.loc[~duplicate_mask].copy()
+
     if add_regime:
         out["regime"] = tag_regime(out["ts"], market=market)
 
@@ -209,6 +217,7 @@ def normalize_option_chain(
         dropped_null_rows=int(null_mask.sum()),
         dropped_nonfinite_rows=nonfinite_count,
         dropped_nonintegral_rows=nonintegral_count,
+        dropped_duplicate_rows=duplicate_count,
         dropped_integer_overflow_rows=integer_overflow_count,
         dropped_nonpositive_strike_rows=nonpositive_strike_count,
         dropped_nonpositive_quote_rows=nonpositive_quote_count,

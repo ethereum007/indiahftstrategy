@@ -281,6 +281,22 @@ def _fold_row(
         "order_to_trade_ratio": _float(row, "order_to_trade_ratio"),
         "otr_breached": _to_bool(row.get("otr_breached", False)),
         "maker_share": _float(row, "maker_share"),
+        "input_quarantine_tracking_enabled": _to_bool(
+            row.get("input_quarantine_tracking_enabled", False)
+        ),
+        "input_dataset_count": _int(row, "input_dataset_count"),
+        "input_total_rows": _int(row, "input_total_rows"),
+        "input_kept_rows": _int(row, "input_kept_rows"),
+        "input_dropped_rows": _int(row, "input_dropped_rows"),
+        "input_integrity_dropped_rows": _int(
+            row,
+            "input_integrity_dropped_rows",
+        ),
+        "input_session_filtered_rows": _int(
+            row,
+            "input_session_filtered_rows",
+        ),
+        "input_empty_datasets": _int(row, "input_empty_datasets"),
         "pending_order_risk_reservation_enabled": _to_bool(
             row.get("pending_order_risk_reservation_enabled", False)
         ),
@@ -534,6 +550,10 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     net_pnl = pd.to_numeric(folds.get("net_pnl", pd.Series(dtype=float)), errors="coerce")
     fills = pd.to_numeric(folds.get("fills", pd.Series(dtype=float)), errors="coerce")
+    input_quarantine_tracking_enabled = folds.get(
+        "input_quarantine_tracking_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     pending_risk_enabled = folds.get(
         "pending_order_risk_reservation_enabled",
         pd.Series(False, index=folds.index),
@@ -601,6 +621,44 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "min_net_pnl": float(net_pnl.min(skipna=True)),
                 "total_fills": int(fills.fillna(0).sum()),
                 "median_fills": float(fills.median(skipna=True)),
+                "input_quarantine_tracking_enabled_folds": int(
+                    input_quarantine_tracking_enabled.sum()
+                ),
+                "total_input_datasets": _numeric_reduce(
+                    folds,
+                    "input_dataset_count",
+                    "sum",
+                ),
+                "total_input_rows": _numeric_reduce(
+                    folds,
+                    "input_total_rows",
+                    "sum",
+                ),
+                "total_input_kept_rows": _numeric_reduce(
+                    folds,
+                    "input_kept_rows",
+                    "sum",
+                ),
+                "total_input_dropped_rows": _numeric_reduce(
+                    folds,
+                    "input_dropped_rows",
+                    "sum",
+                ),
+                "total_input_integrity_dropped_rows": _numeric_reduce(
+                    folds,
+                    "input_integrity_dropped_rows",
+                    "sum",
+                ),
+                "total_input_session_filtered_rows": _numeric_reduce(
+                    folds,
+                    "input_session_filtered_rows",
+                    "sum",
+                ),
+                "total_input_empty_datasets": _numeric_reduce(
+                    folds,
+                    "input_empty_datasets",
+                    "sum",
+                ),
                 "pending_order_risk_reservation_enabled_folds": int(
                     pending_risk_enabled.sum()
                 ),
@@ -919,6 +977,28 @@ def _candidate_config(
         "proof_pass_rate": _jsonable(summary.get("proof_pass_rate")),
         "total_net_pnl": _jsonable(summary.get("total_net_pnl")),
         "total_fills": _jsonable(summary.get("total_fills")),
+        "input_quarantine_tracking_enabled_folds": _jsonable(
+            summary.get("input_quarantine_tracking_enabled_folds")
+        ),
+        "total_input_datasets": _jsonable(
+            summary.get("total_input_datasets")
+        ),
+        "total_input_rows": _jsonable(summary.get("total_input_rows")),
+        "total_input_kept_rows": _jsonable(
+            summary.get("total_input_kept_rows")
+        ),
+        "total_input_dropped_rows": _jsonable(
+            summary.get("total_input_dropped_rows")
+        ),
+        "total_input_integrity_dropped_rows": _jsonable(
+            summary.get("total_input_integrity_dropped_rows")
+        ),
+        "total_input_session_filtered_rows": _jsonable(
+            summary.get("total_input_session_filtered_rows")
+        ),
+        "total_input_empty_datasets": _jsonable(
+            summary.get("total_input_empty_datasets")
+        ),
         "pending_order_risk_reservation_enabled_folds": _jsonable(
             summary.get("pending_order_risk_reservation_enabled_folds")
         ),

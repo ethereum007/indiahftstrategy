@@ -552,6 +552,22 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     total_costs = _float(row, "total_costs")
     maker_share = _float(row, "maker_share")
     otr = _float(row, "order_to_trade_ratio")
+    input_quarantine_tracking_enabled = _bool(
+        row.get("input_quarantine_tracking_enabled", False)
+    )
+    input_dataset_count = _int(row, "input_dataset_count")
+    input_total_rows = _int(row, "input_total_rows")
+    input_kept_rows = _int(row, "input_kept_rows")
+    input_dropped_rows = _int(row, "input_dropped_rows")
+    input_integrity_dropped_rows = _int(
+        row,
+        "input_integrity_dropped_rows",
+    )
+    input_session_filtered_rows = _int(
+        row,
+        "input_session_filtered_rows",
+    )
+    input_empty_datasets = _int(row, "input_empty_datasets")
     pending_order_risk_reservation_enabled = _bool(
         row.get("pending_order_risk_reservation_enabled", False)
     )
@@ -767,6 +783,16 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "maker_share": maker_share,
         "order_to_trade_ratio": otr,
         "otr_breached": _bool(row.get("otr_breached", False)),
+        "input_quarantine_tracking_enabled": (
+            input_quarantine_tracking_enabled
+        ),
+        "input_dataset_count": input_dataset_count,
+        "input_total_rows": input_total_rows,
+        "input_kept_rows": input_kept_rows,
+        "input_dropped_rows": input_dropped_rows,
+        "input_integrity_dropped_rows": input_integrity_dropped_rows,
+        "input_session_filtered_rows": input_session_filtered_rows,
+        "input_empty_datasets": input_empty_datasets,
         "pending_order_risk_reservation_enabled": (
             pending_order_risk_reservation_enabled
         ),
@@ -905,6 +931,61 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             "reason": "summary.csv reported an OTR breach" if bool(metrics["otr_breached"]) else "",
         },
     ]
+    if bool(metrics["input_quarantine_tracking_enabled"]):
+        dataset_count = int(metrics["input_dataset_count"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "input_dataset_count",
+                "value": dataset_count,
+                "operator": ">=",
+                "threshold": 1,
+                "passed": dataset_count >= 1,
+                "reason": (
+                    ""
+                    if dataset_count >= 1
+                    else "input quarantine tracking contains no datasets"
+                ),
+            }
+        )
+        integrity_drops = int(metrics["input_integrity_dropped_rows"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "input_integrity_dropped_rows",
+                "value": integrity_drops,
+                "operator": "==",
+                "threshold": 0,
+                "passed": integrity_drops == 0,
+                "reason": (
+                    ""
+                    if integrity_drops == 0
+                    else (
+                        f"{integrity_drops} input row(s) required "
+                        "integrity repair before replay"
+                    )
+                ),
+            }
+        )
+        empty_datasets = int(metrics["input_empty_datasets"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "input_empty_datasets",
+                "value": empty_datasets,
+                "operator": "==",
+                "threshold": 0,
+                "passed": empty_datasets == 0,
+                "reason": (
+                    ""
+                    if empty_datasets == 0
+                    else (
+                        f"{empty_datasets} input dataset(s) were empty "
+                        "after normalization"
+                    )
+                ),
+            }
+        )
     if bool(metrics["terminal_liquidation_depth_constrained_enabled"]):
         complete = bool(metrics["terminal_liquidation_complete"])
         rows.append(

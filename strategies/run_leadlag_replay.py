@@ -12,7 +12,11 @@ from engine.costs import GenericCostModel
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel
 from engine.multi_engine import InstrumentConfig, MultiBacktestResult, MultiInstrumentEngine, VenueConfig
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.replay import replay_summary, write_replay_outputs
+from reports.replay import (
+    input_quarantine_frame,
+    replay_summary,
+    write_replay_outputs,
+)
 from research.markouts import compute_markouts
 from strategies.leadlag_taker import LeadLagTakerConfig, LeadLagTakerStrategy
 
@@ -25,6 +29,7 @@ class LeadLagReplayResult:
     result: MultiBacktestResult
     summary: pd.DataFrame
     markouts: pd.DataFrame
+    input_quarantine: pd.DataFrame
     output_dir: Path | None = None
 
 
@@ -55,20 +60,32 @@ def run_leadlag_replay(
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
 ) -> LeadLagReplayResult:
-    leader = load_tick_csv(
+    normalized_leader = load_tick_csv(
         leader_path,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
         market=market,
-    ).data
-    laggard = load_tick_csv(
+    )
+    normalized_laggard = load_tick_csv(
         laggard_path,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
         market=market,
-    ).data
+    )
+    leader = normalized_leader.data
+    laggard = normalized_laggard.data
+    input_quarantine = input_quarantine_frame(
+        {
+            "leader": normalized_leader.quarantine,
+            "laggard": normalized_laggard.quarantine,
+        },
+        dataset_types={
+            "leader": "l1_ticks",
+            "laggard": "l1_ticks",
+        },
+    )
     venue = _venue(market)
     strategy = LeadLagTakerStrategy(
         LeadLagTakerConfig(
@@ -132,7 +149,11 @@ def run_leadlag_replay(
     )
     result = engine.run()
     strategy_orders = strategy.entry_orders + strategy.exit_orders
-    summary = replay_summary(result, strategy_orders=strategy_orders)
+    summary = replay_summary(
+        result,
+        strategy_orders=strategy_orders,
+        input_quarantine=input_quarantine,
+    )
     summary["strategy"] = LEAD_LAG_STRATEGY
     summary["market"] = market
     strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy_orders)] if not result.fills.empty else result.fills
@@ -148,7 +169,10 @@ def run_leadlag_replay(
             output_dir=out_dir,
             summary=summary,
             strategy_order_ids=strategy_orders,
-            extra_frames={"markouts": markouts},
+            extra_frames={
+                "markouts": markouts,
+                "input_quarantine": input_quarantine,
+            },
             manifest_run_type="leadlag_replay",
             manifest_inputs={"leader": leader_path, "laggard": laggard_path},
             manifest_parameters={
@@ -178,7 +202,13 @@ def run_leadlag_replay(
                 "markout_horizons_ns": markout_horizons_ns or [100_000_000, 1_000_000_000],
             },
         )
-    return LeadLagReplayResult(result, summary, markouts, out_dir)
+    return LeadLagReplayResult(
+        result=result,
+        summary=summary,
+        markouts=markouts,
+        input_quarantine=input_quarantine,
+        output_dir=out_dir,
+    )
 
 
 def _costs(

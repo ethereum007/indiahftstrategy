@@ -7408,6 +7408,25 @@ across `27` files). Repository collection is healthy at `2693 tests` across
 `164` files. The full suite was not rerun because recent complete runs exceed
 40 minutes. All outputs remain non-authorizing.
 
+Latest normalized-input quarantine proof: imbalance, lead-lag, and parity
+replays now preserve each loader's pre-engine normalization evidence instead
+of silently discarding it. Every run writes `input_quarantine.csv` with one
+row per source dataset, raw and kept counts, reason-level drops, an explicit
+empty-after-normalization state, and separate integrity-repair versus
+calendar/session-policy totals. L1 packets and option-chain snapshots now
+quarantine exact duplicates consistently. Replay summaries aggregate the
+evidence; proof permits expected non-trading-day and out-of-session
+exclusions, but rejects any integrity-repaired row, enabled tracking with no
+datasets, or a dataset left empty. Imbalance and lead-lag walk-forward
+candidate configs, strategy sweeps, and cross-sweep comparisons preserve the
+same counts. Broader replay, proof, walk-forward, sweep, calibration,
+catalog/manifest, selection, promotion, pipeline, and strategy-evidence
+regressions pass (`305` tests across `29` files); after the final zero-dataset
+assertion, the proof file passes (`14` tests). Repository collection is
+healthy at `2698 tests` across `164` files. The full suite was not rerun
+because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

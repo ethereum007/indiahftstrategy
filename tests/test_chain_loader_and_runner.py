@@ -169,6 +169,22 @@ def test_option_chain_normalizer_quarantines_int64_overflow_before_casts():
     assert normalized.quarantine.dropped_nonintegral_rows == 0
 
 
+def test_option_chain_normalizer_quarantines_exact_duplicate_snapshots():
+    valid = chain_rows().iloc[[0]].copy()
+
+    normalized = normalize_option_chain(
+        pd.concat([valid, valid], ignore_index=True),
+        column_map=chain_map(),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert len(normalized.data) == 1
+    assert normalized.quarantine.total_rows == 2
+    assert normalized.quarantine.kept_rows == 1
+    assert normalized.quarantine.dropped_duplicate_rows == 1
+
+
 def test_option_chain_normalizer_quarantines_every_row_below_the_high_water_mark():
     base = chain_rows().iloc[0].to_dict()
     rows = []
