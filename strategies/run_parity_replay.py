@@ -16,7 +16,11 @@ from reports.replay import (
     replay_summary,
     write_replay_outputs,
 )
-from scanners.parity_box import ScannerCosts, ScannerInstruments, scan_parity
+from scanners.parity_box import (
+    ScannerCosts,
+    ScannerInstruments,
+    scan_parity_with_audit,
+)
 from strategies.parity_arb import ParityArbConfig, ParityArbTakerStrategy, ParityLegMap
 
 
@@ -27,6 +31,7 @@ class ParityReplayResult:
     summary: pd.DataFrame
     legging: pd.DataFrame
     input_quarantine: pd.DataFrame
+    futures_join_audit: pd.DataFrame
     output_dir: Path | None = None
 
 
@@ -42,6 +47,7 @@ def run_parity_replay(
     option_tick: float = 0.05,
     future_tick: float = 0.05,
     asof_latency_ns: int = 0,
+    max_futures_quote_age_ns: int = 1_000_000,
     depth_fraction: float = 0.25,
     feed_latency_us: float = 0.0,
     order_latency_us: float = 0.0,
@@ -79,14 +85,17 @@ def run_parity_replay(
     future = Instrument("INDEX-FUT", Kind.FUT, lot_size=lot_size, tick=future_tick)
     option_costs = IndianCostModel.nse_index_options()
     future_costs = IndianCostModel.nse_index_futures()
-    signals = scan_parity(
+    parity_scan = scan_parity_with_audit(
         chain,
         futures,
         instruments=ScannerInstruments(option=option, future=future),
         costs=ScannerCosts(option=option_costs, future=future_costs),
         asof_latency_ns=asof_latency_ns,
+        tolerance_ns=max_futures_quote_age_ns,
         depth_fraction=depth_fraction,
     )
+    signals = parity_scan.opportunities
+    futures_join_audit = parity_scan.futures_join_audit
     if signal_limit is not None:
         signals = signals.head(signal_limit).copy()
 
@@ -127,6 +136,12 @@ def run_parity_replay(
         strategy_orders=strategy_order_ids,
         input_quarantine=input_quarantine,
     )
+    for key, value in _futures_freshness_metrics(
+        futures_join_audit,
+        signals,
+        max_futures_quote_age_ns=max_futures_quote_age_ns,
+    ).items():
+        summary[key] = value
     legging = strategy.legging_report()
     out_dir = Path(output_dir) if output_dir else None
     if out_dir:
@@ -139,6 +154,7 @@ def run_parity_replay(
                 "signals": signals,
                 "legging": legging,
                 "input_quarantine": input_quarantine,
+                "parity_futures_join_audit": futures_join_audit,
             },
             manifest_run_type="parity_replay",
             manifest_inputs={"chain": chain_path, "futures": futures_path},
@@ -150,6 +166,7 @@ def run_parity_replay(
                 "option_tick": option_tick,
                 "future_tick": future_tick,
                 "asof_latency_ns": asof_latency_ns,
+                "max_futures_quote_age_ns": max_futures_quote_age_ns,
                 "depth_fraction": depth_fraction,
                 "feed_latency_us": feed_latency_us,
                 "order_latency_us": order_latency_us,
@@ -165,8 +182,79 @@ def run_parity_replay(
         summary=summary,
         legging=legging,
         input_quarantine=input_quarantine,
+        futures_join_audit=futures_join_audit,
         output_dir=out_dir,
     )
+
+
+def _futures_freshness_metrics(
+    audit: pd.DataFrame,
+    signals: pd.DataFrame,
+    *,
+    max_futures_quote_age_ns: int,
+) -> dict[str, int | bool]:
+    reasons = (
+        audit["reason"].astype(str)
+        if "reason" in audit.columns
+        else pd.Series(dtype="object")
+    )
+    signal_ages = pd.to_numeric(
+        signals.get(
+            "future_asof_age_ns",
+            pd.Series(index=signals.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+    observed_join_ages = pd.to_numeric(
+        audit.get(
+            "future_asof_age_ns",
+            pd.Series(index=audit.index, dtype="float64"),
+        ),
+        errors="coerce",
+    ).dropna()
+    observed_signal_ages = signal_ages.dropna()
+    signal_age_violations = (
+        signal_ages.lt(0) | signal_ages.gt(max_futures_quote_age_ns)
+    )
+    return {
+        "parity_futures_asof_freshness_enabled": True,
+        "parity_futures_max_quote_age_ns": int(
+            max_futures_quote_age_ns
+        ),
+        "parity_futures_join_rows": int(len(audit)),
+        "parity_futures_fresh_join_rows": int((reasons == "fresh").sum()),
+        "parity_futures_stale_join_rows": int(
+            reasons.isin(
+                {
+                    "stale_future_quote",
+                    "negative_future_quote_age",
+                }
+            ).sum()
+        ),
+        "parity_futures_unmatched_join_rows": int(
+            reasons.isin(
+                {
+                    "no_prior_future_quote",
+                    "incomplete_future_quote",
+                }
+            ).sum()
+        ),
+        "parity_futures_max_observed_join_age_ns": int(
+            observed_join_ages.max()
+        )
+        if not observed_join_ages.empty
+        else 0,
+        "parity_futures_signal_count": int(len(signals)),
+        "parity_futures_signals_without_age": int(signal_ages.isna().sum()),
+        "parity_futures_signal_age_violations": int(
+            signal_age_violations.sum()
+        ),
+        "parity_futures_max_signal_age_ns": int(
+            observed_signal_ages.max()
+        )
+        if not observed_signal_ages.empty
+        else 0,
+    }
 
 
 def _build_instruments(
@@ -242,6 +330,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-filter-session", action="store_true")
     parser.add_argument("--lot-size", type=int, default=75)
     parser.add_argument("--asof-latency-ns", type=int, default=0)
+    parser.add_argument(
+        "--max-futures-quote-age-ns",
+        type=int,
+        default=1_000_000,
+    )
     parser.add_argument("--depth-fraction", type=float, default=0.25)
     parser.add_argument("--feed-latency-us", type=float, default=0.0)
     parser.add_argument("--order-latency-us", type=float, default=0.0)
@@ -258,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         filter_session=not args.no_filter_session,
         lot_size=args.lot_size,
         asof_latency_ns=args.asof_latency_ns,
+        max_futures_quote_age_ns=args.max_futures_quote_age_ns,
         depth_fraction=args.depth_fraction,
         feed_latency_us=args.feed_latency_us,
         order_latency_us=args.order_latency_us,

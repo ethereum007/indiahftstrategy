@@ -543,6 +543,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     equity_by_regime = _read_optional(run_dir / "equity_by_regime.csv")
     spread_summary = _read_optional(run_dir / "spread_summary.csv")
     markouts = _read_optional(run_dir / "markouts.csv")
+    parity_signals_path = run_dir / "signals.csv"
+    parity_futures_join_audit_path = (
+        run_dir / "parity_futures_join_audit.csv"
+    )
+    parity_signals = _read_optional(parity_signals_path)
+    parity_futures_join_audit = _read_optional(
+        parity_futures_join_audit_path
+    )
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
     market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
 
@@ -568,6 +576,58 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "input_session_filtered_rows",
     )
     input_empty_datasets = _int(row, "input_empty_datasets")
+    parity_futures_asof_freshness_enabled = _bool(
+        row.get("parity_futures_asof_freshness_enabled", False)
+    )
+    parity_futures_max_quote_age_ns = _int(
+        row,
+        "parity_futures_max_quote_age_ns",
+    )
+    parity_futures_join_reasons = (
+        parity_futures_join_audit["reason"].astype(str)
+        if "reason" in parity_futures_join_audit.columns
+        else pd.Series(dtype="object")
+    )
+    parity_futures_fresh_join_rows = int(
+        (parity_futures_join_reasons == "fresh").sum()
+    )
+    parity_futures_stale_join_rows = int(
+        parity_futures_join_reasons.isin(
+            {
+                "stale_future_quote",
+                "negative_future_quote_age",
+            }
+        ).sum()
+    )
+    parity_futures_unmatched_join_rows = int(
+        parity_futures_join_reasons.isin(
+            {
+                "no_prior_future_quote",
+                "incomplete_future_quote",
+            }
+        ).sum()
+    )
+    parity_futures_unclassified_join_rows = max(
+        int(len(parity_futures_join_audit))
+        - parity_futures_fresh_join_rows
+        - parity_futures_stale_join_rows
+        - parity_futures_unmatched_join_rows,
+        0,
+    )
+    parity_signal_ages = pd.to_numeric(
+        parity_signals.get(
+            "future_asof_age_ns",
+            pd.Series(index=parity_signals.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+    parity_observed_signal_ages = parity_signal_ages.dropna()
+    parity_futures_signal_age_violations = int(
+        (
+            parity_signal_ages.lt(0)
+            | parity_signal_ages.gt(parity_futures_max_quote_age_ns)
+        ).sum()
+    )
     pending_order_risk_reservation_enabled = _bool(
         row.get("pending_order_risk_reservation_enabled", False)
     )
@@ -793,6 +853,43 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "input_integrity_dropped_rows": input_integrity_dropped_rows,
         "input_session_filtered_rows": input_session_filtered_rows,
         "input_empty_datasets": input_empty_datasets,
+        "parity_futures_asof_freshness_enabled": (
+            parity_futures_asof_freshness_enabled
+        ),
+        "parity_futures_max_quote_age_ns": (
+            parity_futures_max_quote_age_ns
+        ),
+        "parity_futures_join_audit_present": (
+            parity_futures_join_audit_path.exists()
+        ),
+        "parity_futures_signals_present": parity_signals_path.exists(),
+        "parity_futures_join_rows": int(
+            len(parity_futures_join_audit)
+        ),
+        "parity_futures_fresh_join_rows": (
+            parity_futures_fresh_join_rows
+        ),
+        "parity_futures_stale_join_rows": (
+            parity_futures_stale_join_rows
+        ),
+        "parity_futures_unmatched_join_rows": (
+            parity_futures_unmatched_join_rows
+        ),
+        "parity_futures_unclassified_join_rows": (
+            parity_futures_unclassified_join_rows
+        ),
+        "parity_futures_signal_count": int(len(parity_signals)),
+        "parity_futures_signals_without_age": int(
+            parity_signal_ages.isna().sum()
+        ),
+        "parity_futures_signal_age_violations": (
+            parity_futures_signal_age_violations
+        ),
+        "parity_futures_max_signal_age_ns": int(
+            parity_observed_signal_ages.max()
+        )
+        if not parity_observed_signal_ages.empty
+        else 0,
         "pending_order_risk_reservation_enabled": (
             pending_order_risk_reservation_enabled
         ),
@@ -982,6 +1079,110 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     else (
                         f"{empty_datasets} input dataset(s) were empty "
                         "after normalization"
+                    )
+                ),
+            }
+        )
+    if bool(metrics["parity_futures_asof_freshness_enabled"]):
+        max_quote_age_ns = int(
+            metrics["parity_futures_max_quote_age_ns"]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_futures_max_quote_age_ns",
+                "value": max_quote_age_ns,
+                "operator": ">=",
+                "threshold": 0,
+                "passed": max_quote_age_ns >= 0,
+                "reason": (
+                    ""
+                    if max_quote_age_ns >= 0
+                    else "parity futures quote-age limit is negative"
+                ),
+            }
+        )
+        for metric, reason in [
+            (
+                "parity_futures_join_audit_present",
+                "parity futures join-audit artifact is missing",
+            ),
+            (
+                "parity_futures_signals_present",
+                "parity signals artifact is missing",
+            ),
+        ]:
+            present = bool(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": present,
+                    "operator": "is",
+                    "threshold": True,
+                    "passed": present,
+                    "reason": "" if present else reason,
+                }
+            )
+        join_rows = int(metrics["parity_futures_join_rows"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_futures_join_rows",
+                "value": join_rows,
+                "operator": ">=",
+                "threshold": 1,
+                "passed": join_rows >= 1,
+                "reason": (
+                    ""
+                    if join_rows >= 1
+                    else "parity futures join audit contains no rows"
+                ),
+            }
+        )
+        for metric, reason in [
+            (
+                "parity_futures_unclassified_join_rows",
+                "parity futures join audit has unclassified rows",
+            ),
+            (
+                "parity_futures_signals_without_age",
+                "parity signals are missing futures as-of age evidence",
+            ),
+            (
+                "parity_futures_signal_age_violations",
+                "parity signals exceed the futures quote-age limit",
+            ),
+        ]:
+            value = int(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": value,
+                    "operator": "==",
+                    "threshold": 0,
+                    "passed": value == 0,
+                    "reason": "" if value == 0 else reason,
+                }
+            )
+        max_signal_age_ns = int(
+            metrics["parity_futures_max_signal_age_ns"]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_futures_max_signal_age_ns",
+                "value": max_signal_age_ns,
+                "operator": "<=",
+                "threshold": max_quote_age_ns,
+                "passed": max_signal_age_ns <= max_quote_age_ns,
+                "reason": (
+                    ""
+                    if max_signal_age_ns <= max_quote_age_ns
+                    else (
+                        "parity signal futures as-of age exceeds "
+                        "the configured limit"
                     )
                 ),
             }

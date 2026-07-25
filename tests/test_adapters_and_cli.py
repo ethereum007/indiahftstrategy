@@ -124,9 +124,12 @@ def test_unified_cli_scan_parity_box_dispatch(tmp_path):
             str(futures_path),
             "--out",
             str(out_dir),
+            "--max-futures-quote-age-ns",
+            "0",
         ]
     )
 
     assert code == 0
     assert (out_dir / "parity_opportunities.csv").exists()
     assert (out_dir / "opportunity_report.csv").exists()
+    assert (out_dir / "parity_futures_join_audit.csv").exists()

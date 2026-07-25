@@ -17,7 +17,7 @@ from scanners.parity_box import (
     ScannerInstruments,
     opportunity_report,
     scan_boxes,
-    scan_parity,
+    scan_parity_with_audit,
 )
 
 
@@ -26,6 +26,7 @@ class ParityBoxRunResult:
     parity: pd.DataFrame
     boxes: pd.DataFrame
     report: pd.DataFrame
+    futures_join_audit: pd.DataFrame
     output_dir: Optional[Path] = None
 
 
@@ -44,7 +45,7 @@ def run_scan(
     option_tick: float = 0.05,
     future_tick: float = 0.05,
     asof_latency_ns: int = 0,
-    tolerance_ns: Optional[int] = None,
+    tolerance_ns: Optional[int] = 1_000_000,
     depth_fraction: float = 0.25,
 ) -> ParityBoxRunResult:
     chain = load_option_chain_csv(
@@ -71,7 +72,7 @@ def run_scan(
         future=IndianCostModel.nse_index_futures(),
     )
 
-    parity = scan_parity(
+    parity_scan = scan_parity_with_audit(
         chain,
         futures,
         instruments=instruments,
@@ -80,6 +81,8 @@ def run_scan(
         tolerance_ns=tolerance_ns,
         depth_fraction=depth_fraction,
     )
+    parity = parity_scan.opportunities
+    futures_join_audit = parity_scan.futures_join_audit
     boxes = scan_boxes(
         chain,
         option_instrument=option,
@@ -101,7 +104,17 @@ def run_scan(
         parity.to_csv(out_dir / "parity_opportunities.csv", index=False)
         boxes.to_csv(out_dir / "box_opportunities.csv", index=False)
         report.to_csv(out_dir / "opportunity_report.csv", index=False)
-    return ParityBoxRunResult(parity=parity, boxes=boxes, report=report, output_dir=out_dir)
+        futures_join_audit.to_csv(
+            out_dir / "parity_futures_join_audit.csv",
+            index=False,
+        )
+    return ParityBoxRunResult(
+        parity=parity,
+        boxes=boxes,
+        report=report,
+        futures_join_audit=futures_join_audit,
+        output_dir=out_dir,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -117,7 +130,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--lot-size", type=int, default=75)
     parser.add_argument("--asof-latency-ns", type=int, default=0)
-    parser.add_argument("--tolerance-ns", type=int, default=None)
+    parser.add_argument(
+        "--max-futures-quote-age-ns",
+        "--tolerance-ns",
+        dest="tolerance_ns",
+        type=int,
+        default=1_000_000,
+    )
     parser.add_argument("--depth-fraction", type=float, default=0.25)
     args = parser.parse_args(argv)
 

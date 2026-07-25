@@ -26,6 +26,9 @@ def parity_opportunities():
                 "net_edge": 440.0,
                 "displayed_depth": 75,
                 "future_ts": 200,
+                "futures_lookup_ts": 200,
+                "future_asof_age_ns": 0,
+                "future_decision_age_ns": 0,
                 "regime": "open",
                 "call_side": 1,
                 "call_price": 105.0,
@@ -114,6 +117,7 @@ def sweep_runs(*, proof_passed=True):
                 "run_dir": "runs/parity",
                 "depth_fraction": 0.25,
                 "asof_latency_ns": 0,
+                "parity_futures_max_quote_age_ns": 100_000,
                 "feed_latency_us": 0.0,
                 "order_latency_us": 0.0,
                 "signal_count": 1,
@@ -164,7 +168,11 @@ def test_parity_candidate_promotion_passes_and_feeds_order_plan():
     assert config["parameters"]["call_price"] == 105.0
     assert config["parameters"]["put_price"] == 95.0
     assert config["parameters"]["future_price"] == 25020.0
+    assert config["parameters"]["futures_lookup_ts"] == 200
+    assert config["parameters"]["future_asof_age_ns"] == 0
+    assert config["parameters"]["future_decision_age_ns"] == 0
     assert config["replay_defaults"]["depth_fraction"] == 0.25
+    assert config["replay_defaults"]["max_futures_quote_age_ns"] == 100_000
 
     order_plan = build_parity_order_plan(
         report.summary,

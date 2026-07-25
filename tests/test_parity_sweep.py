@@ -64,6 +64,40 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert result.summary.iloc[0]["passed_scenarios"] == 1
     assert result.summary.iloc[0]["pass_rate"] == 0.5
     assert result.runs["signal_count"].sum() == 1
+    assert result.runs["parity_futures_asof_freshness_enabled"].all()
+    assert int(
+        result.summary.iloc[0][
+            "parity_futures_asof_freshness_enabled_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0]["total_parity_futures_join_rows"]
+    ) == 4
+    assert int(
+        result.summary.iloc[0]["total_parity_futures_fresh_join_rows"]
+    ) == 2
+    assert int(
+        result.summary.iloc[0]["total_parity_futures_stale_join_rows"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_parity_futures_unmatched_join_rows"]
+    ) == 2
+    assert int(
+        result.summary.iloc[0]["total_parity_futures_signal_count"]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_futures_signals_without_age"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_futures_signal_age_violations"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["max_parity_futures_signal_age_ns"]
+    ) == 0
     assert int(result.summary.iloc[0]["total_pretrade_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_venue_rule_rejections"]) == 0
     assert int(result.summary.iloc[0]["total_position_risk_rejections"]) == 0
@@ -134,6 +168,12 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert (out_dir / "proof" / "proof_checks.csv").exists()
     assert (out_dir / "proof" / "manifest.json").exists()
     assert verify_proof_report(out_dir / "proof").verified
+    assert (
+        out_dir
+        / "runs"
+        / "depth_0p25__asof_0ns__feed_0us__order_0us"
+        / "parity_futures_join_audit.csv"
+    ).exists()
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "summary.csv").exists()
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "manifest.json").exists()
 

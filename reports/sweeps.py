@@ -33,6 +33,20 @@ KNOWN_NON_PARAM_COLUMNS = {
     "input_integrity_dropped_rows",
     "input_session_filtered_rows",
     "input_empty_datasets",
+    "parity_futures_asof_freshness_enabled",
+    "parity_futures_max_quote_age_ns",
+    "parity_futures_join_audit_present",
+    "parity_futures_signals_present",
+    "parity_futures_join_rows",
+    "parity_futures_fresh_join_rows",
+    "parity_futures_stale_join_rows",
+    "parity_futures_unmatched_join_rows",
+    "parity_futures_unclassified_join_rows",
+    "parity_futures_max_observed_join_age_ns",
+    "parity_futures_signal_count",
+    "parity_futures_signals_without_age",
+    "parity_futures_signal_age_violations",
+    "parity_futures_max_signal_age_ns",
     "pending_order_risk_reservation_enabled",
     "aggressive_self_cross_prevention_enabled",
     "venue_order_validation_enabled",
@@ -289,6 +303,44 @@ def _score_scenarios(
             group,
             "input_empty_datasets",
         ).fillna(0.0)
+        parity_futures_asof_freshness_enabled = _bool_series(
+            group.get(
+                "parity_futures_asof_freshness_enabled",
+                pd.Series(False, index=group.index),
+            )
+        )
+        parity_futures_join_rows = _numeric(
+            group,
+            "parity_futures_join_rows",
+        ).fillna(0.0)
+        parity_futures_fresh_join_rows = _numeric(
+            group,
+            "parity_futures_fresh_join_rows",
+        ).fillna(0.0)
+        parity_futures_stale_join_rows = _numeric(
+            group,
+            "parity_futures_stale_join_rows",
+        ).fillna(0.0)
+        parity_futures_unmatched_join_rows = _numeric(
+            group,
+            "parity_futures_unmatched_join_rows",
+        ).fillna(0.0)
+        parity_futures_signal_count = _numeric(
+            group,
+            "parity_futures_signal_count",
+        ).fillna(0.0)
+        parity_futures_signals_without_age = _numeric(
+            group,
+            "parity_futures_signals_without_age",
+        ).fillna(0.0)
+        parity_futures_signal_age_violations = _numeric(
+            group,
+            "parity_futures_signal_age_violations",
+        ).fillna(0.0)
+        parity_futures_max_signal_age_ns = _numeric(
+            group,
+            "parity_futures_max_signal_age_ns",
+        ).fillna(0.0)
         pretrade_rejections = _numeric(group, "pretrade_rejections").fillna(0.0)
         venue_rule_rejections = _numeric(
             group,
@@ -509,6 +561,33 @@ def _score_scenarios(
                 "total_input_empty_datasets": int(
                     input_empty_datasets.sum()
                 ),
+                "parity_futures_asof_freshness_enabled_runs": int(
+                    parity_futures_asof_freshness_enabled.sum()
+                ),
+                "total_parity_futures_join_rows": int(
+                    parity_futures_join_rows.sum()
+                ),
+                "total_parity_futures_fresh_join_rows": int(
+                    parity_futures_fresh_join_rows.sum()
+                ),
+                "total_parity_futures_stale_join_rows": int(
+                    parity_futures_stale_join_rows.sum()
+                ),
+                "total_parity_futures_unmatched_join_rows": int(
+                    parity_futures_unmatched_join_rows.sum()
+                ),
+                "total_parity_futures_signal_count": int(
+                    parity_futures_signal_count.sum()
+                ),
+                "total_parity_futures_signals_without_age": int(
+                    parity_futures_signals_without_age.sum()
+                ),
+                "total_parity_futures_signal_age_violations": int(
+                    parity_futures_signal_age_violations.sum()
+                ),
+                "max_parity_futures_signal_age_ns": int(
+                    parity_futures_max_signal_age_ns.max()
+                ),
                 "total_pretrade_rejections": int(pretrade_rejections.sum()),
                 "total_venue_rule_rejections": int(
                     venue_rule_rejections.sum()
@@ -680,6 +759,15 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_input_integrity_dropped_rows": 0,
                     "total_input_session_filtered_rows": 0,
                     "total_input_empty_datasets": 0,
+                    "parity_futures_asof_freshness_enabled_runs": 0,
+                    "total_parity_futures_join_rows": 0,
+                    "total_parity_futures_fresh_join_rows": 0,
+                    "total_parity_futures_stale_join_rows": 0,
+                    "total_parity_futures_unmatched_join_rows": 0,
+                    "total_parity_futures_signal_count": 0,
+                    "total_parity_futures_signals_without_age": 0,
+                    "total_parity_futures_signal_age_violations": 0,
+                    "max_parity_futures_signal_age_ns": 0,
                     "total_pretrade_rejections": 0,
                     "total_venue_rule_rejections": 0,
                     "total_position_risk_rejections": 0,
@@ -788,6 +876,75 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     _numeric(scenario_runs, "input_empty_datasets")
                     .fillna(0.0)
                     .sum()
+                ),
+                "parity_futures_asof_freshness_enabled_runs": int(
+                    _bool_series(
+                        scenario_runs.get(
+                            "parity_futures_asof_freshness_enabled",
+                            pd.Series(False, index=scenario_runs.index),
+                        )
+                    ).sum()
+                ),
+                "total_parity_futures_join_rows": int(
+                    _numeric(scenario_runs, "parity_futures_join_rows")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_parity_futures_fresh_join_rows": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_fresh_join_rows",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_parity_futures_stale_join_rows": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_stale_join_rows",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_parity_futures_unmatched_join_rows": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_unmatched_join_rows",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_parity_futures_signal_count": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_signal_count",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_parity_futures_signals_without_age": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_signals_without_age",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_parity_futures_signal_age_violations": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_signal_age_violations",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "max_parity_futures_signal_age_ns": int(
+                    _numeric(
+                        scenario_runs,
+                        "parity_futures_max_signal_age_ns",
+                    )
+                    .fillna(0.0)
+                    .max()
                 ),
                 "total_pretrade_rejections": int(
                     _numeric(scenario_runs, "pretrade_rejections")

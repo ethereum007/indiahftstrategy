@@ -268,4 +268,7 @@ def test_parity_box_runner_writes_outputs(tmp_path):
     assert (out_dir / "parity_opportunities.csv").exists()
     assert (out_dir / "box_opportunities.csv").exists()
     assert (out_dir / "opportunity_report.csv").exists()
+    assert (out_dir / "parity_futures_join_audit.csv").exists()
+    assert set(result.futures_join_audit["reason"]) == {"fresh"}
+    assert set(result.futures_join_audit["future_asof_age_ns"]) == {0}
     assert "post_stt_hike" in set(result.report["regime"])

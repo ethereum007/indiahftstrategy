@@ -25,6 +25,19 @@ CHAIN_REQUIRED = [
 ]
 
 FUTURES_REQUIRED = ["ts", "bid", "ask", "bid_qty", "ask_qty"]
+PARITY_FUTURES_JOIN_AUDIT_COLUMNS = [
+    "ts",
+    "expiry",
+    "strike",
+    "futures_lookup_ts",
+    "future_ts",
+    "future_asof_age_ns",
+    "future_decision_age_ns",
+    "future_quote_matched",
+    "future_quote_complete",
+    "future_quote_fresh",
+    "reason",
+]
 
 
 @dataclass(frozen=True)
@@ -39,6 +52,12 @@ class ScannerInstruments:
     future: Instrument
 
 
+@dataclass(frozen=True)
+class ParityScanResult:
+    opportunities: pd.DataFrame
+    futures_join_audit: pd.DataFrame
+
+
 def scan_parity(
     chain: pd.DataFrame,
     futures: pd.DataFrame,
@@ -46,18 +65,43 @@ def scan_parity(
     instruments: ScannerInstruments,
     costs: ScannerCosts,
     asof_latency_ns: int,
-    tolerance_ns: Optional[int] = None,
+    tolerance_ns: Optional[int] = 1_000_000,
     depth_fraction: float = 0.25,
     carry_adjustment: float = 0.0,
 ) -> pd.DataFrame:
+    return scan_parity_with_audit(
+        chain,
+        futures,
+        instruments=instruments,
+        costs=costs,
+        asof_latency_ns=asof_latency_ns,
+        tolerance_ns=tolerance_ns,
+        depth_fraction=depth_fraction,
+        carry_adjustment=carry_adjustment,
+    ).opportunities
+
+
+def scan_parity_with_audit(
+    chain: pd.DataFrame,
+    futures: pd.DataFrame,
+    *,
+    instruments: ScannerInstruments,
+    costs: ScannerCosts,
+    asof_latency_ns: int,
+    tolerance_ns: Optional[int] = 1_000_000,
+    depth_fraction: float = 0.25,
+    carry_adjustment: float = 0.0,
+) -> ParityScanResult:
     _validate(chain, CHAIN_REQUIRED, "chain")
     _validate(futures, FUTURES_REQUIRED, "futures")
     if asof_latency_ns < 0:
         raise ValueError("asof_latency_ns must be non-negative")
+    if tolerance_ns is not None and tolerance_ns < 0:
+        raise ValueError("tolerance_ns must be non-negative")
     if not 0 < depth_fraction <= 1:
         raise ValueError("depth_fraction must be in (0, 1]")
 
-    quotes = _join_futures(
+    quotes, futures_join_audit = _join_futures(
         chain,
         futures,
         asof_latency_ns=asof_latency_ns,
@@ -120,12 +164,21 @@ def scan_parity(
 
     out = pd.DataFrame(rows)
     if out.empty:
-        return _empty_opportunities()
+        return ParityScanResult(
+            _empty_opportunities(),
+            futures_join_audit,
+        )
     out = _add_persistence(out, ["expiry", "strike", "direction"])
     out = out.loc[out["net_edge"] > 0].sort_values(["ts", "strike", "direction"])
     if out.empty:
-        return _empty_opportunities()
-    return out.reset_index(drop=True)
+        return ParityScanResult(
+            _empty_opportunities(),
+            futures_join_audit,
+        )
+    return ParityScanResult(
+        out.reset_index(drop=True),
+        futures_join_audit,
+    )
 
 
 def scan_boxes(
@@ -267,7 +320,7 @@ def _join_futures(
     *,
     asof_latency_ns: int,
     tolerance_ns: Optional[int],
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     left = chain.sort_values("ts").copy()
     left["futures_lookup_ts"] = left["ts"] - asof_latency_ns
     right = futures.sort_values("ts").copy()
@@ -277,11 +330,9 @@ def _join_futures(
         left_on="futures_lookup_ts",
         right_on="ts",
         direction="backward",
-        tolerance=tolerance_ns,
         suffixes=("", "_future"),
     )
-    joined = joined.dropna(subset=["bid", "ask", "bid_qty", "ask_qty"]).copy()
-    return joined.rename(
+    joined = joined.rename(
         columns={
             "bid": "future_bid",
             "ask": "future_ask",
@@ -290,6 +341,48 @@ def _join_futures(
             "ts_future": "future_ts",
         }
     )
+    future_columns = [
+        "future_ts",
+        "future_bid",
+        "future_ask",
+        "future_bid_qty",
+        "future_ask_qty",
+    ]
+    joined["future_asof_age_ns"] = (
+        pd.to_numeric(joined["futures_lookup_ts"], errors="coerce")
+        - pd.to_numeric(joined["future_ts"], errors="coerce")
+    )
+    joined["future_decision_age_ns"] = (
+        pd.to_numeric(joined["ts"], errors="coerce")
+        - pd.to_numeric(joined["future_ts"], errors="coerce")
+    )
+    joined["future_quote_matched"] = joined["future_ts"].notna()
+    joined["future_quote_complete"] = joined[future_columns].notna().all(axis=1)
+    age = pd.to_numeric(joined["future_asof_age_ns"], errors="coerce")
+    within_tolerance = age.ge(0)
+    if tolerance_ns is not None:
+        within_tolerance &= age.le(tolerance_ns)
+    joined["future_quote_fresh"] = (
+        joined["future_quote_complete"] & within_tolerance
+    )
+    joined["reason"] = np.select(
+        [
+            joined["future_quote_fresh"],
+            ~joined["future_quote_matched"],
+            ~joined["future_quote_complete"],
+            age.lt(0),
+        ],
+        [
+            "fresh",
+            "no_prior_future_quote",
+            "incomplete_future_quote",
+            "negative_future_quote_age",
+        ],
+        default="stale_future_quote",
+    )
+    audit = joined[PARITY_FUTURES_JOIN_AUDIT_COLUMNS].reset_index(drop=True)
+    fresh = joined.loc[joined["future_quote_fresh"]].copy()
+    return fresh, audit
 
 
 def _executable_qty(depths: list[float], lot_size: int, depth_fraction: float) -> int:
@@ -320,6 +413,9 @@ def _opportunity_row(row, direction, qty, raw_edge, total_cost, instrument):
         "net_edge": float(gross_edge - total_cost),
         "displayed_depth": int(qty),
         "future_ts": int(row.future_ts),
+        "futures_lookup_ts": int(row.futures_lookup_ts),
+        "future_asof_age_ns": int(row.future_asof_age_ns),
+        "future_decision_age_ns": int(row.future_decision_age_ns),
         "regime": getattr(row, "regime", "unknown"),
         "call_side": int(call_side),
         "call_price": float(call_price),
@@ -417,6 +513,9 @@ def _empty_opportunities() -> pd.DataFrame:
             "net_edge",
             "displayed_depth",
             "future_ts",
+            "futures_lookup_ts",
+            "future_asof_age_ns",
+            "future_decision_age_ns",
             "regime",
             "call_side",
             "call_price",

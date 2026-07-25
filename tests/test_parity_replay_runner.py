@@ -65,6 +65,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert (out_dir / "signals.csv").exists()
     assert (out_dir / "legging.csv").exists()
     assert (out_dir / "input_quarantine.csv").exists()
+    assert (out_dir / "parity_futures_join_audit.csv").exists()
     assert (out_dir / "manifest.json").exists()
     input_quarantine = pd.read_csv(out_dir / "input_quarantine.csv")
     assert input_quarantine["dataset"].tolist() == ["chain", "futures"]
@@ -79,3 +80,74 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["input_kept_rows"]) == 4
     assert int(summary["input_integrity_dropped_rows"]) == 0
     assert int(summary["input_empty_datasets"]) == 0
+    assert bool(summary["parity_futures_asof_freshness_enabled"])
+    assert int(summary["parity_futures_max_quote_age_ns"]) == 1_000_000
+    assert int(summary["parity_futures_join_rows"]) == 2
+    assert int(summary["parity_futures_fresh_join_rows"]) == 2
+    assert int(summary["parity_futures_stale_join_rows"]) == 0
+    assert int(summary["parity_futures_unmatched_join_rows"]) == 0
+    assert int(summary["parity_futures_signal_count"]) == 1
+    assert int(summary["parity_futures_signals_without_age"]) == 0
+    assert int(summary["parity_futures_signal_age_violations"]) == 0
+    assert int(summary["parity_futures_max_signal_age_ns"]) == 0
+    assert set(replay.futures_join_audit["reason"]) == {"fresh"}
+
+
+def test_run_parity_replay_quarantines_stale_futures_join(tmp_path):
+    future_ts = ns_ist("2026-06-10 09:15:00")
+    chain_ts = ns_ist("2026-06-10 09:15:00.000100")
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": chain_ts,
+                "expiry": "2026-06-30",
+                "strike": 1000.0,
+                "call_bid": 54.0,
+                "call_ask": 55.0,
+                "call_bid_qty": 300,
+                "call_ask_qty": 300,
+                "put_bid": 60.0,
+                "put_ask": 61.0,
+                "put_bid_qty": 300,
+                "put_ask_qty": 300,
+            }
+        ]
+    )
+    futures = pd.DataFrame(
+        [
+            {
+                "ts": future_ts,
+                "bid": 1100.0,
+                "ask": 1101.0,
+                "bid_qty": 300,
+                "ask_qty": 300,
+            }
+        ]
+    )
+    chain_path = tmp_path / "chain.csv"
+    futures_path = tmp_path / "futures.csv"
+    out_dir = tmp_path / "replay"
+    chain.to_csv(chain_path, index=False)
+    futures.to_csv(futures_path, index=False)
+
+    replay = run_parity_replay(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        max_futures_quote_age_ns=99_999,
+        depth_fraction=0.25,
+    )
+
+    assert replay.signals.empty
+    assert replay.futures_join_audit.iloc[0]["reason"] == (
+        "stale_future_quote"
+    )
+    assert int(
+        replay.futures_join_audit.iloc[0]["future_asof_age_ns"]
+    ) == 100_000
+    summary = replay.summary.iloc[0]
+    assert int(summary["parity_futures_join_rows"]) == 1
+    assert int(summary["parity_futures_fresh_join_rows"]) == 0
+    assert int(summary["parity_futures_stale_join_rows"]) == 1
+    assert int(summary["parity_futures_signal_count"]) == 0
+    assert int(summary["parity_futures_signal_age_violations"]) == 0

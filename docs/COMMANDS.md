@@ -817,7 +817,8 @@ manifest.json
 python -m hft_cli scan-parity-box `
   --chain data\chain.csv `
   --futures data\futures.csv `
-  --out runs\scan_2026_06_10
+  --out runs\scan_2026_06_10 `
+  --max-futures-quote-age-ns 1000000
 ```
 
 Outputs:
@@ -826,6 +827,7 @@ Outputs:
 parity_opportunities.csv
 box_opportunities.csv
 opportunity_report.csv
+parity_futures_join_audit.csv
 ```
 
 ## Parity / Box Edge Audit
@@ -863,6 +865,7 @@ python -m hft_cli replay-parity `
   --futures data\futures.csv `
   --out runs\parity_replay_2026_06_10 `
   --signal-limit 100 `
+  --max-futures-quote-age-ns 1000000 `
   --feed-latency-us 50 `
   --order-latency-us 250 `
   --fill-model runs\fill_model\leadlag_shadow_latest
@@ -873,7 +876,21 @@ spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
 `order_cancellations.csv`, `order_horizon_states.csv`,
 `input_quarantine.csv`, `liquidity_shortfalls.csv`,
-`queue_initializations.csv`, and `terminal_liquidations.csv`.
+`queue_initializations.csv`, `parity_futures_join_audit.csv`, and
+`terminal_liquidations.csv`.
+
+Parity signal formation uses a backward as-of futures join with a safe default
+maximum quote age of 1 ms. `parity_futures_join_audit.csv` retains every
+option-chain lookup and classifies it as fresh, stale, unmatched, incomplete,
+or negative-age; only fresh, complete futures quotes can form opportunities.
+`future_asof_age_ns` measures age at the latency-adjusted lookup timestamp,
+while `future_decision_age_ns` measures age at the option-chain decision
+timestamp. The replay summary aggregates both accepted and quarantined joins.
+Proof independently reads the join audit and `signals.csv`, requires both
+artifacts, and rejects missing, negative, or over-limit futures age evidence
+on any emitted signal. The same counters remain visible in parity sweeps and
+cross-sweep comparisons. All outputs remain research-only and
+non-authorizing.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows
@@ -1030,6 +1047,7 @@ python -m hft_cli sweep-parity `
   --feed-latency-us 0 50 `
   --order-latency-us 100 250 500 `
   --signal-limit 100 `
+  --max-futures-quote-age-ns 1000000 `
   --min-net-pnl 1 `
   --min-fills 10 `
   --max-drawdown 5000 `
@@ -1051,7 +1069,10 @@ proof/proof_summary.csv
 Promote a passed parity/box scan, edge audit, and replay sweep into the
 launch-compatible `promotion_report` shape. This bridge preserves the selected
 opportunity's executable leg prices so `plan-parity-orders` can generate the
-multi-leg order template without manually re-entering prices:
+multi-leg order template without manually re-entering prices. It also binds
+the selected futures quote-age limit and the opportunity's observed as-of and
+decision ages into `candidate_config.json`, preventing a later handoff from
+silently relaxing the researched freshness assumption:
 
 ```powershell
 python -m hft_cli promote-parity-candidate `

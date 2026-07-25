@@ -30,7 +30,10 @@
   calendar, including previous-trading-day holiday rollback.
 - Synthetic futures/options generator with planted lag relationships.
 - Executable put-call parity and box scanner using touch prices, depth
-  fractions, explicit as-of latency, and full leg costs.
+  fractions, explicit as-of latency, bounded futures quote freshness, and full
+  leg costs. Every parity join now retains lookup/decision ages and a
+  reason-coded audit; stale, unmatched, incomplete, or negative-age futures
+  quotes cannot form signals.
 - Parity/box edge audit that gates scan outputs on opportunity count, net edge,
   persistence, direction coverage, and futures staleness before replay/sweep
   work.
@@ -7426,6 +7429,24 @@ assertion, the proof file passes (`14` tests). Repository collection is
 healthy at `2698 tests` across `164` files. The full suite was not rerun
 because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
+
+Latest bounded parity futures as-of proof: parity signal formation no longer
+accepts an arbitrarily old futures quote. The backward join now defaults to a
+1 ms maximum age, records lookup and decision timestamps plus both quote ages,
+and emits a reason-coded row for every option-chain lookup. Stale, unmatched,
+incomplete, or negative-age quotes remain visible in
+`parity_futures_join_audit.csv` but cannot form opportunities. Replay summaries
+retain fresh/stale/unmatched join counts and emitted-signal age evidence.
+Proof independently reads the audit and signal artifacts, requires both when
+the control is enabled, rejects unknown audit classifications, and fails any
+signal with missing, negative, or over-limit futures age. Parity sweeps and
+cross-sweep comparisons retain the same evidence, and promotion preserves the
+selected maximum age plus the candidate's observed ages in its replay
+defaults. Scanner, replay, CLI, manifest, proof-refresh, parity
+promotion/order-plan/launch, and shared sweep regressions pass (`153` tests
+across `17` files). Repository collection is healthy at `2702 tests` across
+`164` files. The full suite was not rerun because recent complete runs exceed
+40 minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 

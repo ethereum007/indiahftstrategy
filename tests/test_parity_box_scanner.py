@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
 from scanners.parity_box import (
@@ -7,6 +8,7 @@ from scanners.parity_box import (
     opportunity_report,
     scan_boxes,
     scan_parity,
+    scan_parity_with_audit,
 )
 
 
@@ -79,6 +81,9 @@ def test_scan_parity_finds_touchable_dislocation_and_persistence():
     assert list(opps["call_price"]) == [55.0, 55.0]
     assert list(opps["put_price"]) == [60.0, 60.0]
     assert list(opps["future_price"]) == [1002.0, 1001.0]
+    assert list(opps["futures_lookup_ts"]) == [100, 200]
+    assert list(opps["future_asof_age_ns"]) == [0, 0]
+    assert list(opps["future_decision_age_ns"]) == [0, 0]
 
 
 def test_scan_parity_asof_latency_prevents_future_lookahead():
@@ -112,6 +117,70 @@ def test_scan_parity_asof_latency_prevents_future_lookahead():
 
     assert stale.empty
     assert not tradable.empty
+
+
+def test_scan_parity_audits_and_excludes_stale_futures_quote():
+    chain = parity_chain().iloc[[2]].copy()
+    futures = pd.DataFrame(
+        {
+            "ts": [100],
+            "bid": [1002.0],
+            "ask": [1003.0],
+            "bid_qty": [300],
+            "ask_qty": [300],
+        }
+    )
+
+    stale = scan_parity_with_audit(
+        chain,
+        futures,
+        instruments=instruments(),
+        costs=costs(),
+        asof_latency_ns=0,
+        tolerance_ns=199,
+        depth_fraction=0.25,
+    )
+    boundary = scan_parity_with_audit(
+        chain,
+        futures,
+        instruments=instruments(),
+        costs=costs(),
+        asof_latency_ns=0,
+        tolerance_ns=200,
+        depth_fraction=0.25,
+    )
+
+    assert stale.opportunities.empty
+    assert stale.futures_join_audit.iloc[0]["reason"] == "stale_future_quote"
+    assert int(
+        stale.futures_join_audit.iloc[0]["future_asof_age_ns"]
+    ) == 200
+    assert not bool(
+        stale.futures_join_audit.iloc[0]["future_quote_fresh"]
+    )
+    assert not boundary.opportunities.empty
+    assert boundary.futures_join_audit.iloc[0]["reason"] == "fresh"
+    assert int(boundary.opportunities.iloc[0]["future_asof_age_ns"]) == 200
+
+
+def test_scan_parity_rejects_negative_futures_quote_age_limit():
+    with pytest.raises(ValueError, match="tolerance_ns must be non-negative"):
+        scan_parity(
+            parity_chain(),
+            pd.DataFrame(
+                {
+                    "ts": [100],
+                    "bid": [1002.0],
+                    "ask": [1003.0],
+                    "bid_qty": [300],
+                    "ask_qty": [300],
+                }
+            ),
+            instruments=instruments(),
+            costs=costs(),
+            asof_latency_ns=0,
+            tolerance_ns=-1,
+        )
 
 
 def box_chain():

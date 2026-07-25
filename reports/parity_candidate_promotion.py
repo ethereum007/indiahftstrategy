@@ -295,6 +295,16 @@ def _candidate_record(
         "sweep_fills": _jsonable(sweep_run.get("fills")),
         "sweep_robust_score": _jsonable(sweep_run.get("robust_score")),
     }
+    if (
+        "max_futures_quote_age_ns" in sweep_run.index
+        or "parity_futures_max_quote_age_ns" in sweep_run.index
+    ):
+        record["max_futures_quote_age_ns"] = _jsonable(
+            sweep_run.get(
+                "max_futures_quote_age_ns",
+                sweep_run.get("parity_futures_max_quote_age_ns"),
+            )
+        )
     if direction in BOX_DIRECTIONS or scanner == "box":
         record.update(
             {
@@ -314,6 +324,15 @@ def _candidate_record(
                 "put_price": _jsonable(opportunity.get("put_price")),
                 "future_price": _jsonable(opportunity.get("future_price")),
                 "future_ts": _jsonable(opportunity.get("future_ts")),
+                "futures_lookup_ts": _jsonable(
+                    opportunity.get("futures_lookup_ts")
+                ),
+                "future_asof_age_ns": _jsonable(
+                    opportunity.get("future_asof_age_ns")
+                ),
+                "future_decision_age_ns": _jsonable(
+                    opportunity.get("future_decision_age_ns")
+                ),
             }
         )
     return record
@@ -384,12 +403,21 @@ def _promotion_candidate_config(
             "edge_per_unit",
             "persistence_ticks",
             "future_ts",
+            "futures_lookup_ts",
+            "future_asof_age_ns",
+            "future_decision_age_ns",
         ]
         if key in row.index
     }
     replay_defaults = {
         key: _jsonable(row.get(key))
-        for key in ["depth_fraction", "asof_latency_ns", "feed_latency_us", "order_latency_us"]
+        for key in [
+            "depth_fraction",
+            "asof_latency_ns",
+            "max_futures_quote_age_ns",
+            "feed_latency_us",
+            "order_latency_us",
+        ]
         if key in row.index
     }
     metrics = {

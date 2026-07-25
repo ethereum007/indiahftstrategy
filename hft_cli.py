@@ -673,6 +673,11 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--no-filter-session", action="store_true")
     scan.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     scan.add_argument("--asof-latency-ns", type=int, default=0)
+    scan.add_argument(
+        "--max-futures-quote-age-ns",
+        type=int,
+        default=1_000_000,
+    )
     scan.add_argument("--depth-fraction", type=float, default=0.25)
 
     parity_edge = sub.add_parser("audit-parity-edge", help="Gate parity/box scan opportunities before replay.")
@@ -696,6 +701,11 @@ def main(argv: list[str] | None = None) -> int:
     parity.add_argument("--no-filter-session", action="store_true")
     parity.add_argument("--signal-limit", type=int, default=None)
     parity.add_argument("--depth-fraction", type=float, default=0.25)
+    parity.add_argument(
+        "--max-futures-quote-age-ns",
+        type=int,
+        default=1_000_000,
+    )
     parity.add_argument("--feed-latency-us", type=float, default=0.0)
     parity.add_argument("--order-latency-us", type=float, default=0.0)
     parity.add_argument("--fill-model", default=None)
@@ -4100,6 +4110,11 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--feed-latency-us", nargs="+", default=[0.0], type=float)
     parity_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
     parity_sweep.add_argument("--signal-limit", type=int, default=None)
+    parity_sweep.add_argument(
+        "--max-futures-quote-age-ns",
+        type=int,
+        default=1_000_000,
+    )
     parity_sweep.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
     parity_sweep.add_argument("--max-qty", type=int, default=None)
     parity_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
@@ -5384,6 +5399,7 @@ def main(argv: list[str] | None = None) -> int:
             filter_session=not args.no_filter_session,
             market=args.market,
             asof_latency_ns=args.asof_latency_ns,
+            tolerance_ns=args.max_futures_quote_age_ns,
             depth_fraction=args.depth_fraction,
         )
         print(result.report.to_string(index=False))
@@ -5420,6 +5436,7 @@ def main(argv: list[str] | None = None) -> int:
             filter_session=not args.no_filter_session,
             signal_limit=args.signal_limit,
             depth_fraction=replay_params["depth_fraction"],
+            max_futures_quote_age_ns=args.max_futures_quote_age_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
         )
@@ -9243,6 +9260,7 @@ def main(argv: list[str] | None = None) -> int:
             order_latency_us_values=args.order_latency_us,
             filter_session=not args.no_filter_session,
             signal_limit=args.signal_limit,
+            max_futures_quote_age_ns=args.max_futures_quote_age_ns,
             max_signal_age_ns=args.max_signal_age_ns,
             max_qty=args.max_qty,
             proof_thresholds=ProofThresholds(

@@ -35,6 +35,7 @@ def run_parity_sweep(
     lot_size: int = 75,
     option_tick: float = 0.05,
     future_tick: float = 0.05,
+    max_futures_quote_age_ns: int = 1_000_000,
     max_signal_age_ns: int = 1_000_000,
     max_qty: int | None = None,
     max_position_lots: int = 20,
@@ -76,6 +77,7 @@ def run_parity_sweep(
             option_tick=option_tick,
             future_tick=future_tick,
             asof_latency_ns=asof_latency_ns,
+            max_futures_quote_age_ns=max_futures_quote_age_ns,
             depth_fraction=depth_fraction,
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
@@ -127,6 +129,7 @@ def run_parity_sweep(
             "lot_size": lot_size,
             "option_tick": option_tick,
             "future_tick": future_tick,
+            "max_futures_quote_age_ns": max_futures_quote_age_ns,
             "max_signal_age_ns": max_signal_age_ns,
             "max_qty": max_qty,
             "max_position_lots": max_position_lots,
@@ -184,6 +187,15 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "worst_drawdown",
                 "total_signals",
                 "total_partial_executions",
+                "parity_futures_asof_freshness_enabled_runs",
+                "total_parity_futures_join_rows",
+                "total_parity_futures_fresh_join_rows",
+                "total_parity_futures_stale_join_rows",
+                "total_parity_futures_unmatched_join_rows",
+                "total_parity_futures_signal_count",
+                "total_parity_futures_signals_without_age",
+                "total_parity_futures_signal_age_violations",
+                "max_parity_futures_signal_age_ns",
                 "total_liquidity_shortfall_events",
                 "total_liquidity_shortfall_qty",
                 "total_carried_depletion_shortfall_events",
@@ -230,6 +242,47 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "worst_drawdown": float(runs["max_drawdown"].max(skipna=True)),
                 "total_signals": int(runs["signal_count"].sum()),
                 "total_partial_executions": int(runs["partial_execution_count"].sum()),
+                "parity_futures_asof_freshness_enabled_runs": int(
+                    runs.get(
+                        "parity_futures_asof_freshness_enabled",
+                        pd.Series(False, index=runs.index),
+                    )
+                    .fillna(False)
+                    .astype(bool)
+                    .sum()
+                ),
+                "total_parity_futures_join_rows": _sum_int_metric(
+                    runs,
+                    "parity_futures_join_rows",
+                ),
+                "total_parity_futures_fresh_join_rows": _sum_int_metric(
+                    runs,
+                    "parity_futures_fresh_join_rows",
+                ),
+                "total_parity_futures_stale_join_rows": _sum_int_metric(
+                    runs,
+                    "parity_futures_stale_join_rows",
+                ),
+                "total_parity_futures_unmatched_join_rows": _sum_int_metric(
+                    runs,
+                    "parity_futures_unmatched_join_rows",
+                ),
+                "total_parity_futures_signal_count": _sum_int_metric(
+                    runs,
+                    "parity_futures_signal_count",
+                ),
+                "total_parity_futures_signals_without_age": _sum_int_metric(
+                    runs,
+                    "parity_futures_signals_without_age",
+                ),
+                "total_parity_futures_signal_age_violations": _sum_int_metric(
+                    runs,
+                    "parity_futures_signal_age_violations",
+                ),
+                "max_parity_futures_signal_age_ns": _max_int_metric(
+                    runs,
+                    "parity_futures_max_signal_age_ns",
+                ),
                 "total_liquidity_shortfall_events": int(
                     pd.to_numeric(
                         runs.get(
@@ -407,6 +460,11 @@ def _sum_int_metric(runs: pd.DataFrame, column: str) -> int:
     return int(pd.to_numeric(values, errors="coerce").fillna(0).sum())
 
 
+def _max_int_metric(runs: pd.DataFrame, column: str) -> int:
+    values = runs.get(column, pd.Series(0, index=runs.index))
+    return int(pd.to_numeric(values, errors="coerce").fillna(0).max())
+
+
 def _run_name(
     depth_fraction: float,
     asof_latency_ns: int,
@@ -449,6 +507,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--asof-latency-ns", nargs="+", default=["0"])
     parser.add_argument("--feed-latency-us", nargs="+", default=["0"])
     parser.add_argument("--order-latency-us", nargs="+", default=["0"])
+    parser.add_argument(
+        "--max-futures-quote-age-ns",
+        type=int,
+        default=1_000_000,
+    )
     parser.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
     parser.add_argument("--max-qty", type=int, default=None)
     parser.add_argument("--signal-limit", type=int, default=None)
@@ -474,6 +537,7 @@ def main(argv: list[str] | None = None) -> int:
         lot_size=args.lot_size,
         option_tick=args.option_tick,
         future_tick=args.future_tick,
+        max_futures_quote_age_ns=args.max_futures_quote_age_ns,
         max_signal_age_ns=args.max_signal_age_ns,
         max_qty=args.max_qty,
         signal_limit=args.signal_limit,

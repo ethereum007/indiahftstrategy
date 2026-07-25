@@ -406,6 +406,46 @@ def test_proof_report_rejects_empty_normalized_input(tmp_path):
     )
 
 
+def test_proof_report_recomputes_parity_futures_signal_freshness(tmp_path):
+    run_dir = tmp_path / "parity_futures_freshness"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "parity_futures_asof_freshness_enabled"] = True
+    summary.loc[0, "parity_futures_max_quote_age_ns"] = 100
+    summary.to_csv(summary_path, index=False)
+    pd.DataFrame(
+        [{"ts": 200, "future_asof_age_ns": 100}]
+    ).to_csv(run_dir / "signals.csv", index=False)
+    pd.DataFrame(
+        [{"ts": 200, "reason": "fresh"}]
+    ).to_csv(run_dir / "parity_futures_join_audit.csv", index=False)
+
+    valid = evaluate_replay_dirs([run_dir])
+
+    assert valid.passed
+    metrics = valid.metrics.iloc[0]
+    assert bool(metrics["parity_futures_join_audit_present"])
+    assert bool(metrics["parity_futures_signals_present"])
+    assert int(metrics["parity_futures_join_rows"]) == 1
+    assert int(metrics["parity_futures_fresh_join_rows"]) == 1
+    assert int(metrics["parity_futures_signals_without_age"]) == 0
+    assert int(metrics["parity_futures_signal_age_violations"]) == 0
+    assert int(metrics["parity_futures_max_signal_age_ns"]) == 100
+
+    pd.DataFrame(
+        [{"ts": 200, "future_asof_age_ns": 101}]
+    ).to_csv(run_dir / "signals.csv", index=False)
+    invalid = evaluate_replay_dirs([run_dir])
+
+    failed = invalid.checks.loc[~invalid.checks["passed"]]
+    assert not invalid.passed
+    assert failed["check"].tolist() == [
+        "parity_futures_signal_age_violations",
+        "parity_futures_max_signal_age_ns",
+    ]
+
+
 def test_write_proof_report_outputs_metrics_checks_and_summary(tmp_path):
     run_dir = tmp_path / "parity_pass"
     out_dir = tmp_path / "proof"

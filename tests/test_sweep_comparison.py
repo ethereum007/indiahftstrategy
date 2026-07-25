@@ -31,6 +31,15 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "input_integrity_dropped_rows": 0,
             "input_session_filtered_rows": 1,
             "input_empty_datasets": 0,
+            "parity_futures_asof_freshness_enabled": True,
+            "parity_futures_join_rows": 2,
+            "parity_futures_fresh_join_rows": 2,
+            "parity_futures_stale_join_rows": 0,
+            "parity_futures_unmatched_join_rows": 0,
+            "parity_futures_signal_count": 1,
+            "parity_futures_signals_without_age": 0,
+            "parity_futures_signal_age_violations": 0,
+            "parity_futures_max_signal_age_ns": 20,
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
@@ -90,6 +99,15 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "input_integrity_dropped_rows": 1,
             "input_session_filtered_rows": 0,
             "input_empty_datasets": 0,
+            "parity_futures_asof_freshness_enabled": True,
+            "parity_futures_join_rows": 2,
+            "parity_futures_fresh_join_rows": 1,
+            "parity_futures_stale_join_rows": 1,
+            "parity_futures_unmatched_join_rows": 0,
+            "parity_futures_signal_count": 1,
+            "parity_futures_signals_without_age": 0,
+            "parity_futures_signal_age_violations": 1,
+            "parity_futures_max_signal_age_ns": 150,
             "persistent_displayed_liquidity_enabled": True,
             "lot_conserving_fills_enabled": True,
             "causal_event_ordering_enabled": True,
@@ -171,6 +189,18 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_input_session_filtered_rows"]) == 2
     assert int(best["total_input_empty_datasets"]) == 0
     assert int(weak["total_input_integrity_dropped_rows"]) == 2
+    assert int(best["parity_futures_asof_freshness_enabled_runs"]) == 2
+    assert int(best["total_parity_futures_join_rows"]) == 4
+    assert int(best["total_parity_futures_fresh_join_rows"]) == 4
+    assert int(best["total_parity_futures_stale_join_rows"]) == 0
+    assert int(best["total_parity_futures_unmatched_join_rows"]) == 0
+    assert int(best["total_parity_futures_signal_count"]) == 2
+    assert int(best["total_parity_futures_signals_without_age"]) == 0
+    assert int(best["total_parity_futures_signal_age_violations"]) == 0
+    assert int(best["max_parity_futures_signal_age_ns"]) == 20
+    assert int(weak["total_parity_futures_stale_join_rows"]) == 2
+    assert int(weak["total_parity_futures_signal_age_violations"]) == 2
+    assert int(weak["max_parity_futures_signal_age_ns"]) == 150
     assert int(best["order_horizon_tracking_enabled_runs"]) == 2
     assert int(best["total_open_orders_at_replay_end"]) == 0
     assert int(best["total_open_order_qty_at_replay_end"]) == 0
@@ -225,6 +255,34 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(
         comparison.summary.iloc[0]["total_input_empty_datasets"]
     ) == 0
+    assert int(
+        comparison.summary.iloc[0][
+            "parity_futures_asof_freshness_enabled_runs"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0]["total_parity_futures_join_rows"]
+    ) == 8
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_futures_fresh_join_rows"
+        ]
+    ) == 6
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_futures_stale_join_rows"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "total_parity_futures_signal_age_violations"
+        ]
+    ) == 2
+    assert int(
+        comparison.summary.iloc[0][
+            "max_parity_futures_signal_age_ns"
+        ]
+    ) == 150
     assert int(
         comparison.summary.iloc[0]["order_horizon_tracking_enabled_runs"]
     ) == 4
