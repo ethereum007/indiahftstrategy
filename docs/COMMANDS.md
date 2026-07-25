@@ -871,6 +871,8 @@ python -m hft_cli replay-parity `
   --max-leg-book-skew-ns 250000 `
   --feed-latency-us 50 `
   --order-latency-us 250 `
+  --latency-jitter-us 25 `
+  --latency-seed 20260725 `
   --fill-model runs\fill_model\leadlag_shadow_latest
 ```
 
@@ -879,10 +881,20 @@ spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
 `order_submissions.csv`, `order_cancellations.csv`,
 `order_horizon_states.csv`,
-`input_quarantine.csv`, `liquidity_shortfalls.csv`,
+`feed_deliveries.csv`, `input_quarantine.csv`,
+`liquidity_shortfalls.csv`,
 `ioc_arrival_audit.csv`,
 `queue_initializations.csv`, `parity_futures_join_audit.csv`,
 `parity_execution_guard.csv`, and `terminal_liquidations.csv`.
+
+`--latency-jitter-us` applies a bounded uniform perturbation to every feed and
+order latency sample; negative samples are clipped at zero.
+`--latency-seed` makes the full sample path reproducible. The engine-owned
+`feed_deliveries.csv` binds each market-event sequence to its venue-aligned
+market timestamp, strategy-visible timestamp, and sampled feed delay, while
+`order_submissions.csv` carries the sampled order delay. Summary and
+independent proof verify timestamp
+arithmetic, event lineage, and both configured latency envelopes.
 
 Parity signal formation uses a backward as-of futures join with a safe default
 maximum quote age of 1 ms. `parity_futures_join_audit.csv` retains every
@@ -1162,6 +1174,8 @@ python -m hft_cli sweep-parity `
   --asof-latency-ns 0 50000 100000 `
   --feed-latency-us 0 50 `
   --order-latency-us 100 250 500 `
+  --latency-jitter-us 0 25 50 `
+  --latency-seed 20260725 `
   --signal-limit 100 `
   --max-futures-quote-age-ns 1000000 `
   --max-leg-book-age-ns 1000000 `
@@ -1181,6 +1195,11 @@ proof/proof_metrics.csv
 proof/proof_checks.csv
 proof/proof_summary.csv
 ```
+
+Jitter magnitude is a sweep dimension. The seed is fixed across the sweep and
+stored in every run plus the sweep manifest, so scenarios are reproducible and
+candidate promotion carries the exact latency path assumptions forward rather
+than silently selecting an unrecorded random draw.
 
 ## Parity / Box Candidate Promotion
 

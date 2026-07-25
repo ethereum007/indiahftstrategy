@@ -393,6 +393,7 @@ def replay_summary(
         fills=fill_count,
         limit=otr_limit,
     )
+    feed_delivery = _feed_delivery_metrics(result)
     return pd.DataFrame(
         [
             {
@@ -440,6 +441,7 @@ def replay_summary(
                 "causal_event_ordering_enabled": bool(
                     result.engine.causal_event_ordering_enabled
                 ),
+                **feed_delivery,
                 "cancel_lifecycle_tracking_enabled": bool(
                     result.engine.cancel_lifecycle_tracking_enabled
                 ),
@@ -821,6 +823,75 @@ def _ioc_arrival_event_metrics(
     }
 
 
+def _feed_delivery_metrics(
+    result: MultiBacktestResult,
+) -> dict[str, int | bool]:
+    deliveries = result.feed_deliveries
+    required = [
+        "market_ts_ns",
+        "strategy_ts_ns",
+        "feed_latency_ns",
+    ]
+    if deliveries.empty:
+        return {
+            "feed_delivery_tracking_enabled": bool(
+                result.engine.feed_delivery_tracking_enabled
+            ),
+            "feed_delivery_events": 0,
+            "feed_delivery_missing_evidence_rows": 0,
+            "feed_delivery_consistency_violations": 0,
+            "min_sampled_feed_latency_ns": 0,
+            "max_sampled_feed_latency_ns": 0,
+        }
+    if any(column not in deliveries.columns for column in required):
+        return {
+            "feed_delivery_tracking_enabled": bool(
+                result.engine.feed_delivery_tracking_enabled
+            ),
+            "feed_delivery_events": int(len(deliveries)),
+            "feed_delivery_missing_evidence_rows": int(len(deliveries)),
+            "feed_delivery_consistency_violations": int(len(deliveries)),
+            "min_sampled_feed_latency_ns": 0,
+            "max_sampled_feed_latency_ns": 0,
+        }
+
+    numbers = deliveries[required].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+    missing = numbers.isna().any(axis=1)
+    nonintegral = numbers.mod(1).ne(0).any(axis=1)
+    inconsistent = (
+        missing
+        | nonintegral
+        | numbers["feed_latency_ns"].lt(0)
+        | numbers["strategy_ts_ns"].lt(numbers["market_ts_ns"])
+        | numbers["feed_latency_ns"].ne(
+            numbers["strategy_ts_ns"] - numbers["market_ts_ns"]
+        )
+    )
+    sampled = numbers.loc[
+        ~missing,
+        "feed_latency_ns",
+    ]
+    return {
+        "feed_delivery_tracking_enabled": bool(
+            result.engine.feed_delivery_tracking_enabled
+        ),
+        "feed_delivery_events": int(len(deliveries)),
+        "feed_delivery_missing_evidence_rows": int(missing.sum()),
+        "feed_delivery_consistency_violations": int(
+            inconsistent.sum()
+        ),
+        "min_sampled_feed_latency_ns": (
+            int(sampled.min()) if not sampled.empty else 0
+        ),
+        "max_sampled_feed_latency_ns": (
+            int(sampled.max()) if not sampled.empty else 0
+        ),
+    }
+
+
 def write_replay_outputs(
     *,
     result: MultiBacktestResult,
@@ -837,6 +908,10 @@ def write_replay_outputs(
     out.mkdir(parents=True, exist_ok=True)
     result.equity.to_csv(out / "equity.csv", index=False)
     result.fills.to_csv(out / "fills.csv", index=False)
+    result.feed_deliveries.to_csv(
+        out / "feed_deliveries.csv",
+        index=False,
+    )
     result.order_submissions.to_csv(
         out / "order_submissions.csv",
         index=False,

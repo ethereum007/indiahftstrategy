@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -653,6 +655,55 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "manifest.json").exists()
 
 
+def test_run_parity_sweep_expands_latency_jitter_dimension(tmp_path):
+    chain_path, futures_path = write_parity_books(tmp_path)
+    out_dir = tmp_path / "jitter_sweep"
+
+    result = run_parity_sweep(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        depth_fraction_values=[0.25],
+        asof_latency_ns_values=[0],
+        feed_latency_us_values=[10.0],
+        order_latency_us_values=[10.0],
+        latency_jitter_us_values=[0.0, 5.0],
+        latency_seed=123,
+        signal_limit=1,
+        proof_thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+
+    assert len(result.runs) == 2
+    assert set(result.runs["latency_jitter_us"]) == {0.0, 5.0}
+    assert set(result.runs["latency_seed"]) == {123}
+    assert (
+        result.runs["parity_feed_latency_bound_violations"] == 0
+    ).all()
+    assert (
+        result.runs["parity_order_latency_bound_violations"] == 0
+    ).all()
+    assert (
+        out_dir
+        / "runs"
+        / (
+            "depth_0p25__asof_0ns__feed_10us__order_10us"
+            "__jitter_5us"
+        )
+        / "feed_deliveries.csv"
+    ).exists()
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["parameters"]["latency_jitter_us_values"] == [
+        0.0,
+        5.0,
+    ]
+    assert manifest["parameters"]["latency_seed"] == 123
+
+
 def test_unified_cli_sweep_parity_dispatches_and_can_fail_on_breach(tmp_path):
     chain_path, futures_path = write_parity_books(tmp_path)
     out_dir = tmp_path / "cli_parity_sweep"
@@ -677,6 +728,10 @@ def test_unified_cli_sweep_parity_dispatches_and_can_fail_on_breach(tmp_path):
             "500000",
             "--max-leg-book-skew-ns",
             "250000",
+            "--latency-jitter-us",
+            "5",
+            "--latency-seed",
+            "99",
             "--min-net-pnl",
             "-1000000",
             "--min-fills",
@@ -691,3 +746,5 @@ def test_unified_cli_sweep_parity_dispatches_and_can_fail_on_breach(tmp_path):
     runs = pd.read_csv(out_dir / "sweep_runs.csv")
     assert set(runs["parity_execution_max_leg_book_age_ns"]) == {500_000}
     assert set(runs["parity_execution_max_leg_book_skew_ns"]) == {250_000}
+    assert set(runs["latency_jitter_us"]) == {5.0}
+    assert set(runs["latency_seed"]) == {99}

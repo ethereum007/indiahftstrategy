@@ -29,6 +29,8 @@ def run_parity_sweep(
     asof_latency_ns_values: list[int],
     feed_latency_us_values: list[float],
     order_latency_us_values: list[float],
+    latency_jitter_us_values: list[float] | None = None,
+    latency_seed: int = 17,
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
@@ -52,6 +54,13 @@ def run_parity_sweep(
         raise ValueError("feed_latency_us_values must not be empty")
     if not order_latency_us_values:
         raise ValueError("order_latency_us_values must not be empty")
+    latency_jitter_us_values = (
+        [0.0]
+        if latency_jitter_us_values is None
+        else list(latency_jitter_us_values)
+    )
+    if not latency_jitter_us_values:
+        raise ValueError("latency_jitter_us_values must not be empty")
 
     out = Path(output_dir)
     runs_root = out / "runs"
@@ -60,13 +69,26 @@ def run_parity_sweep(
     rows = []
     run_dirs: list[Path] = []
     run_names: list[str] = []
-    for depth_fraction, asof_latency_ns, feed_latency_us, order_latency_us in product(
+    for (
+        depth_fraction,
+        asof_latency_ns,
+        feed_latency_us,
+        order_latency_us,
+        latency_jitter_us,
+    ) in product(
         depth_fraction_values,
         asof_latency_ns_values,
         feed_latency_us_values,
         order_latency_us_values,
+        latency_jitter_us_values,
     ):
-        run_name = _run_name(depth_fraction, asof_latency_ns, feed_latency_us, order_latency_us)
+        run_name = _run_name(
+            depth_fraction,
+            asof_latency_ns,
+            feed_latency_us,
+            order_latency_us,
+            latency_jitter_us,
+        )
         run_dir = runs_root / run_name
         replay = run_parity_replay(
             chain_path=chain_path,
@@ -83,6 +105,8 @@ def run_parity_sweep(
             depth_fraction=depth_fraction,
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
+            latency_jitter_us=latency_jitter_us,
+            latency_seed=latency_seed,
             max_signal_age_ns=max_signal_age_ns,
             max_leg_book_age_ns=max_leg_book_age_ns,
             max_leg_book_skew_ns=max_leg_book_skew_ns,
@@ -100,6 +124,8 @@ def run_parity_sweep(
                 "asof_latency_ns": int(asof_latency_ns),
                 "feed_latency_us": float(feed_latency_us),
                 "order_latency_us": float(order_latency_us),
+                "latency_jitter_us": float(latency_jitter_us),
+                "latency_seed": int(latency_seed),
                 "signal_count": int(len(replay.signals)),
                 **legging,
                 **summary,
@@ -127,6 +153,8 @@ def run_parity_sweep(
             "asof_latency_ns_values": asof_latency_ns_values,
             "feed_latency_us_values": feed_latency_us_values,
             "order_latency_us_values": order_latency_us_values,
+            "latency_jitter_us_values": latency_jitter_us_values,
+            "latency_seed": latency_seed,
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
@@ -1275,13 +1303,19 @@ def _run_name(
     asof_latency_ns: int,
     feed_latency_us: float,
     order_latency_us: float,
+    latency_jitter_us: float = 0.0,
 ) -> str:
-    return (
+    name = (
         f"depth_{_label_number(depth_fraction)}"
         f"__asof_{int(asof_latency_ns)}ns"
         f"__feed_{_label_number(feed_latency_us)}us"
         f"__order_{_label_number(order_latency_us)}us"
     )
+    if float(latency_jitter_us) != 0.0:
+        name += (
+            f"__jitter_{_label_number(latency_jitter_us)}us"
+        )
+    return name
 
 
 def _label_number(value: float) -> str:
@@ -1312,6 +1346,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--asof-latency-ns", nargs="+", default=["0"])
     parser.add_argument("--feed-latency-us", nargs="+", default=["0"])
     parser.add_argument("--order-latency-us", nargs="+", default=["0"])
+    parser.add_argument(
+        "--latency-jitter-us",
+        nargs="+",
+        default=["0"],
+    )
+    parser.add_argument("--latency-seed", type=int, default=17)
     parser.add_argument(
         "--max-futures-quote-age-ns",
         type=int,
@@ -1346,6 +1386,10 @@ def main(argv: list[str] | None = None) -> int:
         asof_latency_ns_values=_int_list(args.asof_latency_ns),
         feed_latency_us_values=_float_list(args.feed_latency_us),
         order_latency_us_values=_float_list(args.order_latency_us),
+        latency_jitter_us_values=_float_list(
+            args.latency_jitter_us
+        ),
+        latency_seed=args.latency_seed,
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,

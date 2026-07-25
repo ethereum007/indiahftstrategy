@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -64,6 +65,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(replay.legging.iloc[0]["unfilled_leg_count"]) == 0
     assert replay.summary.iloc[0]["fills"] == 3
     assert (out_dir / "fills.csv").exists()
+    assert (out_dir / "feed_deliveries.csv").exists()
     assert (out_dir / "order_submissions.csv").exists()
     assert (out_dir / "ioc_arrival_audit.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
@@ -89,6 +91,12 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     ]
     summary = replay.summary.iloc[0]
     assert bool(summary["input_quarantine_tracking_enabled"])
+    assert bool(summary["feed_delivery_tracking_enabled"])
+    assert int(summary["feed_delivery_events"]) == 6
+    assert int(summary["feed_delivery_missing_evidence_rows"]) == 0
+    assert int(summary["feed_delivery_consistency_violations"]) == 0
+    assert int(summary["min_sampled_feed_latency_ns"]) == 0
+    assert int(summary["max_sampled_feed_latency_ns"]) == 0
     assert int(summary["input_dataset_count"]) == 2
     assert int(summary["input_total_rows"]) == 4
     assert int(summary["input_kept_rows"]) == 4
@@ -583,6 +591,125 @@ def test_run_parity_replay_proves_reverse_realized_package_edge(
     ) == float(outcome["realized_net_edge"])
 
 
+def test_run_parity_replay_audits_seeded_latency_jitter(tmp_path):
+    ts0 = ns_ist("2026-06-10 09:15:00")
+    ts1 = ns_ist("2026-06-10 09:15:00.000100")
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "expiry": "2026-06-30",
+                "strike": 1000.0,
+                "call_bid": 54.0,
+                "call_ask": 55.0,
+                "call_bid_qty": 300,
+                "call_ask_qty": 300,
+                "put_bid": 60.0,
+                "put_ask": 61.0,
+                "put_bid_qty": 300,
+                "put_ask_qty": 300,
+            }
+            for ts in [ts0, ts1]
+        ]
+    )
+    futures = pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "bid": 1100.0,
+                "ask": 1101.0,
+                "bid_qty": 300,
+                "ask_qty": 300,
+            }
+            for ts in [ts0, ts1]
+        ]
+    )
+    chain_path = tmp_path / "chain.csv"
+    futures_path = tmp_path / "futures.csv"
+    out_dir = tmp_path / "jittered"
+    chain.to_csv(chain_path, index=False)
+    futures.to_csv(futures_path, index=False)
+
+    kwargs = {
+        "chain_path": chain_path,
+        "futures_path": futures_path,
+        "depth_fraction": 0.25,
+        "feed_latency_us": 10.0,
+        "order_latency_us": 10.0,
+        "latency_jitter_us": 5.0,
+        "latency_seed": 123,
+        "signal_limit": 1,
+    }
+    replay = run_parity_replay(
+        **kwargs,
+        output_dir=out_dir,
+    )
+    repeated = run_parity_replay(**kwargs)
+
+    feed = replay.result.feed_deliveries
+    submissions = replay.result.order_submissions
+    summary = replay.summary.iloc[0]
+    assert feed["feed_latency_ns"].between(5_000, 15_000).all()
+    assert submissions["order_latency_ns"].between(
+        5_000,
+        15_000,
+    ).all()
+    assert feed["feed_latency_ns"].tolist() == (
+        repeated.result.feed_deliveries["feed_latency_ns"].tolist()
+    )
+    assert submissions["order_latency_ns"].tolist() == (
+        repeated.result.order_submissions["order_latency_ns"].tolist()
+    )
+    assert int(summary["parity_latency_seed"]) == 123
+    assert float(summary["parity_latency_jitter_us"]) == 5.0
+    assert int(summary["parity_feed_latency_samples"]) == 6
+    assert int(summary["parity_order_latency_samples"]) == 3
+    assert int(summary["parity_feed_latency_bound_violations"]) == 0
+    assert int(summary["parity_order_latency_bound_violations"]) == 0
+    assert int(summary["parity_expected_min_feed_latency_ns"]) == 5_000
+    assert int(summary["parity_expected_max_order_latency_ns"]) == 15_000
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["parameters"]["latency_jitter_us"] == 5.0
+    assert manifest["parameters"]["latency_seed"] == 123
+    proof = evaluate_replay_dirs(
+        [out_dir],
+        thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+    assert proof.passed
+    proof_metrics = proof.metrics.iloc[0]
+    assert bool(proof_metrics["parity_latency_sampling_enabled"])
+    assert int(
+        proof_metrics["parity_feed_latency_bound_violations"]
+    ) == 0
+    assert int(
+        proof_metrics["parity_order_latency_bound_violations"]
+    ) == 0
+
+    tampered = pd.read_csv(out_dir / "feed_deliveries.csv")
+    tampered.loc[0, "strategy_ts_ns"] += 100_000
+    tampered.loc[0, "feed_latency_ns"] += 100_000
+    tampered.to_csv(out_dir / "feed_deliveries.csv", index=False)
+    failed = evaluate_replay_dirs(
+        [out_dir],
+        thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+    failed_checks = set(
+        failed.checks.loc[
+            ~failed.checks["passed"],
+            "check",
+        ]
+    )
+    assert "parity_feed_latency_bound_violations" in failed_checks
+
+
 def test_run_parity_replay_rejects_edge_that_decays_during_feed_latency(
     tmp_path,
 ):
@@ -764,6 +891,10 @@ def test_unified_cli_replay_parity_forwards_execution_guard_limits(
                 "300000",
                 "--max-leg-book-skew-ns",
                 "200000",
+                "--latency-jitter-us",
+                "25",
+                "--latency-seed",
+                "99",
             ]
         )
 
@@ -772,3 +903,5 @@ def test_unified_cli_replay_parity_forwards_execution_guard_limits(
     assert kwargs["max_signal_age_ns"] == 400_000
     assert kwargs["max_leg_book_age_ns"] == 300_000
     assert kwargs["max_leg_book_skew_ns"] == 200_000
+    assert kwargs["latency_jitter_us"] == 25.0
+    assert kwargs["latency_seed"] == 99

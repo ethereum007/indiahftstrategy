@@ -708,6 +708,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parity.add_argument("--feed-latency-us", type=float, default=0.0)
     parity.add_argument("--order-latency-us", type=float, default=0.0)
+    parity.add_argument("--latency-jitter-us", type=float, default=0.0)
+    parity.add_argument("--latency-seed", type=int, default=17)
     parity.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
     parity.add_argument(
         "--max-leg-book-age-ns",
@@ -4120,6 +4122,8 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--asof-latency-ns", nargs="+", default=[0], type=int)
     parity_sweep.add_argument("--feed-latency-us", nargs="+", default=[0.0], type=float)
     parity_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
+    parity_sweep.add_argument("--latency-jitter-us", nargs="+", default=[0.0], type=float)
+    parity_sweep.add_argument("--latency-seed", type=int, default=17)
     parity_sweep.add_argument("--signal-limit", type=int, default=None)
     parity_sweep.add_argument(
         "--max-futures-quote-age-ns",
@@ -5460,6 +5464,8 @@ def main(argv: list[str] | None = None) -> int:
             max_futures_quote_age_ns=args.max_futures_quote_age_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
+            latency_jitter_us=args.latency_jitter_us,
+            latency_seed=args.latency_seed,
             max_signal_age_ns=args.max_signal_age_ns,
             max_leg_book_age_ns=args.max_leg_book_age_ns,
             max_leg_book_skew_ns=args.max_leg_book_skew_ns,
@@ -9282,6 +9288,8 @@ def main(argv: list[str] | None = None) -> int:
             asof_latency_ns_values=args.asof_latency_ns,
             feed_latency_us_values=args.feed_latency_us,
             order_latency_us_values=args.order_latency_us,
+            latency_jitter_us_values=args.latency_jitter_us,
+            latency_seed=args.latency_seed,
             filter_session=not args.no_filter_session,
             signal_limit=args.signal_limit,
             max_futures_quote_age_ns=args.max_futures_quote_age_ns,

@@ -122,6 +122,8 @@ def sweep_runs(*, proof_passed=True):
                 "parity_execution_max_leg_book_skew_ns": 50_000,
                 "feed_latency_us": 0.0,
                 "order_latency_us": 0.0,
+                "latency_jitter_us": 15.0,
+                "latency_seed": 2026,
                 "signal_count": 1,
                 "execution_count": 1,
                 "partial_execution_count": 0,
@@ -177,6 +179,8 @@ def test_parity_candidate_promotion_passes_and_feeds_order_plan():
     assert config["replay_defaults"]["max_futures_quote_age_ns"] == 100_000
     assert config["replay_defaults"]["max_leg_book_age_ns"] == 200_000
     assert config["replay_defaults"]["max_leg_book_skew_ns"] == 50_000
+    assert config["replay_defaults"]["latency_jitter_us"] == 15.0
+    assert config["replay_defaults"]["latency_seed"] == 2026
 
     order_plan = build_parity_order_plan(
         report.summary,

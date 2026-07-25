@@ -291,6 +291,12 @@ def _candidate_record(
         "asof_latency_ns": _jsonable(sweep_run.get("asof_latency_ns")),
         "feed_latency_us": _jsonable(sweep_run.get("feed_latency_us")),
         "order_latency_us": _jsonable(sweep_run.get("order_latency_us")),
+        "latency_jitter_us": _jsonable(
+            sweep_run.get("latency_jitter_us", 0.0)
+        ),
+        "latency_seed": _jsonable(
+            sweep_run.get("latency_seed", 17)
+        ),
         "sweep_net_pnl": _jsonable(sweep_run.get("net_pnl")),
         "sweep_fills": _jsonable(sweep_run.get("fills")),
         "sweep_robust_score": _jsonable(sweep_run.get("robust_score")),
@@ -433,6 +439,8 @@ def _promotion_candidate_config(
             "max_leg_book_skew_ns",
             "feed_latency_us",
             "order_latency_us",
+            "latency_jitter_us",
+            "latency_seed",
         ]
         if key in row.index
     }

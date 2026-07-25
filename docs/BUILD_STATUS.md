@@ -7636,6 +7636,26 @@ compilation succeeds. Repository collection is healthy at `2725 tests` across
 `164` files. The full suite was not rerun because recent complete runs exceed
 40 minutes.
 
+Latest seeded latency-robustness proof: parity replay now accepts an explicit
+uniform jitter envelope and RNG seed for both feed and order paths. The
+multi-instrument engine writes `feed_deliveries.csv`, binding every unique
+market/feed event sequence, instrument, and venue to the venue-aligned market
+timestamp, strategy-visible timestamp, and sampled delay. Existing
+`order_submissions.csv` supplies the matching send, activation, and sampled
+order delay. Replay summaries expose configured bounds, sample censuses,
+observed extrema, missing evidence, and bound violations. Independent proof
+recomputes timestamp arithmetic, feed-event lineage, clipping-aware latency
+bounds, and order activation delay from raw artifacts; a self-consistent
+sample outside its configured envelope fails proof. Parity sweeps treat jitter
+magnitude as a scenario dimension while holding one visible seed fixed across
+the sweep, preserve zero-jitter run names, and carry the selected jitter and
+seed into candidate replay defaults. All outputs remain research-only and
+non-authorizing. The `236`-test shared-engine, replay, proof, parity,
+promotion, order-plan, launch, CLI, and evidence set passes. Source
+compilation succeeds. Repository collection is healthy at `2727 tests` across
+`164` files. The full suite was not rerun because recent complete runs exceed
+40 minutes.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

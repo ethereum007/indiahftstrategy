@@ -539,6 +539,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     summary = _read_required(run_dir / "summary.csv")
     row = summary.iloc[0]
     manifest = _read_manifest(run_dir)
+    manifest_parameters = _mapping(manifest.get("parameters"))
     equity = _read_optional(run_dir / "equity.csv")
     equity_by_regime = _read_optional(run_dir / "equity_by_regime.csv")
     spread_summary = _read_optional(run_dir / "spread_summary.csv")
@@ -556,6 +557,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     )
     parity_legging_path = run_dir / "legging.csv"
     fills_path = run_dir / "fills.csv"
+    feed_deliveries_path = run_dir / "feed_deliveries.csv"
     order_submissions_path = run_dir / "order_submissions.csv"
     ioc_arrival_audit_path = run_dir / "ioc_arrival_audit.csv"
     parity_execution_guard = _read_optional(
@@ -563,6 +565,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     )
     parity_legging = _read_optional(parity_legging_path)
     replay_fills = _read_optional(fills_path)
+    feed_deliveries = _read_optional(feed_deliveries_path)
     order_submissions = _read_optional(order_submissions_path)
     ioc_arrival_audit = _read_optional(ioc_arrival_audit_path)
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
@@ -648,6 +651,20 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_execution_run_detected = (
         str(manifest.get("run_type", "")).strip().lower()
         == "parity_replay"
+    )
+    parity_latency_sampling_declared = _bool(
+        row.get("parity_latency_sampling_audit_enabled", False)
+    )
+    parity_latency_sampling_configured = (
+        "latency_jitter_us" in manifest_parameters
+        and "latency_seed" in manifest_parameters
+    )
+    parity_latency_sampling_enabled = bool(
+        parity_execution_run_detected
+        and (
+            parity_latency_sampling_declared
+            or parity_latency_sampling_configured
+        )
     )
     parity_execution_guard_enabled = bool(
         parity_execution_guard_declared
@@ -1141,6 +1158,18 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         order_submissions,
         enabled=parity_execution_order_timing_declared,
         order_submissions_present=order_submissions_path.exists(),
+    )
+    parity_latency_sampling_metrics = (
+        _parity_latency_sampling_metrics(
+            feed_deliveries,
+            order_submissions,
+            parameters=manifest_parameters,
+            enabled=parity_latency_sampling_enabled,
+            feed_deliveries_present=feed_deliveries_path.exists(),
+            order_submissions_present=(
+                order_submissions_path.exists()
+            ),
+        )
     )
     parity_ioc_arrival_metrics = _parity_ioc_arrival_metrics(
         parity_legging,
@@ -1649,6 +1678,10 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "parity_execution_run_detected": (
             parity_execution_run_detected
         ),
+        "parity_latency_sampling_declared": (
+            parity_latency_sampling_declared
+        ),
+        **parity_latency_sampling_metrics,
         "parity_execution_max_leg_book_age_ns": (
             parity_execution_max_leg_book_age_ns
         ),
@@ -2928,6 +2961,235 @@ def _parity_realized_edge_metrics(
     }
 
 
+def _parity_latency_sampling_metrics(
+    feed_deliveries: pd.DataFrame,
+    order_submissions: pd.DataFrame,
+    *,
+    parameters: Mapping[str, Any],
+    enabled: bool,
+    feed_deliveries_present: bool,
+    order_submissions_present: bool,
+) -> dict[str, float | int | bool]:
+    feed_us = _configured_float(parameters, "feed_latency_us")
+    order_us = _configured_float(parameters, "order_latency_us")
+    jitter_us = _configured_float(parameters, "latency_jitter_us")
+    seed = _configured_float(parameters, "latency_seed")
+    configuration_violations = int(
+        not np.isfinite(feed_us) or feed_us < 0
+    )
+    configuration_violations += int(
+        not np.isfinite(order_us) or order_us < 0
+    )
+    configuration_violations += int(
+        not np.isfinite(jitter_us) or jitter_us < 0
+    )
+    configuration_violations += int(
+        not np.isfinite(seed)
+        or seed < 0
+        or seed % 1 != 0
+    )
+    if configuration_violations:
+        feed_min_ns = 0
+        feed_max_ns = 0
+        order_min_ns = 0
+        order_max_ns = 0
+    else:
+        feed_min_ns, feed_max_ns = _latency_bounds_ns(
+            feed_us,
+            jitter_us,
+        )
+        order_min_ns, order_max_ns = _latency_bounds_ns(
+            order_us,
+            jitter_us,
+        )
+    feed = _latency_evidence_metrics(
+        feed_deliveries,
+        latency_column="feed_latency_ns",
+        start_column="market_ts_ns",
+        end_column="strategy_ts_ns",
+        minimum_ns=feed_min_ns,
+        maximum_ns=feed_max_ns,
+        require_feed_lineage=True,
+    )
+    order = _latency_evidence_metrics(
+        order_submissions,
+        latency_column="order_latency_ns",
+        start_column="ts_sent_ns",
+        end_column="ts_active_ns",
+        minimum_ns=order_min_ns,
+        maximum_ns=order_max_ns,
+        require_feed_lineage=False,
+    )
+    return {
+        "parity_latency_sampling_enabled": bool(enabled),
+        "parity_latency_feed_deliveries_present": bool(
+            feed_deliveries_present
+        ),
+        "parity_latency_order_submissions_present": bool(
+            order_submissions_present
+        ),
+        "parity_latency_configuration_violations": (
+            configuration_violations
+        ),
+        "parity_latency_jitter_us": (
+            float(jitter_us) if np.isfinite(jitter_us) else np.nan
+        ),
+        "parity_latency_seed": (
+            int(seed) if np.isfinite(seed) and seed % 1 == 0 else -1
+        ),
+        "parity_expected_min_feed_latency_ns": feed_min_ns,
+        "parity_expected_max_feed_latency_ns": feed_max_ns,
+        "parity_feed_latency_samples": feed["samples"],
+        "parity_feed_latency_missing_rows": feed["missing_rows"],
+        "parity_feed_latency_consistency_violations": feed[
+            "consistency_violations"
+        ],
+        "parity_feed_latency_bound_violations": feed[
+            "bound_violations"
+        ],
+        "parity_min_sampled_feed_latency_ns": feed[
+            "minimum_sampled_ns"
+        ],
+        "parity_max_sampled_feed_latency_ns": feed[
+            "maximum_sampled_ns"
+        ],
+        "parity_expected_min_order_latency_ns": order_min_ns,
+        "parity_expected_max_order_latency_ns": order_max_ns,
+        "parity_order_latency_samples": order["samples"],
+        "parity_order_latency_missing_rows": order["missing_rows"],
+        "parity_order_latency_consistency_violations": order[
+            "consistency_violations"
+        ],
+        "parity_order_latency_bound_violations": order[
+            "bound_violations"
+        ],
+        "parity_min_sampled_order_latency_ns": order[
+            "minimum_sampled_ns"
+        ],
+        "parity_max_sampled_order_latency_ns": order[
+            "maximum_sampled_ns"
+        ],
+    }
+
+
+def _configured_float(
+    parameters: Mapping[str, Any],
+    key: str,
+) -> float:
+    try:
+        return float(parameters[key])
+    except (KeyError, TypeError, ValueError):
+        return float("nan")
+
+
+def _latency_bounds_ns(
+    base_latency_us: float,
+    jitter_us: float,
+) -> tuple[int, int]:
+    return (
+        int(max(base_latency_us - jitter_us, 0.0) * 1_000),
+        int((base_latency_us + jitter_us) * 1_000),
+    )
+
+
+def _latency_evidence_metrics(
+    frame: pd.DataFrame,
+    *,
+    latency_column: str,
+    start_column: str,
+    end_column: str,
+    minimum_ns: int,
+    maximum_ns: int,
+    require_feed_lineage: bool,
+) -> dict[str, int]:
+    required = [latency_column, start_column, end_column]
+    if require_feed_lineage:
+        required.extend(
+            [
+                "market_event_seq",
+                "feed_event_seq",
+                "instrument_id",
+                "venue",
+            ]
+        )
+    missing_columns = [
+        column for column in required if column not in frame.columns
+    ]
+    if missing_columns:
+        return {
+            "samples": int(len(frame)),
+            "missing_rows": int(len(frame)),
+            "consistency_violations": int(len(frame)),
+            "bound_violations": int(len(frame)),
+            "minimum_sampled_ns": 0,
+            "maximum_sampled_ns": 0,
+        }
+    numeric_columns = [
+        latency_column,
+        start_column,
+        end_column,
+    ]
+    if require_feed_lineage:
+        numeric_columns.extend(
+            ["market_event_seq", "feed_event_seq"]
+        )
+    numbers = frame[numeric_columns].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+    missing = numbers.isna().any(axis=1)
+    nonintegral = numbers.mod(1).ne(0).any(axis=1)
+    inconsistent = (
+        missing
+        | nonintegral
+        | numbers[latency_column].lt(0)
+        | numbers[end_column].lt(numbers[start_column])
+        | numbers[latency_column].ne(
+            numbers[end_column] - numbers[start_column]
+        )
+    )
+    if require_feed_lineage:
+        missing_identity = (
+            frame["instrument_id"].isna()
+            | frame["instrument_id"].astype(str).str.strip().eq("")
+            | frame["venue"].isna()
+            | frame["venue"].astype(str).str.strip().eq("")
+        )
+        duplicate_lineage = (
+            numbers["market_event_seq"].duplicated(keep=False)
+            | numbers["feed_event_seq"].duplicated(keep=False)
+        )
+        inconsistent |= (
+            missing_identity
+            | duplicate_lineage
+            | numbers["feed_event_seq"].ne(
+                numbers["market_event_seq"] + 1
+            )
+        )
+        missing |= missing_identity
+    valid = ~missing & ~nonintegral
+    bound_violations = (
+        valid
+        & (
+            numbers[latency_column].lt(minimum_ns)
+            | numbers[latency_column].gt(maximum_ns)
+        )
+    )
+    sampled = numbers.loc[valid, latency_column]
+    return {
+        "samples": int(len(frame)),
+        "missing_rows": int(missing.sum()),
+        "consistency_violations": int(inconsistent.sum()),
+        "bound_violations": int(bound_violations.sum()),
+        "minimum_sampled_ns": (
+            int(sampled.min()) if not sampled.empty else 0
+        ),
+        "maximum_sampled_ns": (
+            int(sampled.max()) if not sampled.empty else 0
+        ),
+    }
+
+
 def _parity_order_timing_metrics(
     legging: pd.DataFrame,
     fills: pd.DataFrame,
@@ -4052,6 +4314,118 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+    if bool(metrics["parity_latency_sampling_enabled"]):
+        for metric, reason in [
+            (
+                "parity_latency_sampling_declared",
+                "parity latency sampling is configured without "
+                "the summary audit declaration",
+            ),
+            (
+                "parity_latency_feed_deliveries_present",
+                "engine-owned feed-delivery evidence is missing",
+            ),
+            (
+                "parity_latency_order_submissions_present",
+                "engine-owned order-submission evidence is missing",
+            ),
+        ]:
+            present = bool(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": present,
+                    "operator": "is",
+                    "threshold": True,
+                    "passed": present,
+                    "reason": "" if present else reason,
+                }
+            )
+        feed_samples = int(
+            metrics["parity_feed_latency_samples"]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_feed_latency_samples",
+                "value": feed_samples,
+                "operator": ">=",
+                "threshold": 1,
+                "passed": feed_samples >= 1,
+                "reason": (
+                    ""
+                    if feed_samples >= 1
+                    else "parity replay contains no feed-latency samples"
+                ),
+            }
+        )
+        order_samples = int(
+            metrics["parity_order_latency_samples"]
+        )
+        required_order_samples = (
+            1 if int(metrics["fills"]) > 0 else 0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_order_latency_samples",
+                "value": order_samples,
+                "operator": ">=",
+                "threshold": required_order_samples,
+                "passed": order_samples >= required_order_samples,
+                "reason": (
+                    ""
+                    if order_samples >= required_order_samples
+                    else (
+                        "filled parity replay contains no sampled "
+                        "order latency"
+                    )
+                ),
+            }
+        )
+        for metric, reason in [
+            (
+                "parity_latency_configuration_violations",
+                "latency base, jitter, or seed configuration is invalid",
+            ),
+            (
+                "parity_feed_latency_missing_rows",
+                "feed-delivery rows are missing latency evidence",
+            ),
+            (
+                "parity_feed_latency_consistency_violations",
+                "feed-delivery timestamps or event lineage are inconsistent",
+            ),
+            (
+                "parity_feed_latency_bound_violations",
+                "sampled feed latency falls outside configured bounds",
+            ),
+            (
+                "parity_order_latency_missing_rows",
+                "order submissions are missing sampled latency",
+            ),
+            (
+                "parity_order_latency_consistency_violations",
+                "order activation timestamps disagree with sampled latency",
+            ),
+            (
+                "parity_order_latency_bound_violations",
+                "sampled order latency falls outside configured bounds",
+            ),
+        ]:
+            value = int(metrics[metric])
+            rows.append(
+                {
+                    "run": metrics["run"],
+                    "check": metric,
+                    "value": value,
+                    "operator": "==",
+                    "threshold": 0,
+                    "passed": value == 0,
+                    "reason": "" if value == 0 else reason,
+                }
+            )
     if bool(metrics["parity_execution_guard_enabled"]):
         declared = bool(metrics["parity_execution_guard_declared"])
         rows.append(

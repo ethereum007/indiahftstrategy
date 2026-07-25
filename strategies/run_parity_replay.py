@@ -52,6 +52,8 @@ def run_parity_replay(
     depth_fraction: float = 0.25,
     feed_latency_us: float = 0.0,
     order_latency_us: float = 0.0,
+    latency_jitter_us: float = 0.0,
+    latency_seed: int = 17,
     max_signal_age_ns: int = 1_000_000,
     max_leg_book_age_ns: int = 1_000_000,
     max_leg_book_skew_ns: int = 1_000_000,
@@ -130,8 +132,8 @@ def run_parity_replay(
                 LatencyModel(
                     feed_us=feed_latency_us,
                     order_us=order_latency_us,
-                    jitter_us=0,
-                    _rng=np.random.default_rng(17),
+                    jitter_us=latency_jitter_us,
+                    _rng=np.random.default_rng(latency_seed),
                 ),
             )
         },
@@ -161,6 +163,24 @@ def run_parity_replay(
         max_leg_book_skew_ns=max_leg_book_skew_ns,
     ).items():
         summary[key] = value
+    latency_metrics = _latency_sampling_metrics(
+        result.feed_deliveries,
+        result.order_submissions,
+        feed_latency_us=feed_latency_us,
+        order_latency_us=order_latency_us,
+        latency_jitter_us=latency_jitter_us,
+        latency_seed=latency_seed,
+    )
+    summary = pd.concat(
+        [
+            summary,
+            pd.DataFrame(
+                [latency_metrics],
+                index=summary.index,
+            ),
+        ],
+        axis=1,
+    )
     out_dir = Path(output_dir) if output_dir else None
     if out_dir:
         write_replay_outputs(
@@ -189,6 +209,8 @@ def run_parity_replay(
                 "depth_fraction": depth_fraction,
                 "feed_latency_us": feed_latency_us,
                 "order_latency_us": order_latency_us,
+                "latency_jitter_us": latency_jitter_us,
+                "latency_seed": latency_seed,
                 "max_signal_age_ns": max_signal_age_ns,
                 "max_leg_book_age_ns": max_leg_book_age_ns,
                 "max_leg_book_skew_ns": max_leg_book_skew_ns,
@@ -207,6 +229,120 @@ def run_parity_replay(
         futures_join_audit=futures_join_audit,
         output_dir=out_dir,
     )
+
+
+def _latency_sampling_metrics(
+    feed_deliveries: pd.DataFrame,
+    order_submissions: pd.DataFrame,
+    *,
+    feed_latency_us: float,
+    order_latency_us: float,
+    latency_jitter_us: float,
+    latency_seed: int,
+) -> dict[str, int | float | bool]:
+    feed_min_ns, feed_max_ns = _latency_bounds_ns(
+        feed_latency_us,
+        latency_jitter_us,
+    )
+    order_min_ns, order_max_ns = _latency_bounds_ns(
+        order_latency_us,
+        latency_jitter_us,
+    )
+    feed_metrics = _sampled_latency_metrics(
+        feed_deliveries,
+        column="feed_latency_ns",
+        minimum_ns=feed_min_ns,
+        maximum_ns=feed_max_ns,
+    )
+    order_metrics = _sampled_latency_metrics(
+        order_submissions,
+        column="order_latency_ns",
+        minimum_ns=order_min_ns,
+        maximum_ns=order_max_ns,
+    )
+    return {
+        "parity_latency_sampling_audit_enabled": True,
+        "parity_latency_jitter_us": float(latency_jitter_us),
+        "parity_latency_seed": int(latency_seed),
+        "parity_expected_min_feed_latency_ns": feed_min_ns,
+        "parity_expected_max_feed_latency_ns": feed_max_ns,
+        "parity_feed_latency_samples": feed_metrics["samples"],
+        "parity_feed_latency_missing_rows": feed_metrics[
+            "missing_rows"
+        ],
+        "parity_feed_latency_bound_violations": feed_metrics[
+            "bound_violations"
+        ],
+        "parity_min_sampled_feed_latency_ns": feed_metrics[
+            "minimum_sampled_ns"
+        ],
+        "parity_max_sampled_feed_latency_ns": feed_metrics[
+            "maximum_sampled_ns"
+        ],
+        "parity_expected_min_order_latency_ns": order_min_ns,
+        "parity_expected_max_order_latency_ns": order_max_ns,
+        "parity_order_latency_samples": order_metrics["samples"],
+        "parity_order_latency_missing_rows": order_metrics[
+            "missing_rows"
+        ],
+        "parity_order_latency_bound_violations": order_metrics[
+            "bound_violations"
+        ],
+        "parity_min_sampled_order_latency_ns": order_metrics[
+            "minimum_sampled_ns"
+        ],
+        "parity_max_sampled_order_latency_ns": order_metrics[
+            "maximum_sampled_ns"
+        ],
+    }
+
+
+def _latency_bounds_ns(
+    base_latency_us: float,
+    jitter_us: float,
+) -> tuple[int, int]:
+    return (
+        int(max(float(base_latency_us) - float(jitter_us), 0.0) * 1_000),
+        int((float(base_latency_us) + float(jitter_us)) * 1_000),
+    )
+
+
+def _sampled_latency_metrics(
+    frame: pd.DataFrame,
+    *,
+    column: str,
+    minimum_ns: int,
+    maximum_ns: int,
+) -> dict[str, int]:
+    if column not in frame.columns:
+        return {
+            "samples": int(len(frame)),
+            "missing_rows": int(len(frame)),
+            "bound_violations": int(len(frame)),
+            "minimum_sampled_ns": 0,
+            "maximum_sampled_ns": 0,
+        }
+    values = pd.to_numeric(frame[column], errors="coerce")
+    missing = values.isna()
+    nonintegral = values.mod(1).ne(0)
+    violations = (
+        missing
+        | nonintegral
+        | values.lt(minimum_ns)
+        | values.gt(maximum_ns)
+    )
+    sampled = values.loc[~missing]
+    return {
+        "samples": int(len(frame)),
+        "missing_rows": int(missing.sum()),
+        "bound_violations": int(violations.sum()),
+        "minimum_sampled_ns": (
+            int(sampled.min()) if not sampled.empty else 0
+        ),
+        "maximum_sampled_ns": (
+            int(sampled.max()) if not sampled.empty else 0
+        ),
+    }
 
 
 def _futures_freshness_metrics(
@@ -2117,6 +2253,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--depth-fraction", type=float, default=0.25)
     parser.add_argument("--feed-latency-us", type=float, default=0.0)
     parser.add_argument("--order-latency-us", type=float, default=0.0)
+    parser.add_argument("--latency-jitter-us", type=float, default=0.0)
+    parser.add_argument("--latency-seed", type=int, default=17)
     parser.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
     parser.add_argument(
         "--max-leg-book-age-ns",
@@ -2144,6 +2282,8 @@ def main(argv: list[str] | None = None) -> int:
         depth_fraction=args.depth_fraction,
         feed_latency_us=args.feed_latency_us,
         order_latency_us=args.order_latency_us,
+        latency_jitter_us=args.latency_jitter_us,
+        latency_seed=args.latency_seed,
         max_signal_age_ns=args.max_signal_age_ns,
         max_leg_book_age_ns=args.max_leg_book_age_ns,
         max_leg_book_skew_ns=args.max_leg_book_skew_ns,

@@ -88,6 +88,28 @@ class RoutedFill:
 
 
 @dataclass(frozen=True)
+class FeedDelivery:
+    market_event_seq: int
+    feed_event_seq: int
+    instrument_id: str
+    venue: str
+    market_ts_ns: int
+    strategy_ts_ns: int
+    feed_latency_ns: int
+
+
+FEED_DELIVERY_COLUMNS = [
+    "market_event_seq",
+    "feed_event_seq",
+    "instrument_id",
+    "venue",
+    "market_ts_ns",
+    "strategy_ts_ns",
+    "feed_latency_ns",
+]
+
+
+@dataclass(frozen=True)
 class IOCOrderIntent:
     instrument_id: str
     side: int
@@ -179,6 +201,7 @@ class MultiInstrumentEngine:
 
         self.open_orders: Dict[int, Order] = {}
         self.fills: List[RoutedFill] = []
+        self.feed_deliveries: List[FeedDelivery] = []
         self.order_submissions: List[OrderSubmission] = []
         self.order_rejections: List[OrderRejection] = []
         self.order_cancellations: List[OrderCancellation] = []
@@ -195,6 +218,7 @@ class MultiInstrumentEngine:
         self.venue_order_validation_enabled = True
         self.lot_conserving_fills_enabled = True
         self.causal_event_ordering_enabled = True
+        self.feed_delivery_tracking_enabled = True
         self.order_submission_tracking_enabled = True
         self.cancel_lifecycle_tracking_enabled = True
         self.order_horizon_tracking_enabled = True
@@ -1309,6 +1333,7 @@ class MultiInstrumentEngine:
 
     def _events(self) -> list[_Event]:
         events: list[_Event] = []
+        self.feed_deliveries.clear()
         seq = 0
         for instrument_id, cfg in self.instruments.items():
             venue = self.venues[cfg.venue]
@@ -1324,9 +1349,40 @@ class MultiInstrumentEngine:
                 feed_ts = aligned_ts + venue.latency.feed_delay_ns()
                 feed_tick["ts"] = feed_ts
                 feed_tick["market_ts"] = aligned_ts
-                events.append(_Event(aligned_ts, 0, seq, "market", instrument_id, market_tick))
+                market_event_seq = seq
+                events.append(
+                    _Event(
+                        aligned_ts,
+                        0,
+                        market_event_seq,
+                        "market",
+                        instrument_id,
+                        market_tick,
+                    )
+                )
                 seq += 1
-                events.append(_Event(feed_ts, 1, seq, "feed", instrument_id, feed_tick))
+                feed_event_seq = seq
+                events.append(
+                    _Event(
+                        feed_ts,
+                        1,
+                        feed_event_seq,
+                        "feed",
+                        instrument_id,
+                        feed_tick,
+                    )
+                )
+                self.feed_deliveries.append(
+                    FeedDelivery(
+                        market_event_seq=market_event_seq,
+                        feed_event_seq=feed_event_seq,
+                        instrument_id=instrument_id,
+                        venue=cfg.venue,
+                        market_ts_ns=aligned_ts,
+                        strategy_ts_ns=feed_ts,
+                        feed_latency_ns=feed_ts - aligned_ts,
+                    )
+                )
                 seq += 1
         return sorted(events)
 
@@ -2144,6 +2200,13 @@ class MultiBacktestResult:
         self.engine = engine
         self.equity = pd.DataFrame(engine.equity_curve, columns=["ts", "equity"])
         self.fills = pd.DataFrame([fill.__dict__ for fill in engine.fills])
+        self.feed_deliveries = pd.DataFrame(
+            [
+                delivery.__dict__
+                for delivery in engine.feed_deliveries
+            ],
+            columns=FEED_DELIVERY_COLUMNS,
+        )
         self.order_submissions = pd.DataFrame(
             [
                 submission.__dict__
