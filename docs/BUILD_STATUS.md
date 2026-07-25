@@ -6,7 +6,8 @@
   cancels, depth-constrained terminal liquidation, OTR reporting, shared
   per-event displayed liquidity, persistent same-level depletion across L1
   snapshots, own-order queue priority initialized from the first market
-  snapshot at venue arrival or first observable touch, liquidity-shortfall and
+  snapshot at venue arrival or first observable touch, aggressive-limit
+  residual transitions into observable passive queues, liquidity-shortfall and
   residual-inventory evidence, and tests. Unchanged snapshots do not restore
   consumed depth; only an observed size increase replenishes its delta, while
   a price or timestamp-day change starts a fresh level.
@@ -7304,6 +7305,24 @@ uninitialized count. Engine, replay, proof, walk-forward, and sweep regressions
 pass (`73` tests). Repository collection is healthy at `2663 tests` across
 `164` files. The full suite was not rerun because recent complete runs exceed
 40 minutes. All outputs remain non-authorizing.
+
+Latest aggressive-limit residual proof: a marketable limit that receives only
+a partial taker fill no longer carries its original aggressive zero-queue
+identity after the market moves away. Single- and multi-instrument engines
+record the first snapshot where the residual stops crossing and mark it
+resting. A residual visible at touch or inside the spread joins conservative
+public plus earlier-own-order priority immediately; an off-touch residual
+keeps its queue unresolved, ignores stale prints, and initializes only at the
+first later touch, spread improvement, or trade-through. Later executions are
+classified as maker fills. `resting_transitions.csv` preserves transition
+timing, remaining quantity, book relation, deferred state, eventual queue
+initialization mode/lag, observed depth, own tail, and resulting queue. Replay,
+proof, walk-forward, strategy sweep, and cross-sweep outputs retain transition
+count/quantity, deferred and unresolved counts, and maximum initialization
+lag. Broader engine, replay, proof, walk-forward, and sweep regressions pass
+(`77` tests). Repository collection is healthy at `2667 tests` across `164`
+files. The full suite was not rerun because recent complete runs exceed 40
+minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 

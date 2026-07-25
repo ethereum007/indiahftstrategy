@@ -75,6 +75,21 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(result.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
     assert int(result.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 0
     assert int(
+        result.summary.iloc[0]["total_residual_resting_transition_events"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_residual_resting_transition_qty"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_deferred_residual_queue_events"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_unresolved_residual_queue_events"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["max_residual_queue_initialization_lag_ns"]
+    ) == 0
+    assert int(
         result.summary.iloc[0]["total_terminal_liquidation_events"]
     ) == int(result.runs["terminal_liquidation_events"].sum())
     assert int(

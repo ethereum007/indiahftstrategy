@@ -35,6 +35,11 @@ KNOWN_NON_PARAM_COLUMNS = {
     "deferred_queue_initialization_events",
     "uninitialized_limit_orders",
     "max_queue_initialization_lag_ns",
+    "residual_resting_transition_events",
+    "residual_resting_transition_qty",
+    "deferred_residual_queue_events",
+    "unresolved_residual_queue_events",
+    "max_residual_queue_initialization_lag_ns",
     "terminal_liquidation_depth_constrained_enabled",
     "terminal_liquidation_events",
     "terminal_liquidation_requested_qty",
@@ -259,6 +264,26 @@ def _score_scenarios(
             group,
             "max_queue_initialization_lag_ns",
         ).fillna(0.0)
+        residual_resting_transition_events = _numeric(
+            group,
+            "residual_resting_transition_events",
+        ).fillna(0.0)
+        residual_resting_transition_qty = _numeric(
+            group,
+            "residual_resting_transition_qty",
+        ).fillna(0.0)
+        deferred_residual_queue_events = _numeric(
+            group,
+            "deferred_residual_queue_events",
+        ).fillna(0.0)
+        unresolved_residual_queue_events = _numeric(
+            group,
+            "unresolved_residual_queue_events",
+        ).fillna(0.0)
+        residual_queue_initialization_lag_ns = _numeric(
+            group,
+            "max_residual_queue_initialization_lag_ns",
+        ).fillna(0.0)
         terminal_liquidation_events = _numeric(
             group,
             "terminal_liquidation_events",
@@ -351,6 +376,21 @@ def _score_scenarios(
                 "max_queue_initialization_lag_ns": int(
                     queue_initialization_lag_ns.max()
                 ),
+                "total_residual_resting_transition_events": int(
+                    residual_resting_transition_events.sum()
+                ),
+                "total_residual_resting_transition_qty": int(
+                    residual_resting_transition_qty.sum()
+                ),
+                "total_deferred_residual_queue_events": int(
+                    deferred_residual_queue_events.sum()
+                ),
+                "total_unresolved_residual_queue_events": int(
+                    unresolved_residual_queue_events.sum()
+                ),
+                "max_residual_queue_initialization_lag_ns": int(
+                    residual_queue_initialization_lag_ns.max()
+                ),
                 "total_terminal_liquidation_events": int(
                     terminal_liquidation_events.sum()
                 ),
@@ -421,6 +461,11 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_deferred_queue_initialization_events": 0,
                     "total_uninitialized_limit_orders": 0,
                     "max_queue_initialization_lag_ns": 0,
+                    "total_residual_resting_transition_events": 0,
+                    "total_residual_resting_transition_qty": 0,
+                    "total_deferred_residual_queue_events": 0,
+                    "total_unresolved_residual_queue_events": 0,
+                    "max_residual_queue_initialization_lag_ns": 0,
                     "total_terminal_liquidation_events": 0,
                     "total_terminal_liquidation_requested_qty": 0,
                     "total_terminal_liquidation_filled_qty": 0,
@@ -512,6 +557,46 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     _numeric(
                         scenario_runs,
                         "max_queue_initialization_lag_ns",
+                    )
+                    .fillna(0.0)
+                    .max()
+                ),
+                "total_residual_resting_transition_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "residual_resting_transition_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_residual_resting_transition_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "residual_resting_transition_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_deferred_residual_queue_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "deferred_residual_queue_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_unresolved_residual_queue_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "unresolved_residual_queue_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "max_residual_queue_initialization_lag_ns": int(
+                    _numeric(
+                        scenario_runs,
+                        "max_residual_queue_initialization_lag_ns",
                     )
                     .fillna(0.0)
                     .max()

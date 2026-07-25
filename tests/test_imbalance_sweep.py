@@ -80,6 +80,21 @@ def test_run_imbalance_sweep_writes_runs_summary_and_proof(tmp_path):
     assert int(sweep.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
     assert int(sweep.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 0
     assert int(
+        sweep.summary.iloc[0]["total_residual_resting_transition_events"]
+    ) == 0
+    assert int(
+        sweep.summary.iloc[0]["total_residual_resting_transition_qty"]
+    ) == 0
+    assert int(
+        sweep.summary.iloc[0]["total_deferred_residual_queue_events"]
+    ) == 0
+    assert int(
+        sweep.summary.iloc[0]["total_unresolved_residual_queue_events"]
+    ) == 0
+    assert int(
+        sweep.summary.iloc[0]["max_residual_queue_initialization_lag_ns"]
+    ) == 0
+    assert int(
         sweep.summary.iloc[0]["total_terminal_liquidation_events"]
     ) == int(sweep.runs["terminal_liquidation_events"].sum())
     assert int(

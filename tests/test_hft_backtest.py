@@ -271,6 +271,91 @@ def test_marketable_limit_waits_for_observed_depth_replenishment():
     ]
 
 
+def test_marketable_limit_residual_joins_visible_resting_queue():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (2_000, 100.05, 100.10, 200, 100, np.nan, 0),
+            (3_000, 100.05, 100.10, 200, 100, 100.05, 200),
+            (4_000, 100.05, 100.10, 200, 100, 100.05, 50),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 100.05, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 4_000]
+    assert strategy_fills["maker"].tolist() == [False, True]
+    transition = result.resting_transitions.iloc[0]
+    assert transition["ts_ns"] == 2_000
+    assert transition["transition_lag_ns"] == 2_000
+    assert transition["filled_qty"] == 100
+    assert transition["remaining_qty"] == 50
+    assert transition["book_relation"] == "bid_touch"
+    assert not bool(transition["deferred_at_transition"])
+    assert transition["mode"] == "residual_resting_snapshot"
+    assert bool(transition["queue_initialized"])
+    assert transition["queue_initialization_ts_ns"] == 2_000
+    assert transition["queue_initialization_lag_ns"] == 0
+    assert transition["initialization_book_relation"] == "bid_touch"
+    assert transition["observed_qty"] == 200
+    assert transition["public_queue_ahead"] == 200
+    assert transition["queue_ahead"] == 200
+
+
+def test_off_touch_marketable_residual_defers_queue_and_ignores_stale_print():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (2_000, 100.10, 100.15, 200, 100, np.nan, 0),
+            (3_000, 100.10, 100.15, 200, 100, 100.05, 1_000),
+            (4_000, 100.05, 100.10, 225, 100, np.nan, 0),
+            (5_000, 100.05, 100.10, 225, 100, 100.05, 225),
+            (6_000, 100.05, 100.10, 225, 100, 100.05, 50),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 100.05, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        queue_conservatism=1.0,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 6_000]
+    assert strategy_fills["maker"].tolist() == [False, True]
+    transition = result.resting_transitions.iloc[0]
+    assert transition["ts_ns"] == 2_000
+    assert transition["book_relation"] == "away_from_touch"
+    assert bool(transition["deferred_at_transition"])
+    assert transition["mode"] == "residual_first_touch_snapshot"
+    assert bool(transition["queue_initialized"])
+    assert transition["queue_initialization_ts_ns"] == 4_000
+    assert transition["queue_initialization_lag_ns"] == 2_000
+    assert transition["initialization_book_relation"] == "bid_touch"
+    assert transition["observed_qty"] == 225
+    assert transition["public_queue_ahead"] == 225
+    assert transition["queue_ahead"] == 225
+
+
 def test_price_change_resets_persistent_displayed_liquidity():
     df = ticks(
         [

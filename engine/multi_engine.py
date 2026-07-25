@@ -23,6 +23,8 @@ from engine.hft_backtest import (
     OrderType,
     QueueInitialization,
     QUEUE_INITIALIZATION_COLUMNS,
+    RestingTransition,
+    RESTING_TRANSITION_COLUMNS,
     TerminalLiquidation,
     TERMINAL_LIQUIDATION_COLUMNS,
     _limit_book_relation,
@@ -139,6 +141,7 @@ class MultiInstrumentEngine:
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
+        self.resting_transitions: List[RestingTransition] = []
         self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
@@ -387,6 +390,158 @@ class MultiInstrumentEngine:
                 queue_ahead=float(order.queue_ahead),
             )
         )
+
+    def _transition_limit_to_resting(
+        self,
+        instrument_id: str,
+        order: Order,
+        tick: dict,
+        *,
+        snapshot_ts: int,
+    ) -> None:
+        if (
+            order.otype != OrderType.LIMIT
+            or order.resting_at_venue
+            or order.resting_transition_index is not None
+        ):
+            return
+
+        relation = _limit_book_relation(order, tick)
+        if relation == "marketable":
+            return
+
+        order.resting_at_venue = True
+        order.public_queue_ahead = 0.0
+        order.queue_ahead = 0.0
+        order.queue_initialized = relation != "away_from_touch"
+        observed_qty = 0.0
+        public_queue = 0.0
+        own_queue_tail = 0.0
+        if order.queue_initialized:
+            if relation == "bid_touch":
+                observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+                public_queue = self.qcons * observed_qty
+            elif relation == "ask_touch":
+                observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
+                public_queue = self.qcons * observed_qty
+            own_queue_tail = self._own_queue_tail(
+                instrument_id=instrument_id,
+                side=order.side,
+                price=order.price,
+                active_ns=order.ts_active_ns,
+                priority_oid=order.oid,
+            )
+            order.public_queue_ahead = max(float(public_queue), 0.0)
+            order.queue_ahead = max(
+                order.public_queue_ahead,
+                own_queue_tail,
+            )
+
+        transition = RestingTransition(
+            ts_ns=int(snapshot_ts),
+            instrument_id=instrument_id,
+            oid=order.oid,
+            side=order.side,
+            price=float(order.price),
+            ts_active_ns=int(order.ts_active_ns),
+            transition_lag_ns=max(
+                int(snapshot_ts) - int(order.ts_active_ns),
+                0,
+            ),
+            filled_qty=int(order.filled),
+            remaining_qty=max(int(order.qty) - int(order.filled), 0),
+            book_relation=relation,
+            deferred_at_transition=not order.queue_initialized,
+            mode=(
+                "residual_resting_snapshot"
+                if order.queue_initialized
+                else "residual_queue_deferred"
+            ),
+            queue_initialized=bool(order.queue_initialized),
+            queue_initialization_ts_ns=(
+                int(snapshot_ts)
+                if order.queue_initialized
+                else None
+            ),
+            queue_initialization_lag_ns=(
+                0
+                if order.queue_initialized
+                else None
+            ),
+            initialization_book_relation=(
+                relation
+                if order.queue_initialized
+                else ""
+            ),
+            observed_qty=float(observed_qty),
+            public_queue_ahead=float(order.public_queue_ahead),
+            own_queue_tail=float(own_queue_tail),
+            queue_ahead=float(order.queue_ahead),
+        )
+        order.resting_transition_index = len(self.resting_transitions)
+        self.resting_transitions.append(transition)
+
+    def _initialize_deferred_residual_queue(
+        self,
+        instrument_id: str,
+        order: Order,
+        tick: dict,
+        *,
+        snapshot_ts: int,
+    ) -> None:
+        if (
+            order.resting_transition_index is None
+            or order.queue_initialized
+        ):
+            return
+
+        relation = _limit_book_relation(order, tick)
+        if relation == "away_from_touch":
+            return
+
+        observed_qty = 0.0
+        public_queue = 0.0
+        if relation == "bid_touch":
+            observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+            public_queue = self.qcons * observed_qty
+            mode = "residual_first_touch_snapshot"
+        elif relation == "ask_touch":
+            observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
+            public_queue = self.qcons * observed_qty
+            mode = "residual_first_touch_snapshot"
+        elif relation == "price_improving":
+            mode = "residual_price_improvement_snapshot"
+        else:
+            mode = "residual_marketable_snapshot"
+
+        own_queue_tail = self._own_queue_tail(
+            instrument_id=instrument_id,
+            side=order.side,
+            price=order.price,
+            active_ns=order.ts_active_ns,
+            priority_oid=order.oid,
+        )
+        order.public_queue_ahead = max(float(public_queue), 0.0)
+        order.queue_ahead = max(
+            order.public_queue_ahead,
+            own_queue_tail,
+        )
+        order.queue_initialized = True
+        transition = self.resting_transitions[
+            order.resting_transition_index
+        ]
+        transition.mode = mode
+        transition.queue_initialized = True
+        transition.queue_initialization_ts_ns = int(snapshot_ts)
+        transition.queue_initialization_lag_ns = max(
+            int(snapshot_ts) - int(transition.ts_ns),
+            0,
+        )
+        transition.initialization_book_relation = relation
+        transition.observed_qty = float(observed_qty)
+        transition.public_queue_ahead = float(order.public_queue_ahead)
+        transition.own_queue_tail = float(own_queue_tail)
+        transition.queue_ahead = float(order.queue_ahead)
 
     def cancel(self, oid: int):
         order = self.open_orders.get(oid)
@@ -847,13 +1002,21 @@ class MultiInstrumentEngine:
             return
 
         if order.otype == OrderType.LIMIT:
-            self._initialize_limit_queue(
-                instrument_id,
-                order,
-                tick,
-                snapshot_ts=int(ts),
-                mode="arrival_snapshot",
-            )
+            if order.resting_transition_index is not None:
+                self._initialize_deferred_residual_queue(
+                    instrument_id,
+                    order,
+                    tick,
+                    snapshot_ts=int(ts),
+                )
+            else:
+                self._initialize_limit_queue(
+                    instrument_id,
+                    order,
+                    tick,
+                    snapshot_ts=int(ts),
+                    mode="arrival_snapshot",
+                )
             if not order.queue_initialized:
                 return
 
@@ -883,6 +1046,16 @@ class MultiInstrumentEngine:
                 )
             self._remove_order(instrument_id, order)
             return
+
+        if not order.resting_at_venue:
+            self._transition_limit_to_resting(
+                instrument_id,
+                order,
+                tick,
+                snapshot_ts=int(ts),
+            )
+            if not order.queue_initialized:
+                return
 
         if order.resting_at_venue and (
             (order.side > 0 and ask < order.price)
@@ -1139,6 +1312,13 @@ class MultiBacktestResult:
                 for initialization in engine.queue_initializations
             ],
             columns=QUEUE_INITIALIZATION_COLUMNS,
+        )
+        self.resting_transitions = pd.DataFrame(
+            [
+                transition.__dict__
+                for transition in engine.resting_transitions
+            ],
+            columns=RESTING_TRANSITION_COLUMNS,
         )
         self.terminal_liquidations = pd.DataFrame(
             [

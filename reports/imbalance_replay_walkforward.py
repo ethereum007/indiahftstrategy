@@ -313,6 +313,26 @@ def _fold_row(
             row,
             "max_queue_initialization_lag_ns",
         ),
+        "residual_resting_transition_events": _int(
+            row,
+            "residual_resting_transition_events",
+        ),
+        "residual_resting_transition_qty": _int(
+            row,
+            "residual_resting_transition_qty",
+        ),
+        "deferred_residual_queue_events": _int(
+            row,
+            "deferred_residual_queue_events",
+        ),
+        "unresolved_residual_queue_events": _int(
+            row,
+            "unresolved_residual_queue_events",
+        ),
+        "max_residual_queue_initialization_lag_ns": _int(
+            row,
+            "max_residual_queue_initialization_lag_ns",
+        ),
         "terminal_liquidation_depth_constrained_enabled": _to_bool(
             row.get(
                 "terminal_liquidation_depth_constrained_enabled",
@@ -512,6 +532,31 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                     "max_queue_initialization_lag_ns",
                     "max",
                 ),
+                "total_residual_resting_transition_events": _numeric_reduce(
+                    folds,
+                    "residual_resting_transition_events",
+                    "sum",
+                ),
+                "total_residual_resting_transition_qty": _numeric_reduce(
+                    folds,
+                    "residual_resting_transition_qty",
+                    "sum",
+                ),
+                "total_deferred_residual_queue_events": _numeric_reduce(
+                    folds,
+                    "deferred_residual_queue_events",
+                    "sum",
+                ),
+                "total_unresolved_residual_queue_events": _numeric_reduce(
+                    folds,
+                    "unresolved_residual_queue_events",
+                    "sum",
+                ),
+                "max_residual_queue_initialization_lag_ns": _numeric_reduce(
+                    folds,
+                    "max_residual_queue_initialization_lag_ns",
+                    "max",
+                ),
                 "total_terminal_liquidation_events": _numeric_reduce(
                     folds,
                     "terminal_liquidation_events",
@@ -659,6 +704,21 @@ def _candidate_config(
         ),
         "max_queue_initialization_lag_ns": _jsonable(
             summary.get("max_queue_initialization_lag_ns")
+        ),
+        "total_residual_resting_transition_events": _jsonable(
+            summary.get("total_residual_resting_transition_events")
+        ),
+        "total_residual_resting_transition_qty": _jsonable(
+            summary.get("total_residual_resting_transition_qty")
+        ),
+        "total_deferred_residual_queue_events": _jsonable(
+            summary.get("total_deferred_residual_queue_events")
+        ),
+        "total_unresolved_residual_queue_events": _jsonable(
+            summary.get("total_unresolved_residual_queue_events")
+        ),
+        "max_residual_queue_initialization_lag_ns": _jsonable(
+            summary.get("max_residual_queue_initialization_lag_ns")
         ),
         "terminal_liquidation_depth_constrained_folds": _jsonable(
             summary.get("terminal_liquidation_depth_constrained_folds")

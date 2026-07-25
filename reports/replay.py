@@ -84,6 +84,33 @@ def replay_summary(
     )
     limit_orders_sent = int(result.engine.limit_orders_sent)
     queue_initialization_events = int(len(queue_initializations))
+    resting_transitions = result.resting_transitions
+    transition_remaining_qty = (
+        pd.to_numeric(
+            resting_transitions["remaining_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not resting_transitions.empty
+        else pd.Series(dtype="float64")
+    )
+    transition_deferred = (
+        resting_transitions["deferred_at_transition"].fillna(False).astype(bool)
+        if not resting_transitions.empty
+        else pd.Series(dtype="bool")
+    )
+    transition_initialized = (
+        resting_transitions["queue_initialized"].fillna(False).astype(bool)
+        if not resting_transitions.empty
+        else pd.Series(dtype="bool")
+    )
+    transition_initialization_lag_ns = (
+        pd.to_numeric(
+            resting_transitions["queue_initialization_lag_ns"],
+            errors="coerce",
+        ).fillna(0)
+        if not resting_transitions.empty
+        else pd.Series(dtype="float64")
+    )
     terminal_liquidations = result.terminal_liquidations
     terminal_requested_qty = (
         pd.to_numeric(
@@ -165,6 +192,23 @@ def replay_summary(
                 "max_queue_initialization_lag_ns": int(
                     queue_initialization_lag_ns.max()
                     if not queue_initialization_lag_ns.empty
+                    else 0
+                ),
+                "residual_resting_transition_events": int(
+                    len(resting_transitions)
+                ),
+                "residual_resting_transition_qty": int(
+                    transition_remaining_qty.sum()
+                ),
+                "deferred_residual_queue_events": int(
+                    transition_deferred.sum()
+                ),
+                "unresolved_residual_queue_events": int(
+                    (~transition_initialized).sum()
+                ),
+                "max_residual_queue_initialization_lag_ns": int(
+                    transition_initialization_lag_ns.max()
+                    if not transition_initialization_lag_ns.empty
                     else 0
                 ),
                 "terminal_liquidation_depth_constrained_enabled": bool(
@@ -254,6 +298,10 @@ def write_replay_outputs(
     )
     result.queue_initializations.to_csv(
         out / "queue_initializations.csv",
+        index=False,
+    )
+    result.resting_transitions.to_csv(
+        out / "resting_transitions.csv",
         index=False,
     )
     result.terminal_liquidations.to_csv(

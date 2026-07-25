@@ -125,6 +125,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "order_rejections.csv").exists()
     assert (out_dir / "liquidity_shortfalls.csv").exists()
     assert (out_dir / "queue_initializations.csv").exists()
+    assert (out_dir / "resting_transitions.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
@@ -146,6 +147,17 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
         "mode",
         "book_relation",
     }.issubset(queue_initializations.columns)
+    resting_transitions = pd.read_csv(out_dir / "resting_transitions.csv")
+    assert {
+        "transition_lag_ns",
+        "remaining_qty",
+        "book_relation",
+        "deferred_at_transition",
+        "queue_initialized",
+        "queue_initialization_ts_ns",
+        "queue_initialization_lag_ns",
+        "initialization_book_relation",
+    }.issubset(resting_transitions.columns)
     summary = replay.summary.iloc[0]
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
@@ -157,6 +169,11 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert int(summary["deferred_queue_initialization_events"]) == 0
     assert int(summary["uninitialized_limit_orders"]) == 0
     assert int(summary["max_queue_initialization_lag_ns"]) == 0
+    assert int(summary["residual_resting_transition_events"]) == 0
+    assert int(summary["residual_resting_transition_qty"]) == 0
+    assert int(summary["deferred_residual_queue_events"]) == 0
+    assert int(summary["unresolved_residual_queue_events"]) == 0
+    assert int(summary["max_residual_queue_initialization_lag_ns"]) == 0
     assert bool(summary["terminal_liquidation_depth_constrained_enabled"])
     assert int(summary["terminal_liquidation_events"]) == 0
     assert int(summary["terminal_liquidation_requested_qty"]) == 0

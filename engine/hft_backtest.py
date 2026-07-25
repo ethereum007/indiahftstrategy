@@ -185,6 +185,7 @@ class Order:
     arrival_ts_ns: int | None = None
     arrival_book_relation: str = ""
     resting_at_venue: bool = False
+    resting_transition_index: int | None = None
 
 
 @dataclass
@@ -247,6 +248,30 @@ class QueueInitialization:
     initialization_lag_ns: int
     mode: str
     book_relation: str
+    observed_qty: float
+    public_queue_ahead: float
+    own_queue_tail: float
+    queue_ahead: float
+
+
+@dataclass
+class RestingTransition:
+    ts_ns: int
+    instrument_id: str
+    oid: int
+    side: int
+    price: float
+    ts_active_ns: int
+    transition_lag_ns: int
+    filled_qty: int
+    remaining_qty: int
+    book_relation: str
+    deferred_at_transition: bool
+    mode: str
+    queue_initialized: bool
+    queue_initialization_ts_ns: int | None
+    queue_initialization_lag_ns: int | None
+    initialization_book_relation: str
     observed_qty: float
     public_queue_ahead: float
     own_queue_tail: float
@@ -466,6 +491,29 @@ QUEUE_INITIALIZATION_COLUMNS = [
     "queue_ahead",
 ]
 
+RESTING_TRANSITION_COLUMNS = [
+    "ts_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "price",
+    "ts_active_ns",
+    "transition_lag_ns",
+    "filled_qty",
+    "remaining_qty",
+    "book_relation",
+    "deferred_at_transition",
+    "mode",
+    "queue_initialized",
+    "queue_initialization_ts_ns",
+    "queue_initialization_lag_ns",
+    "initialization_book_relation",
+    "observed_qty",
+    "public_queue_ahead",
+    "own_queue_tail",
+    "queue_ahead",
+]
+
 TERMINAL_LIQUIDATION_COLUMNS = [
     "ts_ns",
     "book_ts_ns",
@@ -557,6 +605,7 @@ class BacktestEngine:
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
+        self.resting_transitions: List[RestingTransition] = []
         self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
@@ -766,6 +815,154 @@ class BacktestEngine:
                 queue_ahead=float(order.queue_ahead),
             )
         )
+
+    def _transition_limit_to_resting(
+        self,
+        order: Order,
+        tick: dict,
+        *,
+        snapshot_ts: int,
+    ) -> None:
+        if (
+            order.otype != OrderType.LIMIT
+            or order.resting_at_venue
+            or order.resting_transition_index is not None
+        ):
+            return
+
+        relation = _limit_book_relation(order, tick)
+        if relation == "marketable":
+            return
+
+        order.resting_at_venue = True
+        order.public_queue_ahead = 0.0
+        order.queue_ahead = 0.0
+        order.queue_initialized = relation != "away_from_touch"
+        observed_qty = 0.0
+        public_queue = 0.0
+        own_queue_tail = 0.0
+        if order.queue_initialized:
+            if relation == "bid_touch":
+                observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+                public_queue = self.qcons * observed_qty
+            elif relation == "ask_touch":
+                observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
+                public_queue = self.qcons * observed_qty
+            own_queue_tail = self._own_queue_tail(
+                side=order.side,
+                price=order.price,
+                active_ns=order.ts_active_ns,
+                priority_oid=order.oid,
+            )
+            order.public_queue_ahead = max(float(public_queue), 0.0)
+            order.queue_ahead = max(
+                order.public_queue_ahead,
+                own_queue_tail,
+            )
+
+        transition = RestingTransition(
+            ts_ns=int(snapshot_ts),
+            instrument_id=self.inst.symbol,
+            oid=order.oid,
+            side=order.side,
+            price=float(order.price),
+            ts_active_ns=int(order.ts_active_ns),
+            transition_lag_ns=max(
+                int(snapshot_ts) - int(order.ts_active_ns),
+                0,
+            ),
+            filled_qty=int(order.filled),
+            remaining_qty=max(int(order.qty) - int(order.filled), 0),
+            book_relation=relation,
+            deferred_at_transition=not order.queue_initialized,
+            mode=(
+                "residual_resting_snapshot"
+                if order.queue_initialized
+                else "residual_queue_deferred"
+            ),
+            queue_initialized=bool(order.queue_initialized),
+            queue_initialization_ts_ns=(
+                int(snapshot_ts)
+                if order.queue_initialized
+                else None
+            ),
+            queue_initialization_lag_ns=(
+                0
+                if order.queue_initialized
+                else None
+            ),
+            initialization_book_relation=(
+                relation
+                if order.queue_initialized
+                else ""
+            ),
+            observed_qty=float(observed_qty),
+            public_queue_ahead=float(order.public_queue_ahead),
+            own_queue_tail=float(own_queue_tail),
+            queue_ahead=float(order.queue_ahead),
+        )
+        order.resting_transition_index = len(self.resting_transitions)
+        self.resting_transitions.append(transition)
+
+    def _initialize_deferred_residual_queue(
+        self,
+        order: Order,
+        tick: dict,
+        *,
+        snapshot_ts: int,
+    ) -> None:
+        if (
+            order.resting_transition_index is None
+            or order.queue_initialized
+        ):
+            return
+
+        relation = _limit_book_relation(order, tick)
+        if relation == "away_from_touch":
+            return
+
+        observed_qty = 0.0
+        public_queue = 0.0
+        if relation == "bid_touch":
+            observed_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+            public_queue = self.qcons * observed_qty
+            mode = "residual_first_touch_snapshot"
+        elif relation == "ask_touch":
+            observed_qty = _nonnegative_qty(tick.get("ask_qty", 0))
+            public_queue = self.qcons * observed_qty
+            mode = "residual_first_touch_snapshot"
+        elif relation == "price_improving":
+            mode = "residual_price_improvement_snapshot"
+        else:
+            mode = "residual_marketable_snapshot"
+
+        own_queue_tail = self._own_queue_tail(
+            side=order.side,
+            price=order.price,
+            active_ns=order.ts_active_ns,
+            priority_oid=order.oid,
+        )
+        order.public_queue_ahead = max(float(public_queue), 0.0)
+        order.queue_ahead = max(
+            order.public_queue_ahead,
+            own_queue_tail,
+        )
+        order.queue_initialized = True
+        transition = self.resting_transitions[
+            order.resting_transition_index
+        ]
+        transition.mode = mode
+        transition.queue_initialized = True
+        transition.queue_initialization_ts_ns = int(snapshot_ts)
+        transition.queue_initialization_lag_ns = max(
+            int(snapshot_ts) - int(transition.ts_ns),
+            0,
+        )
+        transition.initialization_book_relation = relation
+        transition.observed_qty = float(observed_qty)
+        transition.public_queue_ahead = float(order.public_queue_ahead)
+        transition.own_queue_tail = float(own_queue_tail)
+        transition.queue_ahead = float(order.queue_ahead)
 
     def _position_envelope(self, side: int, qty: int) -> tuple[int, int]:
         if not self.reserve_open_order_risk:
@@ -999,12 +1196,19 @@ class BacktestEngine:
             return
 
         if o.otype == OrderType.LIMIT:
-            self._initialize_limit_queue(
-                o,
-                tick,
-                snapshot_ts=int(ts),
-                mode="arrival_snapshot",
-            )
+            if o.resting_transition_index is not None:
+                self._initialize_deferred_residual_queue(
+                    o,
+                    tick,
+                    snapshot_ts=int(ts),
+                )
+            else:
+                self._initialize_limit_queue(
+                    o,
+                    tick,
+                    snapshot_ts=int(ts),
+                    mode="arrival_snapshot",
+                )
             if not o.queue_initialized:
                 return
 
@@ -1031,6 +1235,15 @@ class BacktestEngine:
                 )
             self._remove_order(o)
             return
+
+        if not o.resting_at_venue:
+            self._transition_limit_to_resting(
+                o,
+                tick,
+                snapshot_ts=int(ts),
+            )
+            if not o.queue_initialized:
+                return
 
         # LIMIT maker logic
         # A resting order remains maker even when configured queue depth is
@@ -1228,6 +1441,10 @@ class BacktestResult:
         self.queue_initializations = pd.DataFrame(
             [initialization.__dict__ for initialization in eng.queue_initializations],
             columns=QUEUE_INITIALIZATION_COLUMNS,
+        )
+        self.resting_transitions = pd.DataFrame(
+            [transition.__dict__ for transition in eng.resting_transitions],
+            columns=RESTING_TRANSITION_COLUMNS,
         )
         self.terminal_liquidations = pd.DataFrame(
             [liquidation.__dict__ for liquidation in eng.terminal_liquidations],

@@ -54,6 +54,11 @@ def write_run(
                 "deferred_queue_initialization_events": 3,
                 "uninitialized_limit_orders": 0,
                 "max_queue_initialization_lag_ns": 125_000,
+                "residual_resting_transition_events": 2,
+                "residual_resting_transition_qty": 50,
+                "deferred_residual_queue_events": 1,
+                "unresolved_residual_queue_events": 0,
+                "max_residual_queue_initialization_lag_ns": 2_000,
                 "terminal_liquidation_depth_constrained_enabled": True,
                 "terminal_liquidation_events": 1,
                 "terminal_liquidation_requested_qty": 75,
@@ -149,6 +154,15 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     ) == 3
     assert int(report.metrics.iloc[0]["uninitialized_limit_orders"]) == 0
     assert int(report.metrics.iloc[0]["max_queue_initialization_lag_ns"]) == 125_000
+    assert int(
+        report.metrics.iloc[0]["residual_resting_transition_events"]
+    ) == 2
+    assert int(report.metrics.iloc[0]["residual_resting_transition_qty"]) == 50
+    assert int(report.metrics.iloc[0]["deferred_residual_queue_events"]) == 1
+    assert int(report.metrics.iloc[0]["unresolved_residual_queue_events"]) == 0
+    assert int(
+        report.metrics.iloc[0]["max_residual_queue_initialization_lag_ns"]
+    ) == 2_000
     assert bool(
         report.metrics.iloc[0][
             "terminal_liquidation_depth_constrained_enabled"

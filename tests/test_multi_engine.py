@@ -300,6 +300,103 @@ def test_multi_engine_carries_depletion_until_size_replenishes():
     assert int(summary["max_queue_initialization_lag_ns"]) == 0
 
 
+def test_multi_engine_marketable_residual_defers_until_resting_touch():
+    strategy = BurstRiskStrategy(
+        {"A": [(+1, 150, 100.05, OrderType.LIMIT)]}
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (2_000, 100.10, 100.15, 200, 100, np.nan, 0),
+                        (3_000, 100.10, 100.15, 200, 100, 100.05, 1_000),
+                        (4_000, 100.05, 100.10, 225, 100, np.nan, 0),
+                        (5_000, 100.05, 100.10, 225, 100, 100.05, 225),
+                        (6_000, 100.05, 100.10, 225, 100, 100.05, 50),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+        queue_conservatism=1.0,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 6_000]
+    assert strategy_fills["maker"].tolist() == [False, True]
+    transition = result.resting_transitions.iloc[0]
+    assert transition["instrument_id"] == "A"
+    assert transition["ts_ns"] == 2_000
+    assert transition["book_relation"] == "away_from_touch"
+    assert bool(transition["deferred_at_transition"])
+    assert transition["mode"] == "residual_first_touch_snapshot"
+    assert bool(transition["queue_initialized"])
+    assert transition["queue_initialization_ts_ns"] == 4_000
+    assert transition["queue_initialization_lag_ns"] == 2_000
+    assert transition["initialization_book_relation"] == "bid_touch"
+    assert transition["observed_qty"] == 225
+    assert transition["queue_ahead"] == 225
+    summary = replay_summary(result).iloc[0]
+    assert int(summary["residual_resting_transition_events"]) == 1
+    assert int(summary["residual_resting_transition_qty"]) == 50
+    assert int(summary["deferred_residual_queue_events"]) == 1
+    assert int(summary["unresolved_residual_queue_events"]) == 0
+    assert int(summary["max_residual_queue_initialization_lag_ns"]) == 2_000
+
+
+def test_multi_engine_reports_residual_queue_unresolved_at_replay_end():
+    strategy = BurstRiskStrategy(
+        {"A": [(+1, 150, 100.05, OrderType.LIMIT)]}
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (2_000, 100.10, 100.15, 200, 100, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+        queue_conservatism=1.0,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [100]
+    transition = result.resting_transitions.iloc[0]
+    assert transition["book_relation"] == "away_from_touch"
+    assert bool(transition["deferred_at_transition"])
+    assert transition["mode"] == "residual_queue_deferred"
+    assert not bool(transition["queue_initialized"])
+    assert pd.isna(transition["queue_initialization_ts_ns"])
+    assert pd.isna(transition["queue_initialization_lag_ns"])
+    summary = replay_summary(result).iloc[0]
+    assert int(summary["residual_resting_transition_events"]) == 1
+    assert int(summary["residual_resting_transition_qty"]) == 50
+    assert int(summary["deferred_residual_queue_events"]) == 1
+    assert int(summary["unresolved_residual_queue_events"]) == 1
+    assert int(summary["max_residual_queue_initialization_lag_ns"]) == 0
+
+
 def test_multi_engine_uses_arrival_snapshot_for_limit_queue():
     strategy = BurstRiskStrategy(
         {"A": [(+1, 75, 100.00, OrderType.LIMIT)]}

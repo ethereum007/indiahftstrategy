@@ -190,6 +190,21 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert int(report.summary.loc[0, "total_deferred_queue_initialization_events"]) == 0
     assert int(report.summary.loc[0, "total_uninitialized_limit_orders"]) == 0
     assert int(report.summary.loc[0, "max_queue_initialization_lag_ns"]) == 0
+    assert int(
+        report.summary.loc[0, "total_residual_resting_transition_events"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_residual_resting_transition_qty"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_deferred_residual_queue_events"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_unresolved_residual_queue_events"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "max_residual_queue_initialization_lag_ns"]
+    ) == 0
     assert report.folds[
         "terminal_liquidation_depth_constrained_enabled"
     ].all()
@@ -231,6 +246,30 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert config["replay_walkforward"]["total_deferred_queue_initialization_events"] == 0
     assert config["replay_walkforward"]["total_uninitialized_limit_orders"] == 0
     assert config["replay_walkforward"]["max_queue_initialization_lag_ns"] == 0
+    assert (
+        config["replay_walkforward"][
+            "total_residual_resting_transition_events"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"]["total_residual_resting_transition_qty"]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"]["total_deferred_residual_queue_events"]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"]["total_unresolved_residual_queue_events"]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "max_residual_queue_initialization_lag_ns"
+        ]
+        == 0
+    )
     assert (
         config["replay_walkforward"][
             "terminal_liquidation_depth_constrained_folds"

@@ -578,6 +578,26 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         row,
         "max_queue_initialization_lag_ns",
     )
+    residual_resting_transition_events = _int(
+        row,
+        "residual_resting_transition_events",
+    )
+    residual_resting_transition_qty = _int(
+        row,
+        "residual_resting_transition_qty",
+    )
+    deferred_residual_queue_events = _int(
+        row,
+        "deferred_residual_queue_events",
+    )
+    unresolved_residual_queue_events = _int(
+        row,
+        "unresolved_residual_queue_events",
+    )
+    max_residual_queue_initialization_lag_ns = _int(
+        row,
+        "max_residual_queue_initialization_lag_ns",
+    )
     terminal_liquidation_depth_constrained_enabled = _bool(
         row.get(
             "terminal_liquidation_depth_constrained_enabled",
@@ -679,6 +699,15 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         ),
         "uninitialized_limit_orders": uninitialized_limit_orders,
         "max_queue_initialization_lag_ns": max_queue_initialization_lag_ns,
+        "residual_resting_transition_events": (
+            residual_resting_transition_events
+        ),
+        "residual_resting_transition_qty": residual_resting_transition_qty,
+        "deferred_residual_queue_events": deferred_residual_queue_events,
+        "unresolved_residual_queue_events": unresolved_residual_queue_events,
+        "max_residual_queue_initialization_lag_ns": (
+            max_residual_queue_initialization_lag_ns
+        ),
         "terminal_liquidation_depth_constrained_enabled": (
             terminal_liquidation_depth_constrained_enabled
         ),

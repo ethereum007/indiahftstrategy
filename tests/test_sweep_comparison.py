@@ -30,6 +30,11 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "deferred_queue_initialization_events": 1,
             "uninitialized_limit_orders": 0,
             "max_queue_initialization_lag_ns": 100_000,
+            "residual_resting_transition_events": 1,
+            "residual_resting_transition_qty": 25,
+            "deferred_residual_queue_events": 1,
+            "unresolved_residual_queue_events": 0,
+            "max_residual_queue_initialization_lag_ns": 2_000,
             "terminal_liquidation_depth_constrained_enabled": True,
             "terminal_liquidation_events": 1,
             "terminal_liquidation_requested_qty": 75,
@@ -61,6 +66,11 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "deferred_queue_initialization_events": 1,
             "uninitialized_limit_orders": 0,
             "max_queue_initialization_lag_ns": 100_000,
+            "residual_resting_transition_events": 1,
+            "residual_resting_transition_qty": 25,
+            "deferred_residual_queue_events": 1,
+            "unresolved_residual_queue_events": 0,
+            "max_residual_queue_initialization_lag_ns": 2_000,
             "terminal_liquidation_depth_constrained_enabled": True,
             "terminal_liquidation_events": 1,
             "terminal_liquidation_requested_qty": 75,
@@ -112,6 +122,11 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_deferred_queue_initialization_events"]) == 2
     assert int(best["total_uninitialized_limit_orders"]) == 0
     assert int(best["max_queue_initialization_lag_ns"]) == 100_000
+    assert int(best["total_residual_resting_transition_events"]) == 2
+    assert int(best["total_residual_resting_transition_qty"]) == 50
+    assert int(best["total_deferred_residual_queue_events"]) == 2
+    assert int(best["total_unresolved_residual_queue_events"]) == 0
+    assert int(best["max_residual_queue_initialization_lag_ns"]) == 2_000
     assert int(best["total_terminal_liquidation_events"]) == 2
     assert int(best["total_terminal_liquidation_requested_qty"]) == 150
     assert int(best["total_terminal_liquidation_filled_qty"]) == 150
@@ -133,6 +148,25 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     ) == 4
     assert int(comparison.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
     assert int(comparison.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 100_000
+    assert int(
+        comparison.summary.iloc[0][
+            "total_residual_resting_transition_events"
+        ]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0]["total_residual_resting_transition_qty"]
+    ) == 100
+    assert int(
+        comparison.summary.iloc[0]["total_deferred_residual_queue_events"]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0]["total_unresolved_residual_queue_events"]
+    ) == 0
+    assert int(
+        comparison.summary.iloc[0][
+            "max_residual_queue_initialization_lag_ns"
+        ]
+    ) == 2_000
     assert int(
         comparison.summary.iloc[0]["total_terminal_liquidation_events"]
     ) == 4

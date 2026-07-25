@@ -921,6 +921,21 @@ initialization and deferred-initialization counts, uninitialized limit count,
 and maximum initialization lag; proof, walk-forward, and sweep outputs retain
 the same evidence.
 
+When a marketable limit is only partially filled, its residual does not keep
+an aggressive zero-queue identity forever. On the first snapshot where the
+limit stops crossing, replay records the transition to passive venue state. If
+the price is visible at the touch or inside the spread, the residual joins the
+observable public plus own-order queue immediately. If it is away from touch,
+queue initialization stays deferred, stale off-touch prints are ignored, and
+the first later touch, spread improvement, or trade-through initializes it.
+Subsequent fills are maker fills. `resting_transitions.csv` records the
+transition timestamp/lag, filled and remaining quantities, book relation,
+whether initialization was deferred, eventual initialization mode and lag,
+observed depth, own-order tail, and resulting queue. `summary.csv` and
+downstream proof, walk-forward, sweep, and comparison outputs retain transition
+count/quantity, deferred and unresolved counts, and maximum initialization
+lag.
+
 Terminal liquidation is constrained by depth still available in the exact
 final market event. It cannot reuse displayed quantity already consumed by a
 strategy order on that snapshot, even when cross-snapshot depletion

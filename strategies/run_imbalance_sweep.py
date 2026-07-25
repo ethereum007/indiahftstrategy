@@ -214,6 +214,11 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_deferred_queue_initialization_events",
                 "total_uninitialized_limit_orders",
                 "max_queue_initialization_lag_ns",
+                "total_residual_resting_transition_events",
+                "total_residual_resting_transition_qty",
+                "total_deferred_residual_queue_events",
+                "total_unresolved_residual_queue_events",
+                "max_residual_queue_initialization_lag_ns",
                 "total_terminal_liquidation_events",
                 "total_terminal_liquidation_requested_qty",
                 "total_terminal_liquidation_filled_qty",
@@ -318,6 +323,31 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     pd.to_numeric(
                         runs.get(
                             "max_queue_initialization_lag_ns",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).max()
+                ),
+                "total_residual_resting_transition_events": _sum_int_metric(
+                    runs,
+                    "residual_resting_transition_events",
+                ),
+                "total_residual_resting_transition_qty": _sum_int_metric(
+                    runs,
+                    "residual_resting_transition_qty",
+                ),
+                "total_deferred_residual_queue_events": _sum_int_metric(
+                    runs,
+                    "deferred_residual_queue_events",
+                ),
+                "total_unresolved_residual_queue_events": _sum_int_metric(
+                    runs,
+                    "unresolved_residual_queue_events",
+                ),
+                "max_residual_queue_initialization_lag_ns": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "max_residual_queue_initialization_lag_ns",
                             pd.Series(0, index=runs.index),
                         ),
                         errors="coerce",
