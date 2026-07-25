@@ -50,6 +50,7 @@ class ChainQuarantineReport:
     dropped_nonfinite_rows: int = 0
     dropped_nonintegral_rows: int = 0
     dropped_integer_overflow_rows: int = 0
+    dropped_nonpositive_strike_rows: int = 0
     dropped_nonpositive_quote_rows: int = 0
     dropped_crossed_quote_rows: int = 0
     dropped_nonmonotonic_rows: int = 0
@@ -137,6 +138,10 @@ def normalize_option_chain(
     out["ts"] = out["ts"].astype("int64")
     out["strike"] = out["strike"].astype("float64")
 
+    positive_strike_mask = out["strike"] > 0
+    nonpositive_strike_count = int((~positive_strike_mask).sum())
+    out = out.loc[positive_strike_mask].copy()
+
     positive_quote_mask = (
         (out["call_bid"] > 0)
         & (out["call_ask"] > 0)
@@ -205,6 +210,7 @@ def normalize_option_chain(
         dropped_nonfinite_rows=nonfinite_count,
         dropped_nonintegral_rows=nonintegral_count,
         dropped_integer_overflow_rows=integer_overflow_count,
+        dropped_nonpositive_strike_rows=nonpositive_strike_count,
         dropped_nonpositive_quote_rows=nonpositive_quote_count,
         dropped_crossed_quote_rows=crossed_count,
         dropped_nonmonotonic_rows=nonmonotonic_count,

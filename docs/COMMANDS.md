@@ -8904,6 +8904,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --max-nonfinite-rows 0 `
   --max-nonintegral-rows 0 `
   --max-integer-overflow-rows 0 `
+  --max-nonpositive-strike-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-off-tick-price-rows 0 `
   --min-chain-expiry-snapshots 1000 `
@@ -8973,6 +8974,14 @@ wrap into an apparently valid nanosecond timestamp. Violations are retained as
 `dropped_integer_overflow_rows` and fail the zero-default
 `--max-integer-overflow-rows` gate throughout direct, vendor, provider, batch,
 and broker-vendor readiness evidence.
+Option-chain strikes must be strictly positive before parity or surface math
+can consume them. Zero and negative strikes are quarantined without repair,
+retained as `dropped_nonpositive_strike_rows`, reported by raw diagnostics as
+`nonpositive_strike_rows` plus row-level `nonpositive_strike` issues, and fail
+the zero-default `--max-nonpositive-strike-rows` gate. The count is carried
+through mapped, vendor, provider, batch, broker-vendor, config, and runbook
+evidence. This is a contract-validity rule; premium tick-grid validation does
+not infer or round strike values.
 Top-of-book depth must also be strictly positive. Tick and option-chain rows
 with any zero or negative bid/ask quantity are quarantined before engine output;
 the compatibility evidence field is `dropped_negative_depth_rows`, and it
@@ -9510,6 +9519,7 @@ python -m hft_cli review-data-readiness `
   --max-integer-overflow-rows 0 `
   --max-nonmonotonic-rows 0 `
   --max-duplicate-tick-rows 0 `
+  --max-nonpositive-strike-rows 0 `
   --max-nonpositive-depth-rows 0 `
   --max-invalid-trade-rows 0 `
   --max-off-tick-price-rows 0 `

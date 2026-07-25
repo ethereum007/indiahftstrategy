@@ -61,6 +61,7 @@ class BrokerVendorDataReadinessConfig:
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
+    max_nonpositive_strike_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
@@ -155,6 +156,7 @@ def write_broker_vendor_data_readiness_pipeline(
         max_nonmonotonic_rows=config.max_nonmonotonic_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
+        max_nonpositive_strike_rows=config.max_nonpositive_strike_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
@@ -427,6 +429,9 @@ def _summary(
                 ),
                 "dropped_nonmonotonic_rows": _int(
                     vendor_row.get("dropped_nonmonotonic_rows", 0)
+                ),
+                "dropped_nonpositive_strike_rows": _int(
+                    vendor_row.get("dropped_nonpositive_strike_rows", 0)
                 ),
                 "dropped_negative_depth_rows": _int(
                     vendor_row.get("dropped_negative_depth_rows", 0)
@@ -1113,6 +1118,7 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Duplicate tick packets: {_int(row.get('dropped_duplicate_rows', 0))}",
         f"- Integer-overflow rows: {_int(row.get('dropped_integer_overflow_rows', 0))}",
         f"- {_nonmonotonic_label(row)}: {_int(row.get('dropped_nonmonotonic_rows', 0))}",
+        f"- Nonpositive strike rows: {_int(row.get('dropped_nonpositive_strike_rows', 0))}",
         f"- Nonpositive depth rows: {_int(row.get('dropped_negative_depth_rows', 0))}",
         f"- Invalid trade rows: {_int(row.get('dropped_invalid_trade_rows', 0))}",
         f"- Price-grid validation: {'yes' if _bool(row.get('price_grid_validation_enabled', False)) else 'no'}",
@@ -1263,6 +1269,9 @@ def _config(
             ),
             "dropped_nonmonotonic_rows": _int(
                 row.get("dropped_nonmonotonic_rows", 0)
+            ),
+            "dropped_nonpositive_strike_rows": _int(
+                row.get("dropped_nonpositive_strike_rows", 0)
             ),
             "dropped_negative_depth_rows": _int(
                 row.get("dropped_negative_depth_rows", 0)

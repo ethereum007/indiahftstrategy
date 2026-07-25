@@ -56,6 +56,7 @@ def chain_summary(**overrides):
         "min_snapshot_strikes": 10,
         "p99_snapshot_gap_ns": 2_000.0,
         "nonmonotonic_rows": 0,
+        "nonpositive_strike_rows": 0,
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
         "nonpositive_depth_rows": 0,
@@ -107,6 +108,7 @@ def mapped_data_summary(ready=True):
                 "dropped_integer_overflow_rows": 0,
                 "dropped_crossed_quote_rows": 0,
                 "dropped_nonpositive_quote_rows": 0,
+                "dropped_nonpositive_strike_rows": 0,
                 "dropped_nonmonotonic_rows": 0,
                 "dropped_negative_depth_rows": 0,
                 "dropped_invalid_trade_rows": 0,
@@ -383,6 +385,8 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
             "6",
             "--max-invalid-trade-rows",
             "7",
+            "--max-nonpositive-strike-rows",
+            "8",
             "--max-off-tick-price-rows",
             "0",
             "--fail-on-breach",
@@ -402,6 +406,7 @@ def test_cli_data_readiness_requires_calendar_report_and_bindings(tmp_path):
     assert config["thresholds"]["max_duplicate_tick_rows"] == 5
     assert config["thresholds"]["max_integer_overflow_rows"] == 6
     assert config["thresholds"]["max_invalid_trade_rows"] == 7
+    assert config["thresholds"]["max_nonpositive_strike_rows"] == 8
     assert config["thresholds"]["max_off_tick_price_rows"] == 0
 
 
@@ -599,6 +604,56 @@ def test_data_readiness_gates_nonmonotonic_chain_diagnostics():
     )
     assert not blocked.ready
     assert "chain_nonmonotonic_rows" in failed
+    assert allowed.ready
+
+
+def test_data_readiness_gates_nonpositive_chain_strikes():
+    raw_blocked = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(nonpositive_strike_rows=2),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+        ),
+    )
+    mapped = mapped_data_summary()
+    mapped.loc[0, "kind"] = "chain"
+    mapped.loc[0, "dropped_nonpositive_strike_rows"] = 2
+    mapped_blocked = evaluate_data_readiness(
+        mapped_data_summary=mapped,
+        chain_diagnostic_summary=chain_summary(),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            require_mapped_data=True,
+        ),
+    )
+    allowed = evaluate_data_readiness(
+        mapped_data_summary=mapped,
+        chain_diagnostic_summary=chain_summary(nonpositive_strike_rows=2),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            require_mapped_data=True,
+            max_nonpositive_strike_rows=2,
+        ),
+    )
+
+    raw_failed = set(
+        raw_blocked.checks.loc[
+            ~raw_blocked.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    mapped_failed = set(
+        mapped_blocked.checks.loc[
+            ~mapped_blocked.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not raw_blocked.ready
+    assert "chain_nonpositive_strike_rows" in raw_failed
+    assert not mapped_blocked.ready
+    assert "mapped_data_dropped_nonpositive_strike_rows" in mapped_failed
     assert allowed.ready
 
 

@@ -43,6 +43,7 @@ class ProviderMarketDataBatchConfig:
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
+    max_nonpositive_strike_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
@@ -235,6 +236,7 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
         max_nonmonotonic_rows=config.max_nonmonotonic_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
+        max_nonpositive_strike_rows=config.max_nonpositive_strike_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
@@ -632,6 +634,7 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
+        "max_nonpositive_strike_rows",
         "max_nonpositive_depth_rows",
         "max_invalid_trade_rows",
         "max_non_trading_day_rows",

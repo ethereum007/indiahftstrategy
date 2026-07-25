@@ -7064,6 +7064,22 @@ tests). Repository collection is healthy at `2604 tests` across `164` files.
 The full suite was not rerun because recent complete runs exceed 40 minutes.
 All outputs remain non-authorizing.
 
+Latest option-strike validity gate: option-chain normalization now quarantines
+zero and negative strikes before quote/session filtering and before parity or
+surface math can consume them. Mapped evidence retains
+`dropped_nonpositive_strike_rows`; raw diagnostics retain overall and
+per-expiry `nonpositive_strike_rows` plus row-level `nonpositive_strike`
+issues. Direct and normalized chain readiness fail closed at the new
+zero-default `--max-nonpositive-strike-rows` threshold. The setting and counts
+propagate through Arrow.money/iRage single-day and batch onboarding, provider
+wrappers, broker-vendor proof, CLI configs, summaries, and runbooks. No strike
+is inferred, rounded, or repaired. Normalization, diagnostics, mapped-data,
+readiness, vendor, broker-vendor, provider, snapshot-coverage, calendar,
+contract-authority, parity, and surface regressions pass (`164` tests).
+Repository collection is healthy at `2609 tests` across `164` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes. All outputs
+remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

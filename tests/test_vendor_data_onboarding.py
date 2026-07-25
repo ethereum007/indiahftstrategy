@@ -1549,6 +1549,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert int(summary["dropped_duplicate_rows"]) == 0
     assert int(summary["dropped_integer_overflow_rows"]) == 0
     assert int(summary["dropped_nonmonotonic_rows"]) == 0
+    assert int(summary["dropped_nonpositive_strike_rows"]) == 0
     assert int(summary["dropped_negative_depth_rows"]) == 0
     assert int(summary["dropped_invalid_trade_rows"]) == 0
     assert bool(summary["price_grid_validation_enabled"])
@@ -1582,6 +1583,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
         report.datasets["dropped_nonmonotonic_rows"].astype(int) == 0
     ).all()
     assert (
+        report.datasets["dropped_nonpositive_strike_rows"].astype(int) == 0
+    ).all()
+    assert (
         report.datasets["dropped_negative_depth_rows"].astype(int) == 0
     ).all()
     assert (
@@ -1611,6 +1615,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["dropped_duplicate_rows"] == 0
     assert config["dropped_integer_overflow_rows"] == 0
     assert config["dropped_nonmonotonic_rows"] == 0
+    assert config["dropped_nonpositive_strike_rows"] == 0
     assert config["dropped_negative_depth_rows"] == 0
     assert config["dropped_invalid_trade_rows"] == 0
     assert config["price_grid_validation_enabled"]
@@ -1632,6 +1637,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["datasets"][0]["dropped_duplicate_rows"] == 0
     assert config["datasets"][0]["dropped_integer_overflow_rows"] == 0
     assert config["datasets"][0]["dropped_nonmonotonic_rows"] == 0
+    assert config["datasets"][0]["dropped_nonpositive_strike_rows"] == 0
     assert config["datasets"][0]["dropped_negative_depth_rows"] == 0
     assert config["datasets"][0]["dropped_invalid_trade_rows"] == 0
     assert config["datasets"][0]["price_grid_validation_enabled"]
@@ -1676,6 +1682,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
             "6",
             "--max-nonmonotonic-rows",
             "7",
+            "--max-nonpositive-strike-rows",
+            "8",
             "--min-datasets",
             "2",
             "--fail-on-blocked-actions",
@@ -1696,6 +1704,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert cli_config["data_readiness_thresholds"]["max_duplicate_tick_rows"] == 5
     assert cli_config["data_readiness_thresholds"]["max_integer_overflow_rows"] == 6
     assert cli_config["data_readiness_thresholds"]["max_nonmonotonic_rows"] == 7
+    assert cli_config["data_readiness_thresholds"][
+        "max_nonpositive_strike_rows"
+    ] == 8
 
 
 def test_vendor_market_data_batch_uses_distinct_target_applications(tmp_path):
@@ -2071,6 +2082,104 @@ def test_vendor_market_data_pipeline_gates_nonmonotonic_option_chain_rows(tmp_pa
     assert int(allowed.summary.loc[0, "dropped_nonmonotonic_rows"]) == 2
     assert allowed_config["data_readiness"]["thresholds"][
         "max_nonmonotonic_rows"
+    ] == 2
+
+
+def test_vendor_market_data_pipeline_gates_nonpositive_option_strikes(tmp_path):
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": f"2026-06-10 09:15:0{offset}",
+                "expiry_date": "2026-06-25",
+                "strike_price": strike,
+                "ce_bid": 100.0,
+                "ce_ask": 100.5,
+                "ce_bid_qty": 75,
+                "ce_ask_qty": 150,
+                "pe_bid": 90.0,
+                "pe_ask": 90.5,
+                "pe_bid_qty": 75,
+                "pe_ask_qty": 150,
+            }
+            for offset, strike in enumerate((22500.0, 0.0, -50.0))
+        ]
+    )
+    raw_path = tmp_path / "irage_chain_nonpositive_strikes.csv"
+    raw.to_csv(raw_path, index=False)
+
+    blocked_dir = tmp_path / "blocked_nonpositive_strikes"
+    blocked = write_vendor_market_data_pipeline(
+        raw_path,
+        output_dir=blocked_dir,
+        config=VendorMarketDataPipelineConfig(
+            adapter="irage",
+            kind="chain",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+        ),
+    )
+    failed = set(
+        blocked.readiness.checks.loc[
+            ~blocked.readiness.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    blocked_config = json.loads(
+        (blocked_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    blocked_runbook = (
+        blocked_dir / "vendor_market_data_pipeline_runbook.md"
+    ).read_text(encoding="utf-8")
+
+    assert not blocked.ready
+    assert list(blocked.mapped_data.data["strike"]) == [22500.0]
+    assert int(
+        blocked.mapped_data.summary.loc[
+            0,
+            "dropped_nonpositive_strike_rows",
+        ]
+    ) == 2
+    assert int(blocked.summary.loc[0, "dropped_nonpositive_strike_rows"]) == 2
+    assert "mapped_data_dropped_nonpositive_strike_rows" in failed
+    assert (
+        blocked_config["normalized"]["dropped_nonpositive_strike_rows"] == 2
+    )
+    assert "- Nonpositive strike rows: 2" in blocked_runbook
+
+    allowed_dir = tmp_path / "allowed_nonpositive_strikes"
+    code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(allowed_dir),
+            "--adapter",
+            "irage",
+            "--kind",
+            "chain",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--max-nonpositive-strike-rows",
+            "2",
+            "--fail-on-breach",
+        ]
+    )
+    allowed_config = json.loads(
+        (allowed_dir / "vendor_market_data_pipeline_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert code == 0
+    assert allowed_config["ready"]
+    assert allowed_config["normalized"]["dropped_nonpositive_strike_rows"] == 2
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_nonpositive_strike_rows"
     ] == 2
 
 

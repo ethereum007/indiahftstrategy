@@ -70,6 +70,7 @@ class VendorMarketDataPipelineConfig:
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
+    max_nonpositive_strike_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
@@ -510,6 +511,13 @@ def write_vendor_market_data_batch_pipeline(
                 "dropped_nonmonotonic_rows": int(
                     _number(row, "dropped_nonmonotonic_rows", fallback=0.0)
                 ),
+                "dropped_nonpositive_strike_rows": int(
+                    _number(
+                        row,
+                        "dropped_nonpositive_strike_rows",
+                        fallback=0.0,
+                    )
+                ),
                 "dropped_negative_depth_rows": int(
                     _number(row, "dropped_negative_depth_rows", fallback=0.0)
                 ),
@@ -775,6 +783,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         max_nonmonotonic_rows=config.max_nonmonotonic_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,
         max_nonpositive_quote_rows=config.max_nonpositive_quote_rows,
+        max_nonpositive_strike_rows=config.max_nonpositive_strike_rows,
         max_nonpositive_depth_rows=config.max_nonpositive_depth_rows,
         max_invalid_trade_rows=config.max_invalid_trade_rows,
         max_off_tick_price_rows=config.max_off_tick_price_rows,
@@ -988,6 +997,13 @@ def _summary(
                 ),
                 "dropped_nonmonotonic_rows": int(
                     _number(mapped_row, "dropped_nonmonotonic_rows", fallback=0.0)
+                ),
+                "dropped_nonpositive_strike_rows": int(
+                    _number(
+                        mapped_row,
+                        "dropped_nonpositive_strike_rows",
+                        fallback=0.0,
+                    )
                 ),
                 "dropped_negative_depth_rows": int(
                     _number(mapped_row, "dropped_negative_depth_rows", fallback=0.0)
@@ -1428,6 +1444,7 @@ def _pipeline_runbook_markdown(
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
         f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
         f"- {_nonmonotonic_label(summary_row)}: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
+        f"- Nonpositive strike rows: {int(_number_from_value(summary_row.get('dropped_nonpositive_strike_rows', 0)))}",
         f"- Nonpositive depth rows: {int(_number_from_value(summary_row.get('dropped_negative_depth_rows', 0)))}",
         f"- Invalid trade rows: {int(_number_from_value(summary_row.get('dropped_invalid_trade_rows', 0)))}",
         f"- Price-grid validation: {'yes' if _truthy(summary_row.get('price_grid_validation_enabled', False)) else 'no'}",
@@ -1505,6 +1522,7 @@ def _batch_runbook_markdown(
         f"- Duplicate tick packets: {int(_number_from_value(summary_row.get('dropped_duplicate_rows', 0)))}",
         f"- Integer-overflow rows: {int(_number_from_value(summary_row.get('dropped_integer_overflow_rows', 0)))}",
         f"- {_nonmonotonic_label(summary_row)}: {int(_number_from_value(summary_row.get('dropped_nonmonotonic_rows', 0)))}",
+        f"- Nonpositive strike rows: {int(_number_from_value(summary_row.get('dropped_nonpositive_strike_rows', 0)))}",
         f"- Nonpositive depth rows: {int(_number_from_value(summary_row.get('dropped_negative_depth_rows', 0)))}",
         f"- Invalid trade rows: {int(_number_from_value(summary_row.get('dropped_invalid_trade_rows', 0)))}",
         f"- Price-grid validation: {'yes' if _truthy(summary_row.get('price_grid_validation_enabled', False)) else 'no'}",
@@ -1692,6 +1710,15 @@ def _batch_summary(
                         errors="coerce",
                     ).fillna(0).sum()
                 ),
+                "dropped_nonpositive_strike_rows": int(
+                    pd.to_numeric(
+                        datasets.get(
+                            "dropped_nonpositive_strike_rows",
+                            pd.Series(dtype=float),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
                 "dropped_negative_depth_rows": int(
                     pd.to_numeric(
                         datasets.get(
@@ -1863,6 +1890,13 @@ def _pipeline_config(
             "dropped_nonmonotonic_rows": int(
                 _number(row, "dropped_nonmonotonic_rows", fallback=0.0)
             ),
+            "dropped_nonpositive_strike_rows": int(
+                _number(
+                    row,
+                    "dropped_nonpositive_strike_rows",
+                    fallback=0.0,
+                )
+            ),
             "dropped_negative_depth_rows": int(
                 _number(row, "dropped_negative_depth_rows", fallback=0.0)
             ),
@@ -1964,6 +1998,11 @@ def _batch_config(
             "dropped_nonmonotonic_rows": int(
                 _number_from_value(item.get("dropped_nonmonotonic_rows", 0))
             ),
+            "dropped_nonpositive_strike_rows": int(
+                _number_from_value(
+                    item.get("dropped_nonpositive_strike_rows", 0)
+                )
+            ),
             "dropped_negative_depth_rows": int(
                 _number_from_value(item.get("dropped_negative_depth_rows", 0))
             ),
@@ -2049,6 +2088,13 @@ def _batch_config(
         ),
         "dropped_nonmonotonic_rows": int(
             _number(row, "dropped_nonmonotonic_rows", fallback=0.0)
+        ),
+        "dropped_nonpositive_strike_rows": int(
+            _number(
+                row,
+                "dropped_nonpositive_strike_rows",
+                fallback=0.0,
+            )
         ),
         "dropped_negative_depth_rows": int(
             _number(row, "dropped_negative_depth_rows", fallback=0.0)
@@ -2332,6 +2378,7 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
+        "max_nonpositive_strike_rows",
         "max_nonpositive_depth_rows",
         "max_invalid_trade_rows",
         "max_non_trading_day_rows",

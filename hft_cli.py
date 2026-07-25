@@ -3047,6 +3047,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_pipeline.add_argument("--max-nonmonotonic-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-crossed-quote-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-nonpositive-strike-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-invalid-trade-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-off-tick-price-rows", type=int, default=None)
@@ -3086,6 +3087,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_batch.add_argument("--max-nonmonotonic-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    provider_market_data_batch.add_argument("--max-nonpositive-strike-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-invalid-trade-rows", type=int, default=0)
     provider_market_data_batch.add_argument("--max-off-tick-price-rows", type=int, default=None)
@@ -3166,6 +3168,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     vendor_market_data.add_argument("--max-crossed-quote-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-nonpositive-strike-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-invalid-trade-rows", type=int, default=0)
     vendor_market_data.add_argument("--max-off-tick-price-rows", type=int, default=None)
@@ -3259,6 +3262,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     vendor_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-nonpositive-strike-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-invalid-trade-rows", type=int, default=0)
     vendor_market_data_batch.add_argument("--max-off-tick-price-rows", type=int, default=None)
@@ -3358,6 +3362,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--min-chain-snapshot-strikes", type=int, default=1)
     broker_vendor_data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-nonpositive-strike-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-invalid-trade-rows", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--max-off-tick-price-rows", type=int, default=None)
@@ -3511,6 +3516,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-nonmonotonic-rows", type=int, default=0)
     data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    data_readiness.add_argument("--max-nonpositive-strike-rows", type=int, default=0)
     data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
     data_readiness.add_argument("--max-invalid-trade-rows", type=int, default=0)
     data_readiness.add_argument("--max-off-tick-price-rows", type=int, default=None)
@@ -7909,6 +7915,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_nonmonotonic_rows=args.max_nonmonotonic_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_strike_rows=args.max_nonpositive_strike_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
@@ -7958,6 +7965,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_nonmonotonic_rows=args.max_nonmonotonic_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_strike_rows=args.max_nonpositive_strike_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
@@ -8024,6 +8032,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_chain_snapshot_strikes=args.min_chain_snapshot_strikes,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_strike_rows=args.max_nonpositive_strike_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
@@ -8097,6 +8106,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_chain_snapshot_strikes=args.min_chain_snapshot_strikes,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_strike_rows=args.max_nonpositive_strike_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
@@ -8197,6 +8207,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_chain_snapshot_strikes=args.min_chain_snapshot_strikes,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_strike_rows=args.max_nonpositive_strike_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,
@@ -8366,6 +8377,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_nonmonotonic_rows=args.max_nonmonotonic_rows,
                 max_crossed_quote_rows=args.max_crossed_quote_rows,
                 max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_strike_rows=args.max_nonpositive_strike_rows,
                 max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
                 max_invalid_trade_rows=args.max_invalid_trade_rows,
                 max_off_tick_price_rows=args.max_off_tick_price_rows,

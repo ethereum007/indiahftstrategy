@@ -87,6 +87,7 @@ class DataReadinessThresholds:
     max_nonmonotonic_rows: int = 0
     max_crossed_quote_rows: int = 0
     max_nonpositive_quote_rows: int = 0
+    max_nonpositive_strike_rows: int = 0
     max_nonpositive_depth_rows: int = 0
     max_invalid_trade_rows: int = 0
     max_off_tick_price_rows: int | None = None
@@ -1679,6 +1680,12 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
             "<=",
             thresholds.max_nonmonotonic_rows,
         ),
+        _threshold_check(
+            "chain_nonpositive_strike_rows",
+            _number(row, "nonpositive_strike_rows", fallback=0.0),
+            "<=",
+            thresholds.max_nonpositive_strike_rows,
+        ),
         _threshold_check("chain_crossed_quote_rows", _number(row, "crossed_quote_rows"), "<=", thresholds.max_crossed_quote_rows),
         _threshold_check(
             "chain_nonpositive_quote_rows",
@@ -2006,6 +2013,7 @@ def _mapped_quarantine_checks(
         "dropped_integer_overflow_rows",
         "dropped_crossed_quote_rows",
         "dropped_nonpositive_quote_rows",
+        "dropped_nonpositive_strike_rows",
         "dropped_nonmonotonic_rows",
         "dropped_negative_depth_rows",
         "dropped_invalid_trade_rows",
@@ -2073,6 +2081,15 @@ def _mapped_quarantine_checks(
                 _number(row, "dropped_nonmonotonic_rows"),
                 "<=",
                 thresholds.max_nonmonotonic_rows,
+            )
+        )
+    if kind == "chain":
+        checks.append(
+            _threshold_check(
+                "mapped_data_dropped_nonpositive_strike_rows",
+                _number(row, "dropped_nonpositive_strike_rows"),
+                "<=",
+                thresholds.max_nonpositive_strike_rows,
             )
         )
     if kind == "ticks":
@@ -3198,6 +3215,7 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_nonmonotonic_rows",
         "max_crossed_quote_rows",
         "max_nonpositive_quote_rows",
+        "max_nonpositive_strike_rows",
         "max_nonpositive_depth_rows",
         "max_invalid_trade_rows",
         "max_non_trading_day_rows",

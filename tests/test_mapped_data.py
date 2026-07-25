@@ -280,6 +280,40 @@ def test_normalize_mapped_chain_data_preserves_high_water_quarantine_provenance(
     assert list(report.data["ts"]) == [100, 100, 125]
 
 
+def test_normalize_mapped_chain_data_preserves_nonpositive_strike_provenance():
+    base = {
+        "expiry": "2026-06-25",
+        "call_bid": 100.0,
+        "call_ask": 100.5,
+        "call_bid_qty": 75,
+        "call_ask_qty": 150,
+        "put_bid": 90.0,
+        "put_ask": 90.5,
+        "put_bid_qty": 75,
+        "put_ask_qty": 150,
+    }
+    rows = [
+        {**base, "ts": timestamp, "strike": strike}
+        for timestamp, strike in enumerate((22500.0, 0.0, -50.0), start=1)
+    ]
+
+    report = normalize_mapped_data(
+        pd.DataFrame(rows),
+        chain_mapping(),
+        config=MappedDataConfig(
+            adapter="irage",
+            kind="chain",
+            filter_session=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert list(report.data["strike"]) == [22500.0]
+    assert int(summary["quarantined_rows"]) == 2
+    assert int(summary["dropped_nonpositive_strike_rows"]) == 2
+
+
 def test_normalize_mapped_tick_data_preserves_nonpositive_depth_provenance():
     valid = {
         "exchange_ts": 1,

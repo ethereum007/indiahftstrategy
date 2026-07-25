@@ -223,6 +223,7 @@ def chain_diagnostics(
         tick_size=tick_size,
     )
     frame["nonmonotonic_ts"] = ~_timestamp_at_high_water_mask(frame["ts"])
+    frame["nonpositive_strike"] = frame["strike"] <= 0
     non_trading_days, calendar_closed, calendar_out_of_range, out_of_session = _session_issue_masks(
         frame["ts"],
         market=market,
@@ -281,6 +282,7 @@ def chain_diagnostics(
             median_put_spread_ticks=("put_spread_ticks", "median"),
             off_tick_price_rows=("off_tick_price", "sum"),
             nonmonotonic_rows=("nonmonotonic_ts", "sum"),
+            nonpositive_strike_rows=("nonpositive_strike", "sum"),
             parseable_contract_expiry_rows=(
                 "contract_expiry_parseable",
                 "sum",
@@ -413,6 +415,9 @@ def chain_diagnostics(
                 "start_ts": int(frame["ts"].min()) if len(frame) else np.nan,
                 "end_ts": int(frame["ts"].max()) if len(frame) else np.nan,
                 "nonmonotonic_rows": int(frame["nonmonotonic_ts"].sum()),
+                "nonpositive_strike_rows": int(
+                    frame["nonpositive_strike"].sum()
+                ),
                 "crossed_quote_rows": int(((frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"])).sum()),
                 "nonpositive_quote_rows": int(
                     (
@@ -446,6 +451,7 @@ def chain_diagnostics(
         issues=_chain_issues(
             frame,
             nonmonotonic=frame["nonmonotonic_ts"],
+            nonpositive_strike=frame["nonpositive_strike"],
             non_trading_days=non_trading_days,
             calendar_closed=calendar_closed,
             calendar_out_of_range=calendar_out_of_range,
@@ -566,6 +572,7 @@ def _chain_issues(
     frame: pd.DataFrame,
     *,
     nonmonotonic: pd.Series,
+    nonpositive_strike: pd.Series,
     non_trading_days: pd.Series,
     calendar_closed: pd.Series,
     calendar_out_of_range: pd.Series,
@@ -581,6 +588,7 @@ def _chain_issues(
     rows = []
     checks = {
         "nonmonotonic_ts": nonmonotonic,
+        "nonpositive_strike": nonpositive_strike,
         "crossed_quote": (frame["call_ask"] < frame["call_bid"]) | (frame["put_ask"] < frame["put_bid"]),
         "nonpositive_quote": (frame["call_bid"] <= 0)
         | (frame["call_ask"] <= 0)

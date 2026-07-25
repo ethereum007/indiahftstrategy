@@ -153,6 +153,8 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
             "6",
             "--max-nonmonotonic-rows",
             "7",
+            "--max-nonpositive-strike-rows",
+            "8",
             "--tick-size",
             "0.05",
             "--max-off-tick-price-rows",
@@ -182,4 +184,5 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
     assert config["parameters"]["max_duplicate_tick_rows"] == 5
     assert config["parameters"]["max_integer_overflow_rows"] == 6
     assert config["parameters"]["max_nonmonotonic_rows"] == 7
+    assert config["parameters"]["max_nonpositive_strike_rows"] == 8
     assert config["parameters"]["max_off_tick_price_rows"] == 0

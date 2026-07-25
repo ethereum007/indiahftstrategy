@@ -127,6 +127,25 @@ def test_option_chain_normalizer_quarantines_nonintegral_depth_and_timestamp():
     assert normalized.quarantine.dropped_negative_depth_rows == 0
 
 
+def test_option_chain_normalizer_quarantines_nonpositive_strikes():
+    valid = chain_rows().iloc[[0]].copy()
+    zero_strike = valid.copy()
+    zero_strike["k"] = 0
+    negative_strike = valid.copy()
+    negative_strike["k"] = -50
+
+    normalized = normalize_option_chain(
+        pd.concat([valid, zero_strike, negative_strike], ignore_index=True),
+        column_map=chain_map(),
+        filter_session=False,
+        add_regime=False,
+    )
+
+    assert list(normalized.data["strike"]) == [1000.0]
+    assert normalized.quarantine.dropped_nonpositive_strike_rows == 2
+    assert normalized.quarantine.dropped_nonpositive_quote_rows == 0
+
+
 def test_option_chain_normalizer_quarantines_int64_overflow_before_casts():
     valid = chain_rows().iloc[[0]].copy()
     valid["time"] = 1

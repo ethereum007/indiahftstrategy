@@ -226,6 +226,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert int(summary["dropped_duplicate_rows"]) == 0
         assert int(summary["dropped_integer_overflow_rows"]) == 0
         assert int(summary["dropped_nonmonotonic_rows"]) == 0
+        assert int(summary["dropped_nonpositive_strike_rows"]) == 0
         assert int(summary["dropped_negative_depth_rows"]) == 0
         assert int(summary["dropped_invalid_trade_rows"]) == 0
         assert bool(summary["price_grid_validation_enabled"])
@@ -289,6 +290,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["vendor_market_data_batch"]["dropped_duplicate_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_integer_overflow_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_nonmonotonic_rows"] == 0
+        assert config["vendor_market_data_batch"]["dropped_nonpositive_strike_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_negative_depth_rows"] == 0
         assert config["vendor_market_data_batch"]["dropped_invalid_trade_rows"] == 0
         assert config["vendor_market_data_batch"]["price_grid_validation_enabled"]
@@ -667,6 +669,8 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
             "6",
             "--max-nonmonotonic-rows",
             "7",
+            "--max-nonpositive-strike-rows",
+            "8",
             "--schema-audit",
             str(paths["schema"]),
             "--order-export",
@@ -714,6 +718,9 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert vendor_config["data_readiness_thresholds"]["max_duplicate_tick_rows"] == 5
     assert vendor_config["data_readiness_thresholds"]["max_integer_overflow_rows"] == 6
     assert vendor_config["data_readiness_thresholds"]["max_nonmonotonic_rows"] == 7
+    assert vendor_config["data_readiness_thresholds"][
+        "max_nonpositive_strike_rows"
+    ] == 8
     assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert bool(summary.loc[0, "placeholder_schema_allowed"])
 
