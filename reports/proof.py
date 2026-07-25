@@ -2235,6 +2235,10 @@ def _parity_realized_edge_metrics(
     realized_net_edges: list[float] = []
     realized_edge_changes: list[float] = []
     fill_spans: list[int] = []
+    first_fill_latencies: list[int] = []
+    completion_latencies: list[int] = []
+    fill_timing_evaluable_count = 0
+    negative_fill_latency_count = 0
     seen_order_ids: set[int] = set()
     required_fill_columns = {
         "instrument_id",
@@ -2281,6 +2285,8 @@ def _parity_realized_edge_metrics(
         }
         number_names = [
             "signal_index",
+            "signal_ts_ns",
+            "decision_ts_ns",
             "strike",
             "requested_qty",
             "fill_count",
@@ -2322,6 +2328,8 @@ def _parity_realized_edge_metrics(
             continue
 
         signal_index = float(numbers["signal_index"])
+        signal_ts_ns = int(numbers["signal_ts_ns"])
+        decision_ts_ns = int(numbers["decision_ts_ns"])
         requested_qty = float(numbers["requested_qty"])
         strike = float(numbers["strike"])
         multiplier = float(numbers["contract_multiplier"])
@@ -2344,6 +2352,10 @@ def _parity_realized_edge_metrics(
             not outcome_enabled
             or signal_index < 0
             or signal_index % 1 != 0
+            or numbers["signal_ts_ns"] % 1 != 0
+            or numbers["decision_ts_ns"] % 1 != 0
+            or signal_ts_ns < 0
+            or decision_ts_ns < signal_ts_ns
             or direction not in {
                 "buy_synthetic_sell_future",
                 "sell_synthetic_buy_future",
@@ -2376,6 +2388,8 @@ def _parity_realized_edge_metrics(
         else:
             guard_row = matching_guard.iloc[0]
             guard_number_names = [
+                "signal_ts_ns",
+                "decision_ts_ns",
                 "strike",
                 "edge_revalidation_qty",
                 "decision_contract_multiplier",
@@ -2415,6 +2429,12 @@ def _parity_realized_edge_metrics(
                 violation = violation or (
                     str(guard_row.get("direction", "")).strip()
                     != direction
+                    or guard_numbers["signal_ts_ns"] % 1 != 0
+                    or int(guard_numbers["signal_ts_ns"])
+                    != signal_ts_ns
+                    or guard_numbers["decision_ts_ns"] % 1 != 0
+                    or int(guard_numbers["decision_ts_ns"])
+                    != decision_ts_ns
                     or float(guard_numbers["strike"]) != strike
                     or float(
                         guard_numbers["edge_revalidation_qty"]
@@ -2665,6 +2685,18 @@ def _parity_realized_edge_metrics(
             expected_fill_span = (
                 expected_last_fill - expected_first_fill
             )
+            first_fill_latency = (
+                expected_first_fill - decision_ts_ns
+            )
+            completion_latency = (
+                expected_last_fill - decision_ts_ns
+            )
+            fill_timing_evaluable_count += 1
+            first_fill_latencies.append(first_fill_latency)
+            completion_latencies.append(completion_latency)
+            if first_fill_latency < 0 or completion_latency < 0:
+                negative_fill_latency_count += 1
+                violation = True
             violation = violation or (
                 pd.isna(reported_first_fill)
                 or pd.isna(reported_last_fill)
@@ -2825,6 +2857,22 @@ def _parity_realized_edge_metrics(
         ),
         "parity_execution_max_fill_span_ns": (
             max(fill_spans) if fill_spans else 0
+        ),
+        "parity_execution_fill_timing_evaluable_count": (
+            fill_timing_evaluable_count
+        ),
+        "parity_execution_negative_fill_latency_count": (
+            negative_fill_latency_count
+        ),
+        "parity_execution_min_first_fill_latency_ns": (
+            min(first_fill_latencies)
+            if first_fill_latencies
+            else 0
+        ),
+        "parity_execution_max_completion_latency_ns": (
+            max(completion_latencies)
+            if completion_latencies
+            else 0
         ),
     }
 
@@ -3226,6 +3274,10 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 "a completed parity package realized no positive net edge",
             ),
             (
+                "parity_execution_negative_fill_latency_count",
+                "a parity package contains a fill before its decision",
+            ),
+            (
                 "parity_execution_ioc_batch_preflight_missing_evidence_rows",
                 "parity IOC package preflight evidence is missing",
             ),
@@ -3332,6 +3384,34 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
         )
         complete_executions = int(
             metrics["parity_execution_complete_count"]
+        )
+        fill_timing_executions = int(
+            metrics[
+                "parity_execution_fill_timing_evaluable_count"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_fill_timing_evaluable_count"
+                ),
+                "value": fill_timing_executions,
+                "operator": ">=",
+                "threshold": complete_executions,
+                "passed": (
+                    fill_timing_executions >= complete_executions
+                ),
+                "reason": (
+                    ""
+                    if fill_timing_executions
+                    >= complete_executions
+                    else (
+                        "completed parity packages lack causal "
+                        "decision-to-fill timing evidence"
+                    )
+                ),
+            }
         )
         realized_executions = int(
             metrics[

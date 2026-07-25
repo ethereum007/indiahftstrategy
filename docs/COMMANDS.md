@@ -947,17 +947,23 @@ reported decision-time leg-cost sum, and verifies the net-edge threshold before
 checking limiting-leg marketability and fill ratio. It then joins each package
 order ID to raw `fills.csv`, verifies instrument, side, quantity, limit-price
 protection, cost, and integer-exact nanosecond timing, and independently
-recomputes realized package economics. Missing or reused order IDs, altered
-fills, incomplete evidence, inconsistent arithmetic, or a completed package
-with nonpositive realized net edge fail proof. It also recomputes the other
-guard, preflight, and legging consistency checks and rejects over-age or
-over-skew routed books, expired signals, package-admission rejections,
-incomplete routing, rejected legs, and unfilled legs. Parity sweeps and
-cross-sweep comparisons preserve source-pending and edge-rejected counts,
-maximum source-book lag and observed edge decay, proof-integrity counts,
-minimum routed net edge, realized package counts and net edge,
-decision-to-fill change, maximum fill span, visible marketability and
-capacity-shortfall counts, and minimum routed visible fill ratio.
+recomputes realized package economics. Signal and decision timestamps must
+match the execution guard, the decision cannot predate the signal, and no raw
+fill may predate the decision. Replay and proof report decision-to-first-fill
+and decision-to-completion latency for every package with at least one fill;
+partial packages retain timing evidence but never receive realized-edge
+credit. Missing or reused order IDs, altered fills, incomplete evidence,
+negative fill latency, inconsistent arithmetic, or a completed package with
+nonpositive realized net edge fail proof. It also recomputes the other guard,
+preflight, and legging consistency checks and rejects over-age or over-skew
+routed books, expired signals, package-admission rejections, incomplete
+routing, rejected legs, and unfilled legs. Parity sweeps and cross-sweep
+comparisons preserve source-pending and edge-rejected counts, maximum
+source-book lag and observed edge decay, proof-integrity counts, minimum routed
+net edge, realized package counts and net edge, decision-to-fill edge change,
+maximum fill span, minimum first-fill latency, maximum completion latency,
+visible marketability and capacity-shortfall counts, and minimum routed
+visible fill ratio.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows

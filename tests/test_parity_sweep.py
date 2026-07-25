@@ -291,6 +291,26 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     ) == 0
     assert int(
         result.summary.iloc[0][
+            "total_parity_execution_fill_timing_evaluable_count"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_negative_fill_latency_count"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "min_parity_execution_first_fill_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        result.summary.iloc[0][
+            "max_parity_execution_completion_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        result.summary.iloc[0][
             "total_parity_execution_ioc_batch_preflight_attempts"
         ]
     ) == 1

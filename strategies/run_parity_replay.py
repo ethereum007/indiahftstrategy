@@ -664,6 +664,10 @@ def _realized_edge_metrics(
     realized_net_edges: list[float] = []
     realized_edge_changes: list[float] = []
     fill_spans: list[int] = []
+    first_fill_latencies: list[int] = []
+    completion_latencies: list[int] = []
+    fill_timing_evaluable_count = 0
+    negative_fill_latency_count = 0
 
     for _, row in legging.iterrows():
         enabled_raw = row.get(
@@ -689,6 +693,8 @@ def _realized_edge_metrics(
             for leg in ("call", "put", "future")
         }
         numeric_columns = [
+            "signal_ts_ns",
+            "decision_ts_ns",
             "strike",
             "requested_qty",
             "contract_multiplier",
@@ -729,6 +735,8 @@ def _realized_edge_metrics(
         strike = float(numbers["strike"])
         multiplier = float(numbers["contract_multiplier"])
         decision_net_edge = float(numbers["decision_net_edge"])
+        signal_ts_ns = int(numbers["signal_ts_ns"])
+        decision_ts_ns = int(numbers["decision_ts_ns"])
         if direction == "buy_synthetic_sell_future":
             expected_sides = {"call": 1, "put": -1, "future": -1}
         elif direction == "sell_synthetic_buy_future":
@@ -742,6 +750,10 @@ def _realized_edge_metrics(
                 "buy_synthetic_sell_future",
                 "sell_synthetic_buy_future",
             }
+            or numbers["signal_ts_ns"] % 1 != 0
+            or numbers["decision_ts_ns"] % 1 != 0
+            or signal_ts_ns < 0
+            or decision_ts_ns < signal_ts_ns
             or strike <= 0
             or requested_qty <= 0
             or requested_qty % 1 != 0
@@ -869,6 +881,18 @@ def _realized_edge_metrics(
             expected_first_fill = min(observed_first_timestamps)
             expected_last_fill = max(observed_last_timestamps)
             expected_span = expected_last_fill - expected_first_fill
+            first_fill_latency = (
+                expected_first_fill - decision_ts_ns
+            )
+            completion_latency = (
+                expected_last_fill - decision_ts_ns
+            )
+            fill_timing_evaluable_count += 1
+            first_fill_latencies.append(first_fill_latency)
+            completion_latencies.append(completion_latency)
+            if first_fill_latency < 0 or completion_latency < 0:
+                negative_fill_latency_count += 1
+                violation = True
             if (
                 pd.isna(reported_first_fill)
                 or pd.isna(reported_last_fill)
@@ -1023,6 +1047,22 @@ def _realized_edge_metrics(
         ),
         "parity_execution_max_fill_span_ns": (
             max(fill_spans) if fill_spans else 0
+        ),
+        "parity_execution_fill_timing_evaluable_count": (
+            fill_timing_evaluable_count
+        ),
+        "parity_execution_negative_fill_latency_count": (
+            negative_fill_latency_count
+        ),
+        "parity_execution_min_first_fill_latency_ns": (
+            min(first_fill_latencies)
+            if first_fill_latencies
+            else 0
+        ),
+        "parity_execution_max_completion_latency_ns": (
+            max(completion_latencies)
+            if completion_latencies
+            else 0
         ),
     }
 

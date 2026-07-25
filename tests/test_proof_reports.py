@@ -481,9 +481,11 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ).to_csv(run_dir / "parity_futures_join_audit.csv", index=False)
     guard = pd.DataFrame(
         [
-            {
-                "signal_index": 0,
-                "direction": "buy_synthetic_sell_future",
+                {
+                    "signal_index": 0,
+                    "signal_ts_ns": 200,
+                    "decision_ts_ns": 200,
+                    "direction": "buy_synthetic_sell_future",
                 "strike": 1000.0,
                 "call_instrument_id": "CALL1000",
                 "put_instrument_id": "PUT1000",
@@ -539,9 +541,11 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
     legging = pd.DataFrame(
         [
-            {
-                "signal_index": 0,
-                "direction": "buy_synthetic_sell_future",
+                {
+                    "signal_index": 0,
+                    "signal_ts_ns": 200,
+                    "decision_ts_ns": 200,
+                    "direction": "buy_synthetic_sell_future",
                 "strike": 1000.0,
                 "requested_qty": 75,
                 "expected_order_count": 3,
@@ -756,6 +760,18 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ) == 0.0
     assert int(metrics["parity_execution_max_fill_span_ns"]) == 2
     assert int(
+        metrics["parity_execution_fill_timing_evaluable_count"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_negative_fill_latency_count"]
+    ) == 0
+    assert int(
+        metrics["parity_execution_min_first_fill_latency_ns"]
+    ) == 100
+    assert int(
+        metrics["parity_execution_max_completion_latency_ns"]
+    ) == 102
+    assert int(
         metrics[
             "parity_execution_ioc_visible_capacity_missing_evidence_rows"
         ]
@@ -897,6 +913,39 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         "price",
     ] = 1008.0
     fills_frame.to_csv(run_dir / "fills.csv", index=False)
+
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("CALL1000"),
+        "ts_ns",
+    ] = 199
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    legging.loc[0, "call_first_fill_ts_ns"] = 199
+    legging.loc[0, "call_last_fill_ts_ns"] = 199
+    legging.loc[0, "first_fill_ts_ns"] = 199
+    legging.loc[0, "fill_span_ns"] = 103
+    legging.to_csv(run_dir / "legging.csv", index=False)
+    negative_fill_latency = evaluate_replay_dirs([run_dir])
+
+    negative_fill_latency_failed = (
+        negative_fill_latency.checks.loc[
+            ~negative_fill_latency.checks["passed"]
+        ]
+    )
+    assert not negative_fill_latency.passed
+    assert negative_fill_latency_failed["check"].tolist() == [
+        "parity_execution_realized_edge_consistency_violations",
+        "parity_execution_negative_fill_latency_count",
+    ]
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("CALL1000"),
+        "ts_ns",
+    ] = 300
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    legging.loc[0, "call_first_fill_ts_ns"] = 300
+    legging.loc[0, "call_last_fill_ts_ns"] = 300
+    legging.loc[0, "first_fill_ts_ns"] = 300
+    legging.loc[0, "fill_span_ns"] = 2
+    legging.to_csv(run_dir / "legging.csv", index=False)
 
     fills_frame.loc[
         fills_frame["instrument_id"].eq("FUT"),

@@ -71,6 +71,10 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_total_realized_net_edge": 90.0,
             "parity_execution_min_realized_vs_decision_net_edge": -10.0,
             "parity_execution_max_fill_span_ns": 20,
+            "parity_execution_fill_timing_evaluable_count": 1,
+            "parity_execution_negative_fill_latency_count": 0,
+            "parity_execution_min_first_fill_latency_ns": 50,
+            "parity_execution_max_completion_latency_ns": 70,
             "parity_execution_ioc_batch_preflight_enabled": True,
             "parity_execution_ioc_batch_preflight_declared": True,
             "parity_execution_ioc_batch_preflight_attempts": 1,
@@ -208,6 +212,10 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_total_realized_net_edge": 0.0,
             "parity_execution_min_realized_vs_decision_net_edge": 0.0,
             "parity_execution_max_fill_span_ns": 100,
+            "parity_execution_fill_timing_evaluable_count": 1,
+            "parity_execution_negative_fill_latency_count": 1,
+            "parity_execution_min_first_fill_latency_ns": -5,
+            "parity_execution_max_completion_latency_ns": 100,
             "parity_execution_ioc_batch_preflight_enabled": True,
             "parity_execution_ioc_batch_preflight_declared": True,
             "parity_execution_ioc_batch_preflight_attempts": 1,
@@ -454,6 +462,20 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     ) == -10.0
     assert int(best["max_parity_execution_fill_span_ns"]) == 20
     assert int(
+        best[
+            "total_parity_execution_fill_timing_evaluable_count"
+        ]
+    ) == 2
+    assert int(
+        best["total_parity_execution_negative_fill_latency_count"]
+    ) == 0
+    assert int(
+        best["min_parity_execution_first_fill_latency_ns"]
+    ) == 50
+    assert int(
+        best["max_parity_execution_completion_latency_ns"]
+    ) == 70
+    assert int(
         best["total_parity_execution_ioc_batch_preflight_attempts"]
     ) == 2
     assert int(
@@ -549,6 +571,20 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
         weak["min_parity_execution_realized_net_edge"]
     ) == 0.0
     assert int(weak["max_parity_execution_fill_span_ns"]) == 100
+    assert int(
+        weak[
+            "total_parity_execution_fill_timing_evaluable_count"
+        ]
+    ) == 2
+    assert int(
+        weak["total_parity_execution_negative_fill_latency_count"]
+    ) == 2
+    assert int(
+        weak["min_parity_execution_first_fill_latency_ns"]
+    ) == -5
+    assert int(
+        weak["max_parity_execution_completion_latency_ns"]
+    ) == 100
     assert int(
         weak[
             "total_parity_execution_ioc_batch_preflight_rejected_attempts"

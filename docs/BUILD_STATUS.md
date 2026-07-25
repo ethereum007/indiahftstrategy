@@ -7557,6 +7557,23 @@ Source compilation succeeds. Repository collection is healthy at `2722 tests`
 across `164` files. The full suite was not rerun because recent complete runs
 exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest causal parity fill-timing proof: replay now measures every package with
+at least one fill from decision to first fill and from decision to final fill,
+while retaining the existing inter-leg fill span. Signal and decision
+timestamps must be integer-exact, decision cannot predate signal, and
+independent proof binds both timestamps to the execution guard before deriving
+latencies from raw `fills.csv`. A fully coherent forged artifact whose raw and
+legging timestamps agree still fails when any fill predates the decision.
+Partial packages retain timing evidence but remain ineligible for realized-edge
+credit. Parity sweeps and cross-sweep comparisons preserve the timing-evaluable
+count, negative-latency count, minimum first-fill latency, and maximum
+completion latency. The 49-test focused parity/proof set and the broader
+`101`-test multi-engine, parity, proof, promotion, order-plan, launch, and
+sweep set pass. Source compilation succeeds. Repository collection remains
+healthy at `2722 tests` across `164` files. The full suite was not rerun
+because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

@@ -195,6 +195,18 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
         ]
     ) == 0.0
     assert int(summary["parity_execution_max_fill_span_ns"]) == 0
+    assert int(
+        summary["parity_execution_fill_timing_evaluable_count"]
+    ) == 1
+    assert int(
+        summary["parity_execution_negative_fill_latency_count"]
+    ) == 0
+    assert int(
+        summary["parity_execution_min_first_fill_latency_ns"]
+    ) == 100_000
+    assert int(
+        summary["parity_execution_max_completion_latency_ns"]
+    ) == 100_000
     assert bool(
         summary["parity_execution_ioc_batch_preflight_enabled"]
     )
@@ -390,6 +402,26 @@ def test_run_parity_replay_proves_reverse_realized_package_edge(
             "parity_execution_realized_edge_consistency_violations"
         ]
     ) == 0
+    assert int(
+        proof_metrics[
+            "parity_execution_fill_timing_evaluable_count"
+        ]
+    ) == 1
+    assert int(
+        proof_metrics[
+            "parity_execution_negative_fill_latency_count"
+        ]
+    ) == 0
+    assert int(
+        proof_metrics[
+            "parity_execution_min_first_fill_latency_ns"
+        ]
+    ) == 100_000
+    assert int(
+        proof_metrics[
+            "parity_execution_max_completion_latency_ns"
+        ]
+    ) == 100_000
     assert float(
         proof_metrics["parity_execution_min_realized_net_edge"]
     ) == float(outcome["realized_net_edge"])

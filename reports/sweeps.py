@@ -87,6 +87,10 @@ KNOWN_NON_PARAM_COLUMNS = {
     "parity_execution_total_realized_net_edge",
     "parity_execution_min_realized_vs_decision_net_edge",
     "parity_execution_max_fill_span_ns",
+    "parity_execution_fill_timing_evaluable_count",
+    "parity_execution_negative_fill_latency_count",
+    "parity_execution_min_first_fill_latency_ns",
+    "parity_execution_max_completion_latency_ns",
     "parity_execution_ioc_batch_preflight_enabled",
     "parity_execution_ioc_batch_preflight_declared",
     "parity_execution_ioc_batch_preflight_attempts",
@@ -1479,6 +1483,12 @@ def _parity_execution_aggregates(
         "total_parity_execution_realized_edge_consistency_violations": (
             "parity_execution_realized_edge_consistency_violations"
         ),
+        "total_parity_execution_fill_timing_evaluable_count": (
+            "parity_execution_fill_timing_evaluable_count"
+        ),
+        "total_parity_execution_negative_fill_latency_count": (
+            "parity_execution_negative_fill_latency_count"
+        ),
         "total_parity_execution_ioc_batch_preflight_attempts": (
             "parity_execution_ioc_batch_preflight_attempts"
         ),
@@ -1655,6 +1665,17 @@ def _parity_execution_aggregates(
         "max_parity_execution_fill_span_ns": _max_int(
             frame,
             "parity_execution_max_fill_span_ns",
+        ),
+        "min_parity_execution_first_fill_latency_ns": (
+            _min_metric_where(
+                frame,
+                "parity_execution_min_first_fill_latency_ns",
+                "parity_execution_fill_timing_evaluable_count",
+            )
+        ),
+        "max_parity_execution_completion_latency_ns": _max_int(
+            frame,
+            "parity_execution_max_completion_latency_ns",
         ),
     }
 

@@ -234,6 +234,8 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_realized_edge_missing_evidence_rows",
                 "total_parity_execution_realized_edge_consistency_violations",
                 "total_parity_execution_realized_net_edge",
+                "total_parity_execution_fill_timing_evaluable_count",
+                "total_parity_execution_negative_fill_latency_count",
                 "total_parity_execution_ioc_batch_preflight_attempts",
                 "total_parity_execution_ioc_batch_preflight_passed_attempts",
                 "total_parity_execution_ioc_batch_preflight_rejected_attempts",
@@ -263,6 +265,8 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "min_parity_execution_realized_net_edge",
                 "min_parity_execution_realized_vs_decision_net_edge",
                 "max_parity_execution_fill_span_ns",
+                "min_parity_execution_first_fill_latency_ns",
+                "max_parity_execution_completion_latency_ns",
                 "min_parity_execution_routed_visible_fill_ratio",
                 "total_parity_execution_count",
                 "total_parity_execution_legging_missing_evidence_rows",
@@ -544,6 +548,18 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         "parity_execution_total_realized_net_edge",
                     )
                 ),
+                "total_parity_execution_fill_timing_evaluable_count": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_fill_timing_evaluable_count",
+                    )
+                ),
+                "total_parity_execution_negative_fill_latency_count": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_negative_fill_latency_count",
+                    )
+                ),
                 "total_parity_execution_ioc_batch_preflight_attempts": (
                     _sum_int_metric(
                         runs,
@@ -721,6 +737,19 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "max_parity_execution_fill_span_ns": _max_int_metric(
                     runs,
                     "parity_execution_max_fill_span_ns",
+                ),
+                "min_parity_execution_first_fill_latency_ns": (
+                    _min_metric_where(
+                        runs,
+                        "parity_execution_min_first_fill_latency_ns",
+                        "parity_execution_fill_timing_evaluable_count",
+                    )
+                ),
+                "max_parity_execution_completion_latency_ns": (
+                    _max_int_metric(
+                        runs,
+                        "parity_execution_max_completion_latency_ns",
+                    )
                 ),
                 "total_parity_execution_count": _sum_int_metric(
                     runs,
