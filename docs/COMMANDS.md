@@ -895,37 +895,56 @@ on any emitted signal. The same counters remain visible in parity sweeps and
 cross-sweep comparisons. All outputs remain research-only and
 non-authorizing.
 
-Before routing any parity signal, replay now requires fresh source-market
-books for the call, put, and future and bounds the timestamp skew across all
-three legs. Feed delay therefore consumes the configured book-age budget
-instead of resetting it. `parity_execution_guard.csv` records every deferred,
-expired, rejected, partial, or complete routing decision with per-leg book
-timestamps and ages. Once those books pass, the engine preflights the three
-IOC intents as one non-mutating admission package. The preflight checks venue
-lot/tick rules, visible-book availability, conservative self-cross conflicts,
-and the package-wide instrument, gross-position, delta, and vega envelopes
-without allocating order IDs, consuming liquidity, or sampling order latency.
-Each IOC limit must also cross its strategy-visible touch. Displayed
-opposite-touch quantity is floored to the instrument lot size and reserved
-across same-instrument, same-side intents in the package, so legs cannot
-double-count the same visible depth. The guard artifact retains whether
-preflight was attempted, its pass/fail reason, affected instrument, projected
-range, limit, conflicting order, minimum visible fill ratio, limiting leg,
-requested and available quantity, and touch and limit prices when available.
-A predictable rejection therefore routes zero legs.
+Before routing any parity signal, replay now requires the call and put books
+that formed the signal to have reached at least the signal's source-market
+timestamp. This prevents a delayed strategy callback from acting on a
+precomputed opportunity before its source option books have become visible.
+The backward as-of futures book may legitimately predate the signal, but all
+three current books must still satisfy the configured age and cross-leg skew
+limits. Feed delay therefore consumes the book-age budget instead of resetting
+it.
+
+After source causality, freshness, and skew pass, replay reprices the complete
+three-leg package at the strategy-visible executable touches. It recomputes
+the direction-specific parity edge, gross package edge, each leg's configured
+Indian transaction cost, and decision-time net edge. The package must retain
+strictly positive net edge before IOC admission is attempted; otherwise all
+three legs are deferred with `execution_edge_below_threshold`.
+`parity_execution_guard.csv` records every pending, expired, rejected, partial,
+or complete decision with source-book readiness and lag, per-leg timestamps
+and ages, executable sides and prices, gross edge, leg costs, total cost, and
+net edge.
+
+Once those checks pass, the engine preflights the three IOC intents as one
+non-mutating admission package. The preflight checks venue lot/tick rules,
+visible-book availability, conservative self-cross conflicts, and the
+package-wide instrument, gross-position, delta, and vega envelopes without
+allocating order IDs, consuming liquidity, or sampling order latency. Each IOC
+limit must also cross its strategy-visible touch. Displayed opposite-touch
+quantity is floored to the instrument lot size and reserved across
+same-instrument, same-side intents in the package, so legs cannot double-count
+the same visible depth. The guard artifact retains whether preflight was
+attempted, its pass/fail reason, affected instrument, projected range, limit,
+conflicting order, minimum visible fill ratio, limiting leg, requested and
+available quantity, and touch and limit prices when available. A predictable
+rejection therefore routes zero legs.
 
 This admission check is visible feasibility at the decision timestamp; it
 does not make multi-leg fills atomic or predict exchange state at arrival.
 Liquidity and latency can still produce a partial outcome after all three
 orders are accepted. `legging.csv` treats the execution as complete only when
 all three orders are accepted and every leg fills its requested quantity.
-Proof independently derives limiting-leg side, marketability, and fill ratio
-from the guard evidence, recomputes the other guard, preflight, and legging
-consistency checks, and rejects over-age or over-skew routed books, expired
-signals, package-admission rejections, incomplete routing, rejected legs, and
-unfilled legs. Parity sweeps and cross-sweep comparisons preserve visible
-marketability and capacity-shortfall counts, proof-integrity counts, and the
-minimum routed visible fill ratio.
+Proof independently reconstructs source-book lag from signal and book ages,
+derives all three executable sides, recomputes parity gross edge and the
+reported leg-cost sum, and verifies the net-edge threshold before checking
+limiting-leg marketability and fill ratio. It also recomputes the other guard,
+preflight, and legging consistency checks and rejects over-age or over-skew
+routed books, expired signals, package-admission rejections, incomplete
+routing, rejected legs, and unfilled legs. Parity sweeps and cross-sweep
+comparisons preserve source-pending and edge-rejected counts, maximum
+source-book lag and observed edge decay, proof-integrity counts, minimum routed
+net edge, visible marketability and capacity-shortfall counts, and minimum
+routed visible fill ratio.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows

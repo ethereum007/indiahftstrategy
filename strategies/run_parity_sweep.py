@@ -204,6 +204,10 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "max_parity_futures_signal_age_ns",
                 "parity_execution_guard_enabled_runs",
                 "parity_execution_guard_declared_runs",
+                "parity_execution_signal_source_causality_enabled_runs",
+                "parity_execution_signal_source_causality_declared_runs",
+                "parity_execution_edge_revalidation_enabled_runs",
+                "parity_execution_edge_revalidation_declared_runs",
                 "parity_execution_ioc_batch_preflight_enabled_runs",
                 "parity_execution_ioc_batch_preflight_declared_runs",
                 "parity_execution_guard_artifact_present_runs",
@@ -211,6 +215,16 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_guard_attempts",
                 "total_parity_execution_guard_passed_attempts",
                 "total_parity_execution_guard_deferred_attempts",
+                "total_parity_execution_signal_source_checks",
+                "total_parity_execution_signal_source_ready_attempts",
+                "total_parity_execution_signal_source_pending_attempts",
+                "total_parity_execution_signal_source_missing_evidence_rows",
+                "total_parity_execution_signal_source_consistency_violations",
+                "total_parity_execution_edge_revalidation_attempts",
+                "total_parity_execution_edge_revalidation_passed_attempts",
+                "total_parity_execution_edge_revalidation_rejected_attempts",
+                "total_parity_execution_edge_revalidation_missing_evidence_rows",
+                "total_parity_execution_edge_revalidation_consistency_violations",
                 "total_parity_execution_ioc_batch_preflight_attempts",
                 "total_parity_execution_ioc_batch_preflight_passed_attempts",
                 "total_parity_execution_ioc_batch_preflight_rejected_attempts",
@@ -234,6 +248,9 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_guard_skew_violations",
                 "max_parity_execution_routed_book_age_ns",
                 "max_parity_execution_routed_book_skew_ns",
+                "max_parity_execution_signal_source_lag_ns",
+                "min_parity_execution_routed_net_edge",
+                "max_parity_execution_observed_edge_decay",
                 "min_parity_execution_routed_visible_fill_ratio",
                 "total_parity_execution_count",
                 "total_parity_execution_legging_missing_evidence_rows",
@@ -337,6 +354,30 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     runs,
                     "parity_execution_guard_declared",
                 ),
+                "parity_execution_signal_source_causality_enabled_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_signal_source_causality_enabled",
+                    )
+                ),
+                "parity_execution_signal_source_causality_declared_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_signal_source_causality_declared",
+                    )
+                ),
+                "parity_execution_edge_revalidation_enabled_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_enabled",
+                    )
+                ),
+                "parity_execution_edge_revalidation_declared_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_declared",
+                    )
+                ),
                 "parity_execution_ioc_batch_preflight_enabled_runs": (
                     _sum_bool_metric(
                         runs,
@@ -375,6 +416,66 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     _sum_int_metric(
                         runs,
                         "parity_execution_guard_deferred_attempts",
+                    )
+                ),
+                "total_parity_execution_signal_source_checks": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_signal_source_checks",
+                    )
+                ),
+                "total_parity_execution_signal_source_ready_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_signal_source_ready_attempts",
+                    )
+                ),
+                "total_parity_execution_signal_source_pending_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_signal_source_pending_attempts",
+                    )
+                ),
+                "total_parity_execution_signal_source_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_signal_source_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_signal_source_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_signal_source_consistency_violations",
+                    )
+                ),
+                "total_parity_execution_edge_revalidation_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_attempts",
+                    )
+                ),
+                "total_parity_execution_edge_revalidation_passed_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_passed_attempts",
+                    )
+                ),
+                "total_parity_execution_edge_revalidation_rejected_attempts": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_rejected_attempts",
+                    )
+                ),
+                "total_parity_execution_edge_revalidation_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_edge_revalidation_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_edge_revalidation_consistency_violations",
                     )
                 ),
                 "total_parity_execution_ioc_batch_preflight_attempts": (
@@ -513,8 +614,29 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         "parity_execution_max_routed_book_skew_ns",
                     )
                 ),
+                "max_parity_execution_signal_source_lag_ns": (
+                    _max_int_metric(
+                        runs,
+                        "parity_execution_max_signal_source_lag_ns",
+                    )
+                ),
                 "min_parity_execution_routed_visible_fill_ratio": (
-                    _min_routed_visible_fill_ratio_metric(runs)
+                    _min_routed_metric(
+                        runs,
+                        "parity_execution_min_routed_visible_fill_ratio",
+                    )
+                ),
+                "min_parity_execution_routed_net_edge": (
+                    _min_routed_metric(
+                        runs,
+                        "parity_execution_min_routed_net_edge",
+                    )
+                ),
+                "max_parity_execution_observed_edge_decay": (
+                    _max_float_metric(
+                        runs,
+                        "parity_execution_max_observed_edge_decay",
+                    )
                 ),
                 "total_parity_execution_count": _sum_int_metric(
                     runs,
@@ -732,7 +854,10 @@ def _max_int_metric(runs: pd.DataFrame, column: str) -> int:
     return int(pd.to_numeric(values, errors="coerce").fillna(0).max())
 
 
-def _min_routed_visible_fill_ratio_metric(runs: pd.DataFrame) -> float:
+def _min_routed_metric(
+    runs: pd.DataFrame,
+    column: str,
+) -> float:
     routed = pd.to_numeric(
         runs.get(
             "parity_execution_guard_passed_attempts",
@@ -742,12 +867,21 @@ def _min_routed_visible_fill_ratio_metric(runs: pd.DataFrame) -> float:
     ).fillna(0).gt(0)
     values = pd.to_numeric(
         runs.get(
-            "parity_execution_min_routed_visible_fill_ratio",
+            column,
             pd.Series(float("nan"), index=runs.index),
         ),
         errors="coerce",
     ).loc[routed].dropna()
     return float(values.min()) if not values.empty else 0.0
+
+
+def _max_float_metric(runs: pd.DataFrame, column: str) -> float:
+    values = runs.get(
+        column,
+        pd.Series(float("nan"), index=runs.index),
+    )
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    return float(numeric.max()) if not numeric.empty else 0.0
 
 
 def _sum_bool_metric(runs: pd.DataFrame, column: str) -> int:

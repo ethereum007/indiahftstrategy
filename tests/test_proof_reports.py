@@ -458,6 +458,14 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         0,
         "parity_execution_ioc_batch_preflight_enabled",
     ] = True
+    summary.loc[
+        0,
+        "parity_execution_edge_revalidation_enabled",
+    ] = True
+    summary.loc[
+        0,
+        "parity_execution_signal_source_causality_enabled",
+    ] = True
     summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
     summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
     summary.to_csv(summary_path, index=False)
@@ -471,15 +479,40 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         [
             {
                 "direction": "buy_synthetic_sell_future",
+                "strike": 1000.0,
                 "call_instrument_id": "CALL1000",
                 "put_instrument_id": "PUT1000",
                 "future_instrument_id": "FUT",
+                "signal_age_ns": 100,
                 "guard_passed": True,
                 "guard_reason": "ready",
                 "routing_status": "complete",
                 "orders_requested": 3,
                 "orders_accepted": 3,
                 "routing_complete": True,
+                "signal_source_causality_enabled": True,
+                "signal_source_books_checked": True,
+                "signal_source_books_ready": True,
+                "signal_source_max_lag_ns": 0,
+                "edge_revalidation_enabled": True,
+                "edge_revalidation_checked": True,
+                "edge_revalidation_qty": 75,
+                "signal_net_edge": 1000.0,
+                "decision_call_side": 1,
+                "decision_call_price": 55.0,
+                "decision_put_side": -1,
+                "decision_put_price": 60.0,
+                "decision_future_side": -1,
+                "decision_future_price": 1008.0,
+                "decision_contract_multiplier": 1.0,
+                "decision_edge_per_unit": 13.0,
+                "decision_gross_edge": 975.0,
+                "decision_call_cost": 1.0,
+                "decision_put_cost": 2.0,
+                "decision_future_cost": 3.0,
+                "decision_total_cost": 6.0,
+                "decision_net_edge": 969.0,
+                "decision_min_net_edge": 0.0,
                 "ioc_batch_preflight_enabled": True,
                 "ioc_batch_preflight_attempted": True,
                 "ioc_batch_preflight_passed": True,
@@ -546,6 +579,61 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
             "parity_execution_ioc_batch_preflight_missing_evidence_rows"
         ]
     ) == 0
+    assert bool(
+        metrics["parity_execution_edge_revalidation_declared"]
+    )
+    assert bool(
+        metrics[
+            "parity_execution_signal_source_causality_declared"
+        ]
+    )
+    assert int(
+        metrics["parity_execution_signal_source_checks"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_signal_source_ready_attempts"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_signal_source_pending_attempts"]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_signal_source_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_signal_source_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        metrics["parity_execution_max_signal_source_lag_ns"]
+    ) == 0
+    assert int(
+        metrics["parity_execution_edge_revalidation_attempts"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_edge_revalidation_passed_attempts"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_edge_revalidation_rejected_attempts"]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_edge_revalidation_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_edge_revalidation_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        metrics["parity_execution_min_routed_net_edge"]
+    ) == 969.0
+    assert float(
+        metrics["parity_execution_max_observed_edge_decay"]
+    ) == 31.0
     assert int(
         metrics[
             "parity_execution_ioc_visible_capacity_missing_evidence_rows"
@@ -602,6 +690,48 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     summary.loc[
         0,
         "parity_execution_ioc_batch_preflight_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
+        "parity_execution_edge_revalidation_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    edge_undeclared = evaluate_replay_dirs([run_dir])
+
+    edge_undeclared_failed = edge_undeclared.checks.loc[
+        ~edge_undeclared.checks["passed"]
+    ]
+    assert not edge_undeclared.passed
+    assert edge_undeclared_failed["check"].tolist() == [
+        "parity_execution_edge_revalidation_declared"
+    ]
+    summary.loc[
+        0,
+        "parity_execution_edge_revalidation_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
+        "parity_execution_signal_source_causality_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    signal_source_undeclared = evaluate_replay_dirs([run_dir])
+
+    signal_source_undeclared_failed = (
+        signal_source_undeclared.checks.loc[
+            ~signal_source_undeclared.checks["passed"]
+        ]
+    )
+    assert not signal_source_undeclared.passed
+    assert signal_source_undeclared_failed["check"].tolist() == [
+        "parity_execution_signal_source_causality_declared"
+    ]
+    summary.loc[
+        0,
+        "parity_execution_signal_source_causality_enabled",
     ] = True
     summary.to_csv(summary_path, index=False)
 
@@ -671,6 +801,35 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         "ioc_batch_preflight_min_visible_fill_ratio",
     ] = 2.0
 
+    guard.loc[0, "decision_net_edge"] = -1.0
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    edge_inconsistent = evaluate_replay_dirs([run_dir])
+
+    edge_inconsistent_failed = edge_inconsistent.checks.loc[
+        ~edge_inconsistent.checks["passed"]
+    ]
+    assert not edge_inconsistent.passed
+    assert edge_inconsistent_failed["check"].tolist() == [
+        "parity_execution_edge_revalidation_consistency_violations",
+        "parity_execution_min_routed_net_edge",
+    ]
+    guard.loc[0, "decision_net_edge"] = 969.0
+
+    guard.loc[0, "signal_source_max_lag_ns"] = 1
+    guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
+    signal_source_inconsistent = evaluate_replay_dirs([run_dir])
+
+    signal_source_inconsistent_failed = (
+        signal_source_inconsistent.checks.loc[
+            ~signal_source_inconsistent.checks["passed"]
+        ]
+    )
+    assert not signal_source_inconsistent.passed
+    assert signal_source_inconsistent_failed["check"].tolist() == [
+        "parity_execution_signal_source_consistency_violations"
+    ]
+    guard.loc[0, "signal_source_max_lag_ns"] = 0
+
     guard.loc[0, "ioc_batch_preflight_limit_price"] = 54.0
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
     capacity_unmarketable = evaluate_replay_dirs([run_dir])
@@ -684,6 +843,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ]
     guard.loc[0, "ioc_batch_preflight_limit_price"] = 55.0
 
+    guard.loc[0, "signal_age_ns"] = 101
     guard.loc[0, "call_book_age_ns"] = 101
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
     stale = evaluate_replay_dirs([run_dir])
@@ -695,6 +855,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         "parity_execution_max_routed_book_age_ns",
     ]
 
+    guard.loc[0, "signal_age_ns"] = 100
     guard.loc[0, "call_book_age_ns"] = 100
     guard.loc[0, "routing_status"] = "partial"
     guard.loc[0, "orders_accepted"] = 2

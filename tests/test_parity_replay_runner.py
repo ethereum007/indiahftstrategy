@@ -108,6 +108,59 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["parity_execution_guard_passed_attempts"]) == 1
     assert int(summary["parity_execution_guard_deferred_attempts"]) == 2
     assert bool(
+        summary["parity_execution_signal_source_causality_enabled"]
+    )
+    assert int(
+        summary["parity_execution_signal_source_checks"]
+    ) == 1
+    assert int(
+        summary["parity_execution_signal_source_ready_attempts"]
+    ) == 1
+    assert int(
+        summary["parity_execution_signal_source_pending_attempts"]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_signal_source_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_signal_source_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        summary["parity_execution_max_signal_source_lag_ns"]
+    ) == 0
+    assert bool(
+        summary["parity_execution_edge_revalidation_enabled"]
+    )
+    assert int(
+        summary["parity_execution_edge_revalidation_attempts"]
+    ) == 1
+    assert int(
+        summary["parity_execution_edge_revalidation_passed_attempts"]
+    ) == 1
+    assert int(
+        summary["parity_execution_edge_revalidation_rejected_attempts"]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_edge_revalidation_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_edge_revalidation_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        summary["parity_execution_min_routed_net_edge"]
+    ) > 7_800.0
+    assert float(
+        summary["parity_execution_max_observed_edge_decay"]
+    ) == 0.0
+    assert bool(
         summary["parity_execution_ioc_batch_preflight_enabled"]
     )
     assert int(
@@ -181,6 +234,15 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     routed_guard = replay.execution_guard.loc[
         replay.execution_guard["guard_passed"]
     ].iloc[0]
+    assert bool(routed_guard["edge_revalidation_checked"])
+    assert int(routed_guard["edge_revalidation_qty"]) == 75
+    assert float(routed_guard["decision_edge_per_unit"]) == 105.0
+    assert float(routed_guard["decision_gross_edge"]) == 7_875.0
+    assert float(routed_guard["decision_total_cost"]) > 0.0
+    assert float(routed_guard["decision_net_edge"]) == (
+        float(routed_guard["decision_gross_edge"])
+        - float(routed_guard["decision_total_cost"])
+    )
     assert bool(routed_guard["ioc_batch_preflight_enabled"])
     assert bool(routed_guard["ioc_batch_preflight_attempted"])
     assert bool(routed_guard["ioc_batch_preflight_passed"])
@@ -195,6 +257,101 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
             "ioc_batch_preflight_min_visible_fill_ratio"
         ]
     ) == 4.0
+
+
+def test_run_parity_replay_rejects_edge_that_decays_during_feed_latency(
+    tmp_path,
+):
+    ts0 = ns_ist("2026-06-10 09:15:00")
+    ts1 = ns_ist("2026-06-10 09:15:00.000100")
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "expiry": "2026-06-30",
+                "strike": 1000.0,
+                "call_bid": 54.0,
+                "call_ask": 55.0,
+                "call_bid_qty": 300,
+                "call_ask_qty": 300,
+                "put_bid": 60.0,
+                "put_ask": 61.0,
+                "put_bid_qty": 300,
+                "put_ask_qty": 300,
+            }
+            for ts in [ts0, ts1]
+        ]
+    )
+    futures = pd.DataFrame(
+        [
+            {
+                "ts": ts0,
+                "bid": 1100.0,
+                "ask": 1101.0,
+                "bid_qty": 300,
+                "ask_qty": 300,
+            },
+            {
+                "ts": ts1 - 1,
+                "bid": 990.0,
+                "ask": 991.0,
+                "bid_qty": 300,
+                "ask_qty": 300,
+            },
+        ]
+    )
+    chain_path = tmp_path / "chain.csv"
+    futures_path = tmp_path / "futures.csv"
+    chain.to_csv(chain_path, index=False)
+    futures.to_csv(futures_path, index=False)
+
+    replay = run_parity_replay(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        depth_fraction=0.25,
+        asof_latency_ns=100_000,
+        feed_latency_us=200.0,
+        signal_limit=1,
+    )
+
+    summary = replay.summary.iloc[0]
+    edge_rejections = replay.execution_guard.loc[
+        replay.execution_guard["guard_reason"].eq(
+            "execution_edge_below_threshold"
+        )
+    ]
+    assert replay.signals.iloc[0]["direction"] == (
+        "buy_synthetic_sell_future"
+    )
+    assert replay.result.engine.orders_sent == 0
+    assert replay.result.fills.empty
+    assert not edge_rejections.empty
+    assert (
+        edge_rejections["decision_net_edge"].astype(float) < 0.0
+    ).all()
+    assert int(
+        summary["parity_execution_edge_revalidation_attempts"]
+    ) >= 1
+    assert int(
+        summary["parity_execution_signal_source_pending_attempts"]
+    ) >= 1
+    assert int(
+        summary["parity_execution_max_signal_source_lag_ns"]
+    ) == 100_000
+    assert int(
+        summary["parity_execution_edge_revalidation_passed_attempts"]
+    ) == 0
+    assert int(
+        summary["parity_execution_edge_revalidation_rejected_attempts"]
+    ) == int(
+        summary["parity_execution_edge_revalidation_attempts"]
+    )
+    assert float(
+        summary["parity_execution_max_observed_edge_decay"]
+    ) > 0.0
+    assert int(
+        summary["parity_execution_ioc_batch_preflight_attempts"]
+    ) == 0
 
 
 def test_run_parity_replay_quarantines_stale_futures_join(tmp_path):

@@ -103,6 +103,12 @@ def test_parity_arb_taker_routes_three_ioc_legs_and_tracks_fills():
     routed_guard = strategy.execution_guard_report().loc[
         lambda frame: frame["guard_passed"]
     ].iloc[0]
+    assert bool(routed_guard["edge_revalidation_checked"])
+    assert int(routed_guard["edge_revalidation_qty"]) == 75
+    assert float(routed_guard["decision_edge_per_unit"]) == 13.0
+    assert float(routed_guard["decision_gross_edge"]) == 975.0
+    assert float(routed_guard["decision_total_cost"]) == 0.0
+    assert float(routed_guard["decision_net_edge"]) == 975.0
     assert bool(
         routed_guard[
             "ioc_batch_preflight_visible_capacity_checked"
@@ -117,6 +123,48 @@ def test_parity_arb_taker_routes_three_ioc_legs_and_tracks_fills():
         ]
         == "CALL1000"
     )
+
+
+def test_parity_arb_taker_revalidates_decayed_edge_before_preflight():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                    "net_edge": 500.0,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        future_bid=990.0,
+        future_ask=991.0,
+    )
+
+    result = engine.run()
+
+    guard = strategy.execution_guard_report()
+    rejected = guard.loc[
+        guard["guard_reason"].eq("execution_edge_below_threshold")
+    ]
+    assert engine.orders_sent == 0
+    assert result.fills.empty
+    assert not rejected.empty
+    assert rejected["edge_revalidation_checked"].all()
+    assert set(rejected["signal_net_edge"]) == {500.0}
+    assert set(rejected["decision_edge_per_unit"]) == {-5.0}
+    assert set(rejected["decision_net_edge"]) == {-375.0}
+    assert not rejected["ioc_batch_preflight_attempted"].any()
+    assert strategy.legging_report().empty
 
 
 def test_parity_arb_taker_resets_run_state_when_reused():
@@ -176,9 +224,9 @@ def test_parity_arb_taker_defers_stale_cached_leg_books():
     )
     engine = _parity_engine(
         strategy,
-        call_timestamps=[0],
-        put_timestamps=[0, 100],
-        future_timestamps=[0, 100],
+        call_timestamps=[100],
+        put_timestamps=[200],
+        future_timestamps=[200],
     )
 
     engine.run()
@@ -186,7 +234,8 @@ def test_parity_arb_taker_defers_stale_cached_leg_books():
     guard = strategy.execution_guard_report()
     assert engine.orders_sent == 0
     assert not guard["guard_passed"].any()
-    assert set(guard["guard_reason"]) == {"stale_leg_book"}
+    assert "stale_leg_book" in set(guard["guard_reason"])
+    assert guard.iloc[-1]["guard_reason"] == "stale_leg_book"
     assert guard.iloc[-1]["affected_legs"] == "call"
     assert int(guard.iloc[-1]["call_book_age_ns"]) == 100
 
@@ -216,17 +265,18 @@ def test_parity_arb_taker_defers_cross_leg_book_skew():
     )
     engine = _parity_engine(
         strategy,
-        call_timestamps=[0],
-        put_timestamps=[0, 100],
-        future_timestamps=[0, 100],
+        call_timestamps=[100],
+        put_timestamps=[200],
+        future_timestamps=[200],
     )
 
     engine.run()
 
     guard = strategy.execution_guard_report()
     assert engine.orders_sent == 0
-    assert set(guard["guard_reason"]) == {"leg_book_skew_exceeded"}
-    assert set(guard["leg_book_skew_ns"]) == {100}
+    assert "leg_book_skew_exceeded" in set(guard["guard_reason"])
+    assert guard.iloc[-1]["guard_reason"] == "leg_book_skew_exceeded"
+    assert int(guard.iloc[-1]["leg_book_skew_ns"]) == 100
 
 
 def test_parity_arb_taker_preflights_rejected_third_leg_before_routing():
@@ -417,6 +467,8 @@ def _parity_engine(
     future_timestamps=(0, 100),
     future_max_position_lots=20,
     future_quote_qty=75,
+    future_bid=1008.0,
+    future_ask=1009.0,
 ):
     return MultiInstrumentEngine(
         instruments={
@@ -465,8 +517,8 @@ def _parity_engine(
                     [
                         (
                             ts,
-                            1008.0,
-                            1009.0,
+                            future_bid,
+                            future_ask,
                             future_quote_qty,
                             future_quote_qty,
                             np.nan,

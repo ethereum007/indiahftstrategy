@@ -7515,6 +7515,27 @@ and sweep regressions pass. Repository collection is healthy at `2717 tests`
 across `164` files. The full suite was not rerun because recent complete runs
 exceed 40 minutes. All outputs remain non-authorizing.
 
+Latest causal parity edge-revalidation proof: a precomputed parity signal can
+no longer activate merely because the strategy receive clock has crossed its
+source timestamp. The call and put books that formed the opportunity must each
+reach that timestamp first; the older backward-as-of futures leg remains
+permitted only within its existing age and skew limits. Once all source books
+are causally visible, the strategy reprices the current executable call, put,
+and future touches, applies each leg's configured Indian cost model, and
+requires strictly positive package net edge before IOC preflight. A package
+whose edge decays during feed latency routes zero legs.
+`parity_execution_guard.csv` preserves source readiness and lag plus every
+decision side, price, gross edge, leg cost, total cost, and net edge. Replay
+summaries, independent proof, parity sweeps, and cross-sweep comparisons
+preserve and validate pending/rejected counts, maximum source lag and edge
+decay, minimum routed net edge, and evidence-integrity counters. Proof
+reconstructs source causality from signal/book ages and independently
+recomputes sides, parity arithmetic, cost sums, and pass/reject semantics.
+All `98` multi-engine, parity, proof, promotion, order-plan, launch, and sweep
+regressions pass. Repository collection is healthy at `2719 tests` across
+`164` files. The full suite was not rerun because recent complete runs exceed
+40 minutes. All outputs remain non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

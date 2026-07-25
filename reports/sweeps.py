@@ -58,6 +58,23 @@ KNOWN_NON_PARAM_COLUMNS = {
     "parity_execution_guard_attempts",
     "parity_execution_guard_passed_attempts",
     "parity_execution_guard_deferred_attempts",
+    "parity_execution_signal_source_causality_enabled",
+    "parity_execution_signal_source_causality_declared",
+    "parity_execution_signal_source_checks",
+    "parity_execution_signal_source_ready_attempts",
+    "parity_execution_signal_source_pending_attempts",
+    "parity_execution_signal_source_missing_evidence_rows",
+    "parity_execution_signal_source_consistency_violations",
+    "parity_execution_max_signal_source_lag_ns",
+    "parity_execution_edge_revalidation_enabled",
+    "parity_execution_edge_revalidation_declared",
+    "parity_execution_edge_revalidation_attempts",
+    "parity_execution_edge_revalidation_passed_attempts",
+    "parity_execution_edge_revalidation_rejected_attempts",
+    "parity_execution_edge_revalidation_missing_evidence_rows",
+    "parity_execution_edge_revalidation_consistency_violations",
+    "parity_execution_min_routed_net_edge",
+    "parity_execution_max_observed_edge_decay",
     "parity_execution_ioc_batch_preflight_enabled",
     "parity_execution_ioc_batch_preflight_declared",
     "parity_execution_ioc_batch_preflight_attempts",
@@ -1341,6 +1358,30 @@ def _parity_execution_aggregates(
             pd.Series(False, index=frame.index),
         )
     )
+    edge_revalidation_enabled = _bool_series(
+        frame.get(
+            "parity_execution_edge_revalidation_enabled",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    edge_revalidation_declared = _bool_series(
+        frame.get(
+            "parity_execution_edge_revalidation_declared",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    signal_source_enabled = _bool_series(
+        frame.get(
+            "parity_execution_signal_source_causality_enabled",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    signal_source_declared = _bool_series(
+        frame.get(
+            "parity_execution_signal_source_causality_declared",
+            pd.Series(False, index=frame.index),
+        )
+    )
     guard_present = _bool_series(
         frame.get(
             "parity_execution_guard_present",
@@ -1362,6 +1403,36 @@ def _parity_execution_aggregates(
         ),
         "total_parity_execution_guard_deferred_attempts": (
             "parity_execution_guard_deferred_attempts"
+        ),
+        "total_parity_execution_signal_source_checks": (
+            "parity_execution_signal_source_checks"
+        ),
+        "total_parity_execution_signal_source_ready_attempts": (
+            "parity_execution_signal_source_ready_attempts"
+        ),
+        "total_parity_execution_signal_source_pending_attempts": (
+            "parity_execution_signal_source_pending_attempts"
+        ),
+        "total_parity_execution_signal_source_missing_evidence_rows": (
+            "parity_execution_signal_source_missing_evidence_rows"
+        ),
+        "total_parity_execution_signal_source_consistency_violations": (
+            "parity_execution_signal_source_consistency_violations"
+        ),
+        "total_parity_execution_edge_revalidation_attempts": (
+            "parity_execution_edge_revalidation_attempts"
+        ),
+        "total_parity_execution_edge_revalidation_passed_attempts": (
+            "parity_execution_edge_revalidation_passed_attempts"
+        ),
+        "total_parity_execution_edge_revalidation_rejected_attempts": (
+            "parity_execution_edge_revalidation_rejected_attempts"
+        ),
+        "total_parity_execution_edge_revalidation_missing_evidence_rows": (
+            "parity_execution_edge_revalidation_missing_evidence_rows"
+        ),
+        "total_parity_execution_edge_revalidation_consistency_violations": (
+            "parity_execution_edge_revalidation_consistency_violations"
         ),
         "total_parity_execution_ioc_batch_preflight_attempts": (
             "parity_execution_ioc_batch_preflight_attempts"
@@ -1453,6 +1524,18 @@ def _parity_execution_aggregates(
     return {
         "parity_execution_guard_enabled_runs": int(enabled.sum()),
         "parity_execution_guard_declared_runs": int(declared.sum()),
+        "parity_execution_signal_source_causality_enabled_runs": int(
+            signal_source_enabled.sum()
+        ),
+        "parity_execution_signal_source_causality_declared_runs": int(
+            signal_source_declared.sum()
+        ),
+        "parity_execution_edge_revalidation_enabled_runs": int(
+            edge_revalidation_enabled.sum()
+        ),
+        "parity_execution_edge_revalidation_declared_runs": int(
+            edge_revalidation_declared.sum()
+        ),
         "parity_execution_ioc_batch_preflight_enabled_runs": int(
             preflight_enabled.sum()
         ),
@@ -1474,22 +1557,42 @@ def _parity_execution_aggregates(
             frame,
             "parity_execution_max_routed_book_skew_ns",
         ),
+        "max_parity_execution_signal_source_lag_ns": _max_int(
+            frame,
+            "parity_execution_max_signal_source_lag_ns",
+        ),
         "min_parity_execution_routed_visible_fill_ratio": (
-            _min_routed_visible_fill_ratio(frame)
+            _min_routed_metric(
+                frame,
+                "parity_execution_min_routed_visible_fill_ratio",
+            )
+        ),
+        "min_parity_execution_routed_net_edge": _min_routed_metric(
+            frame,
+            "parity_execution_min_routed_net_edge",
+        ),
+        "max_parity_execution_observed_edge_decay": _max_float(
+            frame,
+            "parity_execution_max_observed_edge_decay",
         ),
     }
 
 
-def _min_routed_visible_fill_ratio(frame: pd.DataFrame) -> float:
+def _min_routed_metric(
+    frame: pd.DataFrame,
+    column: str,
+) -> float:
     routed = _numeric(
         frame,
         "parity_execution_guard_passed_attempts",
     ).fillna(0.0).gt(0.0)
-    values = _numeric(
-        frame,
-        "parity_execution_min_routed_visible_fill_ratio",
-    ).loc[routed].dropna()
+    values = _numeric(frame, column).loc[routed].dropna()
     return float(values.min()) if not values.empty else 0.0
+
+
+def _max_float(frame: pd.DataFrame, column: str) -> float:
+    values = _numeric(frame, column).dropna()
+    return float(values.max()) if not values.empty else 0.0
 
 
 def _max_int(frame: pd.DataFrame, column: str) -> int:

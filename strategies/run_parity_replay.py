@@ -327,6 +327,18 @@ def _execution_guard_metrics(
         bool
     )
     preflight_passed = preflight_passed_raw.fillna(False).astype(bool)
+    edge_metrics = _edge_revalidation_metrics(
+        guard,
+        passed=passed,
+        reasons=reasons,
+        preflight_attempted=preflight_attempted,
+    )
+    signal_source_metrics = _signal_source_metrics(
+        guard,
+        passed=passed,
+        reasons=reasons,
+        preflight_attempted=preflight_attempted,
+    )
     capacity_checked_raw = guard.get(
         "ioc_batch_preflight_visible_capacity_checked",
         pd.Series(np.nan, index=guard.index),
@@ -540,6 +552,8 @@ def _execution_guard_metrics(
         "parity_execution_guard_attempts": int(len(guard)),
         "parity_execution_guard_passed_attempts": int(passed.sum()),
         "parity_execution_guard_deferred_attempts": int((~passed).sum()),
+        **signal_source_metrics,
+        **edge_metrics,
         "parity_execution_ioc_batch_preflight_enabled": True,
         "parity_execution_ioc_batch_preflight_attempts": int(
             preflight_attempted.sum()
@@ -635,6 +649,342 @@ def _execution_guard_metrics(
         ),
         "parity_execution_unfilled_legs": int(unfilled_legs.sum()),
     }
+
+
+def _signal_source_metrics(
+    guard: pd.DataFrame,
+    *,
+    passed: pd.Series,
+    reasons: pd.Series,
+    preflight_attempted: pd.Series,
+) -> dict[str, int | bool]:
+    enabled_raw = guard.get(
+        "signal_source_causality_enabled",
+        pd.Series(np.nan, index=guard.index),
+    )
+    checked_raw = guard.get(
+        "signal_source_books_checked",
+        pd.Series(np.nan, index=guard.index),
+    )
+    ready_raw = guard.get(
+        "signal_source_books_ready",
+        pd.Series(np.nan, index=guard.index),
+    )
+    enabled = enabled_raw.fillna(False).astype(bool)
+    checked = checked_raw.fillna(False).astype(bool)
+    ready = ready_raw.fillna(False).astype(bool)
+    signal_age = _numeric_guard_column(guard, "signal_age_ns")
+    call_age = _numeric_guard_column(guard, "call_book_age_ns")
+    put_age = _numeric_guard_column(guard, "put_book_age_ns")
+    reported_lag = _numeric_guard_column(
+        guard,
+        "signal_source_max_lag_ns",
+    )
+    edge_checked = (
+        guard.get(
+            "edge_revalidation_checked",
+            pd.Series(False, index=guard.index),
+        )
+        .fillna(False)
+        .astype(bool)
+    )
+    pending = reasons.eq("signal_source_books_pending")
+    relevant = (
+        checked
+        | edge_checked
+        | preflight_attempted
+        | passed
+        | pending
+    )
+    missing = relevant & (
+        enabled_raw.isna()
+        | checked_raw.isna()
+        | ready_raw.isna()
+        | signal_age.isna()
+        | call_age.isna()
+        | put_age.isna()
+        | reported_lag.isna()
+    )
+    expected_lag = pd.concat(
+        [
+            call_age.sub(signal_age),
+            put_age.sub(signal_age),
+            pd.Series(0.0, index=guard.index),
+        ],
+        axis=1,
+    ).max(axis=1)
+    expected_ready = expected_lag.eq(0.0)
+    consistency_violation = (
+        ~enabled
+        | ~checked
+        | reported_lag.lt(0)
+        | reported_lag.mod(1).ne(0)
+        | reported_lag.ne(expected_lag)
+        | ready.ne(expected_ready)
+        | (
+            pending
+            & ready
+        )
+        | (
+            ~ready
+            & ~pending
+        )
+        | (
+            (
+                edge_checked
+                | preflight_attempted
+                | passed
+            )
+            & ~ready
+        )
+    )
+    observed_lags = reported_lag.loc[checked].dropna()
+    return {
+        "parity_execution_signal_source_causality_enabled": True,
+        "parity_execution_signal_source_checks": int(checked.sum()),
+        "parity_execution_signal_source_ready_attempts": int(
+            (checked & ready).sum()
+        ),
+        "parity_execution_signal_source_pending_attempts": int(
+            pending.sum()
+        ),
+        "parity_execution_signal_source_missing_evidence_rows": int(
+            missing.sum()
+        ),
+        "parity_execution_signal_source_consistency_violations": int(
+            (
+                relevant
+                & consistency_violation
+                & ~missing
+            ).sum()
+        ),
+        "parity_execution_max_signal_source_lag_ns": (
+            int(observed_lags.max())
+            if not observed_lags.empty
+            else 0
+        ),
+    }
+
+
+def _edge_revalidation_metrics(
+    guard: pd.DataFrame,
+    *,
+    passed: pd.Series,
+    reasons: pd.Series,
+    preflight_attempted: pd.Series,
+) -> dict[str, int | float | bool]:
+    enabled_raw = guard.get(
+        "edge_revalidation_enabled",
+        pd.Series(np.nan, index=guard.index),
+    )
+    checked_raw = guard.get(
+        "edge_revalidation_checked",
+        pd.Series(np.nan, index=guard.index),
+    )
+    enabled = enabled_raw.fillna(False).astype(bool)
+    checked = checked_raw.fillna(False).astype(bool)
+    directions = guard.get(
+        "direction",
+        pd.Series("", index=guard.index),
+    ).astype(str)
+    strike = _numeric_guard_column(guard, "strike")
+    qty = _numeric_guard_column(guard, "edge_revalidation_qty")
+    signal_net_edge = _numeric_guard_column(guard, "signal_net_edge")
+    call_side = _numeric_guard_column(guard, "decision_call_side")
+    call_price = _numeric_guard_column(guard, "decision_call_price")
+    put_side = _numeric_guard_column(guard, "decision_put_side")
+    put_price = _numeric_guard_column(guard, "decision_put_price")
+    future_side = _numeric_guard_column(
+        guard,
+        "decision_future_side",
+    )
+    future_price = _numeric_guard_column(
+        guard,
+        "decision_future_price",
+    )
+    multiplier = _numeric_guard_column(
+        guard,
+        "decision_contract_multiplier",
+    )
+    edge_per_unit = _numeric_guard_column(
+        guard,
+        "decision_edge_per_unit",
+    )
+    gross_edge = _numeric_guard_column(guard, "decision_gross_edge")
+    call_cost = _numeric_guard_column(guard, "decision_call_cost")
+    put_cost = _numeric_guard_column(guard, "decision_put_cost")
+    future_cost = _numeric_guard_column(
+        guard,
+        "decision_future_cost",
+    )
+    total_cost = _numeric_guard_column(guard, "decision_total_cost")
+    net_edge = _numeric_guard_column(guard, "decision_net_edge")
+    threshold = _numeric_guard_column(
+        guard,
+        "decision_min_net_edge",
+    )
+
+    buy_synthetic = directions.eq("buy_synthetic_sell_future")
+    sell_synthetic = directions.eq("sell_synthetic_buy_future")
+    direction_valid = buy_synthetic | sell_synthetic
+    expected_call_side = pd.Series(0, index=guard.index, dtype="int64")
+    expected_put_side = pd.Series(0, index=guard.index, dtype="int64")
+    expected_future_side = pd.Series(
+        0,
+        index=guard.index,
+        dtype="int64",
+    )
+    expected_call_side.loc[buy_synthetic] = 1
+    expected_put_side.loc[buy_synthetic] = -1
+    expected_future_side.loc[buy_synthetic] = -1
+    expected_call_side.loc[sell_synthetic] = -1
+    expected_put_side.loc[sell_synthetic] = 1
+    expected_future_side.loc[sell_synthetic] = 1
+    expected_edge_per_unit = pd.Series(
+        np.nan,
+        index=guard.index,
+        dtype="float64",
+    )
+    expected_edge_per_unit.loc[buy_synthetic] = (
+        future_price
+        - (call_price - put_price + strike)
+    )
+    expected_edge_per_unit.loc[sell_synthetic] = (
+        call_price - put_price + strike - future_price
+    )
+    expected_gross_edge = expected_edge_per_unit * qty * multiplier
+    expected_total_cost = call_cost + put_cost + future_cost
+    expected_net_edge = expected_gross_edge - expected_total_cost
+
+    rejected = reasons.eq("execution_edge_below_threshold")
+    relevant = checked | preflight_attempted | rejected
+    required = [
+        enabled_raw,
+        checked_raw,
+        strike,
+        qty,
+        signal_net_edge,
+        call_side,
+        call_price,
+        put_side,
+        put_price,
+        future_side,
+        future_price,
+        multiplier,
+        edge_per_unit,
+        gross_edge,
+        call_cost,
+        put_cost,
+        future_cost,
+        total_cost,
+        net_edge,
+        threshold,
+    ]
+    missing = relevant & pd.concat(required, axis=1).isna().any(axis=1)
+    numeric_values = [
+        strike,
+        qty,
+        signal_net_edge,
+        call_price,
+        put_price,
+        future_price,
+        multiplier,
+        edge_per_unit,
+        gross_edge,
+        call_cost,
+        put_cost,
+        future_cost,
+        total_cost,
+        net_edge,
+        threshold,
+    ]
+    nonfinite = pd.concat(
+        [~np.isfinite(values) for values in numeric_values],
+        axis=1,
+    ).any(axis=1)
+    consistency_violation = (
+        ~enabled
+        | ~checked
+        | ~direction_valid
+        | qty.le(0)
+        | qty.mod(1).ne(0)
+        | signal_net_edge.le(0)
+        | multiplier.le(0)
+        | call_cost.lt(0)
+        | put_cost.lt(0)
+        | future_cost.lt(0)
+        | total_cost.lt(0)
+        | call_side.ne(expected_call_side)
+        | put_side.ne(expected_put_side)
+        | future_side.ne(expected_future_side)
+        | nonfinite
+        | edge_per_unit.sub(expected_edge_per_unit).abs().gt(1e-9)
+        | gross_edge.sub(expected_gross_edge).abs().gt(1e-9)
+        | total_cost.sub(expected_total_cost).abs().gt(1e-9)
+        | net_edge.sub(expected_net_edge).abs().gt(1e-9)
+        | (
+            checked
+            & ~preflight_attempted
+            & ~rejected
+        )
+        | (
+            preflight_attempted
+            & net_edge.le(threshold)
+        )
+        | (
+            rejected
+            & net_edge.gt(threshold)
+        )
+    )
+    routed_net_edges = net_edge.loc[passed].dropna()
+    observed_decay = (
+        signal_net_edge.loc[checked] - net_edge.loc[checked]
+    ).dropna()
+    return {
+        "parity_execution_edge_revalidation_enabled": True,
+        "parity_execution_edge_revalidation_attempts": int(
+            checked.sum()
+        ),
+        "parity_execution_edge_revalidation_passed_attempts": int(
+            preflight_attempted.sum()
+        ),
+        "parity_execution_edge_revalidation_rejected_attempts": int(
+            rejected.sum()
+        ),
+        "parity_execution_edge_revalidation_missing_evidence_rows": int(
+            missing.sum()
+        ),
+        "parity_execution_edge_revalidation_consistency_violations": int(
+            (
+                relevant
+                & consistency_violation
+                & ~missing
+            ).sum()
+        ),
+        "parity_execution_min_routed_net_edge": (
+            float(routed_net_edges.min())
+            if not routed_net_edges.empty
+            else 0.0
+        ),
+        "parity_execution_max_observed_edge_decay": (
+            max(float(observed_decay.max()), 0.0)
+            if not observed_decay.empty
+            else 0.0
+        ),
+    }
+
+
+def _numeric_guard_column(
+    guard: pd.DataFrame,
+    column: str,
+) -> pd.Series:
+    return pd.to_numeric(
+        guard.get(
+            column,
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
 
 
 def _build_instruments(

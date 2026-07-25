@@ -655,6 +655,18 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             False,
         )
     )
+    parity_execution_edge_revalidation_declared = _bool(
+        row.get(
+            "parity_execution_edge_revalidation_enabled",
+            False,
+        )
+    )
+    parity_execution_signal_source_causality_declared = _bool(
+        row.get(
+            "parity_execution_signal_source_causality_enabled",
+            False,
+        )
+    )
     parity_execution_ioc_batch_preflight_enabled = bool(
         parity_execution_guard_enabled
     )
@@ -794,6 +806,8 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "negative_leg_book_age",
         "stale_leg_book",
         "leg_book_skew_exceeded",
+        "signal_source_books_pending",
+        "execution_edge_below_threshold",
         "ioc_batch_preflight_rejected",
         "ready",
     }
@@ -1075,6 +1089,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
                 & ~parity_capacity_missing_evidence
             ).sum()
         )
+    )
+    parity_edge_metrics = _parity_edge_revalidation_metrics(
+        parity_execution_guard,
+        enabled=parity_execution_guard_enabled,
+    )
+    parity_signal_source_metrics = _parity_signal_source_metrics(
+        parity_execution_guard,
+        enabled=parity_execution_guard_enabled,
     )
     parity_routed_capacity_ratios = parity_capacity_ratio.loc[
         parity_capacity_passed
@@ -1593,6 +1615,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "parity_execution_guard_deferred_attempts": int(
             (~parity_guard_passed).sum()
         ),
+        "parity_execution_edge_revalidation_declared": (
+            parity_execution_edge_revalidation_declared
+        ),
+        "parity_execution_signal_source_causality_declared": (
+            parity_execution_signal_source_causality_declared
+        ),
+        **parity_signal_source_metrics,
+        **parity_edge_metrics,
         "parity_execution_ioc_batch_preflight_enabled": (
             parity_execution_ioc_batch_preflight_enabled
         ),
@@ -1840,6 +1870,336 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     }
 
 
+def _parity_signal_source_metrics(
+    guard: pd.DataFrame,
+    *,
+    enabled: bool,
+) -> dict[str, int | bool]:
+    checks = 0
+    ready_attempts = 0
+    pending_attempts = 0
+    missing_rows = 0
+    consistency_violations = 0
+    observed_lags: list[int] = []
+
+    for _, row in guard.iterrows():
+        enabled_raw = row.get(
+            "signal_source_causality_enabled",
+            np.nan,
+        )
+        checked_raw = row.get(
+            "signal_source_books_checked",
+            np.nan,
+        )
+        ready_raw = row.get(
+            "signal_source_books_ready",
+            np.nan,
+        )
+        checked = _bool(checked_raw)
+        ready = _bool(ready_raw)
+        edge_checked = _bool(
+            row.get("edge_revalidation_checked", False)
+        )
+        preflight_attempted = _bool(
+            row.get("ioc_batch_preflight_attempted", False)
+        )
+        guard_passed = _bool(row.get("guard_passed", False))
+        reason = str(row.get("guard_reason", "")).strip()
+        pending = reason == "signal_source_books_pending"
+        relevant = (
+            checked
+            or edge_checked
+            or preflight_attempted
+            or guard_passed
+            or pending
+        )
+        if not relevant:
+            continue
+
+        checks += int(checked)
+        ready_attempts += int(checked and ready)
+        pending_attempts += int(pending)
+        bool_missing = bool(
+            _boolean_evidence_missing(
+                pd.Series(
+                    [enabled_raw, checked_raw, ready_raw]
+                )
+            ).any()
+        )
+        signal_age = pd.to_numeric(
+            row.get("signal_age_ns", np.nan),
+            errors="coerce",
+        )
+        call_age = pd.to_numeric(
+            row.get("call_book_age_ns", np.nan),
+            errors="coerce",
+        )
+        put_age = pd.to_numeric(
+            row.get("put_book_age_ns", np.nan),
+            errors="coerce",
+        )
+        reported_lag = pd.to_numeric(
+            row.get("signal_source_max_lag_ns", np.nan),
+            errors="coerce",
+        )
+        if (
+            bool_missing
+            or pd.isna(signal_age)
+            or pd.isna(call_age)
+            or pd.isna(put_age)
+            or pd.isna(reported_lag)
+        ):
+            missing_rows += 1
+            continue
+
+        signal_age_value = int(signal_age)
+        call_age_value = int(call_age)
+        put_age_value = int(put_age)
+        lag_value = float(reported_lag)
+        expected_lag = max(
+            call_age_value - signal_age_value,
+            put_age_value - signal_age_value,
+            0,
+        )
+        expected_ready = expected_lag == 0
+        violation = (
+            not _bool(enabled_raw)
+            or not checked
+            or lag_value < 0
+            or lag_value % 1 != 0
+            or lag_value != expected_lag
+            or ready != expected_ready
+            or (pending and ready)
+            or (not ready and not pending)
+            or (
+                (edge_checked or preflight_attempted or guard_passed)
+                and not ready
+            )
+        )
+        consistency_violations += int(violation)
+        if checked:
+            observed_lags.append(int(lag_value))
+
+    return {
+        "parity_execution_signal_source_causality_enabled": bool(
+            enabled
+        ),
+        "parity_execution_signal_source_checks": checks,
+        "parity_execution_signal_source_ready_attempts": (
+            ready_attempts
+        ),
+        "parity_execution_signal_source_pending_attempts": (
+            pending_attempts
+        ),
+        "parity_execution_signal_source_missing_evidence_rows": (
+            missing_rows
+        ),
+        "parity_execution_signal_source_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_max_signal_source_lag_ns": (
+            max(observed_lags)
+            if observed_lags
+            else 0
+        ),
+    }
+
+
+def _parity_edge_revalidation_metrics(
+    guard: pd.DataFrame,
+    *,
+    enabled: bool,
+) -> dict[str, int | float | bool]:
+    attempts = 0
+    passed_attempts = 0
+    rejected_attempts = 0
+    missing_rows = 0
+    consistency_violations = 0
+    routed_net_edges: list[float] = []
+    observed_edge_decay: list[float] = []
+    numeric_columns = [
+        "strike",
+        "edge_revalidation_qty",
+        "signal_net_edge",
+        "decision_call_side",
+        "decision_call_price",
+        "decision_put_side",
+        "decision_put_price",
+        "decision_future_side",
+        "decision_future_price",
+        "decision_contract_multiplier",
+        "decision_edge_per_unit",
+        "decision_gross_edge",
+        "decision_call_cost",
+        "decision_put_cost",
+        "decision_future_cost",
+        "decision_total_cost",
+        "decision_net_edge",
+        "decision_min_net_edge",
+    ]
+
+    for _, row in guard.iterrows():
+        checked_raw = row.get(
+            "edge_revalidation_checked",
+            np.nan,
+        )
+        enabled_raw = row.get(
+            "edge_revalidation_enabled",
+            np.nan,
+        )
+        checked = _bool(checked_raw)
+        preflight_attempted = _bool(
+            row.get("ioc_batch_preflight_attempted", False)
+        )
+        guard_passed = _bool(row.get("guard_passed", False))
+        reason = str(row.get("guard_reason", "")).strip()
+        rejected = reason == "execution_edge_below_threshold"
+        relevant = checked or preflight_attempted or rejected
+        if not relevant:
+            continue
+
+        attempts += int(checked)
+        passed_attempts += int(preflight_attempted)
+        rejected_attempts += int(rejected)
+        numbers = {
+            column: pd.to_numeric(
+                row.get(column, np.nan),
+                errors="coerce",
+            )
+            for column in numeric_columns
+        }
+        direction = str(row.get("direction", "")).strip()
+        boolean_missing = bool(
+            _boolean_evidence_missing(
+                pd.Series([enabled_raw, checked_raw])
+            ).any()
+        )
+        if (
+            boolean_missing
+            or direction == ""
+            or any(pd.isna(value) for value in numbers.values())
+        ):
+            missing_rows += 1
+            continue
+
+        values = {
+            key: float(value)
+            for key, value in numbers.items()
+        }
+        qty = values["edge_revalidation_qty"]
+        strike = values["strike"]
+        call_side = values["decision_call_side"]
+        call_price = values["decision_call_price"]
+        put_side = values["decision_put_side"]
+        put_price = values["decision_put_price"]
+        future_side = values["decision_future_side"]
+        future_price = values["decision_future_price"]
+        multiplier = values["decision_contract_multiplier"]
+        signal_net_edge = values["signal_net_edge"]
+        edge_per_unit = values["decision_edge_per_unit"]
+        gross_edge = values["decision_gross_edge"]
+        call_cost = values["decision_call_cost"]
+        put_cost = values["decision_put_cost"]
+        future_cost = values["decision_future_cost"]
+        total_cost = values["decision_total_cost"]
+        net_edge = values["decision_net_edge"]
+        threshold = values["decision_min_net_edge"]
+
+        if direction == "buy_synthetic_sell_future":
+            expected_sides = (1.0, -1.0, -1.0)
+            expected_edge_per_unit = (
+                future_price
+                - (call_price - put_price + strike)
+            )
+        elif direction == "sell_synthetic_buy_future":
+            expected_sides = (-1.0, 1.0, 1.0)
+            expected_edge_per_unit = (
+                call_price - put_price + strike - future_price
+            )
+        else:
+            expected_sides = (0.0, 0.0, 0.0)
+            expected_edge_per_unit = float("nan")
+        expected_gross_edge = (
+            expected_edge_per_unit * qty * multiplier
+        )
+        expected_total_cost = call_cost + put_cost + future_cost
+        expected_net_edge = expected_gross_edge - expected_total_cost
+        finite = all(np.isfinite(value) for value in values.values())
+        violation = (
+            not _bool(enabled_raw)
+            or not checked
+            or direction not in {
+                "buy_synthetic_sell_future",
+                "sell_synthetic_buy_future",
+            }
+            or qty <= 0
+            or qty % 1 != 0
+            or strike <= 0
+            or signal_net_edge <= 0
+            or call_price <= 0
+            or put_price <= 0
+            or future_price <= 0
+            or multiplier <= 0
+            or call_cost < 0
+            or put_cost < 0
+            or future_cost < 0
+            or total_cost < 0
+            or threshold < 0
+            or (call_side, put_side, future_side) != expected_sides
+            or not finite
+            or abs(edge_per_unit - expected_edge_per_unit) > 1e-9
+            or abs(gross_edge - expected_gross_edge) > 1e-9
+            or abs(total_cost - expected_total_cost) > 1e-9
+            or abs(net_edge - expected_net_edge) > 1e-9
+            or (
+                checked
+                and not preflight_attempted
+                and not rejected
+            )
+            or (preflight_attempted and net_edge <= threshold)
+            or (
+                rejected
+                and (
+                    net_edge > threshold
+                    or preflight_attempted
+                    or guard_passed
+                )
+            )
+        )
+        consistency_violations += int(violation)
+        if guard_passed:
+            routed_net_edges.append(net_edge)
+        if checked:
+            observed_edge_decay.append(signal_net_edge - net_edge)
+
+    return {
+        "parity_execution_edge_revalidation_enabled": bool(enabled),
+        "parity_execution_edge_revalidation_attempts": attempts,
+        "parity_execution_edge_revalidation_passed_attempts": (
+            passed_attempts
+        ),
+        "parity_execution_edge_revalidation_rejected_attempts": (
+            rejected_attempts
+        ),
+        "parity_execution_edge_revalidation_missing_evidence_rows": (
+            missing_rows
+        ),
+        "parity_execution_edge_revalidation_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_min_routed_net_edge": (
+            min(routed_net_edges)
+            if routed_net_edges
+            else 0.0
+        ),
+        "parity_execution_max_observed_edge_decay": (
+            max(max(observed_edge_decay), 0.0)
+            if observed_edge_decay
+            else 0.0
+        ),
+    }
+
+
 def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofThresholds) -> pd.DataFrame:
     rows = [
         _check(metrics, "net_pnl", metrics["net_pnl"], ">=", thresholds.min_net_pnl),
@@ -2033,6 +2393,56 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+        signal_source_declared = bool(
+            metrics[
+                "parity_execution_signal_source_causality_declared"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_signal_source_causality_declared"
+                ),
+                "value": signal_source_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": signal_source_declared,
+                "reason": (
+                    ""
+                    if signal_source_declared
+                    else (
+                        "parity execution lacks the causal signal-source "
+                        "book declaration"
+                    )
+                ),
+            }
+        )
+        edge_revalidation_declared = bool(
+            metrics[
+                "parity_execution_edge_revalidation_declared"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_edge_revalidation_declared"
+                ),
+                "value": edge_revalidation_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": edge_revalidation_declared,
+                "reason": (
+                    ""
+                    if edge_revalidation_declared
+                    else (
+                        "parity execution lacks the decision-time "
+                        "edge-revalidation safety declaration"
+                    )
+                ),
+            }
+        )
         preflight_declared = bool(
             metrics[
                 "parity_execution_ioc_batch_preflight_declared"
@@ -2134,6 +2544,22 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 "parity execution guard status is internally inconsistent",
             ),
             (
+                "parity_execution_signal_source_missing_evidence_rows",
+                "parity signal-source causality evidence is missing",
+            ),
+            (
+                "parity_execution_signal_source_consistency_violations",
+                "parity signal-source causality evidence is inconsistent",
+            ),
+            (
+                "parity_execution_edge_revalidation_missing_evidence_rows",
+                "parity decision-time edge evidence is missing",
+            ),
+            (
+                "parity_execution_edge_revalidation_consistency_violations",
+                "parity decision-time edge evidence is inconsistent",
+            ),
+            (
                 "parity_execution_ioc_batch_preflight_missing_evidence_rows",
                 "parity IOC package preflight evidence is missing",
             ),
@@ -2210,6 +2636,34 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     "reason": "" if value == 0 else reason,
                 }
             )
+        routed_attempts = int(
+            metrics["parity_execution_guard_passed_attempts"]
+        )
+        min_routed_net_edge = float(
+            metrics["parity_execution_min_routed_net_edge"]
+        )
+        routed_edge_passed = (
+            routed_attempts == 0
+            or min_routed_net_edge > 0.0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_min_routed_net_edge",
+                "value": min_routed_net_edge,
+                "operator": ">",
+                "threshold": 0.0,
+                "passed": routed_edge_passed,
+                "reason": (
+                    ""
+                    if routed_edge_passed
+                    else (
+                        "a routed parity package had no positive "
+                        "decision-time net edge after modeled costs"
+                    )
+                ),
+            }
+        )
         for metric, threshold_metric, reason in [
             (
                 "parity_execution_max_routed_book_age_ns",

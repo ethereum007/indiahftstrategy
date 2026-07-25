@@ -34,6 +34,29 @@ PARITY_EXECUTION_GUARD_COLUMNS = [
     "leg_book_skew_ns",
     "max_leg_book_age_ns",
     "max_leg_book_skew_ns",
+    "signal_source_causality_enabled",
+    "signal_source_books_checked",
+    "signal_source_books_ready",
+    "signal_source_max_lag_ns",
+    "edge_revalidation_enabled",
+    "edge_revalidation_checked",
+    "edge_revalidation_qty",
+    "signal_net_edge",
+    "decision_call_side",
+    "decision_call_price",
+    "decision_put_side",
+    "decision_put_price",
+    "decision_future_side",
+    "decision_future_price",
+    "decision_contract_multiplier",
+    "decision_edge_per_unit",
+    "decision_gross_edge",
+    "decision_call_cost",
+    "decision_put_cost",
+    "decision_future_cost",
+    "decision_total_cost",
+    "decision_net_edge",
+    "decision_min_net_edge",
     "ioc_batch_preflight_enabled",
     "ioc_batch_preflight_attempted",
     "ioc_batch_preflight_passed",
@@ -322,6 +345,29 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             guard["affected_legs"] = ",".join(negative_age_legs)
             self.execution_guard_decisions.append(guard)
             return False
+        signal_source_lags = {
+            leg: max(int(signal["ts"]) - book_timestamps[leg], 0)
+            for leg in ("call", "put")
+        }
+        guard["signal_source_books_checked"] = True
+        guard["signal_source_max_lag_ns"] = max(
+            signal_source_lags.values()
+        )
+        pending_signal_source_legs = [
+            leg
+            for leg, lag in signal_source_lags.items()
+            if lag > 0
+        ]
+        guard["signal_source_books_ready"] = (
+            not pending_signal_source_legs
+        )
+        if pending_signal_source_legs:
+            guard["guard_reason"] = "signal_source_books_pending"
+            guard["affected_legs"] = ",".join(
+                pending_signal_source_legs
+            )
+            self.execution_guard_decisions.append(guard)
+            return False
         stale_legs = [
             leg
             for leg, age in book_ages.items()
@@ -353,6 +399,23 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
                 (put_id, +1, put["ask"]),
                 (future_id, +1, future["ask"]),
             ]
+
+        edge_evidence = _decision_edge_evidence(
+            engine,
+            direction=direction,
+            strike=strike,
+            qty=qty,
+            call_id=call_id,
+            put_id=put_id,
+            future_id=future_id,
+            legs=legs,
+        )
+        guard.update(edge_evidence)
+        if float(edge_evidence["decision_net_edge"]) <= 0.0:
+            guard["guard_reason"] = "execution_edge_below_threshold"
+            guard["affected_legs"] = "call,put,future"
+            self.execution_guard_decisions.append(guard)
+            return False
 
         preflight = engine.preflight_ioc_batch(
             [
@@ -499,6 +562,33 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             "max_leg_book_skew_ns": int(
                 self.config.max_leg_book_skew_ns
             ),
+            "signal_source_causality_enabled": True,
+            "signal_source_books_checked": False,
+            "signal_source_books_ready": False,
+            "signal_source_max_lag_ns": None,
+            "edge_revalidation_enabled": True,
+            "edge_revalidation_checked": False,
+            "edge_revalidation_qty": 0,
+            "signal_net_edge": (
+                None
+                if pd.isna(signal.get("net_edge"))
+                else float(signal.get("net_edge"))
+            ),
+            "decision_call_side": 0,
+            "decision_call_price": None,
+            "decision_put_side": 0,
+            "decision_put_price": None,
+            "decision_future_side": 0,
+            "decision_future_price": None,
+            "decision_contract_multiplier": None,
+            "decision_edge_per_unit": None,
+            "decision_gross_edge": None,
+            "decision_call_cost": None,
+            "decision_put_cost": None,
+            "decision_future_cost": None,
+            "decision_total_cost": None,
+            "decision_net_edge": None,
+            "decision_min_net_edge": 0.0,
             "ioc_batch_preflight_enabled": True,
             "ioc_batch_preflight_attempted": False,
             "ioc_batch_preflight_passed": False,
@@ -527,6 +617,78 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
 
 def _source_book_ts(tick: dict) -> int:
     return int(tick.get("market_ts", tick["ts"]))
+
+
+def _decision_edge_evidence(
+    engine: MultiInstrumentEngine,
+    *,
+    direction: str,
+    strike: float,
+    qty: int,
+    call_id: str,
+    put_id: str,
+    future_id: str,
+    legs: list[tuple[str, int, float]],
+) -> dict[str, object]:
+    by_instrument = {
+        instrument_id: (side, float(price))
+        for instrument_id, side, price in legs
+    }
+    call_side, call_price = by_instrument[call_id]
+    put_side, put_price = by_instrument[put_id]
+    future_side, future_price = by_instrument[future_id]
+    if direction == "buy_synthetic_sell_future":
+        edge_per_unit = (
+            future_price - (call_price - put_price + strike)
+        )
+    else:
+        edge_per_unit = (
+            call_price - put_price + strike - future_price
+        )
+
+    call_cfg = engine.instruments[call_id]
+    put_cfg = engine.instruments[put_id]
+    future_cfg = engine.instruments[future_id]
+    multiplier = float(call_cfg.instrument.multiplier)
+    call_cost = call_cfg.costs.cost(
+        call_side,
+        call_price,
+        qty,
+        call_cfg.instrument,
+    )
+    put_cost = put_cfg.costs.cost(
+        put_side,
+        put_price,
+        qty,
+        put_cfg.instrument,
+    )
+    future_cost = future_cfg.costs.cost(
+        future_side,
+        future_price,
+        qty,
+        future_cfg.instrument,
+    )
+    total_cost = call_cost + put_cost + future_cost
+    gross_edge = edge_per_unit * qty * multiplier
+    return {
+        "edge_revalidation_checked": True,
+        "edge_revalidation_qty": int(qty),
+        "decision_call_side": int(call_side),
+        "decision_call_price": call_price,
+        "decision_put_side": int(put_side),
+        "decision_put_price": put_price,
+        "decision_future_side": int(future_side),
+        "decision_future_price": future_price,
+        "decision_contract_multiplier": multiplier,
+        "decision_edge_per_unit": float(edge_per_unit),
+        "decision_gross_edge": float(gross_edge),
+        "decision_call_cost": float(call_cost),
+        "decision_put_cost": float(put_cost),
+        "decision_future_cost": float(future_cost),
+        "decision_total_cost": float(total_cost),
+        "decision_net_edge": float(gross_edge - total_cost),
+        "decision_min_net_edge": 0.0,
+    }
 
 
 def _validate_config(config: ParityArbConfig) -> None:
