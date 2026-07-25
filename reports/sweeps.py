@@ -100,6 +100,17 @@ KNOWN_NON_PARAM_COLUMNS = {
     "parity_execution_pre_activation_fill_legs",
     "parity_execution_min_activation_to_first_fill_latency_ns",
     "parity_execution_max_activation_to_completion_latency_ns",
+    "parity_execution_ioc_arrival_audit_enabled",
+    "parity_execution_ioc_arrival_audit_declared",
+    "parity_execution_ioc_arrival_audit_present",
+    "parity_execution_ioc_arrival_evaluable_legs",
+    "parity_execution_ioc_arrival_missing_evidence_legs",
+    "parity_execution_ioc_arrival_consistency_violations",
+    "parity_execution_ioc_arrival_not_marketable_legs",
+    "parity_execution_ioc_arrival_capacity_shortfall_legs",
+    "parity_execution_ioc_arrival_negative_lag_legs",
+    "parity_execution_min_ioc_arrival_fill_ratio",
+    "parity_execution_max_ioc_arrival_lag_ns",
     "parity_execution_ioc_batch_preflight_enabled",
     "parity_execution_ioc_batch_preflight_declared",
     "parity_execution_ioc_batch_preflight_attempts",
@@ -1419,6 +1430,18 @@ def _parity_execution_aggregates(
             pd.Series(False, index=frame.index),
         )
     )
+    ioc_arrival_audit_enabled = _bool_series(
+        frame.get(
+            "parity_execution_ioc_arrival_audit_enabled",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    ioc_arrival_audit_declared = _bool_series(
+        frame.get(
+            "parity_execution_ioc_arrival_audit_declared",
+            pd.Series(False, index=frame.index),
+        )
+    )
     fills_present = _bool_series(
         frame.get(
             "parity_execution_fills_present",
@@ -1452,6 +1475,12 @@ def _parity_execution_aggregates(
     order_submissions_present = _bool_series(
         frame.get(
             "parity_execution_order_submissions_present",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    ioc_arrival_audit_present = _bool_series(
+        frame.get(
+            "parity_execution_ioc_arrival_audit_present",
             pd.Series(False, index=frame.index),
         )
     )
@@ -1527,6 +1556,24 @@ def _parity_execution_aggregates(
         ),
         "total_parity_execution_pre_activation_fill_legs": (
             "parity_execution_pre_activation_fill_legs"
+        ),
+        "total_parity_execution_ioc_arrival_evaluable_legs": (
+            "parity_execution_ioc_arrival_evaluable_legs"
+        ),
+        "total_parity_execution_ioc_arrival_missing_evidence_legs": (
+            "parity_execution_ioc_arrival_missing_evidence_legs"
+        ),
+        "total_parity_execution_ioc_arrival_consistency_violations": (
+            "parity_execution_ioc_arrival_consistency_violations"
+        ),
+        "total_parity_execution_ioc_arrival_not_marketable_legs": (
+            "parity_execution_ioc_arrival_not_marketable_legs"
+        ),
+        "total_parity_execution_ioc_arrival_capacity_shortfall_legs": (
+            "parity_execution_ioc_arrival_capacity_shortfall_legs"
+        ),
+        "total_parity_execution_ioc_arrival_negative_lag_legs": (
+            "parity_execution_ioc_arrival_negative_lag_legs"
         ),
         "total_parity_execution_ioc_batch_preflight_attempts": (
             "parity_execution_ioc_batch_preflight_attempts"
@@ -1650,6 +1697,12 @@ def _parity_execution_aggregates(
         "parity_execution_order_timing_declared_runs": int(
             order_timing_declared.sum()
         ),
+        "parity_execution_ioc_arrival_audit_enabled_runs": int(
+            ioc_arrival_audit_enabled.sum()
+        ),
+        "parity_execution_ioc_arrival_audit_declared_runs": int(
+            ioc_arrival_audit_declared.sum()
+        ),
         "parity_execution_ioc_batch_preflight_enabled_runs": int(
             preflight_enabled.sum()
         ),
@@ -1667,6 +1720,9 @@ def _parity_execution_aggregates(
         ),
         "parity_execution_order_submissions_artifact_present_runs": (
             int(order_submissions_present.sum())
+        ),
+        "parity_execution_ioc_arrival_audit_artifact_present_runs": (
+            int(ioc_arrival_audit_present.sum())
         ),
         **totals,
         "total_parity_execution_realized_net_edge": (
@@ -1743,6 +1799,17 @@ def _parity_execution_aggregates(
                     "max_activation_to_completion_latency_ns"
                 ),
             )
+        ),
+        "min_parity_execution_ioc_arrival_fill_ratio": (
+            _min_metric_where(
+                frame,
+                "parity_execution_min_ioc_arrival_fill_ratio",
+                "parity_execution_ioc_arrival_evaluable_legs",
+            )
+        ),
+        "max_parity_execution_ioc_arrival_lag_ns": _max_int(
+            frame,
+            "parity_execution_max_ioc_arrival_lag_ns",
         ),
     }
 

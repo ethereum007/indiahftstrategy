@@ -126,6 +126,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "order_rejections.csv").exists()
     assert (out_dir / "order_cancellations.csv").exists()
     assert (out_dir / "liquidity_shortfalls.csv").exists()
+    assert (out_dir / "ioc_arrival_audit.csv").exists()
     assert (out_dir / "queue_initializations.csv").exists()
     assert (out_dir / "resting_transitions.csv").exists()
     assert (out_dir / "passive_price_throughs.csv").exists()
@@ -154,6 +155,21 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
         "remaining_qty",
         "status",
     }.issubset(order_cancellations.columns)
+    ioc_arrival_audit = pd.read_csv(
+        out_dir / "ioc_arrival_audit.csv"
+    )
+    assert {
+        "arrival_ts_ns",
+        "ts_active_ns",
+        "arrival_lag_ns",
+        "bid",
+        "ask",
+        "available_qty",
+        "event_consumed_qty",
+        "filled_qty",
+        "shortfall_qty",
+        "outcome",
+    }.issubset(ioc_arrival_audit.columns)
     queue_initializations = pd.read_csv(out_dir / "queue_initializations.csv")
     assert {
         "arrival_ts_ns",

@@ -349,6 +349,22 @@ def test_ioc_fill_uses_arrival_time_book_not_decision_time():
     assert submission["ts_sent_ns"] == 0
     assert submission["ts_active_ns"] == 150_000
     assert submission["order_latency_ns"] == 150_000
+    assert len(res.ioc_arrival_audit) == 1
+    arrival = res.ioc_arrival_audit.iloc[0]
+    assert arrival["arrival_ts_ns"] == 200_000
+    assert arrival["arrival_lag_ns"] == 50_000
+    assert arrival["instrument_id"] == "NIFTY-TEST"
+    assert arrival["oid"] == submission["oid"]
+    assert arrival["limit_price"] == 100.30
+    assert arrival["touch_price"] == 100.25
+    assert arrival["book_relation"] == "marketable"
+    assert bool(arrival["marketable"])
+    assert arrival["available_qty"] == 75
+    assert arrival["available_after_qty"] == 0
+    assert arrival["filled_qty"] == 75
+    assert arrival["shortfall_qty"] == 0
+    assert arrival["outcome"] == "filled"
+    assert bool(arrival["complete"])
 
 
 def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
@@ -385,6 +401,47 @@ def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
     assert shortfall["filled_qty"] == 0
     assert shortfall["shortfall_qty"] == 75
     assert shortfall["liquidity_source"] == "ask_display"
+    arrivals = result.ioc_arrival_audit.set_index("oid")
+    assert arrivals.loc[strategy.oids[0], "available_qty"] == 100
+    assert arrivals.loc[strategy.oids[0], "available_after_qty"] == 25
+    assert arrivals.loc[strategy.oids[0], "event_consumed_qty"] == 0
+    assert arrivals.loc[strategy.oids[0], "outcome"] == "filled"
+    assert arrivals.loc[strategy.oids[1], "available_qty"] == 25
+    assert arrivals.loc[strategy.oids[1], "available_after_qty"] == 25
+    assert arrivals.loc[strategy.oids[1], "event_consumed_qty"] == 75
+    assert arrivals.loc[strategy.oids[1], "outcome"] == "no_fill"
+
+
+def test_ioc_non_marketable_arrival_is_audited_before_cancellation():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 150, 150, np.nan, 0),
+            (1_000, 100.00, 100.05, 150, 150, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 75, 100.00, OrderType.IOC)
+    engine = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = engine.run()
+
+    assert result.fills.empty
+    assert result.liquidity_shortfalls.empty
+    assert len(result.ioc_arrival_audit) == 1
+    arrival = result.ioc_arrival_audit.iloc[0]
+    assert arrival["arrival_ts_ns"] == 1_000
+    assert arrival["book_relation"] == "bid_touch"
+    assert not bool(arrival["marketable"])
+    assert arrival["available_qty"] == 150
+    assert arrival["filled_qty"] == 0
+    assert arrival["shortfall_qty"] == 75
+    assert arrival["outcome"] == "not_marketable"
+    assert not bool(arrival["complete"])
 
 
 def test_marketable_limit_waits_for_observed_depth_replenishment():

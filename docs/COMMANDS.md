@@ -880,6 +880,7 @@ spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_submissions.csv`, `order_cancellations.csv`,
 `order_horizon_states.csv`,
 `input_quarantine.csv`, `liquidity_shortfalls.csv`,
+`ioc_arrival_audit.csv`,
 `queue_initializations.csv`, `parity_futures_join_audit.csv`,
 `parity_execution_guard.csv`, and `terminal_liquidations.csv`.
 
@@ -951,13 +952,26 @@ latency. For parity, each accepted leg must bind to exactly one IOC submission
 whose send timestamp equals the guarded decision timestamp and whose
 activation timestamp equals send plus latency.
 
+`ioc_arrival_audit.csv` is also engine-owned and records exactly one row when
+each IOC reaches its first eligible venue event. The row preserves send,
+activation, and arrival timestamps; arrival lag; the bid, ask, and displayed
+sizes; side-specific touch and book relation; lot size; displayed quantity
+still available after prior-event and same-event consumption; the resulting
+fill and residual; and the IOC outcome. Non-marketable IOCs therefore remain
+auditable even though they produce neither a fill nor a liquidity-shortfall
+row.
+
 Proof independently reconstructs source-book lag from signal and book ages,
 derives all three executable sides, recomputes parity gross edge and the
 reported decision-time leg-cost sum, and verifies the net-edge threshold before
 checking limiting-leg marketability and fill ratio. It then joins each package
-order ID to raw `order_submissions.csv` and `fills.csv`, verifies instrument,
-side, quantity, limit-price protection, order type, cost, and integer-exact
-nanosecond timing, and independently recomputes realized package economics.
+order ID to raw `order_submissions.csv`, `ioc_arrival_audit.csv`, and
+`fills.csv`, verifies instrument, side, quantity, limit-price protection,
+order type, cost, and integer-exact nanosecond timing, and independently
+recomputes realized package economics. Arrival proof also recomputes
+marketability, touch selection, lot-floored fill capacity, prior-event and
+same-event depletion arithmetic, and the exact fill/outcome implied by the
+arrival book.
 Signal and decision timestamps must match the execution guard, the decision
 cannot predate the signal, no raw fill may predate the decision, and no fill
 may predate its own venue activation. Replay and proof report
@@ -978,8 +992,10 @@ net edge, realized package counts and net edge, decision-to-fill edge change,
 maximum fill span, minimum first-fill latency, maximum completion latency,
 accepted-order timing counts, minimum activation-to-first-fill latency,
 maximum activation-to-completion latency, pre-activation fill counts,
-visible marketability and capacity-shortfall counts, and minimum routed
-visible fill ratio.
+arrival-audit integrity, non-marketable and arrival-capacity-shortfall leg
+counts, minimum arrival fill ratio, maximum arrival lag, visible marketability
+and decision-time capacity-shortfall counts, and minimum routed visible fill
+ratio.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows
@@ -1057,6 +1073,9 @@ and carried-depletion shortfall counts and quantities.
 `liquidity_shortfalls.csv` retains the order, source,
 requested/available/filled quantities, observed size, carried depletion, and
 queue consumption behind each partial or missed eligible fill.
+`ioc_arrival_audit.csv` complements it for every IOC, including full fills and
+non-marketable cancellations, and separates depletion carried from prior
+snapshots from quantity consumed by earlier orders in the same event.
 
 Passive limit queues are initialized against the market snapshot available at
 venue activation, not the older strategy-decision snapshot. A zero-latency

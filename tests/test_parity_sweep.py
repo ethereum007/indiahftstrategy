@@ -157,6 +157,34 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
         ]
     ) == 2
     assert result.runs[
+        "parity_execution_ioc_arrival_audit_enabled"
+    ].all()
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_ioc_arrival_audit_enabled_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_ioc_arrival_audit_declared_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_ioc_arrival_audit_artifact_present_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_ioc_arrival_evaluable_legs"
+        ]
+    ) == 3
+    assert float(
+        result.summary.iloc[0][
+            "min_parity_execution_ioc_arrival_fill_ratio"
+        ]
+    ) == 1.0
+    assert result.runs[
         "parity_execution_ioc_batch_preflight_enabled"
     ].all()
     assert int(

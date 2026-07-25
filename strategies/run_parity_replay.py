@@ -156,6 +156,7 @@ def run_parity_replay(
         execution_guard,
         legging,
         result.order_submissions,
+        result.ioc_arrival_audit,
         max_leg_book_age_ns=max_leg_book_age_ns,
         max_leg_book_skew_ns=max_leg_book_skew_ns,
     ).items():
@@ -282,6 +283,7 @@ def _execution_guard_metrics(
     guard: pd.DataFrame,
     legging: pd.DataFrame,
     order_submissions: pd.DataFrame,
+    ioc_arrival_audit: pd.DataFrame,
     *,
     max_leg_book_age_ns: int,
     max_leg_book_skew_ns: int,
@@ -548,6 +550,10 @@ def _execution_guard_metrics(
         legging,
         order_submissions,
     )
+    ioc_arrival_metrics = _ioc_arrival_metrics(
+        legging,
+        ioc_arrival_audit,
+    )
     return {
         "parity_execution_guard_enabled": True,
         "parity_execution_max_leg_book_age_ns": int(
@@ -656,6 +662,7 @@ def _execution_guard_metrics(
         ),
         "parity_execution_unfilled_legs": int(unfilled_legs.sum()),
         **order_timing_metrics,
+        **ioc_arrival_metrics,
         **realized_edge_metrics,
     }
 
@@ -1395,6 +1402,288 @@ def _signal_source_metrics(
             int(observed_lags.max())
             if not observed_lags.empty
             else 0
+        ),
+    }
+
+
+def _ioc_arrival_metrics(
+    legging: pd.DataFrame,
+    ioc_arrival_audit: pd.DataFrame,
+) -> dict[str, int | float | bool]:
+    evaluable_legs = 0
+    missing_evidence_legs = 0
+    consistency_violations = 0
+    not_marketable_legs = 0
+    capacity_shortfall_legs = 0
+    negative_lag_legs = 0
+    fill_ratios: list[float] = []
+    arrival_lags: list[int] = []
+    audit_oids = pd.to_numeric(
+        ioc_arrival_audit.get(
+            "oid",
+            pd.Series(
+                index=ioc_arrival_audit.index,
+                dtype="float64",
+            ),
+        ),
+        errors="coerce",
+    )
+
+    for _, row in legging.iterrows():
+        for leg in ("call", "put", "future"):
+            order_id_raw = pd.to_numeric(
+                row.get(f"{leg}_order_id", np.nan),
+                errors="coerce",
+            )
+            if pd.isna(order_id_raw):
+                continue
+            if order_id_raw <= 0 or order_id_raw % 1 != 0:
+                consistency_violations += 1
+                continue
+            matches = ioc_arrival_audit.loc[
+                audit_oids.eq(int(order_id_raw))
+            ]
+            if matches.empty:
+                missing_evidence_legs += 1
+                continue
+            if len(matches) != 1:
+                consistency_violations += 1
+                continue
+
+            arrival = matches.iloc[0]
+            number_names = [
+                "arrival_ts_ns",
+                "oid",
+                "side",
+                "limit_price",
+                "requested_qty",
+                "ts_sent_ns",
+                "ts_active_ns",
+                "arrival_lag_ns",
+                "bid",
+                "ask",
+                "bid_qty",
+                "ask_qty",
+                "touch_price",
+                "lot_size",
+                "available_qty",
+                "available_after_qty",
+                "observed_qty",
+                "carried_depletion_qty",
+                "event_consumed_qty",
+                "filled_qty",
+                "shortfall_qty",
+            ]
+            numbers = {
+                name: pd.to_numeric(
+                    arrival.get(name, np.nan),
+                    errors="coerce",
+                )
+                for name in number_names
+            }
+            string_names = [
+                "instrument_id",
+                "order_type",
+                "book_relation",
+                "liquidity_source",
+                "outcome",
+            ]
+            strings = {
+                name: str(arrival.get(name, "")).strip()
+                for name in string_names
+            }
+            marketable_raw = arrival.get("marketable", np.nan)
+            complete_raw = arrival.get("complete", np.nan)
+            if (
+                any(pd.isna(value) for value in numbers.values())
+                or any(
+                    not np.isfinite(float(value))
+                    for value in numbers.values()
+                    if not pd.isna(value)
+                )
+                or any(value == "" for value in strings.values())
+                or pd.isna(marketable_raw)
+                or pd.isna(complete_raw)
+            ):
+                missing_evidence_legs += 1
+                continue
+
+            marketable = bool(marketable_raw)
+            complete = bool(complete_raw)
+            side = int(numbers["side"])
+            requested_qty = int(numbers["requested_qty"])
+            filled_qty = int(numbers["filled_qty"])
+            lot_size = int(numbers["lot_size"])
+            available_qty = float(numbers["available_qty"])
+            observed_qty = float(numbers["observed_qty"])
+            carried_qty = float(numbers["carried_depletion_qty"])
+            event_consumed_qty = float(numbers["event_consumed_qty"])
+            expected_instrument = str(
+                row.get(f"{leg}_instrument_id", "")
+            ).strip()
+            expected_side = pd.to_numeric(
+                row.get(f"{leg}_side", np.nan),
+                errors="coerce",
+            )
+            expected_limit = pd.to_numeric(
+                row.get(f"{leg}_limit_price", np.nan),
+                errors="coerce",
+            )
+            reported_filled_qty = pd.to_numeric(
+                row.get(f"{leg}_filled_qty", np.nan),
+                errors="coerce",
+            )
+            if (
+                pd.isna(expected_side)
+                or pd.isna(expected_limit)
+                or pd.isna(reported_filled_qty)
+                or expected_instrument == ""
+            ):
+                missing_evidence_legs += 1
+                continue
+
+            arrival_ts_ns = int(numbers["arrival_ts_ns"])
+            active_ts_ns = int(numbers["ts_active_ns"])
+            arrival_lag_ns = int(numbers["arrival_lag_ns"])
+            bid = float(numbers["bid"])
+            ask = float(numbers["ask"])
+            limit_price = float(numbers["limit_price"])
+            expected_marketable = (
+                limit_price >= ask
+                if side > 0
+                else limit_price <= bid
+            )
+            expected_touch = ask if side > 0 else bid
+            expected_source = (
+                "ask_display" if side > 0 else "bid_display"
+            )
+            expected_observed = (
+                float(numbers["ask_qty"])
+                if side > 0
+                else float(numbers["bid_qty"])
+            )
+            available_invariant = max(
+                observed_qty - carried_qty - event_consumed_qty,
+                0.0,
+            )
+            expected_fill = 0
+            if marketable and lot_size > 0:
+                expected_fill = min(
+                    requested_qty,
+                    int(np.floor(available_qty / lot_size))
+                    * lot_size,
+                )
+            shortfall_qty = requested_qty - filled_qty
+            expected_outcome = (
+                "not_marketable"
+                if not marketable
+                else (
+                    "filled"
+                    if shortfall_qty == 0
+                    else (
+                        "partial_fill"
+                        if filled_qty > 0
+                        else "no_fill"
+                    )
+                )
+            )
+            violation = (
+                any(
+                    numbers[name] % 1 != 0
+                    for name in [
+                        "arrival_ts_ns",
+                        "oid",
+                        "side",
+                        "requested_qty",
+                        "ts_sent_ns",
+                        "ts_active_ns",
+                        "arrival_lag_ns",
+                        "lot_size",
+                        "filled_qty",
+                        "shortfall_qty",
+                    ]
+                )
+                or int(numbers["oid"]) != int(order_id_raw)
+                or side not in (-1, 1)
+                or requested_qty <= 0
+                or lot_size <= 0
+                or requested_qty % lot_size != 0
+                or filled_qty < 0
+                or filled_qty % lot_size != 0
+                or filled_qty != expected_fill
+                or filled_qty != int(reported_filled_qty)
+                or shortfall_qty != int(numbers["shortfall_qty"])
+                or available_qty < 0
+                or carried_qty < 0
+                or event_consumed_qty < 0
+                or abs(
+                    available_qty - available_invariant
+                )
+                > 1e-9
+                or abs(
+                    float(numbers["available_after_qty"])
+                    - max(available_qty - filled_qty, 0.0)
+                )
+                > 1e-9
+                or abs(observed_qty - expected_observed) > 1e-9
+                or abs(
+                    float(numbers["touch_price"]) - expected_touch
+                )
+                > 1e-9
+                or strings["instrument_id"] != expected_instrument
+                or strings["order_type"] != "IOC"
+                or strings["liquidity_source"] != expected_source
+                or (
+                    strings["book_relation"] == "marketable"
+                )
+                != expected_marketable
+                or marketable != expected_marketable
+                or strings["outcome"] != expected_outcome
+                or complete != (shortfall_qty == 0)
+                or float(side) != float(expected_side)
+                or abs(limit_price - float(expected_limit)) > 1e-9
+                or arrival_ts_ns < active_ts_ns
+                or arrival_lag_ns
+                != arrival_ts_ns - active_ts_ns
+            )
+            evaluable_legs += 1
+            consistency_violations += int(violation)
+            not_marketable_legs += int(not marketable)
+            capacity_shortfall_legs += int(
+                marketable and shortfall_qty > 0
+            )
+            negative_lag_legs += int(
+                arrival_ts_ns < active_ts_ns
+                or arrival_lag_ns < 0
+            )
+            fill_ratios.append(filled_qty / requested_qty)
+            arrival_lags.append(arrival_lag_ns)
+
+    return {
+        "parity_execution_ioc_arrival_audit_enabled": True,
+        "parity_execution_ioc_arrival_evaluable_legs": (
+            evaluable_legs
+        ),
+        "parity_execution_ioc_arrival_missing_evidence_legs": (
+            missing_evidence_legs
+        ),
+        "parity_execution_ioc_arrival_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_ioc_arrival_not_marketable_legs": (
+            not_marketable_legs
+        ),
+        "parity_execution_ioc_arrival_capacity_shortfall_legs": (
+            capacity_shortfall_legs
+        ),
+        "parity_execution_ioc_arrival_negative_lag_legs": (
+            negative_lag_legs
+        ),
+        "parity_execution_min_ioc_arrival_fill_ratio": (
+            float(min(fill_ratios)) if fill_ratios else 0.0
+        ),
+        "parity_execution_max_ioc_arrival_lag_ns": (
+            max(arrival_lags) if arrival_lags else 0
         ),
     }
 

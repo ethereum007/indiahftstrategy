@@ -7596,6 +7596,27 @@ remains healthy at `2722 tests` across `164` files. The full suite was not
 rerun because recent complete runs exceed 40 minutes. All outputs remain
 non-authorizing.
 
+Latest arrival-time IOC execution proof: both replay engines now emit one
+engine-owned `ioc_arrival_audit.csv` row when an IOC reaches its first eligible
+venue event, including orders that are non-marketable and leave no fill or
+shortfall artifact. Each row binds order identity and send/activation timing
+to the arrival bid/ask, displayed sizes, executable touch, book relation, lot
+size, quantity available after carried and same-event depletion, resulting
+fill, residual, and terminal outcome. Replay summaries expose arrival,
+marketability, quantity, depletion, and lag counts. Parity proof independently
+joins all three legs to submissions, arrival rows, and raw fills; recomputes
+marketability, lot-floored displayed capacity, depletion arithmetic, fill
+quantity, outcome, timestamp, and touch; and fails missing, duplicate, or
+tampered evidence. Parity sweeps and cross-sweep comparisons preserve the
+evaluable, missing, inconsistent, non-marketable, shortfall, and negative-lag
+leg counts plus minimum arrival fill ratio and maximum arrival lag. All
+outputs remain research-only and non-authorizing. The `107`-test focused
+engine, replay, proof, and sweep set and the broader `232`-test shared-replay,
+parity, promotion, order-plan, launch, CLI, and strategy-evidence set pass.
+Source compilation succeeds. Repository collection is healthy at
+`2724 tests` across `164` files. The full suite was not rerun because recent
+complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

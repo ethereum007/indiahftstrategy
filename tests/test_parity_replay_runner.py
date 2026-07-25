@@ -65,6 +65,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert replay.summary.iloc[0]["fills"] == 3
     assert (out_dir / "fills.csv").exists()
     assert (out_dir / "order_submissions.csv").exists()
+    assert (out_dir / "ioc_arrival_audit.csv").exists()
     assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
@@ -94,6 +95,32 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert int(summary["input_integrity_dropped_rows"]) == 0
     assert int(summary["input_empty_datasets"]) == 0
     assert bool(summary["parity_futures_asof_freshness_enabled"])
+    assert bool(summary["ioc_arrival_audit_enabled"])
+    assert int(summary["ioc_arrival_events"]) == 3
+    assert int(summary["ioc_arrival_marketable_events"]) == 3
+    assert int(summary["ioc_arrival_not_marketable_events"]) == 0
+    assert int(summary["ioc_arrival_requested_qty"]) == 225
+    assert int(summary["ioc_arrival_filled_qty"]) == 225
+    assert int(summary["ioc_arrival_shortfall_qty"]) == 0
+    assert bool(
+        summary["parity_execution_ioc_arrival_audit_enabled"]
+    )
+    assert int(
+        summary["parity_execution_ioc_arrival_evaluable_legs"]
+    ) == 3
+    assert int(
+        summary[
+            "parity_execution_ioc_arrival_missing_evidence_legs"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_ioc_arrival_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        summary["parity_execution_min_ioc_arrival_fill_ratio"]
+    ) == 1.0
     assert int(summary["parity_futures_max_quote_age_ns"]) == 1_000_000
     assert int(summary["parity_futures_join_rows"]) == 2
     assert int(summary["parity_futures_fresh_join_rows"]) == 2
@@ -481,6 +508,31 @@ def test_run_parity_replay_proves_reverse_realized_package_edge(
     assert int(
         proof_metrics[
             "parity_execution_max_activation_to_completion_latency_ns"
+        ]
+    ) == 100_000
+    assert bool(
+        proof_metrics[
+            "parity_execution_ioc_arrival_audit_present"
+        ]
+    )
+    assert int(
+        proof_metrics[
+            "parity_execution_ioc_arrival_evaluable_legs"
+        ]
+    ) == 3
+    assert int(
+        proof_metrics[
+            "parity_execution_ioc_arrival_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        proof_metrics[
+            "parity_execution_min_ioc_arrival_fill_ratio"
+        ]
+    ) == 1.0
+    assert int(
+        proof_metrics[
+            "parity_execution_max_ioc_arrival_lag_ns"
         ]
     ) == 100_000
     assert float(

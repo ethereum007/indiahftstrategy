@@ -557,12 +557,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_legging_path = run_dir / "legging.csv"
     fills_path = run_dir / "fills.csv"
     order_submissions_path = run_dir / "order_submissions.csv"
+    ioc_arrival_audit_path = run_dir / "ioc_arrival_audit.csv"
     parity_execution_guard = _read_optional(
         parity_execution_guard_path
     )
     parity_legging = _read_optional(parity_legging_path)
     replay_fills = _read_optional(fills_path)
     order_submissions = _read_optional(order_submissions_path)
+    ioc_arrival_audit = _read_optional(ioc_arrival_audit_path)
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
     market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
 
@@ -680,6 +682,12 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_execution_order_timing_declared = _bool(
         row.get(
             "parity_execution_order_timing_enabled",
+            False,
+        )
+    )
+    parity_execution_ioc_arrival_audit_declared = _bool(
+        row.get(
+            "parity_execution_ioc_arrival_audit_enabled",
             False,
         )
     )
@@ -1127,6 +1135,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         order_submissions,
         enabled=parity_execution_order_timing_declared,
         order_submissions_present=order_submissions_path.exists(),
+    )
+    parity_ioc_arrival_metrics = _parity_ioc_arrival_metrics(
+        parity_legging,
+        replay_fills,
+        order_submissions,
+        ioc_arrival_audit,
+        enabled=parity_execution_ioc_arrival_audit_declared,
+        audit_present=ioc_arrival_audit_path.exists(),
     )
     parity_routed_capacity_ratios = parity_capacity_ratio.loc[
         parity_capacity_passed
@@ -1661,6 +1677,10 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             parity_execution_order_timing_declared
         ),
         **parity_order_timing_metrics,
+        "parity_execution_ioc_arrival_audit_declared": (
+            parity_execution_ioc_arrival_audit_declared
+        ),
+        **parity_ioc_arrival_metrics,
         "parity_execution_ioc_batch_preflight_enabled": (
             parity_execution_ioc_batch_preflight_enabled
         ),
@@ -3135,6 +3155,587 @@ def _parity_order_timing_metrics(
     }
 
 
+def _parity_ioc_book_relation(
+    *,
+    side: int,
+    limit_price: float,
+    bid: float,
+    ask: float,
+) -> str:
+    if side > 0:
+        if limit_price >= ask:
+            return "marketable"
+        if abs(limit_price - bid) < 1e-9:
+            return "bid_touch"
+        if bid < limit_price < ask:
+            return "price_improving"
+    else:
+        if limit_price <= bid:
+            return "marketable"
+        if abs(limit_price - ask) < 1e-9:
+            return "ask_touch"
+        if bid < limit_price < ask:
+            return "price_improving"
+    return "away_from_touch"
+
+
+def _parity_ioc_arrival_metrics(
+    legging: pd.DataFrame,
+    fills: pd.DataFrame,
+    order_submissions: pd.DataFrame,
+    ioc_arrival_audit: pd.DataFrame,
+    *,
+    enabled: bool,
+    audit_present: bool,
+) -> dict[str, int | float | bool]:
+    evaluable_legs = 0
+    missing_evidence_legs = 0
+    consistency_violations = 0
+    not_marketable_legs = 0
+    capacity_shortfall_legs = 0
+    negative_lag_legs = 0
+    fill_ratios: list[float] = []
+    arrival_lags: list[int] = []
+    audit_oids = pd.to_numeric(
+        ioc_arrival_audit.get(
+            "oid",
+            pd.Series(
+                index=ioc_arrival_audit.index,
+                dtype="float64",
+            ),
+        ),
+        errors="coerce",
+    )
+    submission_oids = pd.to_numeric(
+        order_submissions.get(
+            "oid",
+            pd.Series(
+                index=order_submissions.index,
+                dtype="float64",
+            ),
+        ),
+        errors="coerce",
+    )
+    fill_oids = pd.to_numeric(
+        fills.get(
+            "oid",
+            pd.Series(index=fills.index, dtype="float64"),
+        ),
+        errors="coerce",
+    )
+
+    if enabled:
+        for _, row in legging.iterrows():
+            for leg in ("call", "put", "future"):
+                order_id_raw = pd.to_numeric(
+                    row.get(f"{leg}_order_id", np.nan),
+                    errors="coerce",
+                )
+                if pd.isna(order_id_raw):
+                    continue
+                if order_id_raw <= 0 or order_id_raw % 1 != 0:
+                    consistency_violations += 1
+                    continue
+                order_id = int(order_id_raw)
+                audit_matches = ioc_arrival_audit.loc[
+                    audit_oids.eq(order_id)
+                ]
+                if audit_matches.empty:
+                    missing_evidence_legs += 1
+                    continue
+                if len(audit_matches) != 1:
+                    consistency_violations += 1
+                    continue
+                submission_matches = order_submissions.loc[
+                    submission_oids.eq(order_id)
+                ]
+                if submission_matches.empty:
+                    missing_evidence_legs += 1
+                    continue
+                if len(submission_matches) != 1:
+                    consistency_violations += 1
+                    continue
+
+                arrival = audit_matches.iloc[0]
+                submission = submission_matches.iloc[0]
+                audit_number_names = [
+                    "arrival_ts_ns",
+                    "oid",
+                    "side",
+                    "limit_price",
+                    "requested_qty",
+                    "ts_sent_ns",
+                    "ts_active_ns",
+                    "arrival_lag_ns",
+                    "bid",
+                    "ask",
+                    "bid_qty",
+                    "ask_qty",
+                    "touch_price",
+                    "lot_size",
+                    "available_qty",
+                    "available_after_qty",
+                    "observed_qty",
+                    "carried_depletion_qty",
+                    "event_consumed_qty",
+                    "filled_qty",
+                    "shortfall_qty",
+                ]
+                audit_numbers = {
+                    name: pd.to_numeric(
+                        arrival.get(name, np.nan),
+                        errors="coerce",
+                    )
+                    for name in audit_number_names
+                }
+                audit_string_names = [
+                    "instrument_id",
+                    "order_type",
+                    "book_relation",
+                    "liquidity_source",
+                    "outcome",
+                ]
+                audit_string_raw = {
+                    name: arrival.get(name, np.nan)
+                    for name in audit_string_names
+                }
+                submission_number_names = [
+                    "ts_sent_ns",
+                    "ts_active_ns",
+                    "oid",
+                    "side",
+                    "qty",
+                    "price",
+                ]
+                submission_numbers = {
+                    name: pd.to_numeric(
+                        submission.get(name, np.nan),
+                        errors="coerce",
+                    )
+                    for name in submission_number_names
+                }
+                marketable_raw = arrival.get("marketable", np.nan)
+                complete_raw = arrival.get("complete", np.nan)
+                expected_instrument_raw = row.get(
+                    f"{leg}_instrument_id",
+                    np.nan,
+                )
+                expected_side = pd.to_numeric(
+                    row.get(f"{leg}_side", np.nan),
+                    errors="coerce",
+                )
+                expected_limit = pd.to_numeric(
+                    row.get(f"{leg}_limit_price", np.nan),
+                    errors="coerce",
+                )
+                reported_filled_qty = pd.to_numeric(
+                    row.get(f"{leg}_filled_qty", np.nan),
+                    errors="coerce",
+                )
+                submission_instrument_raw = submission.get(
+                    "instrument_id",
+                    np.nan,
+                )
+                submission_order_type_raw = submission.get(
+                    "order_type",
+                    np.nan,
+                )
+                missing = (
+                    any(
+                        pd.isna(value)
+                        for value in audit_numbers.values()
+                    )
+                    or any(
+                        not np.isfinite(float(value))
+                        for value in audit_numbers.values()
+                        if not pd.isna(value)
+                    )
+                    or any(
+                        pd.isna(value)
+                        for value in submission_numbers.values()
+                    )
+                    or any(
+                        not np.isfinite(float(value))
+                        for value in submission_numbers.values()
+                        if not pd.isna(value)
+                    )
+                    or any(
+                        pd.isna(value)
+                        or str(value).strip() == ""
+                        for value in audit_string_raw.values()
+                    )
+                    or _boolean_evidence_missing(
+                        pd.Series(
+                            [marketable_raw, complete_raw],
+                            dtype="object",
+                        )
+                    ).any()
+                    or pd.isna(expected_instrument_raw)
+                    or str(expected_instrument_raw).strip() == ""
+                    or pd.isna(expected_side)
+                    or pd.isna(expected_limit)
+                    or pd.isna(reported_filled_qty)
+                    or pd.isna(submission_instrument_raw)
+                    or str(submission_instrument_raw).strip() == ""
+                    or pd.isna(submission_order_type_raw)
+                    or str(submission_order_type_raw).strip() == ""
+                )
+                if missing:
+                    missing_evidence_legs += 1
+                    continue
+
+                audit_strings = {
+                    name: str(value).strip()
+                    for name, value in audit_string_raw.items()
+                }
+                marketable = _bool(marketable_raw)
+                complete = _bool(complete_raw)
+                arrival_ts_ns = int(
+                    audit_numbers["arrival_ts_ns"]
+                )
+                oid = int(audit_numbers["oid"])
+                side = int(audit_numbers["side"])
+                limit_price = float(
+                    audit_numbers["limit_price"]
+                )
+                requested_qty = int(
+                    audit_numbers["requested_qty"]
+                )
+                sent_ts_ns = int(audit_numbers["ts_sent_ns"])
+                active_ts_ns = int(
+                    audit_numbers["ts_active_ns"]
+                )
+                arrival_lag_ns = int(
+                    audit_numbers["arrival_lag_ns"]
+                )
+                bid = float(audit_numbers["bid"])
+                ask = float(audit_numbers["ask"])
+                bid_qty = float(audit_numbers["bid_qty"])
+                ask_qty = float(audit_numbers["ask_qty"])
+                touch_price = float(
+                    audit_numbers["touch_price"]
+                )
+                lot_size = int(audit_numbers["lot_size"])
+                available_qty = float(
+                    audit_numbers["available_qty"]
+                )
+                available_after_qty = float(
+                    audit_numbers["available_after_qty"]
+                )
+                observed_qty = float(
+                    audit_numbers["observed_qty"]
+                )
+                carried_qty = float(
+                    audit_numbers["carried_depletion_qty"]
+                )
+                event_consumed_qty = float(
+                    audit_numbers["event_consumed_qty"]
+                )
+                filled_qty = int(audit_numbers["filled_qty"])
+                shortfall_qty = int(
+                    audit_numbers["shortfall_qty"]
+                )
+                expected_relation = _parity_ioc_book_relation(
+                    side=side,
+                    limit_price=limit_price,
+                    bid=bid,
+                    ask=ask,
+                )
+                expected_marketable = (
+                    expected_relation == "marketable"
+                )
+                expected_touch = ask if side > 0 else bid
+                expected_observed = (
+                    ask_qty if side > 0 else bid_qty
+                )
+                expected_source = (
+                    "ask_display"
+                    if side > 0
+                    else "bid_display"
+                )
+                expected_available = max(
+                    observed_qty
+                    - carried_qty
+                    - event_consumed_qty,
+                    0.0,
+                )
+                expected_fill = 0
+                if marketable and lot_size > 0:
+                    expected_fill = min(
+                        requested_qty,
+                        int(np.floor(available_qty / lot_size))
+                        * lot_size,
+                    )
+                expected_shortfall = (
+                    requested_qty - filled_qty
+                )
+                expected_outcome = (
+                    "not_marketable"
+                    if not marketable
+                    else (
+                        "filled"
+                        if expected_shortfall == 0
+                        else (
+                            "partial_fill"
+                            if filled_qty > 0
+                            else "no_fill"
+                        )
+                    )
+                )
+
+                raw_leg_fills = fills.loc[
+                    fill_oids.eq(order_id)
+                ]
+                if filled_qty > 0 and raw_leg_fills.empty:
+                    missing_evidence_legs += 1
+                    continue
+                raw_fill_violation = False
+                if raw_leg_fills.empty:
+                    raw_filled_qty = 0
+                else:
+                    raw_fill_number_names = [
+                        "ts_ns",
+                        "oid",
+                        "side",
+                        "qty",
+                        "price",
+                    ]
+                    raw_fill_numbers = {
+                        name: pd.to_numeric(
+                            raw_leg_fills.get(
+                                name,
+                                pd.Series(
+                                    np.nan,
+                                    index=raw_leg_fills.index,
+                                ),
+                            ),
+                            errors="coerce",
+                        )
+                        for name in raw_fill_number_names
+                    }
+                    raw_fill_instrument = raw_leg_fills.get(
+                        "instrument_id",
+                        pd.Series(
+                            np.nan,
+                            index=raw_leg_fills.index,
+                        ),
+                    )
+                    raw_fill_maker = raw_leg_fills.get(
+                        "maker",
+                        pd.Series(
+                            np.nan,
+                            index=raw_leg_fills.index,
+                        ),
+                    )
+                    if (
+                        any(
+                            values.isna().any()
+                            for values in raw_fill_numbers.values()
+                        )
+                        or raw_fill_instrument.isna().any()
+                        or _boolean_evidence_missing(
+                            raw_fill_maker
+                        ).any()
+                    ):
+                        missing_evidence_legs += 1
+                        continue
+                    raw_filled_qty = int(
+                        raw_fill_numbers["qty"].sum()
+                    )
+                    raw_fill_violation = (
+                        raw_fill_numbers["ts_ns"]
+                        .mod(1)
+                        .ne(0)
+                        .any()
+                        or raw_fill_numbers["oid"]
+                        .mod(1)
+                        .ne(0)
+                        .any()
+                        or raw_fill_numbers["side"]
+                        .mod(1)
+                        .ne(0)
+                        .any()
+                        or raw_fill_numbers["qty"]
+                        .mod(1)
+                        .ne(0)
+                        .any()
+                        or raw_fill_numbers["ts_ns"]
+                        .ne(arrival_ts_ns)
+                        .any()
+                        or raw_fill_numbers["oid"]
+                        .ne(order_id)
+                        .any()
+                        or raw_fill_numbers["side"]
+                        .ne(side)
+                        .any()
+                        or raw_fill_numbers["qty"].le(0).any()
+                        or raw_fill_numbers["price"]
+                        .sub(touch_price)
+                        .abs()
+                        .gt(1e-9)
+                        .any()
+                        or raw_fill_instrument.astype(str)
+                        .str.strip()
+                        .ne(audit_strings["instrument_id"])
+                        .any()
+                        or raw_fill_maker.map(_bool).any()
+                    )
+
+                integer_names = [
+                    "arrival_ts_ns",
+                    "oid",
+                    "side",
+                    "requested_qty",
+                    "ts_sent_ns",
+                    "ts_active_ns",
+                    "arrival_lag_ns",
+                    "lot_size",
+                    "filled_qty",
+                    "shortfall_qty",
+                ]
+                violation = (
+                    any(
+                        audit_numbers[name] % 1 != 0
+                        for name in integer_names
+                    )
+                    or any(
+                        submission_numbers[name] % 1 != 0
+                        for name in [
+                            "ts_sent_ns",
+                            "ts_active_ns",
+                            "oid",
+                            "side",
+                            "qty",
+                        ]
+                    )
+                    or oid != order_id
+                    or side not in (-1, 1)
+                    or requested_qty <= 0
+                    or lot_size <= 0
+                    or requested_qty % max(lot_size, 1) != 0
+                    or filled_qty < 0
+                    or filled_qty % max(lot_size, 1) != 0
+                    or bid <= 0
+                    or ask <= 0
+                    or bid > ask
+                    or bid_qty < 0
+                    or ask_qty < 0
+                    or available_qty < 0
+                    or available_after_qty < 0
+                    or observed_qty < 0
+                    or carried_qty < 0
+                    or event_consumed_qty < 0
+                    or carried_qty + event_consumed_qty
+                    > observed_qty + 1e-9
+                    or abs(
+                        observed_qty - expected_observed
+                    )
+                    > 1e-9
+                    or abs(
+                        available_qty - expected_available
+                    )
+                    > 1e-9
+                    or abs(
+                        available_after_qty
+                        - max(
+                            available_qty - filled_qty,
+                            0.0,
+                        )
+                    )
+                    > 1e-9
+                    or filled_qty != expected_fill
+                    or shortfall_qty != expected_shortfall
+                    or marketable != expected_marketable
+                    or complete != (shortfall_qty == 0)
+                    or audit_strings["book_relation"]
+                    != expected_relation
+                    or audit_strings["liquidity_source"]
+                    != expected_source
+                    or audit_strings["outcome"]
+                    != expected_outcome
+                    or audit_strings["order_type"] != "IOC"
+                    or abs(touch_price - expected_touch) > 1e-9
+                    or arrival_ts_ns < active_ts_ns
+                    or arrival_lag_ns
+                    != arrival_ts_ns - active_ts_ns
+                    or sent_ts_ns
+                    != int(submission_numbers["ts_sent_ns"])
+                    or active_ts_ns
+                    != int(submission_numbers["ts_active_ns"])
+                    or oid != int(submission_numbers["oid"])
+                    or side != int(submission_numbers["side"])
+                    or requested_qty
+                    != int(submission_numbers["qty"])
+                    or abs(
+                        limit_price
+                        - float(submission_numbers["price"])
+                    )
+                    > 1e-9
+                    or audit_strings["instrument_id"]
+                    != str(submission_instrument_raw).strip()
+                    or str(submission_order_type_raw).strip()
+                    != "IOC"
+                    or audit_strings["instrument_id"]
+                    != str(expected_instrument_raw).strip()
+                    or float(side) != float(expected_side)
+                    or abs(
+                        limit_price - float(expected_limit)
+                    )
+                    > 1e-9
+                    or reported_filled_qty % 1 != 0
+                    or filled_qty != int(reported_filled_qty)
+                    or raw_filled_qty != filled_qty
+                    or raw_fill_violation
+                )
+                evaluable_legs += 1
+                consistency_violations += int(violation)
+                not_marketable_legs += int(not marketable)
+                capacity_shortfall_legs += int(
+                    marketable and shortfall_qty > 0
+                )
+                negative_lag_legs += int(
+                    arrival_ts_ns < active_ts_ns
+                    or arrival_lag_ns < 0
+                )
+                fill_ratios.append(
+                    filled_qty / requested_qty
+                )
+                arrival_lags.append(arrival_lag_ns)
+
+    return {
+        "parity_execution_ioc_arrival_audit_enabled": bool(
+            enabled
+        ),
+        "parity_execution_ioc_arrival_audit_present": bool(
+            audit_present
+        ),
+        "parity_execution_ioc_arrival_evaluable_legs": (
+            evaluable_legs
+        ),
+        "parity_execution_ioc_arrival_missing_evidence_legs": (
+            missing_evidence_legs
+        ),
+        "parity_execution_ioc_arrival_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_ioc_arrival_not_marketable_legs": (
+            not_marketable_legs
+        ),
+        "parity_execution_ioc_arrival_capacity_shortfall_legs": (
+            capacity_shortfall_legs
+        ),
+        "parity_execution_ioc_arrival_negative_lag_legs": (
+            negative_lag_legs
+        ),
+        "parity_execution_min_ioc_arrival_fill_ratio": (
+            float(min(fill_ratios)) if fill_ratios else 0.0
+        ),
+        "parity_execution_max_ioc_arrival_lag_ns": (
+            max(arrival_lags) if arrival_lags else 0
+        ),
+    }
+
+
 def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofThresholds) -> pd.DataFrame:
     rows = [
         _check(metrics, "net_pnl", metrics["net_pnl"], ">=", thresholds.min_net_pnl),
@@ -3420,6 +4021,31 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+        ioc_arrival_audit_declared = bool(
+            metrics[
+                "parity_execution_ioc_arrival_audit_declared"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_ioc_arrival_audit_declared"
+                ),
+                "value": ioc_arrival_audit_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": ioc_arrival_audit_declared,
+                "reason": (
+                    ""
+                    if ioc_arrival_audit_declared
+                    else (
+                        "parity execution lacks engine-owned IOC "
+                        "arrival-book evidence"
+                    )
+                ),
+            }
+        )
         preflight_declared = bool(
             metrics[
                 "parity_execution_ioc_batch_preflight_declared"
@@ -3481,6 +4107,10 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_order_submissions_present",
                 "parity order-submission artifact is missing",
+            ),
+            (
+                "parity_execution_ioc_arrival_audit_present",
+                "parity IOC arrival-audit artifact is missing",
             ),
         ]:
             present = bool(metrics[metric])
@@ -3571,6 +4201,26 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_pre_activation_fill_legs",
                 "a parity leg contains a fill before venue activation",
+            ),
+            (
+                "parity_execution_ioc_arrival_missing_evidence_legs",
+                "a parity leg lacks arrival-time IOC book evidence",
+            ),
+            (
+                "parity_execution_ioc_arrival_consistency_violations",
+                "parity IOC arrival, depth, and fill evidence is inconsistent",
+            ),
+            (
+                "parity_execution_ioc_arrival_not_marketable_legs",
+                "a routed parity IOC was not marketable at venue arrival",
+            ),
+            (
+                "parity_execution_ioc_arrival_capacity_shortfall_legs",
+                "a routed parity IOC exceeded arrival-time displayed capacity",
+            ),
+            (
+                "parity_execution_ioc_arrival_negative_lag_legs",
+                "a parity IOC arrival predates venue activation",
             ),
             (
                 "parity_execution_ioc_batch_preflight_missing_evidence_rows",
@@ -3738,6 +4388,77 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     else (
                         "completed parity packages lack three-leg "
                         "activation-to-fill timing evidence"
+                    )
+                ),
+            }
+        )
+        ioc_arrival_legs = int(
+            metrics[
+                "parity_execution_ioc_arrival_evaluable_legs"
+            ]
+        )
+        required_ioc_arrival_legs = (
+            complete_executions * 3
+            if ioc_arrival_audit_declared
+            else 0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_ioc_arrival_evaluable_legs"
+                ),
+                "value": ioc_arrival_legs,
+                "operator": ">=",
+                "threshold": required_ioc_arrival_legs,
+                "passed": (
+                    ioc_arrival_legs
+                    >= required_ioc_arrival_legs
+                ),
+                "reason": (
+                    ""
+                    if ioc_arrival_legs
+                    >= required_ioc_arrival_legs
+                    else (
+                        "completed parity packages lack three-leg "
+                        "arrival-book and displayed-depth evidence"
+                    )
+                ),
+            }
+        )
+        min_ioc_arrival_fill_ratio = float(
+            metrics[
+                "parity_execution_min_ioc_arrival_fill_ratio"
+            ]
+        )
+        required_ioc_arrival_fill_ratio = (
+            1.0
+            if (
+                ioc_arrival_audit_declared
+                and complete_executions > 0
+            )
+            else 0.0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_min_ioc_arrival_fill_ratio"
+                ),
+                "value": min_ioc_arrival_fill_ratio,
+                "operator": ">=",
+                "threshold": required_ioc_arrival_fill_ratio,
+                "passed": (
+                    min_ioc_arrival_fill_ratio
+                    >= required_ioc_arrival_fill_ratio
+                ),
+                "reason": (
+                    ""
+                    if min_ioc_arrival_fill_ratio
+                    >= required_ioc_arrival_fill_ratio
+                    else (
+                        "a completed parity leg was not fully backed "
+                        "by arrival-time displayed capacity"
                     )
                 ),
             }

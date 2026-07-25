@@ -198,6 +198,60 @@ def replay_summary(
         else pd.Series(dtype="float64")
     )
     carried_depletion_mask = displayed_mask & carried_depletion.gt(0)
+    ioc_arrival_audit = result.ioc_arrival_audit
+    ioc_arrival_marketable = (
+        ioc_arrival_audit["marketable"].fillna(False).astype(bool)
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="bool")
+    )
+    ioc_arrival_requested_qty = (
+        pd.to_numeric(
+            ioc_arrival_audit["requested_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="float64")
+    )
+    ioc_arrival_filled_qty = (
+        pd.to_numeric(
+            ioc_arrival_audit["filled_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="float64")
+    )
+    ioc_arrival_shortfall_qty = (
+        pd.to_numeric(
+            ioc_arrival_audit["shortfall_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="float64")
+    )
+    ioc_arrival_lag_ns = (
+        pd.to_numeric(
+            ioc_arrival_audit["arrival_lag_ns"],
+            errors="coerce",
+        ).dropna()
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="float64")
+    )
+    ioc_arrival_carried_depletion = (
+        pd.to_numeric(
+            ioc_arrival_audit["carried_depletion_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="float64")
+    )
+    ioc_arrival_event_consumed = (
+        pd.to_numeric(
+            ioc_arrival_audit["event_consumed_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not ioc_arrival_audit.empty
+        else pd.Series(dtype="float64")
+    )
     queue_initializations = result.queue_initializations
     queue_modes = (
         queue_initializations["mode"]
@@ -424,6 +478,36 @@ def replay_summary(
                 "order_horizon_tracking_enabled": bool(
                     result.engine.order_horizon_tracking_enabled
                 ),
+                "ioc_arrival_audit_enabled": bool(
+                    result.engine.ioc_arrival_audit_enabled
+                ),
+                "ioc_arrival_events": int(len(ioc_arrival_audit)),
+                "ioc_arrival_marketable_events": int(
+                    ioc_arrival_marketable.sum()
+                ),
+                "ioc_arrival_not_marketable_events": int(
+                    (~ioc_arrival_marketable).sum()
+                ),
+                "ioc_arrival_requested_qty": int(
+                    ioc_arrival_requested_qty.sum()
+                ),
+                "ioc_arrival_filled_qty": int(
+                    ioc_arrival_filled_qty.sum()
+                ),
+                "ioc_arrival_shortfall_qty": int(
+                    ioc_arrival_shortfall_qty.sum()
+                ),
+                "ioc_arrival_carried_depletion_events": int(
+                    ioc_arrival_carried_depletion.gt(0).sum()
+                ),
+                "ioc_arrival_event_depletion_events": int(
+                    ioc_arrival_event_consumed.gt(0).sum()
+                ),
+                "max_ioc_arrival_lag_ns": int(
+                    ioc_arrival_lag_ns.max()
+                    if not ioc_arrival_lag_ns.empty
+                    else 0
+                ),
                 "open_orders_at_replay_end": int(
                     len(order_horizon_states)
                 ),
@@ -604,6 +688,10 @@ def write_replay_outputs(
     )
     result.liquidity_shortfalls.to_csv(
         out / "liquidity_shortfalls.csv",
+        index=False,
+    )
+    result.ioc_arrival_audit.to_csv(
+        out / "ioc_arrival_audit.csv",
         index=False,
     )
     result.queue_initializations.to_csv(

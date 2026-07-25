@@ -84,6 +84,17 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_pre_activation_fill_legs": 0,
             "parity_execution_min_activation_to_first_fill_latency_ns": 20,
             "parity_execution_max_activation_to_completion_latency_ns": 40,
+            "parity_execution_ioc_arrival_audit_enabled": True,
+            "parity_execution_ioc_arrival_audit_declared": True,
+            "parity_execution_ioc_arrival_audit_present": True,
+            "parity_execution_ioc_arrival_evaluable_legs": 3,
+            "parity_execution_ioc_arrival_missing_evidence_legs": 0,
+            "parity_execution_ioc_arrival_consistency_violations": 0,
+            "parity_execution_ioc_arrival_not_marketable_legs": 0,
+            "parity_execution_ioc_arrival_capacity_shortfall_legs": 0,
+            "parity_execution_ioc_arrival_negative_lag_legs": 0,
+            "parity_execution_min_ioc_arrival_fill_ratio": 1.0,
+            "parity_execution_max_ioc_arrival_lag_ns": 30,
             "parity_execution_ioc_batch_preflight_enabled": True,
             "parity_execution_ioc_batch_preflight_declared": True,
             "parity_execution_ioc_batch_preflight_attempts": 1,
@@ -234,6 +245,17 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_pre_activation_fill_legs": 1,
             "parity_execution_min_activation_to_first_fill_latency_ns": -10,
             "parity_execution_max_activation_to_completion_latency_ns": 80,
+            "parity_execution_ioc_arrival_audit_enabled": True,
+            "parity_execution_ioc_arrival_audit_declared": True,
+            "parity_execution_ioc_arrival_audit_present": True,
+            "parity_execution_ioc_arrival_evaluable_legs": 2,
+            "parity_execution_ioc_arrival_missing_evidence_legs": 1,
+            "parity_execution_ioc_arrival_consistency_violations": 1,
+            "parity_execution_ioc_arrival_not_marketable_legs": 1,
+            "parity_execution_ioc_arrival_capacity_shortfall_legs": 1,
+            "parity_execution_ioc_arrival_negative_lag_legs": 1,
+            "parity_execution_min_ioc_arrival_fill_ratio": 0.5,
+            "parity_execution_max_ioc_arrival_lag_ns": 100,
             "parity_execution_ioc_batch_preflight_enabled": True,
             "parity_execution_ioc_batch_preflight_declared": True,
             "parity_execution_ioc_batch_preflight_attempts": 1,
@@ -396,6 +418,16 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
         best["parity_execution_order_timing_declared_runs"]
     ) == 2
     assert int(
+        best[
+            "parity_execution_ioc_arrival_audit_enabled_runs"
+        ]
+    ) == 2
+    assert int(
+        best[
+            "parity_execution_ioc_arrival_audit_declared_runs"
+        ]
+    ) == 2
+    assert int(
         best["parity_execution_ioc_batch_preflight_enabled_runs"]
     ) == 2
     assert int(
@@ -407,6 +439,40 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(
         best[
             "parity_execution_order_submissions_artifact_present_runs"
+        ]
+    ) == 2
+    assert int(
+        best[
+            "parity_execution_ioc_arrival_audit_artifact_present_runs"
+        ]
+    ) == 2
+    assert int(
+        best["total_parity_execution_ioc_arrival_evaluable_legs"]
+    ) == 6
+    assert int(
+        best[
+            "total_parity_execution_ioc_arrival_missing_evidence_legs"
+        ]
+    ) == 0
+    assert int(
+        best[
+            "total_parity_execution_ioc_arrival_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        best["min_parity_execution_ioc_arrival_fill_ratio"]
+    ) == 1.0
+    assert int(
+        best["max_parity_execution_ioc_arrival_lag_ns"]
+    ) == 30
+    assert int(
+        weak[
+            "total_parity_execution_ioc_arrival_missing_evidence_legs"
+        ]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_ioc_arrival_capacity_shortfall_legs"
         ]
     ) == 2
     assert int(best["total_parity_execution_guard_attempts"]) == 6

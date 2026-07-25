@@ -448,6 +448,70 @@ def test_multi_engine_orders_share_instrument_event_liquidity():
     assert shortfall["filled_qty"] == 0
     assert shortfall["shortfall_qty"] == 75
     assert shortfall["liquidity_source"] == "ask_display"
+    arrivals = result.ioc_arrival_audit.set_index("oid")
+    assert arrivals.loc[strategy.oids[0], "available_qty"] == 100
+    assert arrivals.loc[strategy.oids[0], "available_after_qty"] == 25
+    assert arrivals.loc[strategy.oids[0], "event_consumed_qty"] == 0
+    assert arrivals.loc[strategy.oids[0], "outcome"] == "filled"
+    assert arrivals.loc[strategy.oids[1], "available_qty"] == 25
+    assert arrivals.loc[strategy.oids[1], "available_after_qty"] == 25
+    assert arrivals.loc[strategy.oids[1], "event_consumed_qty"] == 75
+    assert arrivals.loc[strategy.oids[1], "outcome"] == "no_fill"
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["ioc_arrival_audit_enabled"])
+    assert int(summary["ioc_arrival_events"]) == 2
+    assert int(summary["ioc_arrival_marketable_events"]) == 2
+    assert int(summary["ioc_arrival_not_marketable_events"]) == 0
+    assert int(summary["ioc_arrival_requested_qty"]) == 150
+    assert int(summary["ioc_arrival_filled_qty"]) == 75
+    assert int(summary["ioc_arrival_shortfall_qty"]) == 75
+    assert int(summary["ioc_arrival_event_depletion_events"]) == 1
+
+
+def test_multi_engine_audits_non_marketable_ioc_arrival():
+    strategy = BurstRiskStrategy(
+        {"A": [(+1, 75, 100.00, OrderType.IOC)]}
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 150, 150, np.nan, 0),
+                        (
+                            1_000,
+                            100.00,
+                            100.05,
+                            150,
+                            150,
+                            np.nan,
+                            0,
+                        ),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    assert result.fills.empty
+    assert len(result.ioc_arrival_audit) == 1
+    arrival = result.ioc_arrival_audit.iloc[0]
+    assert arrival["instrument_id"] == "A"
+    assert arrival["book_relation"] == "bid_touch"
+    assert not bool(arrival["marketable"])
+    assert arrival["filled_qty"] == 0
+    assert arrival["shortfall_qty"] == 75
+    assert arrival["outcome"] == "not_marketable"
+    summary = replay_summary(result).iloc[0]
+    assert int(summary["ioc_arrival_events"]) == 1
+    assert int(summary["ioc_arrival_not_marketable_events"]) == 1
 
 
 def test_multi_engine_carries_depletion_until_size_replenishes():

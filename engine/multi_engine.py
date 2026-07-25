@@ -14,6 +14,8 @@ from engine.hft_backtest import (
     Fill,
     IndianCostModel,
     Instrument,
+    IocArrivalAudit,
+    IOC_ARRIVAL_AUDIT_COLUMNS,
     Kind,
     LatencyModel,
     LiquidityShortfall,
@@ -183,6 +185,7 @@ class MultiInstrumentEngine:
         self._cancellation_index_by_oid: Dict[int, int] = {}
         self.order_horizon_states: List[OrderHorizonState] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
+        self.ioc_arrival_audit: List[IocArrivalAudit] = []
         self.queue_initializations: List[QueueInitialization] = []
         self.resting_transitions: List[RestingTransition] = []
         self.passive_price_throughs: List[PassivePriceThrough] = []
@@ -195,6 +198,7 @@ class MultiInstrumentEngine:
         self.order_submission_tracking_enabled = True
         self.cancel_lifecycle_tracking_enabled = True
         self.order_horizon_tracking_enabled = True
+        self.ioc_arrival_audit_enabled = True
         self.passive_price_through_depth_constrained_enabled = True
         self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
@@ -1638,6 +1642,101 @@ class MultiInstrumentEngine:
         )
         return available, fill_qty, observed_qty, carried_depletion_qty
 
+    def _execute_ioc_arrival(
+        self,
+        instrument_id: str,
+        order: Order,
+        tick: dict,
+        liquidity: EventLiquidity,
+        *,
+        requested_qty: int,
+    ) -> None:
+        arrival_ts_ns = int(tick["ts"])
+        bid = float(tick["bid"])
+        ask = float(tick["ask"])
+        touch_price = ask if order.side > 0 else bid
+        source = "ask_display" if order.side > 0 else "bid_display"
+        relation = _limit_book_relation(order, tick)
+        marketable = relation == "marketable"
+        observed_qty, carried_depletion_qty = liquidity.displayed_context(
+            order.side
+        )
+        available_qty = float(
+            liquidity.ask_qty if order.side > 0 else liquidity.bid_qty
+        )
+        event_consumed_qty = max(
+            float(observed_qty)
+            - float(carried_depletion_qty)
+            - available_qty,
+            0.0,
+        )
+        filled_qty = 0
+        if marketable:
+            (
+                available_qty,
+                filled_qty,
+                observed_qty,
+                carried_depletion_qty,
+            ) = self._fill_from_displayed(
+                instrument_id,
+                order,
+                liquidity=liquidity,
+                price=touch_price,
+                ts_ns=arrival_ts_ns,
+                requested_qty=requested_qty,
+                liquidity_source=source,
+            )
+        shortfall_qty = int(requested_qty) - int(filled_qty)
+        if not marketable:
+            outcome = "not_marketable"
+        elif shortfall_qty == 0:
+            outcome = "filled"
+        elif filled_qty > 0:
+            outcome = "partial_fill"
+        else:
+            outcome = "no_fill"
+        lot_size = int(
+            self.instruments[instrument_id].instrument.lot_size
+        )
+        self.ioc_arrival_audit.append(
+            IocArrivalAudit(
+                arrival_ts_ns=arrival_ts_ns,
+                instrument_id=instrument_id,
+                oid=order.oid,
+                side=order.side,
+                order_type=order.otype.value,
+                limit_price=float(order.price),
+                requested_qty=int(requested_qty),
+                ts_sent_ns=int(order.ts_sent_ns),
+                ts_active_ns=int(order.ts_active_ns),
+                arrival_lag_ns=max(
+                    arrival_ts_ns - int(order.ts_active_ns),
+                    0,
+                ),
+                bid=bid,
+                ask=ask,
+                bid_qty=_nonnegative_qty(tick.get("bid_qty", 0)),
+                ask_qty=_nonnegative_qty(tick.get("ask_qty", 0)),
+                touch_price=touch_price,
+                book_relation=relation,
+                marketable=marketable,
+                lot_size=lot_size,
+                available_qty=float(available_qty),
+                available_after_qty=max(
+                    float(available_qty) - int(filled_qty),
+                    0.0,
+                ),
+                observed_qty=float(observed_qty),
+                carried_depletion_qty=float(carried_depletion_qty),
+                event_consumed_qty=float(event_consumed_qty),
+                filled_qty=int(filled_qty),
+                shortfall_qty=shortfall_qty,
+                liquidity_source=source,
+                outcome=outcome,
+                complete=shortfall_qty == 0,
+            )
+        )
+
     def _fill_resting_from_price_through(
         self,
         instrument_id: str,
@@ -1750,24 +1849,13 @@ class MultiInstrumentEngine:
             return
 
         if order.otype == OrderType.IOC:
-            if order.side > 0 and order.price >= ask:
-                self._fill_from_displayed(
-                    instrument_id,
-                    order,
-                    liquidity=liquidity,
-                    price=ask,
-                    ts_ns=ts,
-                    requested_qty=remaining,
-                )
-            elif order.side < 0 and order.price <= bid:
-                self._fill_from_displayed(
-                    instrument_id,
-                    order,
-                    liquidity=liquidity,
-                    price=bid,
-                    ts_ns=ts,
-                    requested_qty=remaining,
-                )
+            self._execute_ioc_arrival(
+                instrument_id,
+                order,
+                tick,
+                liquidity,
+                requested_qty=remaining,
+            )
             self._remove_order(
                 instrument_id,
                 order,
@@ -2069,6 +2157,13 @@ class MultiBacktestResult:
         self.liquidity_shortfalls = pd.DataFrame(
             [shortfall.__dict__ for shortfall in engine.liquidity_shortfalls],
             columns=LIQUIDITY_SHORTFALL_COLUMNS,
+        )
+        self.ioc_arrival_audit = pd.DataFrame(
+            [
+                arrival.__dict__
+                for arrival in engine.ioc_arrival_audit
+            ],
+            columns=IOC_ARRIVAL_AUDIT_COLUMNS,
         )
         self.queue_initializations = pd.DataFrame(
             [

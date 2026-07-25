@@ -212,12 +212,15 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "parity_execution_realized_edge_declared_runs",
                 "parity_execution_order_timing_enabled_runs",
                 "parity_execution_order_timing_declared_runs",
+                "parity_execution_ioc_arrival_audit_enabled_runs",
+                "parity_execution_ioc_arrival_audit_declared_runs",
                 "parity_execution_ioc_batch_preflight_enabled_runs",
                 "parity_execution_ioc_batch_preflight_declared_runs",
                 "parity_execution_guard_artifact_present_runs",
                 "parity_execution_legging_artifact_present_runs",
                 "parity_execution_fills_artifact_present_runs",
                 "parity_execution_order_submissions_artifact_present_runs",
+                "parity_execution_ioc_arrival_audit_artifact_present_runs",
                 "total_parity_execution_guard_attempts",
                 "total_parity_execution_guard_passed_attempts",
                 "total_parity_execution_guard_deferred_attempts",
@@ -243,6 +246,12 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_order_timing_missing_evidence_legs",
                 "total_parity_execution_order_timing_consistency_violations",
                 "total_parity_execution_pre_activation_fill_legs",
+                "total_parity_execution_ioc_arrival_evaluable_legs",
+                "total_parity_execution_ioc_arrival_missing_evidence_legs",
+                "total_parity_execution_ioc_arrival_consistency_violations",
+                "total_parity_execution_ioc_arrival_not_marketable_legs",
+                "total_parity_execution_ioc_arrival_capacity_shortfall_legs",
+                "total_parity_execution_ioc_arrival_negative_lag_legs",
                 "total_parity_execution_ioc_batch_preflight_attempts",
                 "total_parity_execution_ioc_batch_preflight_passed_attempts",
                 "total_parity_execution_ioc_batch_preflight_rejected_attempts",
@@ -276,6 +285,8 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "max_parity_execution_completion_latency_ns",
                 "min_parity_execution_activation_to_first_fill_latency_ns",
                 "max_parity_execution_activation_to_completion_latency_ns",
+                "min_parity_execution_ioc_arrival_fill_ratio",
+                "max_parity_execution_ioc_arrival_lag_ns",
                 "min_parity_execution_routed_visible_fill_ratio",
                 "total_parity_execution_count",
                 "total_parity_execution_legging_missing_evidence_rows",
@@ -427,6 +438,18 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         "parity_execution_order_timing_declared",
                     )
                 ),
+                "parity_execution_ioc_arrival_audit_enabled_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_ioc_arrival_audit_enabled",
+                    )
+                ),
+                "parity_execution_ioc_arrival_audit_declared_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_ioc_arrival_audit_declared",
+                    )
+                ),
                 "parity_execution_ioc_batch_preflight_enabled_runs": (
                     _sum_bool_metric(
                         runs,
@@ -461,6 +484,12 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     _sum_bool_metric(
                         runs,
                         "parity_execution_order_submissions_present",
+                    )
+                ),
+                "parity_execution_ioc_arrival_audit_artifact_present_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_ioc_arrival_audit_present",
                     )
                 ),
                 "total_parity_execution_guard_attempts": _sum_int_metric(
@@ -615,6 +644,54 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     _sum_int_metric(
                         runs,
                         "parity_execution_pre_activation_fill_legs",
+                    )
+                ),
+                "total_parity_execution_ioc_arrival_evaluable_legs": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_arrival_evaluable_legs",
+                    )
+                ),
+                "total_parity_execution_ioc_arrival_missing_evidence_legs": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_ioc_arrival_missing_evidence_legs",
+                    )
+                ),
+                "total_parity_execution_ioc_arrival_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        (
+                            "parity_execution_ioc_arrival_"
+                            "consistency_violations"
+                        ),
+                    )
+                ),
+                "total_parity_execution_ioc_arrival_not_marketable_legs": (
+                    _sum_int_metric(
+                        runs,
+                        (
+                            "parity_execution_ioc_arrival_"
+                            "not_marketable_legs"
+                        ),
+                    )
+                ),
+                "total_parity_execution_ioc_arrival_capacity_shortfall_legs": (
+                    _sum_int_metric(
+                        runs,
+                        (
+                            "parity_execution_ioc_arrival_"
+                            "capacity_shortfall_legs"
+                        ),
+                    )
+                ),
+                "total_parity_execution_ioc_arrival_negative_lag_legs": (
+                    _sum_int_metric(
+                        runs,
+                        (
+                            "parity_execution_ioc_arrival_"
+                            "negative_lag_legs"
+                        ),
                     )
                 ),
                 "total_parity_execution_ioc_batch_preflight_attempts": (
@@ -825,6 +902,19 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                             "parity_execution_"
                             "max_activation_to_completion_latency_ns"
                         ),
+                    )
+                ),
+                "min_parity_execution_ioc_arrival_fill_ratio": (
+                    _min_metric_where(
+                        runs,
+                        "parity_execution_min_ioc_arrival_fill_ratio",
+                        "parity_execution_ioc_arrival_evaluable_legs",
+                    )
+                ),
+                "max_parity_execution_ioc_arrival_lag_ns": (
+                    _max_int_metric(
+                        runs,
+                        "parity_execution_max_ioc_arrival_lag_ns",
                     )
                 ),
                 "total_parity_execution_count": _sum_int_metric(

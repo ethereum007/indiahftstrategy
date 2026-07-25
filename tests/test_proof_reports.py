@@ -474,6 +474,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         0,
         "parity_execution_order_timing_enabled",
     ] = True
+    summary.loc[
+        0,
+        "parity_execution_ioc_arrival_audit_enabled",
+    ] = True
     summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
     summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
     summary.to_csv(summary_path, index=False)
@@ -682,6 +686,104 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         run_dir / "order_submissions.csv",
         index=False,
     )
+    ioc_arrival_audit = pd.DataFrame(
+        [
+            {
+                "arrival_ts_ns": 300,
+                "instrument_id": "CALL1000",
+                "oid": 1,
+                "side": 1,
+                "order_type": "IOC",
+                "limit_price": 55.0,
+                "requested_qty": 75,
+                "ts_sent_ns": 200,
+                "ts_active_ns": 250,
+                "arrival_lag_ns": 50,
+                "bid": 54.95,
+                "ask": 55.0,
+                "bid_qty": 150,
+                "ask_qty": 150,
+                "touch_price": 55.0,
+                "book_relation": "marketable",
+                "marketable": True,
+                "lot_size": 75,
+                "available_qty": 150,
+                "available_after_qty": 75,
+                "observed_qty": 150,
+                "carried_depletion_qty": 0,
+                "event_consumed_qty": 0,
+                "filled_qty": 75,
+                "shortfall_qty": 0,
+                "liquidity_source": "ask_display",
+                "outcome": "filled",
+                "complete": True,
+            },
+            {
+                "arrival_ts_ns": 301,
+                "instrument_id": "PUT1000",
+                "oid": 2,
+                "side": -1,
+                "order_type": "IOC",
+                "limit_price": 60.0,
+                "requested_qty": 75,
+                "ts_sent_ns": 200,
+                "ts_active_ns": 250,
+                "arrival_lag_ns": 51,
+                "bid": 60.0,
+                "ask": 60.05,
+                "bid_qty": 150,
+                "ask_qty": 150,
+                "touch_price": 60.0,
+                "book_relation": "marketable",
+                "marketable": True,
+                "lot_size": 75,
+                "available_qty": 150,
+                "available_after_qty": 75,
+                "observed_qty": 150,
+                "carried_depletion_qty": 0,
+                "event_consumed_qty": 0,
+                "filled_qty": 75,
+                "shortfall_qty": 0,
+                "liquidity_source": "bid_display",
+                "outcome": "filled",
+                "complete": True,
+            },
+            {
+                "arrival_ts_ns": 302,
+                "instrument_id": "FUT",
+                "oid": 3,
+                "side": -1,
+                "order_type": "IOC",
+                "limit_price": 1008.0,
+                "requested_qty": 75,
+                "ts_sent_ns": 200,
+                "ts_active_ns": 250,
+                "arrival_lag_ns": 52,
+                "bid": 1008.0,
+                "ask": 1008.05,
+                "bid_qty": 150,
+                "ask_qty": 150,
+                "touch_price": 1008.0,
+                "book_relation": "marketable",
+                "marketable": True,
+                "lot_size": 75,
+                "available_qty": 150,
+                "available_after_qty": 75,
+                "observed_qty": 150,
+                "carried_depletion_qty": 0,
+                "event_consumed_qty": 0,
+                "filled_qty": 75,
+                "shortfall_qty": 0,
+                "liquidity_source": "bid_display",
+                "outcome": "filled",
+                "complete": True,
+            },
+        ]
+    )
+    ioc_arrival_audit.to_csv(
+        run_dir / "ioc_arrival_audit.csv",
+        index=False,
+    )
 
     valid = evaluate_replay_dirs([run_dir])
 
@@ -848,6 +950,51 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
             "parity_execution_max_activation_to_completion_latency_ns"
         ]
     ) == 52
+    assert bool(
+        metrics[
+            "parity_execution_ioc_arrival_audit_declared"
+        ]
+    )
+    assert bool(
+        metrics[
+            "parity_execution_ioc_arrival_audit_present"
+        ]
+    )
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_evaluable_legs"
+        ]
+    ) == 3
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_missing_evidence_legs"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_consistency_violations"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_not_marketable_legs"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_ioc_arrival_capacity_shortfall_legs"
+        ]
+    ) == 0
+    assert float(
+        metrics[
+            "parity_execution_min_ioc_arrival_fill_ratio"
+        ]
+    ) == 1.0
+    assert int(
+        metrics[
+            "parity_execution_max_ioc_arrival_lag_ns"
+        ]
+    ) == 52
     assert int(
         metrics[
             "parity_execution_ioc_visible_capacity_missing_evidence_rows"
@@ -973,6 +1120,28 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
 
     summary.loc[
         0,
+        "parity_execution_ioc_arrival_audit_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    ioc_arrival_undeclared = evaluate_replay_dirs([run_dir])
+
+    ioc_arrival_undeclared_failed = (
+        ioc_arrival_undeclared.checks.loc[
+            ~ioc_arrival_undeclared.checks["passed"]
+        ]
+    )
+    assert not ioc_arrival_undeclared.passed
+    assert ioc_arrival_undeclared_failed["check"].tolist() == [
+        "parity_execution_ioc_arrival_audit_declared"
+    ]
+    summary.loc[
+        0,
+        "parity_execution_ioc_arrival_audit_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
         "parity_execution_signal_source_causality_enabled",
     ] = False
     summary.to_csv(summary_path, index=False)
@@ -993,6 +1162,34 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ] = True
     summary.to_csv(summary_path, index=False)
 
+    ioc_arrival_audit.loc[
+        ioc_arrival_audit["instrument_id"].eq("FUT"),
+        "available_qty",
+    ] = 74
+    ioc_arrival_audit.to_csv(
+        run_dir / "ioc_arrival_audit.csv",
+        index=False,
+    )
+    ioc_arrival_tampered = evaluate_replay_dirs([run_dir])
+
+    ioc_arrival_tampered_failed = (
+        ioc_arrival_tampered.checks.loc[
+            ~ioc_arrival_tampered.checks["passed"]
+        ]
+    )
+    assert not ioc_arrival_tampered.passed
+    assert ioc_arrival_tampered_failed["check"].tolist() == [
+        "parity_execution_ioc_arrival_consistency_violations"
+    ]
+    ioc_arrival_audit.loc[
+        ioc_arrival_audit["instrument_id"].eq("FUT"),
+        "available_qty",
+    ] = 150
+    ioc_arrival_audit.to_csv(
+        run_dir / "ioc_arrival_audit.csv",
+        index=False,
+    )
+
     order_submissions.loc[
         order_submissions["instrument_id"].eq("CALL1000"),
         "ts_active_ns",
@@ -1010,7 +1207,8 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     )
     assert not order_schedule_tampered.passed
     assert order_schedule_tampered_failed["check"].tolist() == [
-        "parity_execution_order_timing_consistency_violations"
+        "parity_execution_order_timing_consistency_violations",
+        "parity_execution_ioc_arrival_consistency_violations",
     ]
     order_submissions.loc[
         order_submissions["instrument_id"].eq("CALL1000"),
@@ -1033,7 +1231,8 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ]
     assert not fill_price_tampered.passed
     assert fill_price_tampered_failed["check"].tolist() == [
-        "parity_execution_realized_edge_consistency_violations"
+        "parity_execution_realized_edge_consistency_violations",
+        "parity_execution_ioc_arrival_consistency_violations",
     ]
     fills_frame.loc[
         fills_frame["instrument_id"].eq("FUT"),
@@ -1058,7 +1257,8 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     ]
     assert not pre_activation_fill.passed
     assert pre_activation_fill_failed["check"].tolist() == [
-        "parity_execution_pre_activation_fill_legs"
+        "parity_execution_pre_activation_fill_legs",
+        "parity_execution_ioc_arrival_consistency_violations",
     ]
 
     fills_frame.loc[
@@ -1083,6 +1283,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         "parity_execution_realized_edge_consistency_violations",
         "parity_execution_negative_fill_latency_count",
         "parity_execution_pre_activation_fill_legs",
+        "parity_execution_ioc_arrival_consistency_violations",
     ]
     fills_frame.loc[
         fills_frame["instrument_id"].eq("CALL1000"),
