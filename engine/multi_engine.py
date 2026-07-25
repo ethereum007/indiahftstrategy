@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from engine.hft_backtest import (
+    DisplayedLiquidityLedger,
     EventLiquidity,
     Fill,
     IndianCostModel,
@@ -98,6 +99,7 @@ class MultiInstrumentEngine:
         queue_conservatism: float = 1.5,
         reserve_open_order_risk: bool = True,
         ban_aggressive_self_cross: bool = True,
+        persist_displayed_liquidity_depletion: bool = True,
     ):
         if not instruments:
             raise ValueError("at least one instrument is required")
@@ -108,6 +110,9 @@ class MultiInstrumentEngine:
         self.qcons = queue_conservatism
         self.reserve_open_order_risk = reserve_open_order_risk
         self.ban_aggressive_self_cross = ban_aggressive_self_cross
+        self.persist_displayed_liquidity_depletion = (
+            persist_displayed_liquidity_depletion
+        )
 
         for iid, cfg in self.instruments.items():
             if cfg.venue not in self.venues:
@@ -127,6 +132,12 @@ class MultiInstrumentEngine:
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.shared_event_liquidity_enabled = True
+        self._displayed_liquidity = {
+            instrument_id: DisplayedLiquidityLedger(
+                enabled=persist_displayed_liquidity_depletion,
+            )
+            for instrument_id in self.instruments
+        }
         self.positions: Dict[str, int] = {iid: 0 for iid in self.instruments}
         self.cash = 0.0
         self.total_costs = 0.0
@@ -646,6 +657,8 @@ class MultiInstrumentEngine:
         liquidity_source: str,
         queue_ahead_before: float = 0.0,
         queue_consumed: float = 0.0,
+        observed_qty: float = 0.0,
+        carried_depletion_qty: float = 0.0,
     ) -> None:
         shortfall = int(requested_qty) - int(filled_qty)
         if shortfall <= 0:
@@ -666,6 +679,8 @@ class MultiInstrumentEngine:
                 reason=f"{liquidity_source}_liquidity_{state}",
                 queue_ahead_before=float(queue_ahead_before),
                 queue_consumed=float(queue_consumed),
+                observed_qty=float(observed_qty),
+                carried_depletion_qty=float(carried_depletion_qty),
             )
         )
 
@@ -680,6 +695,9 @@ class MultiInstrumentEngine:
         requested_qty: int,
     ) -> None:
         source = "ask_display" if order.side > 0 else "bid_display"
+        observed_qty, carried_depletion_qty = liquidity.displayed_context(
+            order.side
+        )
         available, fill_qty = liquidity.consume_displayed(
             order.side,
             requested_qty,
@@ -706,6 +724,8 @@ class MultiInstrumentEngine:
             available_qty=available,
             filled_qty=fill_qty,
             liquidity_source=source,
+            observed_qty=observed_qty,
+            carried_depletion_qty=carried_depletion_qty,
         )
 
     def _try_fill(
@@ -880,7 +900,9 @@ class MultiInstrumentEngine:
             self._now_ns = event.ts_ns
             if event.kind == "market":
                 self._latest_books[event.instrument_id] = event.tick
-                liquidity = EventLiquidity.from_tick(event.tick)
+                liquidity = self._displayed_liquidity[
+                    event.instrument_id
+                ].event_liquidity(event.tick)
                 order_ids = sorted(
                     self.open_orders,
                     key=lambda oid: (

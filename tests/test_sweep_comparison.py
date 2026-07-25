@@ -23,6 +23,9 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "max_drawdown": 2.0,
             "losing_regimes": 0,
             "worst_regime_equity_change": 3.0,
+            "persistent_displayed_liquidity_enabled": True,
+            "carried_depletion_shortfall_events": 1,
+            "carried_depletion_shortfall_qty": 25,
         },
         {
             "run": "trigger_3__feed_0us__order_100us",
@@ -36,6 +39,9 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "max_drawdown": 4.0,
             "losing_regimes": 1,
             "worst_regime_equity_change": -1.0,
+            "persistent_displayed_liquidity_enabled": True,
+            "carried_depletion_shortfall_events": 1,
+            "carried_depletion_shortfall_qty": 25,
         },
     ]
 
@@ -69,7 +75,13 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_pretrade_rejections"]) == 0
     assert int(best["total_position_risk_rejections"]) == 0
     assert int(best["total_self_cross_rejections"]) == 0
+    assert int(best["total_carried_depletion_shortfall_events"]) == 2
+    assert int(best["total_carried_depletion_shortfall_qty"]) == 50
     assert int(comparison.summary.iloc[0]["total_pretrade_rejections"]) == 0
+    assert int(
+        comparison.summary.iloc[0]["total_carried_depletion_shortfall_events"]
+    ) == 4
+    assert int(comparison.summary.iloc[0]["total_carried_depletion_shortfall_qty"]) == 100
 
 
 def test_write_sweep_comparison_outputs_selection_artifacts(tmp_path):

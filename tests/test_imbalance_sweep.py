@@ -72,6 +72,8 @@ def test_run_imbalance_sweep_writes_runs_summary_and_proof(tmp_path):
     assert int(sweep.summary.iloc[0]["total_pretrade_rejections"]) == 0
     assert int(sweep.summary.iloc[0]["total_position_risk_rejections"]) == 0
     assert int(sweep.summary.iloc[0]["total_self_cross_rejections"]) == 0
+    assert int(sweep.summary.iloc[0]["total_carried_depletion_shortfall_events"]) == 0
+    assert int(sweep.summary.iloc[0]["total_carried_depletion_shortfall_qty"]) == 0
     assert sweep.runs["pending_order_risk_reservation_enabled"].all()
     assert sweep.runs["aggressive_self_cross_prevention_enabled"].all()
     assert sweep.proof.passed

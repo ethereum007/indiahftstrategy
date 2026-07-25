@@ -186,6 +186,8 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_partial_executions",
                 "total_liquidity_shortfall_events",
                 "total_liquidity_shortfall_qty",
+                "total_carried_depletion_shortfall_events",
+                "total_carried_depletion_shortfall_qty",
                 "total_pretrade_rejections",
                 "total_position_risk_rejections",
                 "total_self_cross_rejections",
@@ -218,6 +220,24 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     pd.to_numeric(
                         runs.get(
                             "liquidity_shortfall_qty",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_carried_depletion_shortfall_events": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "carried_depletion_shortfall_events",
+                            pd.Series(0, index=runs.index),
+                        ),
+                        errors="coerce",
+                    ).fillna(0).sum()
+                ),
+                "total_carried_depletion_shortfall_qty": int(
+                    pd.to_numeric(
+                        runs.get(
+                            "carried_depletion_shortfall_qty",
                             pd.Series(0, index=runs.index),
                         ),
                         errors="coerce",

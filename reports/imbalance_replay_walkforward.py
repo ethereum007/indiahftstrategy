@@ -290,11 +290,22 @@ def _fold_row(
         "shared_event_liquidity_enabled": _to_bool(
             row.get("shared_event_liquidity_enabled", False)
         ),
+        "persistent_displayed_liquidity_enabled": _to_bool(
+            row.get("persistent_displayed_liquidity_enabled", False)
+        ),
         "liquidity_shortfall_events": _int(
             row,
             "liquidity_shortfall_events",
         ),
         "liquidity_shortfall_qty": _int(row, "liquidity_shortfall_qty"),
+        "carried_depletion_shortfall_events": _int(
+            row,
+            "carried_depletion_shortfall_events",
+        ),
+        "carried_depletion_shortfall_qty": _int(
+            row,
+            "carried_depletion_shortfall_qty",
+        ),
         "pretrade_rejections": _int(row, "pretrade_rejections"),
         "position_risk_rejections": _int(row, "position_risk_rejections"),
         "self_cross_rejections": _int(row, "self_cross_rejections"),
@@ -367,6 +378,10 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
         "shared_event_liquidity_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    persistent_liquidity_enabled = folds.get(
+        "persistent_displayed_liquidity_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     proof_pass_rate = float(folds["proof_passed"].map(_to_bool).mean()) if not folds.empty else 0.0
     return pd.DataFrame(
         [
@@ -391,6 +406,9 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "shared_event_liquidity_enabled_folds": int(
                     shared_liquidity_enabled.sum()
                 ),
+                "persistent_displayed_liquidity_enabled_folds": int(
+                    persistent_liquidity_enabled.sum()
+                ),
                 "total_liquidity_shortfall_events": _numeric_reduce(
                     folds,
                     "liquidity_shortfall_events",
@@ -399,6 +417,16 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "total_liquidity_shortfall_qty": _numeric_reduce(
                     folds,
                     "liquidity_shortfall_qty",
+                    "sum",
+                ),
+                "total_carried_depletion_shortfall_events": _numeric_reduce(
+                    folds,
+                    "carried_depletion_shortfall_events",
+                    "sum",
+                ),
+                "total_carried_depletion_shortfall_qty": _numeric_reduce(
+                    folds,
+                    "carried_depletion_shortfall_qty",
                     "sum",
                 ),
                 "total_pretrade_rejections": _numeric_reduce(
@@ -473,11 +501,20 @@ def _candidate_config(
         "shared_event_liquidity_enabled_folds": _jsonable(
             summary.get("shared_event_liquidity_enabled_folds")
         ),
+        "persistent_displayed_liquidity_enabled_folds": _jsonable(
+            summary.get("persistent_displayed_liquidity_enabled_folds")
+        ),
         "total_liquidity_shortfall_events": _jsonable(
             summary.get("total_liquidity_shortfall_events")
         ),
         "total_liquidity_shortfall_qty": _jsonable(
             summary.get("total_liquidity_shortfall_qty")
+        ),
+        "total_carried_depletion_shortfall_events": _jsonable(
+            summary.get("total_carried_depletion_shortfall_events")
+        ),
+        "total_carried_depletion_shortfall_qty": _jsonable(
+            summary.get("total_carried_depletion_shortfall_qty")
         ),
         "total_pretrade_rejections": _jsonable(
             summary.get("total_pretrade_rejections")

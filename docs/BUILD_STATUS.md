@@ -4,10 +4,13 @@
 
 - Single-instrument event backtester with Indian costs, latency, queue fills,
   cancels, terminal flattening, OTR reporting, shared per-event displayed
-  liquidity, own-order queue priority, liquidity-shortfall evidence, and tests.
+  liquidity, persistent same-level depletion across L1 snapshots, own-order
+  queue priority, liquidity-shortfall evidence, and tests. Unchanged snapshots
+  do not restore consumed depth; only an observed size increase replenishes its
+  delta, while a price or timestamp-day change starts a fresh level.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local
-  event-liquidity conservation.
+  event and cross-snapshot liquidity conservation.
 - Data normalization for top-of-book ticks and option-chain snapshots,
   including IST session filtering, quarantine reports, and regime tags.
 - NSE F&O chain diagnostics can validate declared weekly or monthly contract

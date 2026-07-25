@@ -889,11 +889,16 @@ Displayed bid and ask quantities are event-scoped budgets: concurrent IOC or
 marketable limit orders cannot each claim the full same L1 depth. Passive
 orders at one price receive deterministic queue priority behind earlier own
 orders, and one trade print advances those absolute queue positions without
-allocating more aggregate fills than the print quantity. `summary.csv` records
-whether shared event liquidity was enabled plus displayed and trade-print
-shortfall counts and quantities. `liquidity_shortfalls.csv` retains the order,
-source, requested/available/filled quantities, and queue consumption behind
-each partial or missed eligible fill.
+allocating more aggregate fills than the print quantity. Consumed displayed
+depth also persists across consecutive snapshots at the same price: an
+unchanged quantity does not replenish, and a size increase restores only the
+observed delta. A price change or timestamp-day transition starts a fresh
+level. `summary.csv` records whether shared event liquidity and persistent
+displayed depletion were enabled, plus displayed, trade-print, and
+carried-depletion shortfall counts and quantities. `liquidity_shortfalls.csv`
+retains the order, source, requested/available/filled quantities, observed
+size, carried depletion, and queue consumption behind each partial or missed
+eligible fill.
 
 ## Parity Sweep
 

@@ -179,8 +179,12 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert int(report.summary.loc[0, "proof_passed_folds"]) == 2
     assert report.folds["pending_order_risk_reservation_enabled"].all()
     assert report.folds["aggressive_self_cross_prevention_enabled"].all()
+    assert report.folds["persistent_displayed_liquidity_enabled"].all()
     assert int(report.summary.loc[0, "pending_order_risk_reservation_enabled_folds"]) == 2
     assert int(report.summary.loc[0, "aggressive_self_cross_prevention_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "persistent_displayed_liquidity_enabled_folds"]) == 2
+    assert int(report.summary.loc[0, "total_carried_depletion_shortfall_events"]) == 0
+    assert int(report.summary.loc[0, "total_carried_depletion_shortfall_qty"]) == 0
     assert int(report.summary.loc[0, "total_pretrade_rejections"]) == 0
     assert int(report.summary.loc[0, "total_position_risk_rejections"]) == 0
     assert int(report.summary.loc[0, "total_self_cross_rejections"]) == 0
@@ -191,6 +195,9 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert config["replay_defaults"]["trigger_ticks"] == 10.0
     assert config["replay_walkforward"]["pending_order_risk_reservation_enabled_folds"] == 2
     assert config["replay_walkforward"]["aggressive_self_cross_prevention_enabled_folds"] == 2
+    assert config["replay_walkforward"]["persistent_displayed_liquidity_enabled_folds"] == 2
+    assert config["replay_walkforward"]["total_carried_depletion_shortfall_events"] == 0
+    assert config["replay_walkforward"]["total_carried_depletion_shortfall_qty"] == 0
     assert config["replay_walkforward"]["total_pretrade_rejections"] == 0
     assert walkforward_row["summary_file"] == "leadlag_replay_walkforward_summary.csv"
     assert bool(walkforward_row["summary_status"])

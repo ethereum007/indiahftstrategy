@@ -49,6 +49,9 @@ import numpy as np
 import pandas as pd
 
 
+NANOSECONDS_PER_DAY = 86_400_000_000_000
+
+
 # ----------------------------------------------------------------------------
 # Instruments & market structure
 # ----------------------------------------------------------------------------
@@ -220,6 +223,8 @@ class LiquidityShortfall:
     reason: str
     queue_ahead_before: float = 0.0
     queue_consumed: float = 0.0
+    observed_qty: float = 0.0
+    carried_depletion_qty: float = 0.0
 
 
 @dataclass
@@ -235,13 +240,25 @@ class EventLiquidity:
     bid_qty: float
     ask_qty: float
     last_qty: float
+    bid_observed_qty: float = 0.0
+    ask_observed_qty: float = 0.0
+    bid_carried_depletion_qty: float = 0.0
+    ask_carried_depletion_qty: float = 0.0
+    _ledger: Optional["DisplayedLiquidityLedger"] = field(
+        default=None,
+        repr=False,
+    )
 
     @classmethod
     def from_tick(cls, tick: dict) -> "EventLiquidity":
+        bid_qty = _nonnegative_qty(tick.get("bid_qty", 0))
+        ask_qty = _nonnegative_qty(tick.get("ask_qty", 0))
         return cls(
-            bid_qty=_nonnegative_qty(tick.get("bid_qty", 0)),
-            ask_qty=_nonnegative_qty(tick.get("ask_qty", 0)),
+            bid_qty=bid_qty,
+            ask_qty=ask_qty,
             last_qty=_nonnegative_qty(tick.get("last_qty", 0)),
+            bid_observed_qty=bid_qty,
+            ask_observed_qty=ask_qty,
         )
 
     def consume_displayed(self, side: int, requested_qty: int) -> tuple[float, int]:
@@ -249,7 +266,107 @@ class EventLiquidity:
         available = float(getattr(self, attr))
         filled = min(int(requested_qty), max(int(math.floor(available)), 0))
         setattr(self, attr, max(available - filled, 0.0))
+        if self._ledger is not None and filled > 0:
+            self._ledger.consume(side, filled)
         return available, filled
+
+    def displayed_context(self, side: int) -> tuple[float, float]:
+        prefix = "ask" if side > 0 else "bid"
+        return (
+            float(getattr(self, f"{prefix}_observed_qty")),
+            float(getattr(self, f"{prefix}_carried_depletion_qty")),
+        )
+
+
+@dataclass
+class _DisplayedSideLiquidity:
+    price: float | None = None
+    observed_qty: float = 0.0
+    remaining_qty: float = 0.0
+
+    def refresh(self, price: object, observed_qty: object, *, enabled: bool) -> None:
+        next_price = float(price)
+        next_observed = _nonnegative_qty(observed_qty)
+        same_level = (
+            self.price is not None
+            and math.isfinite(next_price)
+            and abs(next_price - self.price) < 1e-9
+        )
+        if not enabled or not same_level:
+            next_remaining = next_observed
+        else:
+            observed_delta = next_observed - self.observed_qty
+            next_remaining = min(
+                max(self.remaining_qty + observed_delta, 0.0),
+                next_observed,
+            )
+        self.price = next_price
+        self.observed_qty = next_observed
+        self.remaining_qty = next_remaining
+
+
+@dataclass
+class DisplayedLiquidityLedger:
+    enabled: bool = True
+    bid: _DisplayedSideLiquidity = field(
+        default_factory=_DisplayedSideLiquidity,
+    )
+    ask: _DisplayedSideLiquidity = field(
+        default_factory=_DisplayedSideLiquidity,
+    )
+    _session_day: int | None = field(default=None, init=False, repr=False)
+
+    def event_liquidity(self, tick: dict) -> EventLiquidity:
+        session_day = _timestamp_day(tick.get("ts"))
+        if (
+            session_day is not None
+            and self._session_day is not None
+            and session_day != self._session_day
+        ):
+            self.bid = _DisplayedSideLiquidity()
+            self.ask = _DisplayedSideLiquidity()
+        if session_day is not None:
+            self._session_day = session_day
+        self.bid.refresh(
+            tick.get("bid", np.nan),
+            tick.get("bid_qty", 0),
+            enabled=self.enabled,
+        )
+        self.ask.refresh(
+            tick.get("ask", np.nan),
+            tick.get("ask_qty", 0),
+            enabled=self.enabled,
+        )
+        return EventLiquidity(
+            bid_qty=self.bid.remaining_qty,
+            ask_qty=self.ask.remaining_qty,
+            last_qty=_nonnegative_qty(tick.get("last_qty", 0)),
+            bid_observed_qty=self.bid.observed_qty,
+            ask_observed_qty=self.ask.observed_qty,
+            bid_carried_depletion_qty=max(
+                self.bid.observed_qty - self.bid.remaining_qty,
+                0.0,
+            ),
+            ask_carried_depletion_qty=max(
+                self.ask.observed_qty - self.ask.remaining_qty,
+                0.0,
+            ),
+            _ledger=self,
+        )
+
+    def consume(self, side: int, qty: int) -> None:
+        state = self.ask if side > 0 else self.bid
+        state.remaining_qty = max(state.remaining_qty - qty, 0.0)
+
+
+def _timestamp_day(value: object) -> int | None:
+    try:
+        timestamp_ns = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(timestamp_ns):
+        return None
+    return math.floor(timestamp_ns / NANOSECONDS_PER_DAY)
 
 
 ORDER_REJECTION_COLUMNS = [
@@ -280,6 +397,8 @@ LIQUIDITY_SHORTFALL_COLUMNS = [
     "reason",
     "queue_ahead_before",
     "queue_consumed",
+    "observed_qty",
+    "carried_depletion_qty",
 ]
 
 
@@ -314,7 +433,8 @@ class BacktestEngine:
                  max_position_lots: int = 20,
                  queue_conservatism: float = 1.5,
                  ban_aggressive_self_cross: bool = True,
-                 reserve_open_order_risk: bool = True):
+                 reserve_open_order_risk: bool = True,
+                 persist_displayed_liquidity_depletion: bool = True):
         self.df = self._prep(df)
         self.inst = inst
         self.strategy = strategy
@@ -324,6 +444,9 @@ class BacktestEngine:
         self.qcons = queue_conservatism  # >1 = assume more queue ahead of us
         self.reserve_open_order_risk = reserve_open_order_risk
         self.ban_aggressive_self_cross = ban_aggressive_self_cross
+        self.persist_displayed_liquidity_depletion = (
+            persist_displayed_liquidity_depletion
+        )
 
         self._oid = 0
         self.open_orders: Dict[int, Order] = {}
@@ -331,6 +454,9 @@ class BacktestEngine:
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.shared_event_liquidity_enabled = True
+        self._displayed_liquidity = DisplayedLiquidityLedger(
+            enabled=persist_displayed_liquidity_depletion,
+        )
         self.position = 0
         self.cash = 0.0
         self.total_costs = 0.0
@@ -604,6 +730,8 @@ class BacktestEngine:
         liquidity_source: str,
         queue_ahead_before: float = 0.0,
         queue_consumed: float = 0.0,
+        observed_qty: float = 0.0,
+        carried_depletion_qty: float = 0.0,
     ) -> None:
         shortfall = int(requested_qty) - int(filled_qty)
         if shortfall <= 0:
@@ -624,6 +752,8 @@ class BacktestEngine:
                 reason=f"{liquidity_source}_liquidity_{state}",
                 queue_ahead_before=float(queue_ahead_before),
                 queue_consumed=float(queue_consumed),
+                observed_qty=float(observed_qty),
+                carried_depletion_qty=float(carried_depletion_qty),
             )
         )
 
@@ -637,6 +767,9 @@ class BacktestEngine:
         requested_qty: int,
     ) -> None:
         source = "ask_display" if order.side > 0 else "bid_display"
+        observed_qty, carried_depletion_qty = liquidity.displayed_context(
+            order.side
+        )
         available, fill_qty = liquidity.consume_displayed(
             order.side,
             requested_qty,
@@ -651,6 +784,8 @@ class BacktestEngine:
             available_qty=available,
             filled_qty=fill_qty,
             liquidity_source=source,
+            observed_qty=observed_qty,
+            carried_depletion_qty=carried_depletion_qty,
         )
 
     def _try_fill(self, o: Order, tick: dict, liquidity: EventLiquidity):
@@ -770,7 +905,7 @@ class BacktestEngine:
             # feed latency: strategy sees tick later; we shift its decision
             # time, but fills check against the true book timestamp.
             self._tick = tick
-            liquidity = EventLiquidity.from_tick(tick)
+            liquidity = self._displayed_liquidity.event_liquidity(tick)
             order_ids = sorted(
                 self.open_orders,
                 key=lambda oid: (

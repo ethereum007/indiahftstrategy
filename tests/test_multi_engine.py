@@ -9,6 +9,7 @@ from engine.multi_engine import (
     PortfolioLimits,
     VenueConfig,
 )
+from reports.replay import replay_summary
 
 
 class InterleaveStrategy(MultiInstrumentStrategy):
@@ -214,6 +215,47 @@ def test_multi_engine_orders_share_instrument_event_liquidity():
     assert shortfall["available_qty"] == 25
     assert shortfall["shortfall_qty"] == 50
     assert shortfall["liquidity_source"] == "ask_display"
+
+
+def test_multi_engine_carries_depletion_until_size_replenishes():
+    strategy = BurstRiskStrategy(
+        {"A": [(+1, 150, 101.00, OrderType.LIMIT)]}
+    )
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (2_000, 100.00, 100.05, 300, 100, np.nan, 0),
+                        (3_000, 100.00, 100.05, 300, 150, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )
+
+    result = engine.run()
+
+    strategy_fills = result.fills.loc[result.fills["oid"].isin(strategy.oids)]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 3_000]
+    assert result.liquidity_shortfalls["carried_depletion_qty"].tolist() == [
+        0,
+        100,
+    ]
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["persistent_displayed_liquidity_enabled"])
+    assert int(summary["liquidity_shortfall_events"]) == 2
+    assert int(summary["liquidity_shortfall_qty"]) == 100
+    assert int(summary["carried_depletion_shortfall_events"]) == 1
+    assert int(summary["carried_depletion_shortfall_qty"]) == 50
 
 
 def test_feed_callbacks_are_ordered_by_latency_adjusted_global_time_and_skew():

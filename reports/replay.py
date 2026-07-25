@@ -52,6 +52,15 @@ def replay_summary(
     )
     displayed_mask = liquidity_sources.isin({"ask_display", "bid_display"})
     trade_print_mask = liquidity_sources == "trade_print"
+    carried_depletion = (
+        pd.to_numeric(
+            liquidity_shortfalls["carried_depletion_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not liquidity_shortfalls.empty
+        else pd.Series(dtype="float64")
+    )
+    carried_depletion_mask = displayed_mask & carried_depletion.gt(0)
     otr = check_order_to_trade_ratio(
         orders_sent=result.engine.orders_sent,
         fills=fill_count,
@@ -78,6 +87,9 @@ def replay_summary(
                 "shared_event_liquidity_enabled": bool(
                     result.engine.shared_event_liquidity_enabled
                 ),
+                "persistent_displayed_liquidity_enabled": bool(
+                    result.engine.persist_displayed_liquidity_depletion
+                ),
                 "liquidity_shortfall_events": int(len(liquidity_shortfalls)),
                 "liquidity_shortfall_qty": int(shortfall_qty.sum()),
                 "displayed_liquidity_shortfall_events": int(
@@ -89,6 +101,12 @@ def replay_summary(
                 "trade_print_shortfall_events": int(trade_print_mask.sum()),
                 "trade_print_shortfall_qty": int(
                     shortfall_qty.loc[trade_print_mask].sum()
+                ),
+                "carried_depletion_shortfall_events": int(
+                    carried_depletion_mask.sum()
+                ),
+                "carried_depletion_shortfall_qty": int(
+                    shortfall_qty.loc[carried_depletion_mask].sum()
                 ),
                 "pretrade_rejections": int(len(order_rejections)),
                 "position_risk_rejections": int(

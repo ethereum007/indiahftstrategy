@@ -561,6 +561,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     shared_event_liquidity_enabled = _bool(
         row.get("shared_event_liquidity_enabled", False)
     )
+    persistent_displayed_liquidity_enabled = _bool(
+        row.get("persistent_displayed_liquidity_enabled", False)
+    )
     liquidity_shortfall_events = _int(row, "liquidity_shortfall_events")
     liquidity_shortfall_qty = _int(row, "liquidity_shortfall_qty")
     displayed_liquidity_shortfall_events = _int(
@@ -576,6 +579,14 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "trade_print_shortfall_events",
     )
     trade_print_shortfall_qty = _int(row, "trade_print_shortfall_qty")
+    carried_depletion_shortfall_events = _int(
+        row,
+        "carried_depletion_shortfall_events",
+    )
+    carried_depletion_shortfall_qty = _int(
+        row,
+        "carried_depletion_shortfall_qty",
+    )
     pretrade_rejections = _int(row, "pretrade_rejections")
     position_risk_rejections = _int(row, "position_risk_rejections")
     self_cross_rejections = _int(row, "self_cross_rejections")
@@ -604,6 +615,9 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
             aggressive_self_cross_prevention_enabled
         ),
         "shared_event_liquidity_enabled": shared_event_liquidity_enabled,
+        "persistent_displayed_liquidity_enabled": (
+            persistent_displayed_liquidity_enabled
+        ),
         "liquidity_shortfall_events": liquidity_shortfall_events,
         "liquidity_shortfall_qty": liquidity_shortfall_qty,
         "displayed_liquidity_shortfall_events": (
@@ -612,6 +626,10 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "displayed_liquidity_shortfall_qty": displayed_liquidity_shortfall_qty,
         "trade_print_shortfall_events": trade_print_shortfall_events,
         "trade_print_shortfall_qty": trade_print_shortfall_qty,
+        "carried_depletion_shortfall_events": (
+            carried_depletion_shortfall_events
+        ),
+        "carried_depletion_shortfall_qty": carried_depletion_shortfall_qty,
         "pretrade_rejections": pretrade_rejections,
         "position_risk_rejections": position_risk_rejections,
         "self_cross_rejections": self_cross_rejections,

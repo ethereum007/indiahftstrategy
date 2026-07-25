@@ -139,8 +139,11 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert bool(summary["pending_order_risk_reservation_enabled"])
     assert bool(summary["aggressive_self_cross_prevention_enabled"])
     assert bool(summary["shared_event_liquidity_enabled"])
+    assert bool(summary["persistent_displayed_liquidity_enabled"])
     assert int(summary["liquidity_shortfall_events"]) == 0
     assert int(summary["liquidity_shortfall_qty"]) == 0
+    assert int(summary["carried_depletion_shortfall_events"]) == 0
+    assert int(summary["carried_depletion_shortfall_qty"]) == 0
     assert int(summary["pretrade_rejections"]) == 0
     assert int(summary["position_risk_rejections"]) == 0
     assert int(summary["self_cross_rejections"]) == 0

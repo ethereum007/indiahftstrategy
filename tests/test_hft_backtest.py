@@ -240,6 +240,114 @@ def test_ioc_orders_share_displayed_liquidity_and_audit_shortfall():
     assert shortfall["liquidity_source"] == "ask_display"
 
 
+def test_marketable_limit_waits_for_observed_depth_replenishment():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (2_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (3_000, 100.00, 100.05, 300, 150, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 3_000]
+    assert result.liquidity_shortfalls["available_qty"].tolist() == [100, 0]
+    assert result.liquidity_shortfalls["observed_qty"].tolist() == [100, 100]
+    assert result.liquidity_shortfalls["carried_depletion_qty"].tolist() == [
+        0,
+        100,
+    ]
+
+
+def test_price_change_resets_persistent_displayed_liquidity():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (2_000, 100.05, 100.10, 300, 100, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 2_000]
+    assert len(result.liquidity_shortfalls) == 1
+
+
+def test_session_change_resets_persistent_displayed_liquidity():
+    next_day = 86_400_000_000_000
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (next_day + 1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, next_day + 1_000]
+    assert len(result.liquidity_shortfalls) == 1
+
+
+def test_persistent_displayed_liquidity_can_be_disabled_for_sensitivity():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 300, 100, np.nan, 0),
+            (1_000, 100.00, 100.05, 300, 100, np.nan, 0),
+            (2_000, 100.00, 100.05, 300, 100, np.nan, 0),
+        ]
+    )
+    strategy = SendOnce(+1, 150, 101.00, OrderType.LIMIT)
+    eng = BacktestEngine(
+        df,
+        inst(),
+        strategy,
+        latency=fixed_latency(),
+        costs=no_costs(),
+        persist_displayed_liquidity_depletion=False,
+    )
+
+    result = eng.run()
+
+    strategy_fills = result.fills.loc[result.fills["side"] > 0]
+    assert strategy_fills["qty"].tolist() == [100, 50]
+    assert strategy_fills["ts_ns"].tolist() == [1_000, 2_000]
+    assert not eng.persist_displayed_liquidity_depletion
+
+
 def test_feed_latency_is_part_of_order_arrival_time():
     df = ticks(
         [
