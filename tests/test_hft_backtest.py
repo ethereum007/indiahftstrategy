@@ -702,6 +702,73 @@ def test_terminal_flatten_happens_at_touch_with_taker_costs_and_final_equity():
     assert eng.position == 0
     assert res.equity.iloc[-1]["equity"] == eng.cash
     assert math.isclose(eng.cash, (100.20 - 100.25) * 75)
+    liquidation = res.terminal_liquidations.iloc[0]
+    assert liquidation["requested_qty"] == 75
+    assert liquidation["available_qty"] == 75
+    assert liquidation["filled_qty"] == 75
+    assert liquidation["shortfall_qty"] == 0
+    assert liquidation["residual_position"] == 0
+    assert bool(liquidation["complete"])
+    assert res.liquidity_shortfalls.empty
+
+
+def test_terminal_flatten_preserves_residual_when_final_depth_is_insufficient():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (1_000, 100.20, 100.25, 25, 75, np.nan, 0),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        BuyAndHold(75),
+        latency=fixed_latency(),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    assert result.fills["qty"].tolist() == [75, 25]
+    assert result.fills["side"].tolist() == [1, -1]
+    assert eng.position == 50
+    liquidation = result.terminal_liquidations.iloc[0]
+    assert liquidation["liquidity_source"] == "terminal_bid_display"
+    assert liquidation["requested_qty"] == 75
+    assert liquidation["available_qty"] == 25
+    assert liquidation["filled_qty"] == 25
+    assert liquidation["shortfall_qty"] == 50
+    assert liquidation["residual_position"] == 50
+    assert not bool(liquidation["complete"])
+    shortfall = result.liquidity_shortfalls.iloc[0]
+    assert shortfall["liquidity_source"] == "terminal_bid_display"
+    assert shortfall["requested_qty"] == 75
+    assert shortfall["filled_qty"] == 25
+    assert shortfall["shortfall_qty"] == 50
+
+
+def test_terminal_liquidation_uses_replay_horizon_and_retains_book_timestamp():
+    df = ticks(
+        [
+            (0, 100.00, 100.05, 75, 75, np.nan, 0),
+            (200_000, 100.20, 100.25, 75, 75, np.nan, 0),
+        ]
+    )
+    eng = BacktestEngine(
+        df,
+        inst(),
+        BuyAndHold(75),
+        latency=fixed_latency(feed_us=100, order_us=0),
+        costs=no_costs(),
+    )
+
+    result = eng.run()
+
+    assert result.fills["ts_ns"].tolist() == [200_000, 300_000]
+    liquidation = result.terminal_liquidations.iloc[0]
+    assert liquidation["ts_ns"] == 300_000
+    assert liquidation["book_ts_ns"] == 200_000
+    assert result.equity.iloc[-1]["ts"] == 300_000
 
 
 def test_open_order_quantity_is_reserved_against_position_limit():

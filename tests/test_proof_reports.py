@@ -54,6 +54,15 @@ def write_run(
                 "deferred_queue_initialization_events": 3,
                 "uninitialized_limit_orders": 0,
                 "max_queue_initialization_lag_ns": 125_000,
+                "terminal_liquidation_depth_constrained_enabled": True,
+                "terminal_liquidation_events": 1,
+                "terminal_liquidation_requested_qty": 75,
+                "terminal_liquidation_filled_qty": 75,
+                "terminal_liquidation_shortfall_qty": 0,
+                "terminal_liquidation_incomplete_events": 0,
+                "terminal_residual_position_qty": 0,
+                "terminal_residual_instruments": 0,
+                "terminal_liquidation_complete": True,
                 "liquidity_shortfall_events": 2,
                 "liquidity_shortfall_qty": 75,
                 "displayed_liquidity_shortfall_events": 1,
@@ -140,12 +149,49 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     ) == 3
     assert int(report.metrics.iloc[0]["uninitialized_limit_orders"]) == 0
     assert int(report.metrics.iloc[0]["max_queue_initialization_lag_ns"]) == 125_000
+    assert bool(
+        report.metrics.iloc[0][
+            "terminal_liquidation_depth_constrained_enabled"
+        ]
+    )
+    assert int(report.metrics.iloc[0]["terminal_liquidation_events"]) == 1
+    assert int(
+        report.metrics.iloc[0]["terminal_liquidation_requested_qty"]
+    ) == 75
+    assert int(report.metrics.iloc[0]["terminal_liquidation_filled_qty"]) == 75
+    assert int(
+        report.metrics.iloc[0]["terminal_liquidation_shortfall_qty"]
+    ) == 0
+    assert bool(report.metrics.iloc[0]["terminal_liquidation_complete"])
     assert int(report.metrics.iloc[0]["liquidity_shortfall_events"]) == 2
     assert int(report.metrics.iloc[0]["liquidity_shortfall_qty"]) == 75
     assert int(report.metrics.iloc[0]["carried_depletion_shortfall_events"]) == 1
     assert int(report.metrics.iloc[0]["carried_depletion_shortfall_qty"]) == 50
     assert int(report.metrics.iloc[0]["pretrade_rejections"]) == 0
     assert report.checks["passed"].all()
+
+
+def test_proof_report_rejects_incomplete_terminal_liquidation(tmp_path):
+    run_dir = tmp_path / "residual_inventory"
+    write_run(run_dir)
+    summary_path = run_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "terminal_liquidation_filled_qty"] = 25
+    summary.loc[0, "terminal_liquidation_shortfall_qty"] = 50
+    summary.loc[0, "terminal_liquidation_incomplete_events"] = 1
+    summary.loc[0, "terminal_residual_position_qty"] = 50
+    summary.loc[0, "terminal_residual_instruments"] = 1
+    summary.loc[0, "terminal_liquidation_complete"] = False
+    summary.to_csv(summary_path, index=False)
+
+    report = evaluate_replay_dirs([run_dir])
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.passed
+    assert failed["check"].tolist() == ["terminal_liquidation_complete"]
+    assert failed.iloc[0]["reason"] == (
+        "terminal liquidation left residual inventory"
+    )
 
 
 def test_write_proof_report_outputs_metrics_checks_and_summary(tmp_path):

@@ -247,6 +247,25 @@ class QueueInitialization:
 
 
 @dataclass
+class TerminalLiquidation:
+    ts_ns: int
+    book_ts_ns: int
+    instrument_id: str
+    oid: int
+    side: int
+    price: float
+    requested_qty: int
+    available_qty: float
+    filled_qty: int
+    shortfall_qty: int
+    residual_position: int
+    liquidity_source: str
+    observed_qty: float
+    carried_depletion_qty: float
+    complete: bool
+
+
+@dataclass
 class EventLiquidity:
     """Observed liquidity attached to one market-data event.
 
@@ -437,6 +456,24 @@ QUEUE_INITIALIZATION_COLUMNS = [
     "queue_ahead",
 ]
 
+TERMINAL_LIQUIDATION_COLUMNS = [
+    "ts_ns",
+    "book_ts_ns",
+    "instrument_id",
+    "oid",
+    "side",
+    "price",
+    "requested_qty",
+    "available_qty",
+    "filled_qty",
+    "shortfall_qty",
+    "residual_position",
+    "liquidity_source",
+    "observed_qty",
+    "carried_depletion_qty",
+    "complete",
+]
+
 
 def _nonnegative_qty(value: object) -> float:
     try:
@@ -490,8 +527,10 @@ class BacktestEngine:
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
+        self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
+        self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
         self._displayed_liquidity = DisplayedLiquidityLedger(
             enabled=persist_displayed_liquidity_depletion,
@@ -502,6 +541,8 @@ class BacktestEngine:
         self.orders_sent = 0
         self.equity_curve: List[tuple] = []   # (ts, mtm_equity)
         self._tick: dict = {}
+        self._horizon_ns = 0
+        self._latest_liquidity: EventLiquidity | None = None
 
     # -- data prep -----------------------------------------------------------
     @staticmethod
@@ -869,8 +910,11 @@ class BacktestEngine:
         price: float,
         ts_ns: int,
         requested_qty: int,
-    ) -> None:
-        source = "ask_display" if order.side > 0 else "bid_display"
+        liquidity_source: str | None = None,
+    ) -> tuple[float, int, float, float]:
+        source = liquidity_source or (
+            "ask_display" if order.side > 0 else "bid_display"
+        )
         observed_qty, carried_depletion_qty = liquidity.displayed_context(
             order.side
         )
@@ -891,6 +935,7 @@ class BacktestEngine:
             observed_qty=observed_qty,
             carried_depletion_qty=carried_depletion_qty,
         )
+        return available, fill_qty, observed_qty, carried_depletion_qty
 
     def _try_fill(self, o: Order, tick: dict, liquidity: EventLiquidity):
         ts = tick["ts"]
@@ -1014,10 +1059,12 @@ class BacktestEngine:
         cols = self.df.columns
         for row in self.df.itertuples(index=False):
             tick = dict(zip(cols, row))
+            self._horizon_ns = max(self._horizon_ns, int(tick["ts"]))
             # feed latency: strategy sees tick later; we shift its decision
             # time, but fills check against the true book timestamp.
             self._tick = tick
             liquidity = self._displayed_liquidity.event_liquidity(tick)
+            self._latest_liquidity = liquidity
             order_ids = sorted(
                 self.open_orders,
                 key=lambda oid: (
@@ -1032,23 +1079,80 @@ class BacktestEngine:
             seen = dict(tick)
             seen["ts"] = tick["ts"] + self.latency.feed_delay_ns()
             seen["market_ts"] = tick["ts"]
+            self._horizon_ns = max(self._horizon_ns, int(seen["ts"]))
             self._tick = seen
             self.strategy.on_tick(self, seen)
             self._tick = tick
             mid = 0.5 * (tick["bid"] + tick["ask"])
             self.equity_curve.append(
                 (tick["ts"], self.cash + self.position * mid * self.inst.multiplier))
-        # flatten at last mid (taker, with costs) for honest terminal PnL
+        # Attempt a terminal taker close against depth still available at the
+        # final touch. Any remainder stays marked as residual inventory.
         last = self._tick
         if self.position != 0 and last:
+            book_ts_ns = int(last["ts"])
+            terminal_ts_ns = max(book_ts_ns, self._horizon_ns)
             side = -int(np.sign(self.position))
             px = last["ask"] if side > 0 else last["bid"]
-            o = Order(self._oid + 1, side, abs(self.position), px,
-                      OrderType.IOC, last["ts"], last["ts"])
-            self._execute(o, abs(self.position), px, last["ts"], maker=False)
+            requested_qty = abs(self.position)
+            self._oid += 1
+            o = Order(self._oid, side, requested_qty, px,
+                      OrderType.IOC, terminal_ts_ns, terminal_ts_ns)
+            source = (
+                "terminal_ask_display"
+                if side > 0
+                else "terminal_bid_display"
+            )
+            liquidity = self._latest_liquidity
+            if liquidity is None:
+                liquidity = self._displayed_liquidity.event_liquidity(last)
+            terminal_tick = dict(last)
+            terminal_tick["ts"] = terminal_ts_ns
+            terminal_tick["market_ts"] = book_ts_ns
+            self._tick = terminal_tick
+            (
+                available_qty,
+                filled_qty,
+                observed_qty,
+                carried_depletion_qty,
+            ) = self._fill_from_displayed(
+                o,
+                liquidity=liquidity,
+                price=px,
+                ts_ns=terminal_ts_ns,
+                requested_qty=requested_qty,
+                liquidity_source=source,
+            )
+            shortfall_qty = requested_qty - filled_qty
+            self.terminal_liquidations.append(
+                TerminalLiquidation(
+                    ts_ns=terminal_ts_ns,
+                    book_ts_ns=book_ts_ns,
+                    instrument_id=self.inst.symbol,
+                    oid=o.oid,
+                    side=side,
+                    price=float(px),
+                    requested_qty=requested_qty,
+                    available_qty=float(available_qty),
+                    filled_qty=filled_qty,
+                    shortfall_qty=shortfall_qty,
+                    residual_position=int(self.position),
+                    liquidity_source=source,
+                    observed_qty=float(observed_qty),
+                    carried_depletion_qty=float(carried_depletion_qty),
+                    complete=(
+                        shortfall_qty == 0
+                        and self.position == 0
+                    ),
+                )
+            )
             mid = 0.5 * (last["bid"] + last["ask"])
             self.equity_curve.append(
-                (last["ts"], self.cash + self.position * mid * self.inst.multiplier))
+                (
+                    terminal_ts_ns,
+                    self.cash + self.position * mid * self.inst.multiplier,
+                )
+            )
         self.strategy.on_end(self)
         return BacktestResult(self)
 
@@ -1073,6 +1177,10 @@ class BacktestResult:
         self.queue_initializations = pd.DataFrame(
             [initialization.__dict__ for initialization in eng.queue_initializations],
             columns=QUEUE_INITIALIZATION_COLUMNS,
+        )
+        self.terminal_liquidations = pd.DataFrame(
+            [liquidation.__dict__ for liquidation in eng.terminal_liquidations],
+            columns=TERMINAL_LIQUIDATION_COLUMNS,
         )
 
     def report(self) -> str:
@@ -1099,6 +1207,7 @@ class BacktestResult:
             f"Fills / Orders     : {nf} / {self.eng.orders_sent}  (OTR {otr:.1f})",
             f"Pre-trade rejects  : {len(self.order_rejections)}",
             f"Liquidity shortfall: {len(self.liquidity_shortfalls)} events",
+            f"Terminal residual  : {abs(self.eng.position)} units",
             f"Maker fill share   : {100*maker_share:.1f}%",
             f"Turnover           : ₹{turnover:,.0f}",
             f"Sharpe (annualized): {sharpe:.2f}",

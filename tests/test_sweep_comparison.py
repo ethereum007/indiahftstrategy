@@ -30,6 +30,15 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "deferred_queue_initialization_events": 1,
             "uninitialized_limit_orders": 0,
             "max_queue_initialization_lag_ns": 100_000,
+            "terminal_liquidation_depth_constrained_enabled": True,
+            "terminal_liquidation_events": 1,
+            "terminal_liquidation_requested_qty": 75,
+            "terminal_liquidation_filled_qty": 75,
+            "terminal_liquidation_shortfall_qty": 0,
+            "terminal_liquidation_incomplete_events": 0,
+            "terminal_residual_position_qty": 0,
+            "terminal_residual_instruments": 0,
+            "terminal_liquidation_complete": True,
             "carried_depletion_shortfall_events": 1,
             "carried_depletion_shortfall_qty": 25,
         },
@@ -52,6 +61,15 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "deferred_queue_initialization_events": 1,
             "uninitialized_limit_orders": 0,
             "max_queue_initialization_lag_ns": 100_000,
+            "terminal_liquidation_depth_constrained_enabled": True,
+            "terminal_liquidation_events": 1,
+            "terminal_liquidation_requested_qty": 75,
+            "terminal_liquidation_filled_qty": 75,
+            "terminal_liquidation_shortfall_qty": 0,
+            "terminal_liquidation_incomplete_events": 0,
+            "terminal_residual_position_qty": 0,
+            "terminal_residual_instruments": 0,
+            "terminal_liquidation_complete": True,
             "carried_depletion_shortfall_events": 1,
             "carried_depletion_shortfall_qty": 25,
         },
@@ -94,6 +112,11 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert int(best["total_deferred_queue_initialization_events"]) == 2
     assert int(best["total_uninitialized_limit_orders"]) == 0
     assert int(best["max_queue_initialization_lag_ns"]) == 100_000
+    assert int(best["total_terminal_liquidation_events"]) == 2
+    assert int(best["total_terminal_liquidation_requested_qty"]) == 150
+    assert int(best["total_terminal_liquidation_filled_qty"]) == 150
+    assert int(best["total_terminal_liquidation_shortfall_qty"]) == 0
+    assert int(best["total_terminal_residual_position_qty"]) == 0
     assert int(comparison.summary.iloc[0]["total_pretrade_rejections"]) == 0
     assert int(
         comparison.summary.iloc[0]["total_carried_depletion_shortfall_events"]
@@ -110,6 +133,24 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     ) == 4
     assert int(comparison.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
     assert int(comparison.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 100_000
+    assert int(
+        comparison.summary.iloc[0]["total_terminal_liquidation_events"]
+    ) == 4
+    assert int(
+        comparison.summary.iloc[0][
+            "total_terminal_liquidation_requested_qty"
+        ]
+    ) == 300
+    assert int(
+        comparison.summary.iloc[0][
+            "total_terminal_liquidation_filled_qty"
+        ]
+    ) == 300
+    assert int(
+        comparison.summary.iloc[0][
+            "total_terminal_liquidation_shortfall_qty"
+        ]
+    ) == 0
 
 
 def test_write_sweep_comparison_outputs_selection_artifacts(tmp_path):

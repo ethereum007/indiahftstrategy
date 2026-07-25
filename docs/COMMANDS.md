@@ -871,7 +871,8 @@ python -m hft_cli replay-parity `
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, legging report, and
 `order_rejections.csv`. Every replay also writes
-`liquidity_shortfalls.csv` and `queue_initializations.csv`.
+`liquidity_shortfalls.csv`, `queue_initializations.csv`, and
+`terminal_liquidations.csv`.
 
 All shared-clock replays reserve the remaining quantity of live and
 cancel-pending orders when applying instrument position, portfolio gross
@@ -913,6 +914,18 @@ relation, observed public depth, earlier own-order tail, and resulting queue.
 initialization and deferred-initialization counts, uninitialized limit count,
 and maximum initialization lag; proof, walk-forward, and sweep outputs retain
 the same evidence.
+
+Terminal liquidation is constrained by depth still available in the exact
+final market event. It cannot reuse displayed quantity already consumed by a
+strategy order on that snapshot, even when cross-snapshot depletion
+persistence is disabled. `terminal_liquidations.csv` records the replay-horizon
+timestamp, source-book timestamp, side, touch price, requested/available/filled
+and shortfall quantities, signed residual position, observed size, carried
+depletion, and completion status for every attempted instrument close.
+`summary.csv` retains aggregate requested, filled, shortfall, residual, and
+incomplete-event metrics. Residual inventory remains marked in final equity for
+measurement, but a depth-constrained replay with an incomplete terminal close
+fails its proof check and cannot qualify as a paper/shadow candidate.
 
 ## Parity Sweep
 

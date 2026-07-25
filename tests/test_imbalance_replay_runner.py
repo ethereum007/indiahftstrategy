@@ -125,6 +125,7 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert (out_dir / "order_rejections.csv").exists()
     assert (out_dir / "liquidity_shortfalls.csv").exists()
     assert (out_dir / "queue_initializations.csv").exists()
+    assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "signals.csv").exists()
@@ -147,6 +148,15 @@ def test_run_imbalance_replay_writes_outputs_and_signals(tmp_path):
     assert int(summary["deferred_queue_initialization_events"]) == 0
     assert int(summary["uninitialized_limit_orders"]) == 0
     assert int(summary["max_queue_initialization_lag_ns"]) == 0
+    assert bool(summary["terminal_liquidation_depth_constrained_enabled"])
+    assert int(summary["terminal_liquidation_events"]) == 0
+    assert int(summary["terminal_liquidation_requested_qty"]) == 0
+    assert int(summary["terminal_liquidation_filled_qty"]) == 0
+    assert int(summary["terminal_liquidation_shortfall_qty"]) == 0
+    assert int(summary["terminal_liquidation_incomplete_events"]) == 0
+    assert int(summary["terminal_residual_position_qty"]) == 0
+    assert int(summary["terminal_residual_instruments"]) == 0
+    assert bool(summary["terminal_liquidation_complete"])
     assert int(summary["liquidity_shortfall_events"]) == 0
     assert int(summary["liquidity_shortfall_qty"]) == 0
     assert int(summary["carried_depletion_shortfall_events"]) == 0

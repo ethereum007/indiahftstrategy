@@ -23,6 +23,8 @@ from engine.hft_backtest import (
     OrderType,
     QueueInitialization,
     QUEUE_INITIALIZATION_COLUMNS,
+    TerminalLiquidation,
+    TERMINAL_LIQUIDATION_COLUMNS,
     _nonnegative_qty,
 )
 
@@ -128,6 +130,7 @@ class MultiInstrumentEngine:
         self._now_ns = 0
         self._visible_ticks: Dict[str, dict] = {}
         self._latest_books: Dict[str, dict] = {}
+        self._latest_liquidity: Dict[str, EventLiquidity] = {}
         self._order_instrument: Dict[int, str] = {}
 
         self.open_orders: Dict[int, Order] = {}
@@ -135,8 +138,10 @@ class MultiInstrumentEngine:
         self.order_rejections: List[OrderRejection] = []
         self.liquidity_shortfalls: List[LiquidityShortfall] = []
         self.queue_initializations: List[QueueInitialization] = []
+        self.terminal_liquidations: List[TerminalLiquidation] = []
         self.shared_event_liquidity_enabled = True
         self.arrival_queue_initialization_enabled = True
+        self.terminal_liquidation_depth_constrained_enabled = True
         self.limit_orders_sent = 0
         self._displayed_liquidity = {
             instrument_id: DisplayedLiquidityLedger(
@@ -762,8 +767,11 @@ class MultiInstrumentEngine:
         price: float,
         ts_ns: int,
         requested_qty: int,
-    ) -> None:
-        source = "ask_display" if order.side > 0 else "bid_display"
+        liquidity_source: str | None = None,
+    ) -> tuple[float, int, float, float]:
+        source = liquidity_source or (
+            "ask_display" if order.side > 0 else "bid_display"
+        )
         observed_qty, carried_depletion_qty = liquidity.displayed_context(
             order.side
         )
@@ -796,6 +804,7 @@ class MultiInstrumentEngine:
             observed_qty=observed_qty,
             carried_depletion_qty=carried_depletion_qty,
         )
+        return available, fill_qty, observed_qty, carried_depletion_qty
 
     def _try_fill(
         self,
@@ -981,6 +990,7 @@ class MultiInstrumentEngine:
                 liquidity = self._displayed_liquidity[
                     event.instrument_id
                 ].event_liquidity(event.tick)
+                self._latest_liquidity[event.instrument_id] = liquidity
                 order_ids = sorted(
                     self.open_orders,
                     key=lambda oid: (
@@ -1013,7 +1023,11 @@ class MultiInstrumentEngine:
     def _flatten_open_positions(self):
         if not self._latest_books:
             return
-        final_ts = max(tick["ts"] for tick in self._latest_books.values())
+        final_ts = max(
+            self._now_ns,
+            max(tick["ts"] for tick in self._latest_books.values()),
+        )
+        self._now_ns = int(final_ts)
         for instrument_id, pos in list(self.positions.items()):
             if pos == 0:
                 continue
@@ -1022,17 +1036,64 @@ class MultiInstrumentEngine:
                 continue
             side = -int(np.sign(pos))
             price = tick["ask"] if side > 0 else tick["bid"]
+            requested_qty = abs(pos)
             self._oid += 1
             order = Order(
                 self._oid,
                 side,
-                abs(pos),
+                requested_qty,
                 price,
                 OrderType.IOC,
                 final_ts,
                 final_ts,
             )
-            self._execute(instrument_id, order, abs(pos), price, final_ts, maker=False)
+            source = (
+                "terminal_ask_display"
+                if side > 0
+                else "terminal_bid_display"
+            )
+            liquidity = self._latest_liquidity.get(instrument_id)
+            if liquidity is None:
+                liquidity = self._displayed_liquidity[
+                    instrument_id
+                ].event_liquidity(tick)
+            (
+                available_qty,
+                filled_qty,
+                observed_qty,
+                carried_depletion_qty,
+            ) = self._fill_from_displayed(
+                instrument_id,
+                order,
+                liquidity=liquidity,
+                price=price,
+                ts_ns=final_ts,
+                requested_qty=requested_qty,
+                liquidity_source=source,
+            )
+            shortfall_qty = requested_qty - filled_qty
+            self.terminal_liquidations.append(
+                TerminalLiquidation(
+                    ts_ns=int(final_ts),
+                    book_ts_ns=int(tick["ts"]),
+                    instrument_id=instrument_id,
+                    oid=order.oid,
+                    side=side,
+                    price=float(price),
+                    requested_qty=requested_qty,
+                    available_qty=float(available_qty),
+                    filled_qty=filled_qty,
+                    shortfall_qty=shortfall_qty,
+                    residual_position=int(self.positions[instrument_id]),
+                    liquidity_source=source,
+                    observed_qty=float(observed_qty),
+                    carried_depletion_qty=float(carried_depletion_qty),
+                    complete=(
+                        shortfall_qty == 0
+                        and self.positions[instrument_id] == 0
+                    ),
+                )
+            )
         self._mark_equity(final_ts)
 
 
@@ -1056,6 +1117,13 @@ class MultiBacktestResult:
             ],
             columns=QUEUE_INITIALIZATION_COLUMNS,
         )
+        self.terminal_liquidations = pd.DataFrame(
+            [
+                liquidation.__dict__
+                for liquidation in engine.terminal_liquidations
+            ],
+            columns=TERMINAL_LIQUIDATION_COLUMNS,
+        )
 
     def report(self) -> str:
         if self.equity.empty:
@@ -1076,6 +1144,8 @@ class MultiBacktestResult:
                 f"Fills / Orders   : {fill_count} / {self.engine.orders_sent} (OTR {otr:.1f})",
                 f"Pre-trade rejects: {len(self.order_rejections)}",
                 f"Liquidity gaps   : {len(self.liquidity_shortfalls)} events",
+                "Terminal residual: "
+                f"{sum(abs(position) for position in self.engine.positions.values())} units",
                 f"Maker fill share : {100 * maker_share:.1f}%",
                 f"Turnover         : Rs {turnover:,.0f}",
                 f"Portfolio delta  : {self.engine.portfolio_delta():,.2f}",

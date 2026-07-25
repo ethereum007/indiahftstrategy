@@ -35,6 +35,15 @@ KNOWN_NON_PARAM_COLUMNS = {
     "deferred_queue_initialization_events",
     "uninitialized_limit_orders",
     "max_queue_initialization_lag_ns",
+    "terminal_liquidation_depth_constrained_enabled",
+    "terminal_liquidation_events",
+    "terminal_liquidation_requested_qty",
+    "terminal_liquidation_filled_qty",
+    "terminal_liquidation_shortfall_qty",
+    "terminal_liquidation_incomplete_events",
+    "terminal_residual_position_qty",
+    "terminal_residual_instruments",
+    "terminal_liquidation_complete",
     "liquidity_shortfall_events",
     "liquidity_shortfall_qty",
     "displayed_liquidity_shortfall_events",
@@ -250,6 +259,34 @@ def _score_scenarios(
             group,
             "max_queue_initialization_lag_ns",
         ).fillna(0.0)
+        terminal_liquidation_events = _numeric(
+            group,
+            "terminal_liquidation_events",
+        ).fillna(0.0)
+        terminal_liquidation_requested_qty = _numeric(
+            group,
+            "terminal_liquidation_requested_qty",
+        ).fillna(0.0)
+        terminal_liquidation_filled_qty = _numeric(
+            group,
+            "terminal_liquidation_filled_qty",
+        ).fillna(0.0)
+        terminal_liquidation_shortfall_qty = _numeric(
+            group,
+            "terminal_liquidation_shortfall_qty",
+        ).fillna(0.0)
+        terminal_liquidation_incomplete_events = _numeric(
+            group,
+            "terminal_liquidation_incomplete_events",
+        ).fillna(0.0)
+        terminal_residual_position_qty = _numeric(
+            group,
+            "terminal_residual_position_qty",
+        ).fillna(0.0)
+        terminal_residual_instruments = _numeric(
+            group,
+            "terminal_residual_instruments",
+        ).fillna(0.0)
         worst_regime = _numeric(group, "worst_regime_equity_change")
         losing_regimes = _numeric(group, "losing_regimes")
 
@@ -314,6 +351,27 @@ def _score_scenarios(
                 "max_queue_initialization_lag_ns": int(
                     queue_initialization_lag_ns.max()
                 ),
+                "total_terminal_liquidation_events": int(
+                    terminal_liquidation_events.sum()
+                ),
+                "total_terminal_liquidation_requested_qty": int(
+                    terminal_liquidation_requested_qty.sum()
+                ),
+                "total_terminal_liquidation_filled_qty": int(
+                    terminal_liquidation_filled_qty.sum()
+                ),
+                "total_terminal_liquidation_shortfall_qty": int(
+                    terminal_liquidation_shortfall_qty.sum()
+                ),
+                "total_terminal_liquidation_incomplete_events": int(
+                    terminal_liquidation_incomplete_events.sum()
+                ),
+                "total_terminal_residual_position_qty": int(
+                    terminal_residual_position_qty.sum()
+                ),
+                "total_terminal_residual_instruments": int(
+                    terminal_residual_instruments.sum()
+                ),
                 "worst_regime_equity_change": float(worst_regime.min(skipna=True)),
                 "runs_with_losing_regimes": int((losing_regimes > 0).sum()),
                 "selection_passed": bool(selection_passed),
@@ -363,6 +421,13 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     "total_deferred_queue_initialization_events": 0,
                     "total_uninitialized_limit_orders": 0,
                     "max_queue_initialization_lag_ns": 0,
+                    "total_terminal_liquidation_events": 0,
+                    "total_terminal_liquidation_requested_qty": 0,
+                    "total_terminal_liquidation_filled_qty": 0,
+                    "total_terminal_liquidation_shortfall_qty": 0,
+                    "total_terminal_liquidation_incomplete_events": 0,
+                    "total_terminal_residual_position_qty": 0,
+                    "total_terminal_residual_instruments": 0,
                 }
             ]
         )
@@ -450,6 +515,59 @@ def _comparison_summary(scores: pd.DataFrame, scenario_runs: pd.DataFrame) -> pd
                     )
                     .fillna(0.0)
                     .max()
+                ),
+                "total_terminal_liquidation_events": int(
+                    _numeric(scenario_runs, "terminal_liquidation_events")
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_terminal_liquidation_requested_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "terminal_liquidation_requested_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_terminal_liquidation_filled_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "terminal_liquidation_filled_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_terminal_liquidation_shortfall_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "terminal_liquidation_shortfall_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_terminal_liquidation_incomplete_events": int(
+                    _numeric(
+                        scenario_runs,
+                        "terminal_liquidation_incomplete_events",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_terminal_residual_position_qty": int(
+                    _numeric(
+                        scenario_runs,
+                        "terminal_residual_position_qty",
+                    )
+                    .fillna(0.0)
+                    .sum()
+                ),
+                "total_terminal_residual_instruments": int(
+                    _numeric(
+                        scenario_runs,
+                        "terminal_residual_instruments",
+                    )
+                    .fillna(0.0)
+                    .sum()
                 ),
             }
         ]

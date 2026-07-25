@@ -109,6 +109,42 @@ class BurstRiskStrategy(MultiInstrumentStrategy):
         pass
 
 
+class EnterThenReduceStrategy(MultiInstrumentStrategy):
+    def __init__(self):
+        self.stage = 0
+
+    def on_start(self, engine):
+        pass
+
+    def on_tick(self, engine, instrument_id, tick):
+        if instrument_id != "A":
+            return
+        if self.stage == 0:
+            engine.send(
+                instrument_id,
+                +1,
+                75,
+                tick["ask"] + 1.0,
+                OrderType.IOC,
+            )
+            self.stage = 1
+        elif self.stage == 1:
+            engine.send(
+                instrument_id,
+                -1,
+                25,
+                tick["bid"] - 1.0,
+                OrderType.IOC,
+            )
+            self.stage = 2
+
+    def on_fill(self, engine, fill):
+        pass
+
+    def on_end(self, engine):
+        pass
+
+
 def frame(rows):
     return pd.DataFrame(
         rows,
@@ -303,6 +339,60 @@ def test_multi_engine_uses_arrival_snapshot_for_limit_queue():
     summary = replay_summary(result).iloc[0]
     assert int(summary["deferred_queue_initialization_events"]) == 1
     assert int(summary["max_queue_initialization_lag_ns"]) == 100_000
+
+
+def test_terminal_liquidation_reuses_no_depth_consumed_on_final_snapshot():
+    engine = MultiInstrumentEngine(
+        instruments={
+            "A": InstrumentConfig(
+                option_inst("A"),
+                "NSE",
+                frame(
+                    [
+                        (0, 100.00, 100.05, 75, 75, np.nan, 0),
+                        (1_000, 100.10, 100.15, 75, 75, np.nan, 0),
+                        (2_000, 100.20, 100.25, 50, 75, np.nan, 0),
+                    ]
+                ),
+                costs=free_costs(),
+            )
+        },
+        venues={"NSE": venue()},
+        strategy=EnterThenReduceStrategy(),
+        persist_displayed_liquidity_depletion=False,
+    )
+
+    result = engine.run()
+
+    assert result.fills["qty"].tolist() == [75, 25, 25]
+    assert result.fills["side"].tolist() == [1, -1, -1]
+    assert engine.positions["A"] == 25
+    liquidation = result.terminal_liquidations.iloc[0]
+    assert liquidation["book_ts_ns"] == 2_000
+    assert liquidation["liquidity_source"] == "terminal_bid_display"
+    assert liquidation["requested_qty"] == 50
+    assert liquidation["available_qty"] == 25
+    assert liquidation["filled_qty"] == 25
+    assert liquidation["shortfall_qty"] == 25
+    assert liquidation["residual_position"] == 25
+    assert liquidation["observed_qty"] == 50
+    assert liquidation["carried_depletion_qty"] == 0
+    assert not bool(liquidation["complete"])
+    shortfall = result.liquidity_shortfalls.iloc[0]
+    assert shortfall["liquidity_source"] == "terminal_bid_display"
+    assert shortfall["carried_depletion_qty"] == 0
+    summary = replay_summary(result).iloc[0]
+    assert bool(summary["terminal_liquidation_depth_constrained_enabled"])
+    assert int(summary["terminal_liquidation_events"]) == 1
+    assert int(summary["terminal_liquidation_requested_qty"]) == 50
+    assert int(summary["terminal_liquidation_filled_qty"]) == 25
+    assert int(summary["terminal_liquidation_shortfall_qty"]) == 25
+    assert int(summary["terminal_liquidation_incomplete_events"]) == 1
+    assert int(summary["terminal_residual_position_qty"]) == 25
+    assert int(summary["terminal_residual_instruments"]) == 1
+    assert not bool(summary["terminal_liquidation_complete"])
+    assert int(summary["displayed_liquidity_shortfall_events"]) == 1
+    assert int(summary["carried_depletion_shortfall_events"]) == 0
 
 
 def test_feed_callbacks_are_ordered_by_latency_adjusted_global_time_and_skew():

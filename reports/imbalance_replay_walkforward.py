@@ -313,6 +313,43 @@ def _fold_row(
             row,
             "max_queue_initialization_lag_ns",
         ),
+        "terminal_liquidation_depth_constrained_enabled": _to_bool(
+            row.get(
+                "terminal_liquidation_depth_constrained_enabled",
+                False,
+            )
+        ),
+        "terminal_liquidation_events": _int(
+            row,
+            "terminal_liquidation_events",
+        ),
+        "terminal_liquidation_requested_qty": _int(
+            row,
+            "terminal_liquidation_requested_qty",
+        ),
+        "terminal_liquidation_filled_qty": _int(
+            row,
+            "terminal_liquidation_filled_qty",
+        ),
+        "terminal_liquidation_shortfall_qty": _int(
+            row,
+            "terminal_liquidation_shortfall_qty",
+        ),
+        "terminal_liquidation_incomplete_events": _int(
+            row,
+            "terminal_liquidation_incomplete_events",
+        ),
+        "terminal_residual_position_qty": _int(
+            row,
+            "terminal_residual_position_qty",
+        ),
+        "terminal_residual_instruments": _int(
+            row,
+            "terminal_residual_instruments",
+        ),
+        "terminal_liquidation_complete": _to_bool(
+            row.get("terminal_liquidation_complete", False)
+        ),
         "liquidity_shortfall_events": _int(
             row,
             "liquidity_shortfall_events",
@@ -406,6 +443,14 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
         "arrival_queue_initialization_enabled",
         pd.Series(False, index=folds.index),
     ).map(_to_bool)
+    terminal_depth_constrained = folds.get(
+        "terminal_liquidation_depth_constrained_enabled",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
+    terminal_complete = folds.get(
+        "terminal_liquidation_complete",
+        pd.Series(False, index=folds.index),
+    ).map(_to_bool)
     proof_pass_rate = float(folds["proof_passed"].map(_to_bool).mean()) if not folds.empty else 0.0
     return pd.DataFrame(
         [
@@ -436,6 +481,12 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                 "arrival_queue_initialization_enabled_folds": int(
                     arrival_queue_enabled.sum()
                 ),
+                "terminal_liquidation_depth_constrained_folds": int(
+                    terminal_depth_constrained.sum()
+                ),
+                "terminal_liquidation_complete_folds": int(
+                    terminal_complete.sum()
+                ),
                 "total_limit_orders_sent": _numeric_reduce(
                     folds,
                     "limit_orders_sent",
@@ -460,6 +511,41 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
                     folds,
                     "max_queue_initialization_lag_ns",
                     "max",
+                ),
+                "total_terminal_liquidation_events": _numeric_reduce(
+                    folds,
+                    "terminal_liquidation_events",
+                    "sum",
+                ),
+                "total_terminal_liquidation_requested_qty": _numeric_reduce(
+                    folds,
+                    "terminal_liquidation_requested_qty",
+                    "sum",
+                ),
+                "total_terminal_liquidation_filled_qty": _numeric_reduce(
+                    folds,
+                    "terminal_liquidation_filled_qty",
+                    "sum",
+                ),
+                "total_terminal_liquidation_shortfall_qty": _numeric_reduce(
+                    folds,
+                    "terminal_liquidation_shortfall_qty",
+                    "sum",
+                ),
+                "total_terminal_liquidation_incomplete_events": _numeric_reduce(
+                    folds,
+                    "terminal_liquidation_incomplete_events",
+                    "sum",
+                ),
+                "total_terminal_residual_position_qty": _numeric_reduce(
+                    folds,
+                    "terminal_residual_position_qty",
+                    "sum",
+                ),
+                "total_terminal_residual_instruments": _numeric_reduce(
+                    folds,
+                    "terminal_residual_instruments",
+                    "sum",
                 ),
                 "total_liquidity_shortfall_events": _numeric_reduce(
                     folds,
@@ -573,6 +659,33 @@ def _candidate_config(
         ),
         "max_queue_initialization_lag_ns": _jsonable(
             summary.get("max_queue_initialization_lag_ns")
+        ),
+        "terminal_liquidation_depth_constrained_folds": _jsonable(
+            summary.get("terminal_liquidation_depth_constrained_folds")
+        ),
+        "terminal_liquidation_complete_folds": _jsonable(
+            summary.get("terminal_liquidation_complete_folds")
+        ),
+        "total_terminal_liquidation_events": _jsonable(
+            summary.get("total_terminal_liquidation_events")
+        ),
+        "total_terminal_liquidation_requested_qty": _jsonable(
+            summary.get("total_terminal_liquidation_requested_qty")
+        ),
+        "total_terminal_liquidation_filled_qty": _jsonable(
+            summary.get("total_terminal_liquidation_filled_qty")
+        ),
+        "total_terminal_liquidation_shortfall_qty": _jsonable(
+            summary.get("total_terminal_liquidation_shortfall_qty")
+        ),
+        "total_terminal_liquidation_incomplete_events": _jsonable(
+            summary.get("total_terminal_liquidation_incomplete_events")
+        ),
+        "total_terminal_residual_position_qty": _jsonable(
+            summary.get("total_terminal_residual_position_qty")
+        ),
+        "total_terminal_residual_instruments": _jsonable(
+            summary.get("total_terminal_residual_instruments")
         ),
         "total_liquidity_shortfall_events": _jsonable(
             summary.get("total_liquidity_shortfall_events")

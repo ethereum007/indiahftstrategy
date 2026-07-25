@@ -53,6 +53,7 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert replay.legging.iloc[0]["fill_count"] == 3
     assert replay.summary.iloc[0]["fills"] == 3
     assert (out_dir / "fills.csv").exists()
+    assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "pnl_decomposition.csv").exists()

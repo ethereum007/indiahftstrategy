@@ -190,6 +190,28 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert int(report.summary.loc[0, "total_deferred_queue_initialization_events"]) == 0
     assert int(report.summary.loc[0, "total_uninitialized_limit_orders"]) == 0
     assert int(report.summary.loc[0, "max_queue_initialization_lag_ns"]) == 0
+    assert report.folds[
+        "terminal_liquidation_depth_constrained_enabled"
+    ].all()
+    assert report.folds["terminal_liquidation_complete"].all()
+    assert int(
+        report.summary.loc[
+            0,
+            "terminal_liquidation_depth_constrained_folds",
+        ]
+    ) == 2
+    assert int(
+        report.summary.loc[0, "terminal_liquidation_complete_folds"]
+    ) == 2
+    assert int(
+        report.summary.loc[0, "total_terminal_liquidation_events"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_terminal_liquidation_shortfall_qty"]
+    ) == 0
+    assert int(
+        report.summary.loc[0, "total_terminal_residual_position_qty"]
+    ) == 0
     assert int(report.summary.loc[0, "total_carried_depletion_shortfall_events"]) == 0
     assert int(report.summary.loc[0, "total_carried_depletion_shortfall_qty"]) == 0
     assert int(report.summary.loc[0, "total_pretrade_rejections"]) == 0
@@ -209,6 +231,32 @@ def test_write_leadlag_replay_walkforward_outputs_proof_candidate_and_catalog_ro
     assert config["replay_walkforward"]["total_deferred_queue_initialization_events"] == 0
     assert config["replay_walkforward"]["total_uninitialized_limit_orders"] == 0
     assert config["replay_walkforward"]["max_queue_initialization_lag_ns"] == 0
+    assert (
+        config["replay_walkforward"][
+            "terminal_liquidation_depth_constrained_folds"
+        ]
+        == 2
+    )
+    assert (
+        config["replay_walkforward"]["terminal_liquidation_complete_folds"]
+        == 2
+    )
+    assert (
+        config["replay_walkforward"]["total_terminal_liquidation_events"]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_terminal_liquidation_shortfall_qty"
+        ]
+        == 0
+    )
+    assert (
+        config["replay_walkforward"][
+            "total_terminal_residual_position_qty"
+        ]
+        == 0
+    )
     assert config["replay_walkforward"]["total_carried_depletion_shortfall_events"] == 0
     assert config["replay_walkforward"]["total_carried_depletion_shortfall_qty"] == 0
     assert config["replay_walkforward"]["total_pretrade_rejections"] == 0

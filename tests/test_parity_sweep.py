@@ -74,8 +74,27 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(result.summary.iloc[0]["total_deferred_queue_initialization_events"]) == 0
     assert int(result.summary.iloc[0]["total_uninitialized_limit_orders"]) == 0
     assert int(result.summary.iloc[0]["max_queue_initialization_lag_ns"]) == 0
+    assert int(
+        result.summary.iloc[0]["total_terminal_liquidation_events"]
+    ) == int(result.runs["terminal_liquidation_events"].sum())
+    assert int(
+        result.summary.iloc[0]["total_terminal_liquidation_requested_qty"]
+    ) == int(result.runs["terminal_liquidation_requested_qty"].sum())
+    assert int(
+        result.summary.iloc[0]["total_terminal_liquidation_filled_qty"]
+    ) == int(result.runs["terminal_liquidation_filled_qty"].sum())
+    assert int(
+        result.summary.iloc[0]["total_terminal_liquidation_shortfall_qty"]
+    ) == 0
+    assert int(
+        result.summary.iloc[0]["total_terminal_residual_position_qty"]
+    ) == 0
     assert result.runs["pending_order_risk_reservation_enabled"].all()
     assert result.runs["aggressive_self_cross_prevention_enabled"].all()
+    assert result.runs[
+        "terminal_liquidation_depth_constrained_enabled"
+    ].all()
+    assert result.runs["terminal_liquidation_complete"].all()
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "sweep_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()

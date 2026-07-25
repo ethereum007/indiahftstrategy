@@ -578,6 +578,43 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         row,
         "max_queue_initialization_lag_ns",
     )
+    terminal_liquidation_depth_constrained_enabled = _bool(
+        row.get(
+            "terminal_liquidation_depth_constrained_enabled",
+            False,
+        )
+    )
+    terminal_liquidation_events = _int(
+        row,
+        "terminal_liquidation_events",
+    )
+    terminal_liquidation_requested_qty = _int(
+        row,
+        "terminal_liquidation_requested_qty",
+    )
+    terminal_liquidation_filled_qty = _int(
+        row,
+        "terminal_liquidation_filled_qty",
+    )
+    terminal_liquidation_shortfall_qty = _int(
+        row,
+        "terminal_liquidation_shortfall_qty",
+    )
+    terminal_liquidation_incomplete_events = _int(
+        row,
+        "terminal_liquidation_incomplete_events",
+    )
+    terminal_residual_position_qty = _int(
+        row,
+        "terminal_residual_position_qty",
+    )
+    terminal_residual_instruments = _int(
+        row,
+        "terminal_residual_instruments",
+    )
+    terminal_liquidation_complete = _bool(
+        row.get("terminal_liquidation_complete", False)
+    )
     liquidity_shortfall_events = _int(row, "liquidity_shortfall_events")
     liquidity_shortfall_qty = _int(row, "liquidity_shortfall_qty")
     displayed_liquidity_shortfall_events = _int(
@@ -642,6 +679,23 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         ),
         "uninitialized_limit_orders": uninitialized_limit_orders,
         "max_queue_initialization_lag_ns": max_queue_initialization_lag_ns,
+        "terminal_liquidation_depth_constrained_enabled": (
+            terminal_liquidation_depth_constrained_enabled
+        ),
+        "terminal_liquidation_events": terminal_liquidation_events,
+        "terminal_liquidation_requested_qty": (
+            terminal_liquidation_requested_qty
+        ),
+        "terminal_liquidation_filled_qty": terminal_liquidation_filled_qty,
+        "terminal_liquidation_shortfall_qty": (
+            terminal_liquidation_shortfall_qty
+        ),
+        "terminal_liquidation_incomplete_events": (
+            terminal_liquidation_incomplete_events
+        ),
+        "terminal_residual_position_qty": terminal_residual_position_qty,
+        "terminal_residual_instruments": terminal_residual_instruments,
+        "terminal_liquidation_complete": terminal_liquidation_complete,
         "liquidity_shortfall_events": liquidity_shortfall_events,
         "liquidity_shortfall_qty": liquidity_shortfall_qty,
         "displayed_liquidity_shortfall_events": (
@@ -681,6 +735,23 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             "reason": "summary.csv reported an OTR breach" if bool(metrics["otr_breached"]) else "",
         },
     ]
+    if bool(metrics["terminal_liquidation_depth_constrained_enabled"]):
+        complete = bool(metrics["terminal_liquidation_complete"])
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "terminal_liquidation_complete",
+                "value": complete,
+                "operator": "is",
+                "threshold": True,
+                "passed": complete,
+                "reason": (
+                    ""
+                    if complete
+                    else "terminal liquidation left residual inventory"
+                ),
+            }
+        )
     if thresholds.max_drawdown is not None:
         rows.append(_check(metrics, "max_drawdown", metrics["max_drawdown"], "<=", thresholds.max_drawdown))
     if thresholds.max_otr is not None:

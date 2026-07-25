@@ -58,6 +58,7 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert replay.summary.iloc[0]["fills"] == 2
     assert not replay.markouts.empty
     assert (out_dir / "fills.csv").exists()
+    assert (out_dir / "terminal_liquidations.csv").exists()
     assert (out_dir / "equity.csv").exists()
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "pnl_decomposition.csv").exists()
@@ -74,3 +75,6 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert manifest["parameters"]["strategy"] == "lead_lag_taker"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    assert bool(summary.loc[0, "terminal_liquidation_depth_constrained_enabled"])
+    assert bool(summary.loc[0, "terminal_liquidation_complete"])
+    assert int(summary.loc[0, "terminal_residual_position_qty"]) == 0

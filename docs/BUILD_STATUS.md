@@ -3,15 +3,17 @@
 ## Current State
 
 - Single-instrument event backtester with Indian costs, latency, queue fills,
-  cancels, terminal flattening, OTR reporting, shared per-event displayed
-  liquidity, persistent same-level depletion across L1 snapshots, own-order
-  queue priority initialized from the first market snapshot at venue arrival,
-  liquidity-shortfall evidence, and tests. Unchanged snapshots do not restore
-  consumed depth; only an observed size increase replenishes its delta, while a
-  price or timestamp-day change starts a fresh level.
+  cancels, depth-constrained terminal liquidation, OTR reporting, shared
+  per-event displayed liquidity, persistent same-level depletion across L1
+  snapshots, own-order queue priority initialized from the first market
+  snapshot at venue arrival, liquidity-shortfall and residual-inventory
+  evidence, and tests. Unchanged snapshots do not restore consumed depth; only
+  an observed size increase replenishes its delta, while a price or
+  timestamp-day change starts a fresh level.
 - Multi-instrument shared-clock engine with venue latency, clock skew,
   per-instrument routing, portfolio limits, shared equity, and instrument-local
-  event and cross-snapshot liquidity conservation.
+  event and cross-snapshot liquidity conservation, including horizon-causal
+  terminal close attempts against each instrument's final event budget.
 - Data normalization for top-of-book ticks and option-chain snapshots,
   including IST session filtering, quarantine reports, and regime tags.
 - NSE F&O chain diagnostics can validate declared weekly or monthly contract
@@ -7263,6 +7265,26 @@ regressions plus manifest/catalog and promotion/evidence checks pass (`236`
 tests). Repository collection is healthy at
 `2656 tests` across `164` files. The full suite was not rerun because recent
 complete runs exceed 40 minutes. All outputs remain non-authorizing.
+
+Latest depth-constrained terminal-liquidation proof: single- and
+multi-instrument replays no longer flatten arbitrary positions against
+unbounded final-touch liquidity. Each terminal close consumes only depth still
+available in the exact final `EventLiquidity` object, so strategy orders and
+terminal orders cannot reuse one snapshot even when cross-snapshot persistence
+is disabled. Close attempts occur at the true replay horizon while retaining
+the source-book timestamp. Full and partial attempts write
+`terminal_liquidations.csv` with requested, available, filled, shortfall,
+observed, carried-depletion, and signed residual-position evidence. Replay
+summaries retain completion and aggregate residual metrics; proof reports
+automatically fail a depth-constrained run that leaves residual inventory, and
+walk-forward, sweep, and cross-sweep outputs preserve the evidence. Final
+equity may still mark residual inventory for measurement, but that run cannot
+qualify as a paper/shadow candidate. Direct engine, replay, proof,
+walk-forward, sweep, selection, calibration, pipeline, manifest/catalog,
+promotion, and strategy-evidence regressions pass (`252` tests). Repository
+collection is healthy at `2660 tests` across `164` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
 
 ## Next Build Targets
 

@@ -50,7 +50,14 @@ def replay_summary(
         if not liquidity_shortfalls.empty
         else pd.Series(dtype="float64")
     )
-    displayed_mask = liquidity_sources.isin({"ask_display", "bid_display"})
+    displayed_mask = liquidity_sources.isin(
+        {
+            "ask_display",
+            "bid_display",
+            "terminal_ask_display",
+            "terminal_bid_display",
+        }
+    )
     trade_print_mask = liquidity_sources == "trade_print"
     carried_depletion = (
         pd.to_numeric(
@@ -77,6 +84,43 @@ def replay_summary(
     )
     limit_orders_sent = int(result.engine.limit_orders_sent)
     queue_initialization_events = int(len(queue_initializations))
+    terminal_liquidations = result.terminal_liquidations
+    terminal_requested_qty = (
+        pd.to_numeric(
+            terminal_liquidations["requested_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not terminal_liquidations.empty
+        else pd.Series(dtype="float64")
+    )
+    terminal_filled_qty = (
+        pd.to_numeric(
+            terminal_liquidations["filled_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not terminal_liquidations.empty
+        else pd.Series(dtype="float64")
+    )
+    terminal_shortfall_qty = (
+        pd.to_numeric(
+            terminal_liquidations["shortfall_qty"],
+            errors="coerce",
+        ).fillna(0)
+        if not terminal_liquidations.empty
+        else pd.Series(dtype="float64")
+    )
+    terminal_residual_positions = (
+        pd.to_numeric(
+            terminal_liquidations["residual_position"],
+            errors="coerce",
+        ).fillna(0)
+        if not terminal_liquidations.empty
+        else pd.Series(dtype="float64")
+    )
+    terminal_incomplete_mask = (
+        terminal_shortfall_qty.gt(0)
+        | terminal_residual_positions.ne(0)
+    )
     otr = check_order_to_trade_ratio(
         orders_sent=result.engine.orders_sent,
         fills=fill_count,
@@ -122,6 +166,31 @@ def replay_summary(
                     queue_initialization_lag_ns.max()
                     if not queue_initialization_lag_ns.empty
                     else 0
+                ),
+                "terminal_liquidation_depth_constrained_enabled": bool(
+                    result.engine.terminal_liquidation_depth_constrained_enabled
+                ),
+                "terminal_liquidation_events": int(len(terminal_liquidations)),
+                "terminal_liquidation_requested_qty": int(
+                    terminal_requested_qty.sum()
+                ),
+                "terminal_liquidation_filled_qty": int(
+                    terminal_filled_qty.sum()
+                ),
+                "terminal_liquidation_shortfall_qty": int(
+                    terminal_shortfall_qty.sum()
+                ),
+                "terminal_liquidation_incomplete_events": int(
+                    terminal_incomplete_mask.sum()
+                ),
+                "terminal_residual_position_qty": int(
+                    terminal_residual_positions.abs().sum()
+                ),
+                "terminal_residual_instruments": int(
+                    terminal_residual_positions.ne(0).sum()
+                ),
+                "terminal_liquidation_complete": bool(
+                    not terminal_incomplete_mask.any()
                 ),
                 "liquidity_shortfall_events": int(len(liquidity_shortfalls)),
                 "liquidity_shortfall_qty": int(shortfall_qty.sum()),
@@ -185,6 +254,10 @@ def write_replay_outputs(
     )
     result.queue_initializations.to_csv(
         out / "queue_initializations.csv",
+        index=False,
+    )
+    result.terminal_liquidations.to_csv(
+        out / "terminal_liquidations.csv",
         index=False,
     )
     summary.to_csv(out / "summary.csv", index=False)

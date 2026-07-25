@@ -192,6 +192,13 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_deferred_queue_initialization_events",
                 "total_uninitialized_limit_orders",
                 "max_queue_initialization_lag_ns",
+                "total_terminal_liquidation_events",
+                "total_terminal_liquidation_requested_qty",
+                "total_terminal_liquidation_filled_qty",
+                "total_terminal_liquidation_shortfall_qty",
+                "total_terminal_liquidation_incomplete_events",
+                "total_terminal_residual_position_qty",
+                "total_terminal_residual_instruments",
                 "total_pretrade_rejections",
                 "total_position_risk_rejections",
                 "total_self_cross_rejections",
@@ -290,6 +297,34 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         errors="coerce",
                     ).fillna(0).max()
                 ),
+                "total_terminal_liquidation_events": _sum_int_metric(
+                    runs,
+                    "terminal_liquidation_events",
+                ),
+                "total_terminal_liquidation_requested_qty": _sum_int_metric(
+                    runs,
+                    "terminal_liquidation_requested_qty",
+                ),
+                "total_terminal_liquidation_filled_qty": _sum_int_metric(
+                    runs,
+                    "terminal_liquidation_filled_qty",
+                ),
+                "total_terminal_liquidation_shortfall_qty": _sum_int_metric(
+                    runs,
+                    "terminal_liquidation_shortfall_qty",
+                ),
+                "total_terminal_liquidation_incomplete_events": _sum_int_metric(
+                    runs,
+                    "terminal_liquidation_incomplete_events",
+                ),
+                "total_terminal_residual_position_qty": _sum_int_metric(
+                    runs,
+                    "terminal_residual_position_qty",
+                ),
+                "total_terminal_residual_instruments": _sum_int_metric(
+                    runs,
+                    "terminal_residual_instruments",
+                ),
                 "total_pretrade_rejections": int(
                     runs["pretrade_rejections"].sum()
                 ),
@@ -302,6 +337,11 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
             }
         ]
     )
+
+
+def _sum_int_metric(runs: pd.DataFrame, column: str) -> int:
+    values = runs.get(column, pd.Series(0, index=runs.index))
+    return int(pd.to_numeric(values, errors="coerce").fillna(0).sum())
 
 
 def _run_name(trigger_ticks: float, feed_latency_us: float, order_latency_us: float) -> str:
