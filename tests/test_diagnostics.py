@@ -376,6 +376,8 @@ def test_tick_and_chain_diagnostics_report_daily_observation_spans():
     assert int(tick_summary["min_daily_rows"]) == 2
     assert float(tick_summary["median_daily_rows"]) == 2.0
     assert int(tick_summary["max_daily_rows"]) == 2
+    assert int(tick_summary["min_daily_gap_observations"]) == 1
+    assert int(tick_summary["max_daily_observation_gap_ns"]) == 4_000_000_000
     assert int(chain_overall["observation_days"]) == 2
     assert chain_overall["observation_dates"] == (
         "2026-06-10;2026-06-11"
@@ -387,6 +389,14 @@ def test_tick_and_chain_diagnostics_report_daily_observation_spans():
     assert float(chain_overall["median_daily_snapshots"]) == 2.5
     assert int(chain_overall["max_daily_snapshots"]) == 3
     assert int(chain_overall["min_daily_snapshots_per_expiry"]) == 2
+    assert int(chain_overall["min_daily_gap_observations"]) == 1
+    assert int(chain_overall["max_daily_observation_gap_ns"]) == 3_000_000_000
+    assert int(
+        chain_overall["min_daily_gap_observations_per_expiry"]
+    ) == 1
+    assert int(
+        chain_overall["max_daily_snapshot_gap_ns_per_expiry"]
+    ) == 5_000_000_000
     assert int(june_expiry["observation_days"]) == 2
     assert june_expiry["observation_dates"] == (
         "2026-06-10;2026-06-11"
@@ -394,10 +404,14 @@ def test_tick_and_chain_diagnostics_report_daily_observation_spans():
     assert int(june_expiry["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(june_expiry["max_daily_observation_span_ns"]) == 5_000_000_000
     assert int(june_expiry["min_daily_snapshots"]) == 2
+    assert int(june_expiry["min_daily_gap_observations"]) == 1
+    assert int(june_expiry["max_daily_observation_gap_ns"]) == 5_000_000_000
     assert int(july_expiry["observation_days"]) == 1
     assert july_expiry["observation_dates"] == "2026-06-10"
     assert int(july_expiry["min_daily_observation_span_ns"]) == 3_000_000_000
     assert int(july_expiry["min_daily_snapshots"]) == 2
+    assert int(july_expiry["min_daily_gap_observations"]) == 1
+    assert int(july_expiry["max_daily_observation_gap_ns"]) == 3_000_000_000
 
 
 def test_chain_daily_density_counts_snapshots_instead_of_strike_rows():
@@ -430,6 +444,9 @@ def test_chain_daily_density_counts_snapshots_instead_of_strike_rows():
     assert int(overall["min_daily_rows"]) == 6
     assert int(overall["min_daily_snapshots"]) == 2
     assert int(overall["min_daily_snapshots_per_expiry"]) == 2
+    assert int(overall["min_daily_gap_observations"]) == 1
+    assert int(overall["max_daily_observation_gap_ns"]) == 1_000_000_000
+    assert int(overall["max_daily_snapshot_gap_ns_per_expiry"]) == 1_000_000_000
     assert int(expiry["min_daily_rows"]) == 6
     assert int(expiry["min_daily_snapshots"]) == 2
 

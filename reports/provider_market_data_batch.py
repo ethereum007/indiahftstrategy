@@ -40,6 +40,7 @@ class ProviderMarketDataBatchConfig:
     pipeline_min_rows: int = 1
     min_daily_observation_span_ns: int | None = None
     min_daily_observations: int | None = None
+    max_daily_observation_gap_ns: int | None = None
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
@@ -244,6 +245,9 @@ def _pipeline_config(config: ProviderMarketDataBatchConfig) -> ProviderMarketDat
             config.min_daily_observation_span_ns
         ),
         min_daily_observations=config.min_daily_observations,
+        max_daily_observation_gap_ns=(
+            config.max_daily_observation_gap_ns
+        ),
         max_null_rows=config.max_null_rows,
         max_nonfinite_rows=config.max_nonfinite_rows,
         max_nonintegral_rows=config.max_nonintegral_rows,
@@ -316,6 +320,20 @@ def _dataset_row(
             _number(
                 vendor_row,
                 "min_daily_observations",
+                fallback=0.0,
+            )
+        ),
+        "min_daily_gap_observations": int(
+            _number(
+                vendor_row,
+                "min_daily_gap_observations",
+                fallback=0.0,
+            )
+        ),
+        "max_daily_observation_gap_ns": int(
+            _number(
+                vendor_row,
+                "max_daily_observation_gap_ns",
                 fallback=0.0,
             )
         ),
@@ -479,6 +497,32 @@ def _summary(
                     if dataset_count
                     else 0
                 ),
+                "min_daily_gap_observations": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "min_daily_gap_observations",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).min()
+                    )
+                    if dataset_count
+                    else 0
+                ),
+                "max_daily_observation_gap_ns": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "max_daily_observation_gap_ns",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).max()
+                    )
+                    if dataset_count
+                    else 0
+                ),
                 "source_file_fingerprint_coverage": _number(
                     comparison_row,
                     "source_file_fingerprint_coverage",
@@ -556,6 +600,16 @@ def _config(
         "min_daily_observations": int(
             _number(row, "min_daily_observations", fallback=0.0)
         ),
+        "min_daily_gap_observations": int(
+            _number(row, "min_daily_gap_observations", fallback=0.0)
+        ),
+        "max_daily_observation_gap_ns": int(
+            _number(
+                row,
+                "max_daily_observation_gap_ns",
+                fallback=0.0,
+            )
+        ),
         "source_file_fingerprint_coverage": _number(row, "source_file_fingerprint_coverage", fallback=0.0),
         "min_mapping_coverage": _number(row, "min_mapping_coverage", fallback=0.0),
         "datasets": _records(datasets),
@@ -588,6 +642,8 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, action_queue: 
         f"- Unique local observation dates: {int(_number(summary, 'unique_observation_dates', fallback=0.0))}",
         f"- Observation-date coverage: {_number(summary, 'observation_date_coverage', fallback=0.0)}",
         f"- Minimum daily observations: {int(_number(summary, 'min_daily_observations', fallback=0.0))}",
+        f"- Minimum daily gap observations: {int(_number(summary, 'min_daily_gap_observations', fallback=0.0))}",
+        f"- Maximum daily observation gap (ns): {int(_number(summary, 'max_daily_observation_gap_ns', fallback=0.0))}",
         f"- Primary next gate: `{summary['next_gate']}`" if str(summary["next_gate"]) else "- Primary next gate: ",
         "",
         "## Blocked Actions",
@@ -760,6 +816,17 @@ def _validate_config(config: ProviderMarketDataBatchConfig) -> None:
     ):
         raise ValueError(
             "min_daily_observations must be a non-negative integer"
+        )
+    if (
+        config.max_daily_observation_gap_ns is not None
+        and (
+            isinstance(config.max_daily_observation_gap_ns, bool)
+            or not isinstance(config.max_daily_observation_gap_ns, int)
+            or config.max_daily_observation_gap_ns < 0
+        )
+    ):
+        raise ValueError(
+            "max_daily_observation_gap_ns must be a non-negative integer"
         )
     if (
         config.max_off_grid_strike_rows is not None

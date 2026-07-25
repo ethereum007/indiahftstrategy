@@ -522,6 +522,34 @@ def chain_diagnostics(
         if not observation_spans.by_group.empty
         else 0
     )
+    min_daily_gap_observations_per_expiry = (
+        int(
+            pd.to_numeric(
+                observation_spans.by_group[
+                    "min_daily_gap_observations"
+                ],
+                errors="coerce",
+            )
+            .fillna(0)
+            .min()
+        )
+        if not observation_spans.by_group.empty
+        else 0
+    )
+    max_daily_snapshot_gap_ns_per_expiry = (
+        int(
+            pd.to_numeric(
+                observation_spans.by_group[
+                    "max_daily_observation_gap_ns"
+                ],
+                errors="coerce",
+            )
+            .fillna(0)
+            .max()
+        )
+        if not observation_spans.by_group.empty
+        else 0
+    )
     overall = pd.DataFrame(
         [
             {
@@ -540,6 +568,12 @@ def chain_diagnostics(
                 **observation_spans.overall,
                 "min_daily_snapshots_per_expiry": (
                     min_daily_snapshots_per_expiry
+                ),
+                "min_daily_gap_observations_per_expiry": (
+                    min_daily_gap_observations_per_expiry
+                ),
+                "max_daily_snapshot_gap_ns_per_expiry": (
+                    max_daily_snapshot_gap_ns_per_expiry
                 ),
                 "nonmonotonic_rows": int(frame["nonmonotonic_ts"].sum()),
                 "nonpositive_strike_rows": int(
@@ -811,6 +845,8 @@ def _daily_observation_span_diagnostics(
         "min_daily_snapshots",
         "median_daily_snapshots",
         "max_daily_snapshots",
+        "min_daily_gap_observations",
+        "max_daily_observation_gap_ns",
     ]
     if group_column is None:
         by_group = pd.DataFrame(columns=summary_columns)
@@ -845,6 +881,14 @@ def _daily_observation_span_diagnostics(
                 min_daily_snapshots=("daily_snapshots", "min"),
                 median_daily_snapshots=("daily_snapshots", "median"),
                 max_daily_snapshots=("daily_snapshots", "max"),
+                min_daily_gap_observations=(
+                    "daily_gap_observations",
+                    "min",
+                ),
+                max_daily_observation_gap_ns=(
+                    "daily_max_observation_gap_ns",
+                    "max",
+                ),
             )
             .reset_index()
         )
@@ -866,6 +910,8 @@ def _daily_observation_spans(
                 "daily_observation_span_ns",
                 "daily_rows",
                 "daily_snapshots",
+                "daily_gap_observations",
+                "daily_max_observation_gap_ns",
             ]
         )
     daily = (
@@ -879,6 +925,14 @@ def _daily_observation_spans(
             max_ts_ns=("ts_ns", "max"),
             daily_rows=("ts_ns", "size"),
             daily_snapshots=("ts_ns", "nunique"),
+            daily_gap_observations=(
+                "ts_ns",
+                _observation_gap_count,
+            ),
+            daily_max_observation_gap_ns=(
+                "ts_ns",
+                _max_observation_gap_ns,
+            ),
         )
         .reset_index()
     )
@@ -904,10 +958,14 @@ def _daily_observation_span_summary(
             "min_daily_snapshots": 0,
             "median_daily_snapshots": 0.0,
             "max_daily_snapshots": 0,
+            "min_daily_gap_observations": 0,
+            "max_daily_observation_gap_ns": 0,
         }
     spans = daily["daily_observation_span_ns"]
     rows = daily["daily_rows"]
     snapshots = daily["daily_snapshots"]
+    gap_observations = daily["daily_gap_observations"]
+    max_gaps = daily["daily_max_observation_gap_ns"]
     return {
         "observation_dates": _joined_observation_dates(
             daily["observation_date"]
@@ -922,7 +980,22 @@ def _daily_observation_span_summary(
         "min_daily_snapshots": int(snapshots.min()),
         "median_daily_snapshots": float(snapshots.median()),
         "max_daily_snapshots": int(snapshots.max()),
+        "min_daily_gap_observations": int(gap_observations.min()),
+        "max_daily_observation_gap_ns": int(max_gaps.max()),
     }
+
+
+def _observation_gap_count(values: pd.Series) -> int:
+    return max(int(values.nunique(dropna=True)) - 1, 0)
+
+
+def _max_observation_gap_ns(values: pd.Series) -> int:
+    timestamps = np.sort(
+        pd.to_numeric(values, errors="coerce").dropna().unique()
+    )
+    if len(timestamps) < 2:
+        return 0
+    return int(np.diff(timestamps).max())
 
 
 def _joined_observation_dates(values: pd.Series) -> str:

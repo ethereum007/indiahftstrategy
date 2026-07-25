@@ -75,9 +75,11 @@ class DataReadinessThresholds:
     min_tick_rows: int = 1
     min_tick_daily_observation_span_ns: int | None = None
     min_tick_daily_rows: int | None = None
+    max_tick_daily_observation_gap_ns: int | None = None
     min_chain_rows: int = 1
     min_chain_daily_observation_span_ns: int | None = None
     min_chain_daily_snapshots_per_expiry: int | None = None
+    max_chain_daily_snapshot_gap_ns_per_expiry: int | None = None
     min_chain_expiries: int = 1
     min_chain_strikes: int = 1
     min_chain_expiry_snapshots: int = 1
@@ -1716,6 +1718,31 @@ def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> 
                 thresholds.min_tick_daily_rows,
             )
         )
+    if thresholds.max_tick_daily_observation_gap_ns is not None:
+        checks.extend(
+            [
+                _threshold_check(
+                    "tick_min_daily_gap_observations",
+                    _number(
+                        row,
+                        "min_daily_gap_observations",
+                        fallback=float("nan"),
+                    ),
+                    ">=",
+                    1,
+                ),
+                _threshold_check(
+                    "tick_max_daily_observation_gap_ns",
+                    _number(
+                        row,
+                        "max_daily_observation_gap_ns",
+                        fallback=float("nan"),
+                    ),
+                    "<=",
+                    thresholds.max_tick_daily_observation_gap_ns,
+                ),
+            ]
+        )
     if thresholds.max_tick_median_spread_ticks is not None:
         checks.append(
             _threshold_check(
@@ -2167,6 +2194,37 @@ def _chain_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) ->
                 ">=",
                 thresholds.min_chain_daily_snapshots_per_expiry,
             )
+        )
+    if (
+        thresholds.max_chain_daily_snapshot_gap_ns_per_expiry
+        is not None
+    ):
+        checks.extend(
+            [
+                _threshold_check(
+                    "chain_min_daily_gap_observations_per_expiry",
+                    _number(
+                        row,
+                        "min_daily_gap_observations_per_expiry",
+                        fallback=float("nan"),
+                    ),
+                    ">=",
+                    1,
+                ),
+                _threshold_check(
+                    "chain_max_daily_snapshot_gap_ns_per_expiry",
+                    _number(
+                        row,
+                        "max_daily_snapshot_gap_ns_per_expiry",
+                        fallback=float("nan"),
+                    ),
+                    "<=",
+                    (
+                        thresholds
+                        .max_chain_daily_snapshot_gap_ns_per_expiry
+                    ),
+                ),
+            ]
         )
     return checks
 
@@ -3443,8 +3501,10 @@ def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
         "max_off_grid_strike_rows",
         "min_tick_daily_observation_span_ns",
         "min_tick_daily_rows",
+        "max_tick_daily_observation_gap_ns",
         "min_chain_daily_observation_span_ns",
         "min_chain_daily_snapshots_per_expiry",
+        "max_chain_daily_snapshot_gap_ns_per_expiry",
         "max_tick_p99_gap_ns",
         "max_tick_median_spread_ticks",
         "max_chain_median_spread_ticks",

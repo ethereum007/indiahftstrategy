@@ -9085,6 +9085,21 @@ the explicit `--min-tick-daily-rows` and
 large strike cross-sections at one chain timestamp from impersonating temporal
 coverage. Thresholds must come from the reviewed vendor capture policy; the
 platform does not infer a sampling rate or manufacture missing observations.
+P99 gaps can still hide one rare but material outage. Diagnostics therefore
+also retain `min_daily_gap_observations` and
+`max_daily_observation_gap_ns`, calculated after resetting at each market-local
+trading date. Chain diagnostics compute the conservative
+`min_daily_gap_observations_per_expiry` and
+`max_daily_snapshot_gap_ns_per_expiry` from distinct snapshot timestamps for
+each expiry. Use `--max-daily-observation-gap-ns` on vendor, provider, batch,
+and broker-vendor pipelines; use `--max-tick-daily-observation-gap-ns` or
+`--max-chain-daily-snapshot-gap-ns-per-expiry` on direct readiness reports.
+Requesting the gate also requires at least one measurable gap on every
+evaluated tick day or expiry-day, so a single-timestamp capture fails closed
+instead of reporting a misleading zero. The local-day reset excludes
+overnight closures from this metric; exchange calendars and session checks
+remain responsible for deciding whether each timestamp belongs to a valid
+trading session.
 For ticks, normalization also removes exact repeated engine packets while
 retaining the first occurrence in input order. Same-timestamp packets with a
 different quote, depth, last price, or last quantity remain distinct. The

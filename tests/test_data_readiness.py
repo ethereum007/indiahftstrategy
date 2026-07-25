@@ -36,6 +36,8 @@ def tick_summary(**overrides):
         "min_daily_rows": 50,
         "median_daily_rows": 50.0,
         "max_daily_rows": 50,
+        "min_daily_gap_observations": 49,
+        "max_daily_observation_gap_ns": 100_000_000,
         "nonmonotonic_rows": 0,
         "crossed_quote_rows": 0,
         "nonpositive_quote_rows": 0,
@@ -75,6 +77,8 @@ def chain_summary(**overrides):
         "median_daily_observation_span_ns": 7_500_000_000_000.0,
         "max_daily_observation_span_ns": 7_800_000_000_000,
         "min_daily_snapshots_per_expiry": 5,
+        "min_daily_gap_observations_per_expiry": 4,
+        "max_daily_snapshot_gap_ns_per_expiry": 200_000_000,
         "p99_snapshot_gap_ns": 2_000.0,
         "nonmonotonic_rows": 0,
         "nonpositive_strike_rows": 0,
@@ -733,6 +737,79 @@ def test_data_readiness_gates_minimum_daily_observation_density():
     assert not missing_evidence.ready
 
 
+def test_data_readiness_gates_maximum_local_daily_observation_gap():
+    gapped_tick = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(
+            max_daily_observation_gap_ns=5_000,
+        ),
+        thresholds=DataReadinessThresholds(
+            max_tick_daily_observation_gap_ns=4_999,
+        ),
+    )
+    unmeasurable_tick = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(
+            min_daily_gap_observations=0,
+            max_daily_observation_gap_ns=0,
+        ),
+        thresholds=DataReadinessThresholds(
+            max_tick_daily_observation_gap_ns=10_000,
+        ),
+    )
+    allowed_chain = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(
+            max_daily_snapshot_gap_ns_per_expiry=5_000,
+        ),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_chain_daily_snapshot_gap_ns_per_expiry=5_000,
+        ),
+    )
+    unmeasurable_chain = evaluate_data_readiness(
+        chain_diagnostic_summary=chain_summary(
+            min_daily_gap_observations_per_expiry=0,
+            max_daily_snapshot_gap_ns_per_expiry=0,
+        ),
+        thresholds=DataReadinessThresholds(
+            require_tick_diagnostics=False,
+            require_chain_diagnostics=True,
+            max_chain_daily_snapshot_gap_ns_per_expiry=10_000,
+        ),
+    )
+
+    gapped_failed = set(
+        gapped_tick.checks.loc[
+            ~gapped_tick.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    unmeasurable_tick_failed = set(
+        unmeasurable_tick.checks.loc[
+            ~unmeasurable_tick.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    unmeasurable_chain_failed = set(
+        unmeasurable_chain.checks.loc[
+            ~unmeasurable_chain.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not gapped_tick.ready
+    assert "tick_max_daily_observation_gap_ns" in gapped_failed
+    assert not unmeasurable_tick.ready
+    assert (
+        "tick_min_daily_gap_observations"
+        in unmeasurable_tick_failed
+    )
+    assert allowed_chain.ready
+    assert not unmeasurable_chain.ready
+    assert (
+        "chain_min_daily_gap_observations_per_expiry"
+        in unmeasurable_chain_failed
+    )
+
+
 def test_data_readiness_gates_declared_chain_strike_grid():
     off_grid = evaluate_data_readiness(
         chain_diagnostic_summary=chain_summary(off_grid_strike_rows=1),
@@ -801,6 +878,8 @@ def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
             "7200000000000",
             "--min-chain-daily-snapshots-per-expiry",
             "5",
+            "--max-chain-daily-snapshot-gap-ns-per-expiry",
+            "200000000",
             "--fail-on-breach",
         ]
     )
@@ -819,6 +898,12 @@ def test_cli_data_readiness_requires_and_retains_strike_grid_evidence(tmp_path):
             "min_chain_daily_snapshots_per_expiry"
         ]
         == 5
+    )
+    assert (
+        config["thresholds"][
+            "max_chain_daily_snapshot_gap_ns_per_expiry"
+        ]
+        == 200_000_000
     )
     components = {
         row["component"]: row for row in config["components"]
@@ -850,6 +935,8 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
             "3600000000000",
             "--min-tick-daily-rows",
             "50",
+            "--max-tick-daily-observation-gap-ns",
+            "100000000",
             "--fail-on-breach",
         ]
     )
@@ -865,6 +952,10 @@ def test_cli_data_readiness_retains_wide_spread_budget(tmp_path):
         == 3_600_000_000_000
     )
     assert config["thresholds"]["min_tick_daily_rows"] == 50
+    assert (
+        config["thresholds"]["max_tick_daily_observation_gap_ns"]
+        == 100_000_000
+    )
 
 
 def test_data_readiness_fails_on_filtered_mapped_data_quarantine():

@@ -55,6 +55,7 @@ class BrokerVendorDataReadinessConfig:
     min_rows: int = 1
     min_daily_observation_span_ns: int | None = None
     min_daily_observations: int | None = None
+    max_daily_observation_gap_ns: int | None = None
     min_chain_expiry_snapshots: int = 1
     min_chain_snapshots_per_expiry: int = 1
     min_chain_snapshot_strikes: int = 1
@@ -158,6 +159,9 @@ def write_broker_vendor_data_readiness_pipeline(
             config.min_daily_observation_span_ns
         ),
         min_daily_observations=config.min_daily_observations,
+        max_daily_observation_gap_ns=(
+            config.max_daily_observation_gap_ns
+        ),
         min_chain_expiry_snapshots=config.min_chain_expiry_snapshots,
         min_chain_snapshots_per_expiry=(
             config.min_chain_snapshots_per_expiry
@@ -522,6 +526,12 @@ def _summary(
                 ),
                 "min_daily_observations": _int(
                     vendor_row.get("min_daily_observations", 0)
+                ),
+                "min_daily_gap_observations": _int(
+                    vendor_row.get("min_daily_gap_observations", 0)
+                ),
+                "max_daily_observation_gap_ns": _int(
+                    vendor_row.get("max_daily_observation_gap_ns", 0)
                 ),
                 "median_daily_observation_span_ns": _float(
                     vendor_row.get(
@@ -1234,6 +1244,8 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Local trading days observed: {_int(row.get('observation_days', 0))}",
         f"- Minimum daily observation span (ns): {_int(row.get('min_daily_observation_span_ns', 0))}",
         f"- Minimum daily observations: {_int(row.get('min_daily_observations', 0))}",
+        f"- Minimum daily gap observations: {_int(row.get('min_daily_gap_observations', 0))}",
+        f"- Maximum daily observation gap (ns): {_int(row.get('max_daily_observation_gap_ns', 0))}",
         f"- Median daily observation span (ns): {_float(row.get('median_daily_observation_span_ns', 0.0))}",
         f"- Maximum daily observation span (ns): {_int(row.get('max_daily_observation_span_ns', 0))}",
         f"- Strike-grid validation: {'yes' if _bool(row.get('strike_grid_validation_enabled', False)) else 'no'}",
@@ -1447,6 +1459,12 @@ def _config(
             ),
             "min_daily_observations": _int(
                 row.get("min_daily_observations", 0)
+            ),
+            "min_daily_gap_observations": _int(
+                row.get("min_daily_gap_observations", 0)
+            ),
+            "max_daily_observation_gap_ns": _int(
+                row.get("max_daily_observation_gap_ns", 0)
             ),
             "median_daily_observation_span_ns": _float(
                 row.get("median_daily_observation_span_ns", 0.0)

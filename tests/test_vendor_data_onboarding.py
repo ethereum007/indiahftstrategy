@@ -1337,6 +1337,7 @@ def test_vendor_market_data_pipeline_gates_min_daily_observation_span(
             timestamp_unit="datetime",
             min_daily_observation_span_ns=1_000_000_001,
             min_daily_observations=3,
+            max_daily_observation_gap_ns=999_999_999,
         ),
     )
 
@@ -1363,23 +1364,41 @@ def test_vendor_market_data_pipeline_gates_min_daily_observation_span(
         == 1_000_000_000
     )
     assert int(diagnostic_summary["min_daily_rows"]) == 2
+    assert int(diagnostic_summary["min_daily_gap_observations"]) == 1
+    assert (
+        int(diagnostic_summary["max_daily_observation_gap_ns"])
+        == 1_000_000_000
+    )
     assert (
         int(blocked.summary.loc[0, "min_daily_observation_span_ns"])
         == 1_000_000_000
     )
     assert int(blocked.summary.loc[0, "min_daily_observations"]) == 2
+    assert (
+        int(blocked.summary.loc[0, "max_daily_observation_gap_ns"])
+        == 1_000_000_000
+    )
     assert "tick_min_daily_observation_span_ns" in failed
     assert "tick_min_daily_rows" in failed
+    assert "tick_max_daily_observation_gap_ns" in failed
     assert (
         blocked_config["diagnostics"]["min_daily_observation_span_ns"]
         == 1_000_000_000
     )
     assert blocked_config["diagnostics"]["min_daily_observations"] == 2
     assert (
+        blocked_config["diagnostics"]["max_daily_observation_gap_ns"]
+        == 1_000_000_000
+    )
+    assert (
         "- Minimum daily observation span (ns): 1000000000"
         in blocked_runbook
     )
     assert "- Minimum daily observations: 2" in blocked_runbook
+    assert (
+        "- Maximum daily observation gap (ns): 1000000000"
+        in blocked_runbook
+    )
 
     allowed_dir = tmp_path / "allowed_short_session_pipeline"
     code = main(
@@ -1399,6 +1418,8 @@ def test_vendor_market_data_pipeline_gates_min_daily_observation_span(
             "1000000000",
             "--min-daily-observations",
             "2",
+            "--max-daily-observation-gap-ns",
+            "1000000000",
             "--fail-on-breach",
         ]
     )
@@ -1415,6 +1436,9 @@ def test_vendor_market_data_pipeline_gates_min_daily_observation_span(
     assert allowed_config["data_readiness"]["thresholds"][
         "min_tick_daily_rows"
     ] == 2
+    assert allowed_config["data_readiness"]["thresholds"][
+        "max_tick_daily_observation_gap_ns"
+    ] == 1_000_000_000
 
     with pytest.raises(
         ValueError,
@@ -1439,6 +1463,17 @@ def test_vendor_market_data_pipeline_gates_min_daily_observation_span(
                 kind="ticks",
                 timestamp_unit="datetime",
                 min_daily_observations=-1,
+            ),
+        )
+    with pytest.raises(ValueError, match="max_daily_observation_gap_ns"):
+        write_vendor_market_data_pipeline(
+            raw_path,
+            output_dir=tmp_path / "invalid_daily_gap",
+            config=VendorMarketDataPipelineConfig(
+                adapter="arrow_money",
+                kind="ticks",
+                timestamp_unit="datetime",
+                max_daily_observation_gap_ns=-1,
             ),
         )
 
@@ -1916,6 +1951,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert summary["observation_date_coverage"] == 1.0
     assert int(summary["min_daily_observation_span_ns"]) == 1_000_000_000
     assert int(summary["min_daily_observations"]) == 2
+    assert int(summary["min_daily_gap_observations"]) == 1
+    assert int(summary["max_daily_observation_gap_ns"]) == 1_000_000_000
     assert int(summary["max_daily_observation_span_ns"]) == 1_000_000_000
     assert summary["blocked_action_count"] == 0
     assert summary["next_gate"] == ""
@@ -1936,6 +1973,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert "- Local trading days observed: 2" in runbook
     assert "- Minimum daily observation span (ns): 1000000000" in runbook
     assert "- Minimum daily observations: 2" in runbook
+    assert "- Minimum daily gap observations: 1" in runbook
+    assert "- Maximum daily observation gap (ns): 1000000000" in runbook
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
     assert (report.datasets["dropped_null_rows"].astype(int) == 0).all()
     assert (report.datasets["dropped_nonfinite_rows"].astype(int) == 0).all()
@@ -1964,6 +2003,13 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     ).all()
     assert (
         report.datasets["min_daily_observations"].astype(int) == 2
+    ).all()
+    assert (
+        report.datasets["min_daily_gap_observations"].astype(int) == 1
+    ).all()
+    assert (
+        report.datasets["max_daily_observation_gap_ns"].astype(int)
+        == 1_000_000_000
     ).all()
     assert report.datasets["source_file_sha256"].nunique() == 2
     assert report.datasets["source_header_sha256"].nunique() == 1
@@ -1996,6 +2042,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["observation_days"] == 2
     assert config["min_daily_observation_span_ns"] == 1_000_000_000
     assert config["min_daily_observations"] == 2
+    assert config["min_daily_gap_observations"] == 1
+    assert config["max_daily_observation_gap_ns"] == 1_000_000_000
     assert config["unique_source_files"] == 2
     assert config["source_file_fingerprint_coverage"] == 1.0
     assert config["min_mapping_coverage"] == 1.0
@@ -2023,6 +2071,11 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
         == 1_000_000_000
     )
     assert config["datasets"][0]["min_daily_observations"] == 2
+    assert config["datasets"][0]["min_daily_gap_observations"] == 1
+    assert (
+        config["datasets"][0]["max_daily_observation_gap_ns"]
+        == 1_000_000_000
+    )
     assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
@@ -2068,6 +2121,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
             "1000000000",
             "--min-daily-observations",
             "2",
+            "--max-daily-observation-gap-ns",
+            "1000000000",
             "--min-datasets",
             "2",
             "--min-unique-observation-dates",
@@ -2099,6 +2154,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert cli_config["data_readiness_thresholds"][
         "min_tick_daily_rows"
     ] == 2
+    assert cli_config["data_readiness_thresholds"][
+        "max_tick_daily_observation_gap_ns"
+    ] == 1_000_000_000
     assert (
         cli_config["comparison"]["thresholds"][
             "min_unique_observation_dates"

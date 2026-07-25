@@ -156,6 +156,8 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
             "1000000000",
             "--min-daily-observations",
             "2",
+            "--max-daily-observation-gap-ns",
+            "1000000000",
             "--max-null-rows",
             "2",
             "--max-nonfinite-rows",
@@ -218,7 +220,16 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
         == 1_000_000_000
     )
     assert config["parameters"]["min_daily_observations"] == 2
+    assert (
+        config["parameters"]["max_daily_observation_gap_ns"]
+        == 1_000_000_000
+    )
     assert int(summary.loc[0, "min_daily_observations"]) == 2
+    assert int(summary.loc[0, "min_daily_gap_observations"]) == 1
+    assert (
+        int(summary.loc[0, "max_daily_observation_gap_ns"])
+        == 1_000_000_000
+    )
     assert bool(vendor_summary.loc[0, "quote_spread_validation_enabled"])
     assert int(vendor_summary.loc[0, "wide_spread_rows"]) == 0
     assert bool(vendor_summary.loc[0, "bbo_staleness_validation_enabled"])
@@ -228,6 +239,10 @@ def test_cli_provider_market_data_pipeline_accepts_rest_capture(tmp_path):
         == 1_000_000_000
     )
     assert int(vendor_summary.loc[0, "min_daily_observations"]) == 2
+    assert (
+        int(vendor_summary.loc[0, "max_daily_observation_gap_ns"])
+        == 1_000_000_000
+    )
 
 
 def test_cli_provider_market_data_pipeline_carries_chain_strike_grid(tmp_path):

@@ -41,6 +41,7 @@ class ProviderMarketDataPipelineConfig:
     pipeline_min_rows: int = 1
     min_daily_observation_span_ns: int | None = None
     min_daily_observations: int | None = None
+    max_daily_observation_gap_ns: int | None = None
     max_null_rows: int = 0
     max_nonfinite_rows: int = 0
     max_nonintegral_rows: int = 0
@@ -137,6 +138,9 @@ def write_provider_market_data_pipeline(
                     config.min_daily_observation_span_ns
                 ),
                 min_daily_observations=config.min_daily_observations,
+                max_daily_observation_gap_ns=(
+                    config.max_daily_observation_gap_ns
+                ),
                 max_null_rows=config.max_null_rows,
                 max_nonfinite_rows=config.max_nonfinite_rows,
                 max_nonintegral_rows=config.max_nonintegral_rows,
@@ -274,6 +278,20 @@ def _summary(
                     _number(
                         vendor_summary,
                         "min_daily_observations",
+                        fallback=0.0,
+                    )
+                ),
+                "min_daily_gap_observations": int(
+                    _number(
+                        vendor_summary,
+                        "min_daily_gap_observations",
+                        fallback=0.0,
+                    )
+                ),
+                "max_daily_observation_gap_ns": int(
+                    _number(
+                        vendor_summary,
+                        "max_daily_observation_gap_ns",
                         fallback=0.0,
                     )
                 ),
@@ -430,6 +448,8 @@ def _runbook_markdown(summary: pd.Series, components: pd.DataFrame, action_queue
         f"- Calendar SHA-256: {summary['market_calendar_sha256']}",
         f"- Kind: {summary['kind']}",
         f"- Minimum daily observations: {int(_number(summary, 'min_daily_observations', fallback=0.0))}",
+        f"- Minimum daily gap observations: {int(_number(summary, 'min_daily_gap_observations', fallback=0.0))}",
+        f"- Maximum daily observation gap (ns): {int(_number(summary, 'max_daily_observation_gap_ns', fallback=0.0))}",
         "",
         "## Components",
     ]

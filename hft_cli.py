@@ -3052,6 +3052,11 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=None,
     )
+    provider_market_data_pipeline.add_argument(
+        "--max-daily-observation-gap-ns",
+        type=int,
+        default=None,
+    )
     provider_market_data_pipeline.add_argument("--max-null-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonfinite-rows", type=int, default=0)
     provider_market_data_pipeline.add_argument("--max-nonintegral-rows", type=int, default=0)
@@ -3105,6 +3110,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     provider_market_data_batch.add_argument(
         "--min-daily-observations",
+        type=int,
+        default=None,
+    )
+    provider_market_data_batch.add_argument(
+        "--max-daily-observation-gap-ns",
         type=int,
         default=None,
     )
@@ -3204,6 +3214,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     vendor_market_data.add_argument(
         "--min-daily-observations",
+        type=int,
+        default=None,
+    )
+    vendor_market_data.add_argument(
+        "--max-daily-observation-gap-ns",
         type=int,
         default=None,
     )
@@ -3314,6 +3329,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     vendor_market_data_batch.add_argument(
         "--min-daily-observations",
+        type=int,
+        default=None,
+    )
+    vendor_market_data_batch.add_argument(
+        "--max-daily-observation-gap-ns",
         type=int,
         default=None,
     )
@@ -3435,6 +3455,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     broker_vendor_data_readiness.add_argument(
         "--min-daily-observations",
+        type=int,
+        default=None,
+    )
+    broker_vendor_data_readiness.add_argument(
+        "--max-daily-observation-gap-ns",
         type=int,
         default=None,
     )
@@ -3612,6 +3637,11 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=None,
     )
+    data_readiness.add_argument(
+        "--max-tick-daily-observation-gap-ns",
+        type=int,
+        default=None,
+    )
     data_readiness.add_argument("--min-chain-rows", type=int, default=1)
     data_readiness.add_argument(
         "--min-chain-daily-observation-span-ns",
@@ -3620,6 +3650,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     data_readiness.add_argument(
         "--min-chain-daily-snapshots-per-expiry",
+        type=int,
+        default=None,
+    )
+    data_readiness.add_argument(
+        "--max-chain-daily-snapshot-gap-ns-per-expiry",
         type=int,
         default=None,
     )
@@ -8042,6 +8077,9 @@ def main(argv: list[str] | None = None) -> int:
                     args.min_daily_observation_span_ns
                 ),
                 min_daily_observations=args.min_daily_observations,
+                max_daily_observation_gap_ns=(
+                    args.max_daily_observation_gap_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8102,6 +8140,9 @@ def main(argv: list[str] | None = None) -> int:
                     args.min_daily_observation_span_ns
                 ),
                 min_daily_observations=args.min_daily_observations,
+                max_daily_observation_gap_ns=(
+                    args.max_daily_observation_gap_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8177,6 +8218,9 @@ def main(argv: list[str] | None = None) -> int:
                     args.min_daily_observation_span_ns
                 ),
                 min_daily_observations=args.min_daily_observations,
+                max_daily_observation_gap_ns=(
+                    args.max_daily_observation_gap_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8261,6 +8305,9 @@ def main(argv: list[str] | None = None) -> int:
                     args.min_daily_observation_span_ns
                 ),
                 min_daily_observations=args.min_daily_observations,
+                max_daily_observation_gap_ns=(
+                    args.max_daily_observation_gap_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8375,6 +8422,9 @@ def main(argv: list[str] | None = None) -> int:
                     args.min_daily_observation_span_ns
                 ),
                 min_daily_observations=args.min_daily_observations,
+                max_daily_observation_gap_ns=(
+                    args.max_daily_observation_gap_ns
+                ),
                 max_null_rows=args.max_null_rows,
                 max_nonfinite_rows=args.max_nonfinite_rows,
                 max_nonintegral_rows=args.max_nonintegral_rows,
@@ -8553,12 +8603,19 @@ def main(argv: list[str] | None = None) -> int:
                     args.min_tick_daily_observation_span_ns
                 ),
                 min_tick_daily_rows=args.min_tick_daily_rows,
+                max_tick_daily_observation_gap_ns=(
+                    args.max_tick_daily_observation_gap_ns
+                ),
                 min_chain_rows=args.min_chain_rows,
                 min_chain_daily_observation_span_ns=(
                     args.min_chain_daily_observation_span_ns
                 ),
                 min_chain_daily_snapshots_per_expiry=(
                     args.min_chain_daily_snapshots_per_expiry
+                ),
+                max_chain_daily_snapshot_gap_ns_per_expiry=(
+                    args
+                    .max_chain_daily_snapshot_gap_ns_per_expiry
                 ),
                 min_chain_expiries=args.min_chain_expiries,
                 min_chain_strikes=args.min_chain_strikes,

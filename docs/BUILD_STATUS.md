@@ -7194,6 +7194,27 @@ cutover, strategy, quote-risk, scale-up, parity, and surface regressions pass
 files. The full suite was not rerun because recent complete runs exceed 40
 minutes. All outputs remain non-authorizing.
 
+Latest market-local maximum-gap gate: tick diagnostics now retain the largest
+consecutive timestamp gap after resetting at each local trading date, while
+option-chain diagnostics use distinct snapshot timestamps and maintain the
+conservative maximum per expiry and observed local day. The opt-in
+`--max-daily-observation-gap-ns` wrapper policy maps to explicit direct tick
+and per-expiry chain thresholds. Enabling it also requires at least one
+measurable gap on every evaluated tick day or expiry-day, so a single-timestamp
+capture fails closed rather than passing with a synthetic zero. Reports retain
+`min_daily_gap_observations`, `max_daily_observation_gap_ns`,
+`min_daily_gap_observations_per_expiry`, and
+`max_daily_snapshot_gap_ns_per_expiry` evidence through Arrow.money/iRage
+vendor onboarding, provider wrappers, broker-vendor proof, CLI, configs,
+summaries, manifests, and runbooks. This complements the existing p99 gap
+policy, excludes overnight closures by construction, and neither infers a
+sampling cadence nor fills missing observations. Directly affected and
+downstream data-proof, manifest/catalog, live-ingest, cutover, contract,
+strategy, quote-risk, and scale-up regressions pass (`644` tests). Repository
+collection is healthy at `2634 tests` across `164` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes. All outputs remain
+non-authorizing.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

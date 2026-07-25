@@ -132,6 +132,8 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
             "1000000000",
             "--min-daily-observations",
             "2",
+            "--max-daily-observation-gap-ns",
+            "1000000000",
             "--max-null-rows",
             "2",
             "--max-nonfinite-rows",
@@ -192,9 +194,19 @@ def test_provider_market_data_batch_compares_clean_capture_sessions(tmp_path):
         == 1_000_000_000
     )
     assert cli_config["parameters"]["min_daily_observations"] == 2
+    assert (
+        cli_config["parameters"]["max_daily_observation_gap_ns"]
+        == 1_000_000_000
+    )
     assert cli_config["min_daily_observations"] == 2
+    assert cli_config["min_daily_gap_observations"] == 1
+    assert cli_config["max_daily_observation_gap_ns"] == 1_000_000_000
     assert all(
         int(row["min_daily_observations"]) == 2
+        for row in cli_config["datasets"]
+    )
+    assert all(
+        int(row["max_daily_observation_gap_ns"]) == 1_000_000_000
         for row in cli_config["datasets"]
     )
     assert (

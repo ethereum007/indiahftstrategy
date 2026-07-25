@@ -64,6 +64,7 @@ class VendorMarketDataPipelineConfig:
     min_rows: int = 1
     min_daily_observation_span_ns: int | None = None
     min_daily_observations: int | None = None
+    max_daily_observation_gap_ns: int | None = None
     min_chain_expiry_snapshots: int = 1
     min_chain_snapshots_per_expiry: int = 1
     min_chain_snapshot_strikes: int = 1
@@ -590,6 +591,20 @@ def write_vendor_market_data_batch_pipeline(
                         fallback=0.0,
                     )
                 ),
+                "min_daily_gap_observations": int(
+                    _number(
+                        row,
+                        "min_daily_gap_observations",
+                        fallback=0.0,
+                    )
+                ),
+                "max_daily_observation_gap_ns": int(
+                    _number(
+                        row,
+                        "max_daily_observation_gap_ns",
+                        fallback=0.0,
+                    )
+                ),
                 "median_daily_observation_span_ns": _number(
                     row,
                     "median_daily_observation_span_ns",
@@ -862,6 +877,11 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
             if config.kind == "ticks"
             else None
         ),
+        max_tick_daily_observation_gap_ns=(
+            config.max_daily_observation_gap_ns
+            if config.kind == "ticks"
+            else None
+        ),
         min_chain_rows=config.min_rows,
         min_chain_daily_observation_span_ns=(
             config.min_daily_observation_span_ns
@@ -870,6 +890,11 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         ),
         min_chain_daily_snapshots_per_expiry=(
             config.min_daily_observations
+            if config.kind == "chain"
+            else None
+        ),
+        max_chain_daily_snapshot_gap_ns_per_expiry=(
+            config.max_daily_observation_gap_ns
             if config.kind == "chain"
             else None
         ),
@@ -1229,6 +1254,20 @@ def _summary(
                     _number(
                         diagnostic_row,
                         _daily_observation_metric(config.kind),
+                        fallback=0.0,
+                    )
+                ),
+                "min_daily_gap_observations": int(
+                    _number(
+                        diagnostic_row,
+                        _daily_gap_observation_count_metric(config.kind),
+                        fallback=0.0,
+                    )
+                ),
+                "max_daily_observation_gap_ns": int(
+                    _number(
+                        diagnostic_row,
+                        _daily_gap_metric(config.kind),
                         fallback=0.0,
                     )
                 ),
@@ -1665,6 +1704,8 @@ def _pipeline_runbook_markdown(
         f"- Local trading days observed: {int(_number_from_value(summary_row.get('observation_days', 0)))}",
         f"- Minimum daily observation span (ns): {int(_number_from_value(summary_row.get('min_daily_observation_span_ns', 0)))}",
         f"- Minimum daily observations: {int(_number_from_value(summary_row.get('min_daily_observations', 0)))}",
+        f"- Minimum daily gap observations: {int(_number_from_value(summary_row.get('min_daily_gap_observations', 0)))}",
+        f"- Maximum daily observation gap (ns): {int(_number_from_value(summary_row.get('max_daily_observation_gap_ns', 0)))}",
         f"- Median daily observation span (ns): {_number_from_value(summary_row.get('median_daily_observation_span_ns', 0.0))}",
         f"- Maximum daily observation span (ns): {int(_number_from_value(summary_row.get('max_daily_observation_span_ns', 0)))}",
         f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
@@ -1762,6 +1803,8 @@ def _batch_runbook_markdown(
         f"- Local trading days observed: {int(_number_from_value(summary_row.get('observation_days', 0)))}",
         f"- Minimum daily observation span (ns): {int(_number_from_value(summary_row.get('min_daily_observation_span_ns', 0)))}",
         f"- Minimum daily observations: {int(_number_from_value(summary_row.get('min_daily_observations', 0)))}",
+        f"- Minimum daily gap observations: {int(_number_from_value(summary_row.get('min_daily_gap_observations', 0)))}",
+        f"- Maximum daily observation gap (ns): {int(_number_from_value(summary_row.get('max_daily_observation_gap_ns', 0)))}",
         f"- Median daily observation span (ns): {_number_from_value(summary_row.get('median_daily_observation_span_ns', 0.0))}",
         f"- Maximum daily observation span (ns): {int(_number_from_value(summary_row.get('max_daily_observation_span_ns', 0)))}",
         f"- Strike-grid validation: {'yes' if _truthy(summary_row.get('strike_grid_validation_enabled', False)) else 'no'}",
@@ -2110,6 +2153,32 @@ def _batch_summary(
                     if dataset_count
                     else 0
                 ),
+                "min_daily_gap_observations": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "min_daily_gap_observations",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).min()
+                    )
+                    if dataset_count
+                    else 0
+                ),
+                "max_daily_observation_gap_ns": (
+                    int(
+                        pd.to_numeric(
+                            datasets.get(
+                                "max_daily_observation_gap_ns",
+                                pd.Series(dtype=float),
+                            ),
+                            errors="coerce",
+                        ).fillna(0).max()
+                    )
+                    if dataset_count
+                    else 0
+                ),
                 "median_daily_observation_span_ns": (
                     float(
                         pd.to_numeric(
@@ -2376,6 +2445,20 @@ def _pipeline_config(
                     fallback=0.0,
                 )
             ),
+            "min_daily_gap_observations": int(
+                _number(
+                    row,
+                    "min_daily_gap_observations",
+                    fallback=0.0,
+                )
+            ),
+            "max_daily_observation_gap_ns": int(
+                _number(
+                    row,
+                    "max_daily_observation_gap_ns",
+                    fallback=0.0,
+                )
+            ),
             "median_daily_observation_span_ns": _number(
                 row,
                 "median_daily_observation_span_ns",
@@ -2523,6 +2606,16 @@ def _batch_config(
             "min_daily_observations": int(
                 _number_from_value(
                     item.get("min_daily_observations", 0)
+                )
+            ),
+            "min_daily_gap_observations": int(
+                _number_from_value(
+                    item.get("min_daily_gap_observations", 0)
+                )
+            ),
+            "max_daily_observation_gap_ns": int(
+                _number_from_value(
+                    item.get("max_daily_observation_gap_ns", 0)
                 )
             ),
             "median_daily_observation_span_ns": _number_from_value(
@@ -2693,6 +2786,20 @@ def _batch_config(
                 fallback=0.0,
             )
         ),
+        "min_daily_gap_observations": int(
+            _number(
+                row,
+                "min_daily_gap_observations",
+                fallback=0.0,
+            )
+        ),
+        "max_daily_observation_gap_ns": int(
+            _number(
+                row,
+                "max_daily_observation_gap_ns",
+                fallback=0.0,
+            )
+        ),
         "median_daily_observation_span_ns": _number(
             row,
             "median_daily_observation_span_ns",
@@ -2836,6 +2943,18 @@ def _daily_observation_metric(kind: str) -> str:
     if kind == "ticks":
         return "min_daily_rows"
     return "min_daily_snapshots_per_expiry"
+
+
+def _daily_gap_observation_count_metric(kind: str) -> str:
+    if kind == "ticks":
+        return "min_daily_gap_observations"
+    return "min_daily_gap_observations_per_expiry"
+
+
+def _daily_gap_metric(kind: str) -> str:
+    if kind == "ticks":
+        return "max_daily_observation_gap_ns"
+    return "max_daily_snapshot_gap_ns_per_expiry"
 
 
 def _first(frame: pd.DataFrame) -> pd.Series:
@@ -3007,6 +3126,17 @@ def _validate_config(config: VendorMarketDataPipelineConfig) -> None:
     ):
         raise ValueError(
             "min_daily_observations must be a non-negative integer"
+        )
+    if (
+        config.max_daily_observation_gap_ns is not None
+        and (
+            isinstance(config.max_daily_observation_gap_ns, bool)
+            or not isinstance(config.max_daily_observation_gap_ns, int)
+            or config.max_daily_observation_gap_ns < 0
+        )
+    ):
+        raise ValueError(
+            "max_daily_observation_gap_ns must be a non-negative integer"
         )
     if config.strike_step is not None and config.kind != "chain":
         raise ValueError("strike_step is only valid for chain data")
