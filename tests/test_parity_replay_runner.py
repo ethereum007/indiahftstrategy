@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from hft_cli import main
+from reports.proof import ProofThresholds, evaluate_replay_dirs
 from strategies.run_parity_replay import run_parity_replay
 
 
@@ -160,6 +161,40 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert float(
         summary["parity_execution_max_observed_edge_decay"]
     ) == 0.0
+    assert bool(summary["parity_execution_realized_edge_enabled"])
+    assert int(
+        summary["parity_execution_realized_edge_evaluable_count"]
+    ) == 1
+    assert int(
+        summary["parity_execution_realized_edge_positive_count"]
+    ) == 1
+    assert int(
+        summary["parity_execution_realized_edge_nonpositive_count"]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_realized_edge_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        summary[
+            "parity_execution_realized_edge_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        summary["parity_execution_min_realized_net_edge"]
+    ) > 7_800.0
+    assert float(
+        summary["parity_execution_total_realized_net_edge"]
+    ) == float(
+        summary["parity_execution_min_realized_net_edge"]
+    )
+    assert float(
+        summary[
+            "parity_execution_min_realized_vs_decision_net_edge"
+        ]
+    ) == 0.0
+    assert int(summary["parity_execution_max_fill_span_ns"]) == 0
     assert bool(
         summary["parity_execution_ioc_batch_preflight_enabled"]
     )
@@ -243,6 +278,22 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
         float(routed_guard["decision_gross_edge"])
         - float(routed_guard["decision_total_cost"])
     )
+    outcome = replay.legging.iloc[0]
+    assert bool(outcome["realized_edge_evaluable"])
+    assert bool(outcome["realized_edge_positive"])
+    assert float(outcome["call_fill_vwap"]) == 55.0
+    assert float(outcome["put_fill_vwap"]) == 60.0
+    assert float(outcome["future_fill_vwap"]) == 1100.0
+    assert float(outcome["realized_edge_per_unit"]) == 105.0
+    assert float(outcome["realized_total_cost"]) == (
+        float(outcome["call_fill_cost"])
+        + float(outcome["put_fill_cost"])
+        + float(outcome["future_fill_cost"])
+    )
+    assert float(outcome["realized_net_edge"]) == float(
+        routed_guard["decision_net_edge"]
+    )
+    assert float(outcome["realized_vs_decision_net_edge"]) == 0.0
     assert bool(routed_guard["ioc_batch_preflight_enabled"])
     assert bool(routed_guard["ioc_batch_preflight_attempted"])
     assert bool(routed_guard["ioc_batch_preflight_passed"])
@@ -257,6 +308,91 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
             "ioc_batch_preflight_min_visible_fill_ratio"
         ]
     ) == 4.0
+
+
+def test_run_parity_replay_proves_reverse_realized_package_edge(
+    tmp_path,
+):
+    timestamps = [
+        ns_ist("2026-06-10 09:15:00"),
+        ns_ist("2026-06-10 09:15:00.000100"),
+    ]
+    chain = pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "expiry": "2026-06-30",
+                "strike": 1000.0,
+                "call_bid": 54.0,
+                "call_ask": 55.0,
+                "call_bid_qty": 300,
+                "call_ask_qty": 300,
+                "put_bid": 60.0,
+                "put_ask": 61.0,
+                "put_bid_qty": 300,
+                "put_ask_qty": 300,
+            }
+            for ts in timestamps
+        ]
+    )
+    futures = pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "bid": 979.0,
+                "ask": 980.0,
+                "bid_qty": 300,
+                "ask_qty": 300,
+            }
+            for ts in timestamps
+        ]
+    )
+    chain_path = tmp_path / "chain.csv"
+    futures_path = tmp_path / "futures.csv"
+    out_dir = tmp_path / "reverse_replay"
+    chain.to_csv(chain_path, index=False)
+    futures.to_csv(futures_path, index=False)
+
+    replay = run_parity_replay(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        depth_fraction=0.25,
+        signal_limit=1,
+    )
+    proof = evaluate_replay_dirs(
+        [out_dir],
+        thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+
+    outcome = replay.legging.iloc[0]
+    proof_metrics = proof.metrics.iloc[0]
+    assert replay.signals.iloc[0]["direction"] == (
+        "sell_synthetic_buy_future"
+    )
+    assert int(outcome["call_side"]) == -1
+    assert int(outcome["put_side"]) == 1
+    assert int(outcome["future_side"]) == 1
+    assert float(outcome["realized_edge_per_unit"]) == 13.0
+    assert float(outcome["realized_net_edge"]) > 900.0
+    assert bool(outcome["realized_edge_positive"])
+    assert proof.passed
+    assert int(
+        proof_metrics[
+            "parity_execution_realized_edge_evaluable_count"
+        ]
+    ) == 1
+    assert int(
+        proof_metrics[
+            "parity_execution_realized_edge_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        proof_metrics["parity_execution_min_realized_net_edge"]
+    ) == float(outcome["realized_net_edge"])
 
 
 def test_run_parity_replay_rejects_edge_that_decays_during_feed_latency(

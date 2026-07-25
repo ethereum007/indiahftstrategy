@@ -40,10 +40,12 @@
   receive a non-mutating IOC-batch admission preflight covering venue rules,
   visible books, conservative self-cross conflicts, and package-wide
   instrument, gross, delta, and vega risk before any order ID is allocated.
-  Legging evidence still requires all three non-atomic orders to be accepted
-  and fully filled before an execution is complete. Proof, sweeps,
-  comparisons, and candidate replay defaults preserve and enforce the same
-  limits and preflight evidence.
+  Legging evidence requires all three non-atomic orders to be accepted and
+  fully filled before an execution is complete, binds each leg to raw order and
+  fill evidence, and reports realized package edge after actual fill costs.
+  Proof, sweeps, comparisons, and candidate replay defaults preserve and
+  enforce the same limits, preflight evidence, and complete-package outcome
+  economics.
 - Parity/box edge audit that gates scan outputs on opportunity count, net edge,
   persistence, direction coverage, and futures staleness before replay/sweep
   work.
@@ -7535,6 +7537,25 @@ All `98` multi-engine, parity, proof, promotion, order-plan, launch, and sweep
 regressions pass. Repository collection is healthy at `2719 tests` across
 `164` files. The full suite was not rerun because recent complete runs exceed
 40 minutes. All outputs remain non-authorizing.
+
+Latest realized parity package-edge proof: every accepted call, put, and
+future leg is now bound to its order ID, actual filled quantity, fill VWAP,
+fill cost, and first/last fill timestamp. Only a fully routed and fully filled
+three-leg package receives realized-edge evidence; partial packages remain
+explicitly unevaluable. Replay reports realized edge per unit, gross and net
+package edge, decision-to-fill change, and fill span. Proof independently
+joins those order IDs to raw `fills.csv`, verifies instrument, side, quantity,
+limit protection, costs, and integer-exact nanosecond timing, and recomputes
+the package outcome. Missing or reused IDs, altered fills, inconsistent
+arithmetic, and completed packages with nonpositive realized net edge fail
+closed. Parity sweeps and cross-sweep comparisons preserve complete,
+positive, nonpositive, missing, and inconsistent outcome counts, total and
+minimum realized net edge, minimum decision-to-fill change, and maximum fill
+span. The 49-test focused parity/proof set and the broader `101`-test
+multi-engine, parity, proof, promotion, order-plan, launch, and sweep set pass.
+Source compilation succeeds. Repository collection is healthy at `2722 tests`
+across `164` files. The full suite was not rerun because recent complete runs
+exceed 40 minutes. All outputs remain non-authorizing.
 
 ## Next Build Targets
 

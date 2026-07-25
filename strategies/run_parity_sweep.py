@@ -208,10 +208,13 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "parity_execution_signal_source_causality_declared_runs",
                 "parity_execution_edge_revalidation_enabled_runs",
                 "parity_execution_edge_revalidation_declared_runs",
+                "parity_execution_realized_edge_enabled_runs",
+                "parity_execution_realized_edge_declared_runs",
                 "parity_execution_ioc_batch_preflight_enabled_runs",
                 "parity_execution_ioc_batch_preflight_declared_runs",
                 "parity_execution_guard_artifact_present_runs",
                 "parity_execution_legging_artifact_present_runs",
+                "parity_execution_fills_artifact_present_runs",
                 "total_parity_execution_guard_attempts",
                 "total_parity_execution_guard_passed_attempts",
                 "total_parity_execution_guard_deferred_attempts",
@@ -225,6 +228,12 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "total_parity_execution_edge_revalidation_rejected_attempts",
                 "total_parity_execution_edge_revalidation_missing_evidence_rows",
                 "total_parity_execution_edge_revalidation_consistency_violations",
+                "total_parity_execution_realized_edge_evaluable_count",
+                "total_parity_execution_realized_edge_positive_count",
+                "total_parity_execution_realized_edge_nonpositive_count",
+                "total_parity_execution_realized_edge_missing_evidence_rows",
+                "total_parity_execution_realized_edge_consistency_violations",
+                "total_parity_execution_realized_net_edge",
                 "total_parity_execution_ioc_batch_preflight_attempts",
                 "total_parity_execution_ioc_batch_preflight_passed_attempts",
                 "total_parity_execution_ioc_batch_preflight_rejected_attempts",
@@ -251,6 +260,9 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "max_parity_execution_signal_source_lag_ns",
                 "min_parity_execution_routed_net_edge",
                 "max_parity_execution_observed_edge_decay",
+                "min_parity_execution_realized_net_edge",
+                "min_parity_execution_realized_vs_decision_net_edge",
+                "max_parity_execution_fill_span_ns",
                 "min_parity_execution_routed_visible_fill_ratio",
                 "total_parity_execution_count",
                 "total_parity_execution_legging_missing_evidence_rows",
@@ -378,6 +390,18 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         "parity_execution_edge_revalidation_declared",
                     )
                 ),
+                "parity_execution_realized_edge_enabled_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_realized_edge_enabled",
+                    )
+                ),
+                "parity_execution_realized_edge_declared_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_realized_edge_declared",
+                    )
+                ),
                 "parity_execution_ioc_batch_preflight_enabled_runs": (
                     _sum_bool_metric(
                         runs,
@@ -400,6 +424,12 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     _sum_bool_metric(
                         runs,
                         "parity_execution_legging_present",
+                    )
+                ),
+                "parity_execution_fills_artifact_present_runs": (
+                    _sum_bool_metric(
+                        runs,
+                        "parity_execution_fills_present",
                     )
                 ),
                 "total_parity_execution_guard_attempts": _sum_int_metric(
@@ -476,6 +506,42 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                     _sum_int_metric(
                         runs,
                         "parity_execution_edge_revalidation_consistency_violations",
+                    )
+                ),
+                "total_parity_execution_realized_edge_evaluable_count": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_realized_edge_evaluable_count",
+                    )
+                ),
+                "total_parity_execution_realized_edge_positive_count": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_realized_edge_positive_count",
+                    )
+                ),
+                "total_parity_execution_realized_edge_nonpositive_count": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_realized_edge_nonpositive_count",
+                    )
+                ),
+                "total_parity_execution_realized_edge_missing_evidence_rows": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_realized_edge_missing_evidence_rows",
+                    )
+                ),
+                "total_parity_execution_realized_edge_consistency_violations": (
+                    _sum_int_metric(
+                        runs,
+                        "parity_execution_realized_edge_consistency_violations",
+                    )
+                ),
+                "total_parity_execution_realized_net_edge": (
+                    _sum_float_metric(
+                        runs,
+                        "parity_execution_total_realized_net_edge",
                     )
                 ),
                 "total_parity_execution_ioc_batch_preflight_attempts": (
@@ -637,6 +703,24 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
                         runs,
                         "parity_execution_max_observed_edge_decay",
                     )
+                ),
+                "min_parity_execution_realized_net_edge": (
+                    _min_metric_where(
+                        runs,
+                        "parity_execution_min_realized_net_edge",
+                        "parity_execution_realized_edge_evaluable_count",
+                    )
+                ),
+                "min_parity_execution_realized_vs_decision_net_edge": (
+                    _min_metric_where(
+                        runs,
+                        "parity_execution_min_realized_vs_decision_net_edge",
+                        "parity_execution_realized_edge_evaluable_count",
+                    )
+                ),
+                "max_parity_execution_fill_span_ns": _max_int_metric(
+                    runs,
+                    "parity_execution_max_fill_span_ns",
                 ),
                 "total_parity_execution_count": _sum_int_metric(
                     runs,
@@ -849,6 +933,13 @@ def _sum_int_metric(runs: pd.DataFrame, column: str) -> int:
     return int(pd.to_numeric(values, errors="coerce").fillna(0).sum())
 
 
+def _sum_float_metric(runs: pd.DataFrame, column: str) -> float:
+    values = runs.get(column, pd.Series(0.0, index=runs.index))
+    return float(
+        pd.to_numeric(values, errors="coerce").fillna(0.0).sum()
+    )
+
+
 def _max_int_metric(runs: pd.DataFrame, column: str) -> int:
     values = runs.get(column, pd.Series(0, index=runs.index))
     return int(pd.to_numeric(values, errors="coerce").fillna(0).max())
@@ -872,6 +963,28 @@ def _min_routed_metric(
         ),
         errors="coerce",
     ).loc[routed].dropna()
+    return float(values.min()) if not values.empty else 0.0
+
+
+def _min_metric_where(
+    runs: pd.DataFrame,
+    column: str,
+    count_column: str,
+) -> float:
+    present = pd.to_numeric(
+        runs.get(
+            count_column,
+            pd.Series(0, index=runs.index),
+        ),
+        errors="coerce",
+    ).fillna(0).gt(0)
+    values = pd.to_numeric(
+        runs.get(
+            column,
+            pd.Series(float("nan"), index=runs.index),
+        ),
+        errors="coerce",
+    ).loc[present].dropna()
     return float(values.min()) if not values.empty else 0.0
 
 

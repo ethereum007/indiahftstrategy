@@ -126,6 +126,19 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
         ]
     ) == 2
     assert result.runs[
+        "parity_execution_realized_edge_enabled"
+    ].all()
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_realized_edge_enabled_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_realized_edge_declared_runs"
+        ]
+    ) == 2
+    assert result.runs[
         "parity_execution_ioc_batch_preflight_enabled"
     ].all()
     assert int(
@@ -146,6 +159,11 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert int(
         result.summary.iloc[0][
             "parity_execution_legging_artifact_present_runs"
+        ]
+    ) == 2
+    assert int(
+        result.summary.iloc[0][
+            "parity_execution_fills_artifact_present_runs"
         ]
     ) == 2
     assert int(
@@ -226,6 +244,51 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
             "max_parity_execution_observed_edge_decay"
         ]
     ) == 0.0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_realized_edge_evaluable_count"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_realized_edge_positive_count"
+        ]
+    ) == 1
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_realized_edge_nonpositive_count"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_realized_edge_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        result.summary.iloc[0][
+            "total_parity_execution_realized_edge_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        result.summary.iloc[0][
+            "total_parity_execution_realized_net_edge"
+        ]
+    ) == 7821.51938925
+    assert float(
+        result.summary.iloc[0][
+            "min_parity_execution_realized_net_edge"
+        ]
+    ) == 7821.51938925
+    assert float(
+        result.summary.iloc[0][
+            "min_parity_execution_realized_vs_decision_net_edge"
+        ]
+    ) == 0.0
+    assert int(
+        result.summary.iloc[0][
+            "max_parity_execution_fill_span_ns"
+        ]
+    ) == 0
     assert int(
         result.summary.iloc[0][
             "total_parity_execution_ioc_batch_preflight_attempts"

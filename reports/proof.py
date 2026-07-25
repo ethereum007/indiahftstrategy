@@ -555,10 +555,12 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         run_dir / "parity_execution_guard.csv"
     )
     parity_legging_path = run_dir / "legging.csv"
+    fills_path = run_dir / "fills.csv"
     parity_execution_guard = _read_optional(
         parity_execution_guard_path
     )
     parity_legging = _read_optional(parity_legging_path)
+    replay_fills = _read_optional(fills_path)
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
     market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
 
@@ -664,6 +666,12 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_execution_signal_source_causality_declared = _bool(
         row.get(
             "parity_execution_signal_source_causality_enabled",
+            False,
+        )
+    )
+    parity_execution_realized_edge_declared = _bool(
+        row.get(
+            "parity_execution_realized_edge_enabled",
             False,
         )
     )
@@ -1097,6 +1105,13 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     parity_signal_source_metrics = _parity_signal_source_metrics(
         parity_execution_guard,
         enabled=parity_execution_guard_enabled,
+    )
+    parity_realized_edge_metrics = _parity_realized_edge_metrics(
+        parity_legging,
+        parity_execution_guard,
+        replay_fills,
+        enabled=parity_execution_realized_edge_declared,
+        fills_present=fills_path.exists(),
     )
     parity_routed_capacity_ratios = parity_capacity_ratio.loc[
         parity_capacity_passed
@@ -1623,6 +1638,10 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         ),
         **parity_signal_source_metrics,
         **parity_edge_metrics,
+        "parity_execution_realized_edge_declared": (
+            parity_execution_realized_edge_declared
+        ),
+        **parity_realized_edge_metrics,
         "parity_execution_ioc_batch_preflight_enabled": (
             parity_execution_ioc_batch_preflight_enabled
         ),
@@ -2200,6 +2219,616 @@ def _parity_edge_revalidation_metrics(
     }
 
 
+def _parity_realized_edge_metrics(
+    legging: pd.DataFrame,
+    guard: pd.DataFrame,
+    fills: pd.DataFrame,
+    *,
+    enabled: bool,
+    fills_present: bool,
+) -> dict[str, int | float | bool]:
+    evaluable_count = 0
+    positive_count = 0
+    nonpositive_count = 0
+    missing_rows = 0
+    consistency_violations = 0
+    realized_net_edges: list[float] = []
+    realized_edge_changes: list[float] = []
+    fill_spans: list[int] = []
+    seen_order_ids: set[int] = set()
+    required_fill_columns = {
+        "instrument_id",
+        "ts_ns",
+        "oid",
+        "side",
+        "qty",
+        "price",
+        "cost",
+    }
+    fill_columns_complete = required_fill_columns.issubset(
+        fills.columns
+    )
+    fill_oids = (
+        pd.to_numeric(fills["oid"], errors="coerce")
+        if "oid" in fills.columns
+        else pd.Series(np.nan, index=fills.index)
+    )
+    guard_signal_indices = pd.to_numeric(
+        guard.get(
+            "signal_index",
+            pd.Series(np.nan, index=guard.index),
+        ),
+        errors="coerce",
+    )
+    guard_passed = guard.get(
+        "guard_passed",
+        pd.Series(False, index=guard.index),
+    ).map(_bool)
+
+    for _, row in legging.iterrows():
+        row_missing = False
+        violation = False
+        bool_fields = {
+            name: row.get(name, np.nan)
+            for name in (
+                "routing_complete",
+                "fills_complete",
+                "partial",
+                "realized_edge_evidence_enabled",
+                "realized_edge_evaluable",
+                "realized_edge_positive",
+            )
+        }
+        number_names = [
+            "signal_index",
+            "strike",
+            "requested_qty",
+            "fill_count",
+            "filled_leg_count",
+            "fully_filled_leg_count",
+            "contract_multiplier",
+            "decision_net_edge",
+            "call_side",
+            "call_limit_price",
+            "call_filled_qty",
+            "put_side",
+            "put_limit_price",
+            "put_filled_qty",
+            "future_side",
+            "future_limit_price",
+            "future_filled_qty",
+        ]
+        numbers = {
+            name: pd.to_numeric(
+                row.get(name, np.nan),
+                errors="coerce",
+            )
+            for name in number_names
+        }
+        direction = str(row.get("direction", "")).strip()
+        instrument_ids = {
+            leg: str(row.get(f"{leg}_instrument_id", "")).strip()
+            for leg in ("call", "put", "future")
+        }
+        if (
+            _boolean_evidence_missing(
+                pd.Series(list(bool_fields.values()))
+            ).any()
+            or any(pd.isna(value) for value in numbers.values())
+            or direction == ""
+            or any(not value for value in instrument_ids.values())
+        ):
+            missing_rows += 1
+            continue
+
+        signal_index = float(numbers["signal_index"])
+        requested_qty = float(numbers["requested_qty"])
+        strike = float(numbers["strike"])
+        multiplier = float(numbers["contract_multiplier"])
+        decision_net_edge = float(numbers["decision_net_edge"])
+        routing_complete = _bool(bool_fields["routing_complete"])
+        fills_complete = _bool(bool_fields["fills_complete"])
+        partial = _bool(bool_fields["partial"])
+        outcome_enabled = _bool(
+            bool_fields["realized_edge_evidence_enabled"]
+        )
+        evaluable = _bool(bool_fields["realized_edge_evaluable"])
+        positive = _bool(bool_fields["realized_edge_positive"])
+        if direction == "buy_synthetic_sell_future":
+            expected_sides = {"call": 1, "put": -1, "future": -1}
+        elif direction == "sell_synthetic_buy_future":
+            expected_sides = {"call": -1, "put": 1, "future": 1}
+        else:
+            expected_sides = {"call": 0, "put": 0, "future": 0}
+        violation = (
+            not outcome_enabled
+            or signal_index < 0
+            or signal_index % 1 != 0
+            or direction not in {
+                "buy_synthetic_sell_future",
+                "sell_synthetic_buy_future",
+            }
+            or strike <= 0
+            or requested_qty <= 0
+            or requested_qty % 1 != 0
+            or multiplier <= 0
+            or decision_net_edge <= 0
+            or partial == (routing_complete and fills_complete)
+            or evaluable != (routing_complete and fills_complete)
+        )
+
+        matching_signal_guards = guard.loc[
+            guard_signal_indices.eq(int(signal_index))
+        ]
+        matching_passed_guards = matching_signal_guards.loc[
+            guard_passed.loc[matching_signal_guards.index]
+        ]
+        matching_guard = (
+            matching_passed_guards
+            if len(matching_passed_guards) == 1
+            else matching_signal_guards
+            if len(matching_signal_guards) == 1
+            else pd.DataFrame()
+        )
+        if len(matching_guard) != 1:
+            violation = True
+            row_missing = row_missing or matching_guard.empty
+        else:
+            guard_row = matching_guard.iloc[0]
+            guard_number_names = [
+                "strike",
+                "edge_revalidation_qty",
+                "decision_contract_multiplier",
+                "decision_net_edge",
+                "decision_call_side",
+                "decision_call_price",
+                "decision_put_side",
+                "decision_put_price",
+                "decision_future_side",
+                "decision_future_price",
+            ]
+            guard_numbers = {
+                name: pd.to_numeric(
+                    guard_row.get(name, np.nan),
+                    errors="coerce",
+                )
+                for name in guard_number_names
+            }
+            guard_instrument_ids = {
+                leg: str(
+                    guard_row.get(f"{leg}_instrument_id", "")
+                ).strip()
+                for leg in ("call", "put", "future")
+            }
+            if (
+                any(
+                    pd.isna(value)
+                    for value in guard_numbers.values()
+                )
+                or any(
+                    not value
+                    for value in guard_instrument_ids.values()
+                )
+            ):
+                row_missing = True
+            else:
+                violation = violation or (
+                    str(guard_row.get("direction", "")).strip()
+                    != direction
+                    or float(guard_numbers["strike"]) != strike
+                    or float(
+                        guard_numbers["edge_revalidation_qty"]
+                    )
+                    != requested_qty
+                    or float(
+                        guard_numbers[
+                            "decision_contract_multiplier"
+                        ]
+                    )
+                    != multiplier
+                    or abs(
+                        float(guard_numbers["decision_net_edge"])
+                        - decision_net_edge
+                    )
+                    > 1e-9
+                    or guard_instrument_ids != instrument_ids
+                    or float(
+                        guard_numbers["decision_call_side"]
+                    )
+                    != float(numbers["call_side"])
+                    or float(
+                        guard_numbers["decision_call_price"]
+                    )
+                    != float(numbers["call_limit_price"])
+                    or float(
+                        guard_numbers["decision_put_side"]
+                    )
+                    != float(numbers["put_side"])
+                    or float(
+                        guard_numbers["decision_put_price"]
+                    )
+                    != float(numbers["put_limit_price"])
+                    or float(
+                        guard_numbers["decision_future_side"]
+                    )
+                    != float(numbers["future_side"])
+                    or float(
+                        guard_numbers["decision_future_price"]
+                    )
+                    != float(numbers["future_limit_price"])
+                )
+
+        package_order_ids: list[int] = []
+        fill_prices: dict[str, float] = {}
+        fill_costs: dict[str, float] = {}
+        observed_first_timestamps: list[int] = []
+        observed_last_timestamps: list[int] = []
+        raw_fill_count = 0
+        raw_filled_leg_count = 0
+        raw_fully_filled_leg_count = 0
+        for leg in ("call", "put", "future"):
+            side = float(numbers[f"{leg}_side"])
+            limit_price = float(numbers[f"{leg}_limit_price"])
+            reported_qty = float(numbers[f"{leg}_filled_qty"])
+            order_id_raw = pd.to_numeric(
+                row.get(f"{leg}_order_id", np.nan),
+                errors="coerce",
+            )
+            reported_vwap = pd.to_numeric(
+                row.get(f"{leg}_fill_vwap", np.nan),
+                errors="coerce",
+            )
+            reported_cost = pd.to_numeric(
+                row.get(f"{leg}_fill_cost", np.nan),
+                errors="coerce",
+            )
+            reported_first = pd.to_numeric(
+                row.get(f"{leg}_first_fill_ts_ns", np.nan),
+                errors="coerce",
+            )
+            reported_last = pd.to_numeric(
+                row.get(f"{leg}_last_fill_ts_ns", np.nan),
+                errors="coerce",
+            )
+            violation = violation or (
+                side != expected_sides[leg]
+                or limit_price <= 0
+                or reported_qty < 0
+                or reported_qty % 1 != 0
+                or reported_qty > requested_qty
+            )
+            if pd.isna(order_id_raw):
+                violation = violation or (
+                    reported_qty != 0
+                    or not pd.isna(reported_vwap)
+                    or not pd.isna(reported_cost)
+                    or not pd.isna(reported_first)
+                    or not pd.isna(reported_last)
+                )
+                continue
+            if (
+                order_id_raw <= 0
+                or order_id_raw % 1 != 0
+            ):
+                violation = True
+                continue
+            order_id = int(order_id_raw)
+            package_order_ids.append(order_id)
+            if order_id in seen_order_ids:
+                violation = True
+            seen_order_ids.add(order_id)
+            if not fill_columns_complete:
+                row_missing = True
+                continue
+            raw_leg_fills = fills.loc[fill_oids.eq(order_id)]
+            if raw_leg_fills.empty:
+                violation = violation or (
+                    reported_qty != 0
+                    or not pd.isna(reported_vwap)
+                    or pd.isna(reported_cost)
+                    or (
+                        not pd.isna(reported_cost)
+                        and float(reported_cost) != 0.0
+                    )
+                    or not pd.isna(reported_first)
+                    or not pd.isna(reported_last)
+                )
+                continue
+            raw_qty = pd.to_numeric(
+                raw_leg_fills["qty"],
+                errors="coerce",
+            )
+            raw_price = pd.to_numeric(
+                raw_leg_fills["price"],
+                errors="coerce",
+            )
+            raw_cost = pd.to_numeric(
+                raw_leg_fills["cost"],
+                errors="coerce",
+            )
+            raw_ts = pd.to_numeric(
+                raw_leg_fills["ts_ns"],
+                errors="coerce",
+            )
+            raw_side = pd.to_numeric(
+                raw_leg_fills["side"],
+                errors="coerce",
+            )
+            if (
+                raw_qty.isna().any()
+                or raw_price.isna().any()
+                or raw_cost.isna().any()
+                or raw_ts.isna().any()
+                or raw_side.isna().any()
+            ):
+                row_missing = True
+                continue
+            if raw_qty.le(0).any():
+                violation = True
+                continue
+            actual_qty = float(raw_qty.sum())
+            actual_vwap = float(
+                (raw_price * raw_qty).sum() / actual_qty
+            )
+            actual_cost = float(raw_cost.sum())
+            actual_first = int(raw_ts.min())
+            actual_last = int(raw_ts.max())
+            raw_fill_count += int(len(raw_leg_fills))
+            raw_filled_leg_count += int(actual_qty > 0)
+            raw_fully_filled_leg_count += int(
+                actual_qty == requested_qty
+            )
+            fill_prices[leg] = actual_vwap
+            fill_costs[leg] = actual_cost
+            observed_first_timestamps.append(actual_first)
+            observed_last_timestamps.append(actual_last)
+            instrument_match = (
+                raw_leg_fills["instrument_id"].astype(str)
+                == instrument_ids[leg]
+            ).all()
+            per_fill_limit_ok = (
+                raw_price.le(limit_price + 1e-9).all()
+                if side > 0
+                else raw_price.ge(limit_price - 1e-9).all()
+            )
+            violation = violation or (
+                not instrument_match
+                or not raw_side.eq(side).all()
+                or raw_qty.le(0).any()
+                or raw_qty.mod(1).ne(0).any()
+                or raw_price.le(0).any()
+                or raw_cost.lt(0).any()
+                or raw_ts.mod(1).ne(0).any()
+                or not per_fill_limit_ok
+                or actual_qty != reported_qty
+                or pd.isna(reported_vwap)
+                or (
+                    not pd.isna(reported_vwap)
+                    and abs(float(reported_vwap) - actual_vwap)
+                    > 1e-9
+                )
+                or pd.isna(reported_cost)
+                or (
+                    not pd.isna(reported_cost)
+                    and abs(float(reported_cost) - actual_cost)
+                    > 1e-9
+                )
+                or pd.isna(reported_first)
+                or (
+                    not pd.isna(reported_first)
+                    and (
+                        reported_first % 1 != 0
+                        or int(reported_first) != actual_first
+                    )
+                )
+                or pd.isna(reported_last)
+                or (
+                    not pd.isna(reported_last)
+                    and (
+                        reported_last % 1 != 0
+                        or int(reported_last) != actual_last
+                    )
+                )
+            )
+
+        accepted_package_complete = len(package_order_ids) == 3
+        filled_package_complete = (
+            accepted_package_complete
+            and raw_fully_filled_leg_count == 3
+        )
+        violation = violation or (
+            len(package_order_ids) != len(set(package_order_ids))
+            or routing_complete != accepted_package_complete
+            or fills_complete != filled_package_complete
+            or float(numbers["fill_count"]) != raw_fill_count
+            or float(numbers["filled_leg_count"])
+            != raw_filled_leg_count
+            or float(numbers["fully_filled_leg_count"])
+            != raw_fully_filled_leg_count
+        )
+
+        reported_first_fill = pd.to_numeric(
+            row.get("first_fill_ts_ns", np.nan),
+            errors="coerce",
+        )
+        reported_last_fill = pd.to_numeric(
+            row.get("last_fill_ts_ns", np.nan),
+            errors="coerce",
+        )
+        reported_fill_span = pd.to_numeric(
+            row.get("fill_span_ns", np.nan),
+            errors="coerce",
+        )
+        if observed_first_timestamps:
+            expected_first_fill = min(observed_first_timestamps)
+            expected_last_fill = max(observed_last_timestamps)
+            expected_fill_span = (
+                expected_last_fill - expected_first_fill
+            )
+            violation = violation or (
+                pd.isna(reported_first_fill)
+                or pd.isna(reported_last_fill)
+                or pd.isna(reported_fill_span)
+                or (
+                    not pd.isna(reported_first_fill)
+                    and (
+                        reported_first_fill % 1 != 0
+                        or int(reported_first_fill)
+                        != expected_first_fill
+                    )
+                )
+                or (
+                    not pd.isna(reported_last_fill)
+                    and (
+                        reported_last_fill % 1 != 0
+                        or int(reported_last_fill)
+                        != expected_last_fill
+                    )
+                )
+                or (
+                    not pd.isna(reported_fill_span)
+                    and (
+                        reported_fill_span % 1 != 0
+                        or int(reported_fill_span)
+                        != expected_fill_span
+                    )
+                )
+            )
+            fill_spans.append(expected_fill_span)
+        else:
+            violation = violation or (
+                not pd.isna(reported_first_fill)
+                or not pd.isna(reported_last_fill)
+                or not pd.isna(reported_fill_span)
+            )
+
+        realized_names = [
+            "realized_edge_per_unit",
+            "realized_gross_edge",
+            "realized_total_cost",
+            "realized_net_edge",
+            "realized_vs_decision_net_edge",
+        ]
+        realized = {
+            name: pd.to_numeric(
+                row.get(name, np.nan),
+                errors="coerce",
+            )
+            for name in realized_names
+        }
+        if evaluable:
+            if (
+                len(fill_prices) != 3
+                or len(fill_costs) != 3
+                or any(pd.isna(value) for value in realized.values())
+            ):
+                row_missing = True
+            else:
+                if direction == "buy_synthetic_sell_future":
+                    expected_edge_per_unit = (
+                        fill_prices["future"]
+                        - (
+                            fill_prices["call"]
+                            - fill_prices["put"]
+                            + strike
+                        )
+                    )
+                else:
+                    expected_edge_per_unit = (
+                        fill_prices["call"]
+                        - fill_prices["put"]
+                        + strike
+                        - fill_prices["future"]
+                    )
+                expected_gross_edge = (
+                    expected_edge_per_unit
+                    * requested_qty
+                    * multiplier
+                )
+                expected_total_cost = sum(fill_costs.values())
+                expected_net_edge = (
+                    expected_gross_edge - expected_total_cost
+                )
+                expected_change = expected_net_edge - decision_net_edge
+                violation = violation or (
+                    abs(
+                        float(realized["realized_edge_per_unit"])
+                        - expected_edge_per_unit
+                    )
+                    > 1e-9
+                    or abs(
+                        float(realized["realized_gross_edge"])
+                        - expected_gross_edge
+                    )
+                    > 1e-9
+                    or abs(
+                        float(realized["realized_total_cost"])
+                        - expected_total_cost
+                    )
+                    > 1e-9
+                    or abs(
+                        float(realized["realized_net_edge"])
+                        - expected_net_edge
+                    )
+                    > 1e-9
+                    or abs(
+                        float(
+                            realized[
+                                "realized_vs_decision_net_edge"
+                            ]
+                        )
+                        - expected_change
+                    )
+                    > 1e-9
+                    or positive != (expected_net_edge > 0.0)
+                )
+                evaluable_count += 1
+                positive_count += int(expected_net_edge > 0.0)
+                nonpositive_count += int(expected_net_edge <= 0.0)
+                realized_net_edges.append(expected_net_edge)
+                realized_edge_changes.append(expected_change)
+        else:
+            violation = violation or (
+                positive
+                or any(not pd.isna(value) for value in realized.values())
+            )
+
+        missing_rows += int(row_missing)
+        consistency_violations += int(violation and not row_missing)
+
+    return {
+        "parity_execution_realized_edge_enabled": bool(enabled),
+        "parity_execution_fills_present": bool(fills_present),
+        "parity_execution_realized_edge_evaluable_count": (
+            evaluable_count
+        ),
+        "parity_execution_realized_edge_positive_count": positive_count,
+        "parity_execution_realized_edge_nonpositive_count": (
+            nonpositive_count
+        ),
+        "parity_execution_realized_edge_missing_evidence_rows": (
+            missing_rows
+        ),
+        "parity_execution_realized_edge_consistency_violations": (
+            consistency_violations
+        ),
+        "parity_execution_min_realized_net_edge": (
+            min(realized_net_edges) if realized_net_edges else 0.0
+        ),
+        "parity_execution_total_realized_net_edge": sum(
+            realized_net_edges
+        ),
+        "parity_execution_min_realized_vs_decision_net_edge": (
+            min(realized_edge_changes)
+            if realized_edge_changes
+            else 0.0
+        ),
+        "parity_execution_max_fill_span_ns": (
+            max(fill_spans) if fill_spans else 0
+        ),
+    }
+
+
 def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofThresholds) -> pd.DataFrame:
     rows = [
         _check(metrics, "net_pnl", metrics["net_pnl"], ">=", thresholds.min_net_pnl),
@@ -2443,6 +3072,27 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+        realized_edge_declared = bool(
+            metrics["parity_execution_realized_edge_declared"]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_realized_edge_declared",
+                "value": realized_edge_declared,
+                "operator": "is",
+                "threshold": True,
+                "passed": realized_edge_declared,
+                "reason": (
+                    ""
+                    if realized_edge_declared
+                    else (
+                        "parity execution lacks the realized fill-edge "
+                        "proof declaration"
+                    )
+                ),
+            }
+        )
         preflight_declared = bool(
             metrics[
                 "parity_execution_ioc_batch_preflight_declared"
@@ -2496,6 +3146,10 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_legging_present",
                 "parity legging artifact is missing",
+            ),
+            (
+                "parity_execution_fills_present",
+                "parity raw fills artifact is missing",
             ),
         ]:
             present = bool(metrics[metric])
@@ -2558,6 +3212,18 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
             (
                 "parity_execution_edge_revalidation_consistency_violations",
                 "parity decision-time edge evidence is inconsistent",
+            ),
+            (
+                "parity_execution_realized_edge_missing_evidence_rows",
+                "parity realized fill-edge evidence is missing",
+            ),
+            (
+                "parity_execution_realized_edge_consistency_violations",
+                "parity realized fill-edge evidence is inconsistent",
+            ),
+            (
+                "parity_execution_realized_edge_nonpositive_count",
+                "a completed parity package realized no positive net edge",
             ),
             (
                 "parity_execution_ioc_batch_preflight_missing_evidence_rows",
@@ -2660,6 +3326,59 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                     else (
                         "a routed parity package had no positive "
                         "decision-time net edge after modeled costs"
+                    )
+                ),
+            }
+        )
+        complete_executions = int(
+            metrics["parity_execution_complete_count"]
+        )
+        realized_executions = int(
+            metrics[
+                "parity_execution_realized_edge_evaluable_count"
+            ]
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": (
+                    "parity_execution_realized_edge_evaluable_count"
+                ),
+                "value": realized_executions,
+                "operator": "==",
+                "threshold": complete_executions,
+                "passed": realized_executions == complete_executions,
+                "reason": (
+                    ""
+                    if realized_executions == complete_executions
+                    else (
+                        "completed parity packages are not fully bound "
+                        "to realized fill-edge evidence"
+                    )
+                ),
+            }
+        )
+        min_realized_net_edge = float(
+            metrics["parity_execution_min_realized_net_edge"]
+        )
+        realized_edge_passed = (
+            realized_executions == 0
+            or min_realized_net_edge > 0.0
+        )
+        rows.append(
+            {
+                "run": metrics["run"],
+                "check": "parity_execution_min_realized_net_edge",
+                "value": min_realized_net_edge,
+                "operator": ">",
+                "threshold": 0.0,
+                "passed": realized_edge_passed,
+                "reason": (
+                    ""
+                    if realized_edge_passed
+                    else (
+                        "a completed parity package had no positive "
+                        "realized net edge after actual fill costs"
                     )
                 ),
             }

@@ -933,18 +933,31 @@ This admission check is visible feasibility at the decision timestamp; it
 does not make multi-leg fills atomic or predict exchange state at arrival.
 Liquidity and latency can still produce a partial outcome after all three
 orders are accepted. `legging.csv` treats the execution as complete only when
-all three orders are accepted and every leg fills its requested quantity.
+all three orders are accepted and every leg fills its requested quantity. Each
+legging row binds the call, put, and future intent to its accepted order ID,
+side, limit, actual filled quantity, fill VWAP, fill cost, and first/last fill
+timestamps. Complete packages additionally report realized edge per unit,
+gross edge, total actual fill cost, realized net edge, decision-to-fill edge
+change, and package fill span. Partial packages never receive realized-edge
+credit.
+
 Proof independently reconstructs source-book lag from signal and book ages,
 derives all three executable sides, recomputes parity gross edge and the
-reported leg-cost sum, and verifies the net-edge threshold before checking
-limiting-leg marketability and fill ratio. It also recomputes the other guard,
-preflight, and legging consistency checks and rejects over-age or over-skew
-routed books, expired signals, package-admission rejections, incomplete
-routing, rejected legs, and unfilled legs. Parity sweeps and cross-sweep
-comparisons preserve source-pending and edge-rejected counts, maximum
-source-book lag and observed edge decay, proof-integrity counts, minimum routed
-net edge, visible marketability and capacity-shortfall counts, and minimum
-routed visible fill ratio.
+reported decision-time leg-cost sum, and verifies the net-edge threshold before
+checking limiting-leg marketability and fill ratio. It then joins each package
+order ID to raw `fills.csv`, verifies instrument, side, quantity, limit-price
+protection, cost, and integer-exact nanosecond timing, and independently
+recomputes realized package economics. Missing or reused order IDs, altered
+fills, incomplete evidence, inconsistent arithmetic, or a completed package
+with nonpositive realized net edge fail proof. It also recomputes the other
+guard, preflight, and legging consistency checks and rejects over-age or
+over-skew routed books, expired signals, package-admission rejections,
+incomplete routing, rejected legs, and unfilled legs. Parity sweeps and
+cross-sweep comparisons preserve source-pending and edge-rejected counts,
+maximum source-book lag and observed edge decay, proof-integrity counts,
+minimum routed net edge, realized package counts and net edge,
+decision-to-fill change, maximum fill span, visible marketability and
+capacity-shortfall counts, and minimum routed visible fill ratio.
 
 `input_quarantine.csv` retains one row per source dataset before the engine
 sees it. It records raw and kept rows, all loader quarantine reasons, rows

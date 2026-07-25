@@ -75,6 +75,18 @@ KNOWN_NON_PARAM_COLUMNS = {
     "parity_execution_edge_revalidation_consistency_violations",
     "parity_execution_min_routed_net_edge",
     "parity_execution_max_observed_edge_decay",
+    "parity_execution_realized_edge_enabled",
+    "parity_execution_realized_edge_declared",
+    "parity_execution_fills_present",
+    "parity_execution_realized_edge_evaluable_count",
+    "parity_execution_realized_edge_positive_count",
+    "parity_execution_realized_edge_nonpositive_count",
+    "parity_execution_realized_edge_missing_evidence_rows",
+    "parity_execution_realized_edge_consistency_violations",
+    "parity_execution_min_realized_net_edge",
+    "parity_execution_total_realized_net_edge",
+    "parity_execution_min_realized_vs_decision_net_edge",
+    "parity_execution_max_fill_span_ns",
     "parity_execution_ioc_batch_preflight_enabled",
     "parity_execution_ioc_batch_preflight_declared",
     "parity_execution_ioc_batch_preflight_attempts",
@@ -1370,6 +1382,24 @@ def _parity_execution_aggregates(
             pd.Series(False, index=frame.index),
         )
     )
+    realized_edge_enabled = _bool_series(
+        frame.get(
+            "parity_execution_realized_edge_enabled",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    realized_edge_declared = _bool_series(
+        frame.get(
+            "parity_execution_realized_edge_declared",
+            pd.Series(False, index=frame.index),
+        )
+    )
+    fills_present = _bool_series(
+        frame.get(
+            "parity_execution_fills_present",
+            pd.Series(False, index=frame.index),
+        )
+    )
     signal_source_enabled = _bool_series(
         frame.get(
             "parity_execution_signal_source_causality_enabled",
@@ -1433,6 +1463,21 @@ def _parity_execution_aggregates(
         ),
         "total_parity_execution_edge_revalidation_consistency_violations": (
             "parity_execution_edge_revalidation_consistency_violations"
+        ),
+        "total_parity_execution_realized_edge_evaluable_count": (
+            "parity_execution_realized_edge_evaluable_count"
+        ),
+        "total_parity_execution_realized_edge_positive_count": (
+            "parity_execution_realized_edge_positive_count"
+        ),
+        "total_parity_execution_realized_edge_nonpositive_count": (
+            "parity_execution_realized_edge_nonpositive_count"
+        ),
+        "total_parity_execution_realized_edge_missing_evidence_rows": (
+            "parity_execution_realized_edge_missing_evidence_rows"
+        ),
+        "total_parity_execution_realized_edge_consistency_violations": (
+            "parity_execution_realized_edge_consistency_violations"
         ),
         "total_parity_execution_ioc_batch_preflight_attempts": (
             "parity_execution_ioc_batch_preflight_attempts"
@@ -1521,6 +1566,14 @@ def _parity_execution_aggregates(
         output: int(_numeric(frame, column).fillna(0.0).sum())
         for output, column in sum_columns.items()
     }
+    total_realized_net_edge = float(
+        _numeric(
+            frame,
+            "parity_execution_total_realized_net_edge",
+        )
+        .fillna(0.0)
+        .sum()
+    )
     return {
         "parity_execution_guard_enabled_runs": int(enabled.sum()),
         "parity_execution_guard_declared_runs": int(declared.sum()),
@@ -1536,6 +1589,12 @@ def _parity_execution_aggregates(
         "parity_execution_edge_revalidation_declared_runs": int(
             edge_revalidation_declared.sum()
         ),
+        "parity_execution_realized_edge_enabled_runs": int(
+            realized_edge_enabled.sum()
+        ),
+        "parity_execution_realized_edge_declared_runs": int(
+            realized_edge_declared.sum()
+        ),
         "parity_execution_ioc_batch_preflight_enabled_runs": int(
             preflight_enabled.sum()
         ),
@@ -1548,7 +1607,13 @@ def _parity_execution_aggregates(
         "parity_execution_legging_artifact_present_runs": int(
             legging_present.sum()
         ),
+        "parity_execution_fills_artifact_present_runs": int(
+            fills_present.sum()
+        ),
         **totals,
+        "total_parity_execution_realized_net_edge": (
+            total_realized_net_edge
+        ),
         "max_parity_execution_routed_book_age_ns": _max_int(
             frame,
             "parity_execution_max_routed_book_age_ns",
@@ -1575,6 +1640,22 @@ def _parity_execution_aggregates(
             frame,
             "parity_execution_max_observed_edge_decay",
         ),
+        "min_parity_execution_realized_net_edge": _min_metric_where(
+            frame,
+            "parity_execution_min_realized_net_edge",
+            "parity_execution_realized_edge_evaluable_count",
+        ),
+        "min_parity_execution_realized_vs_decision_net_edge": (
+            _min_metric_where(
+                frame,
+                "parity_execution_min_realized_vs_decision_net_edge",
+                "parity_execution_realized_edge_evaluable_count",
+            )
+        ),
+        "max_parity_execution_fill_span_ns": _max_int(
+            frame,
+            "parity_execution_max_fill_span_ns",
+        ),
     }
 
 
@@ -1587,6 +1668,16 @@ def _min_routed_metric(
         "parity_execution_guard_passed_attempts",
     ).fillna(0.0).gt(0.0)
     values = _numeric(frame, column).loc[routed].dropna()
+    return float(values.min()) if not values.empty else 0.0
+
+
+def _min_metric_where(
+    frame: pd.DataFrame,
+    column: str,
+    count_column: str,
+) -> float:
+    present = _numeric(frame, count_column).fillna(0.0).gt(0.0)
+    values = _numeric(frame, column).loc[present].dropna()
     return float(values.min()) if not values.empty else 0.0
 
 

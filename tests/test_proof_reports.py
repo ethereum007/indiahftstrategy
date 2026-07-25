@@ -466,6 +466,10 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         0,
         "parity_execution_signal_source_causality_enabled",
     ] = True
+    summary.loc[
+        0,
+        "parity_execution_realized_edge_enabled",
+    ] = True
     summary.loc[0, "parity_execution_max_leg_book_age_ns"] = 100
     summary.loc[0, "parity_execution_max_leg_book_skew_ns"] = 50
     summary.to_csv(summary_path, index=False)
@@ -478,6 +482,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     guard = pd.DataFrame(
         [
             {
+                "signal_index": 0,
                 "direction": "buy_synthetic_sell_future",
                 "strike": 1000.0,
                 "call_instrument_id": "CALL1000",
@@ -535,18 +540,99 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     legging = pd.DataFrame(
         [
             {
+                "signal_index": 0,
+                "direction": "buy_synthetic_sell_future",
+                "strike": 1000.0,
+                "requested_qty": 75,
                 "expected_order_count": 3,
                 "order_count": 3,
+                "fill_count": 3,
+                "filled_leg_count": 3,
                 "partial": False,
                 "route_rejection_count": 0,
                 "fully_filled_leg_count": 3,
                 "unfilled_leg_count": 0,
                 "routing_complete": True,
                 "fills_complete": True,
+                "realized_edge_evidence_enabled": True,
+                "call_instrument_id": "CALL1000",
+                "call_order_id": 1,
+                "call_side": 1,
+                "call_limit_price": 55.0,
+                "call_filled_qty": 75,
+                "call_fill_vwap": 55.0,
+                "call_fill_cost": 1.0,
+                "call_first_fill_ts_ns": 300,
+                "call_last_fill_ts_ns": 300,
+                "put_instrument_id": "PUT1000",
+                "put_order_id": 2,
+                "put_side": -1,
+                "put_limit_price": 60.0,
+                "put_filled_qty": 75,
+                "put_fill_vwap": 60.0,
+                "put_fill_cost": 2.0,
+                "put_first_fill_ts_ns": 301,
+                "put_last_fill_ts_ns": 301,
+                "future_instrument_id": "FUT",
+                "future_order_id": 3,
+                "future_side": -1,
+                "future_limit_price": 1008.0,
+                "future_filled_qty": 75,
+                "future_fill_vwap": 1008.0,
+                "future_fill_cost": 3.0,
+                "future_first_fill_ts_ns": 302,
+                "future_last_fill_ts_ns": 302,
+                "contract_multiplier": 1.0,
+                "decision_net_edge": 969.0,
+                "realized_edge_evaluable": True,
+                "realized_edge_per_unit": 13.0,
+                "realized_gross_edge": 975.0,
+                "realized_total_cost": 6.0,
+                "realized_net_edge": 969.0,
+                "realized_vs_decision_net_edge": 0.0,
+                "realized_edge_positive": True,
+                "first_fill_ts_ns": 300,
+                "last_fill_ts_ns": 302,
+                "fill_span_ns": 2,
             }
         ]
     )
     legging.to_csv(run_dir / "legging.csv", index=False)
+    fills_frame = pd.DataFrame(
+        [
+            {
+                "instrument_id": "CALL1000",
+                "ts_ns": 300,
+                "oid": 1,
+                "side": 1,
+                "qty": 75,
+                "price": 55.0,
+                "cost": 1.0,
+                "maker": False,
+            },
+            {
+                "instrument_id": "PUT1000",
+                "ts_ns": 301,
+                "oid": 2,
+                "side": -1,
+                "qty": 75,
+                "price": 60.0,
+                "cost": 2.0,
+                "maker": False,
+            },
+            {
+                "instrument_id": "FUT",
+                "ts_ns": 302,
+                "oid": 3,
+                "side": -1,
+                "qty": 75,
+                "price": 1008.0,
+                "cost": 3.0,
+                "maker": False,
+            },
+        ]
+    )
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
 
     valid = evaluate_replay_dirs([run_dir])
 
@@ -634,6 +720,41 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     assert float(
         metrics["parity_execution_max_observed_edge_decay"]
     ) == 31.0
+    assert bool(
+        metrics["parity_execution_realized_edge_declared"]
+    )
+    assert bool(metrics["parity_execution_fills_present"])
+    assert int(
+        metrics["parity_execution_realized_edge_evaluable_count"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_realized_edge_positive_count"]
+    ) == 1
+    assert int(
+        metrics["parity_execution_realized_edge_nonpositive_count"]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_realized_edge_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        metrics[
+            "parity_execution_realized_edge_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        metrics["parity_execution_min_realized_net_edge"]
+    ) == 969.0
+    assert float(
+        metrics["parity_execution_total_realized_net_edge"]
+    ) == 969.0
+    assert float(
+        metrics[
+            "parity_execution_min_realized_vs_decision_net_edge"
+        ]
+    ) == 0.0
+    assert int(metrics["parity_execution_max_fill_span_ns"]) == 2
     assert int(
         metrics[
             "parity_execution_ioc_visible_capacity_missing_evidence_rows"
@@ -715,6 +836,28 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
 
     summary.loc[
         0,
+        "parity_execution_realized_edge_enabled",
+    ] = False
+    summary.to_csv(summary_path, index=False)
+    realized_edge_undeclared = evaluate_replay_dirs([run_dir])
+
+    realized_edge_undeclared_failed = (
+        realized_edge_undeclared.checks.loc[
+            ~realized_edge_undeclared.checks["passed"]
+        ]
+    )
+    assert not realized_edge_undeclared.passed
+    assert realized_edge_undeclared_failed["check"].tolist() == [
+        "parity_execution_realized_edge_declared"
+    ]
+    summary.loc[
+        0,
+        "parity_execution_realized_edge_enabled",
+    ] = True
+    summary.to_csv(summary_path, index=False)
+
+    summary.loc[
+        0,
         "parity_execution_signal_source_causality_enabled",
     ] = False
     summary.to_csv(summary_path, index=False)
@@ -734,6 +877,59 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
         "parity_execution_signal_source_causality_enabled",
     ] = True
     summary.to_csv(summary_path, index=False)
+
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("FUT"),
+        "price",
+    ] = 1007.0
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    fill_price_tampered = evaluate_replay_dirs([run_dir])
+
+    fill_price_tampered_failed = fill_price_tampered.checks.loc[
+        ~fill_price_tampered.checks["passed"]
+    ]
+    assert not fill_price_tampered.passed
+    assert fill_price_tampered_failed["check"].tolist() == [
+        "parity_execution_realized_edge_consistency_violations"
+    ]
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("FUT"),
+        "price",
+    ] = 1008.0
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("FUT"),
+        "cost",
+    ] = 1000.0
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    legging.loc[0, "future_fill_cost"] = 1000.0
+    legging.loc[0, "realized_total_cost"] = 1003.0
+    legging.loc[0, "realized_net_edge"] = -28.0
+    legging.loc[0, "realized_vs_decision_net_edge"] = -997.0
+    legging.loc[0, "realized_edge_positive"] = False
+    legging.to_csv(run_dir / "legging.csv", index=False)
+    realized_edge_lost = evaluate_replay_dirs([run_dir])
+
+    realized_edge_lost_failed = realized_edge_lost.checks.loc[
+        ~realized_edge_lost.checks["passed"]
+    ]
+    assert not realized_edge_lost.passed
+    assert realized_edge_lost_failed["check"].tolist() == [
+        "parity_execution_realized_edge_nonpositive_count",
+        "parity_execution_min_realized_net_edge",
+    ]
+    fills_frame.loc[
+        fills_frame["instrument_id"].eq("FUT"),
+        "cost",
+    ] = 3.0
+    fills_frame.to_csv(run_dir / "fills.csv", index=False)
+    legging.loc[0, "future_fill_cost"] = 3.0
+    legging.loc[0, "realized_total_cost"] = 6.0
+    legging.loc[0, "realized_net_edge"] = 969.0
+    legging.loc[0, "realized_vs_decision_net_edge"] = 0.0
+    legging.loc[0, "realized_edge_positive"] = True
+    legging.to_csv(run_dir / "legging.csv", index=False)
 
     guard.loc[0, "guard_passed"] = False
     guard.loc[0, "guard_reason"] = "ioc_batch_preflight_rejected"
@@ -811,6 +1007,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     assert not edge_inconsistent.passed
     assert edge_inconsistent_failed["check"].tolist() == [
         "parity_execution_edge_revalidation_consistency_violations",
+        "parity_execution_realized_edge_consistency_violations",
         "parity_execution_min_routed_net_edge",
     ]
     guard.loc[0, "decision_net_edge"] = 969.0
@@ -862,12 +1059,29 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     guard.loc[0, "routing_complete"] = False
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
     legging.loc[0, "order_count"] = 2
+    legging.loc[0, "fill_count"] = 2
+    legging.loc[0, "filled_leg_count"] = 2
     legging.loc[0, "partial"] = True
     legging.loc[0, "route_rejection_count"] = 1
     legging.loc[0, "fully_filled_leg_count"] = 2
     legging.loc[0, "unfilled_leg_count"] = 1
     legging.loc[0, "routing_complete"] = False
     legging.loc[0, "fills_complete"] = False
+    legging.loc[0, "future_order_id"] = float("nan")
+    legging.loc[0, "future_filled_qty"] = 0
+    legging.loc[0, "future_fill_vwap"] = float("nan")
+    legging.loc[0, "future_fill_cost"] = float("nan")
+    legging.loc[0, "future_first_fill_ts_ns"] = float("nan")
+    legging.loc[0, "future_last_fill_ts_ns"] = float("nan")
+    legging.loc[0, "realized_edge_evaluable"] = False
+    legging.loc[0, "realized_edge_per_unit"] = float("nan")
+    legging.loc[0, "realized_gross_edge"] = float("nan")
+    legging.loc[0, "realized_total_cost"] = float("nan")
+    legging.loc[0, "realized_net_edge"] = float("nan")
+    legging.loc[0, "realized_vs_decision_net_edge"] = float("nan")
+    legging.loc[0, "realized_edge_positive"] = False
+    legging.loc[0, "last_fill_ts_ns"] = 301
+    legging.loc[0, "fill_span_ns"] = 1
     legging.to_csv(run_dir / "legging.csv", index=False)
     incomplete = evaluate_replay_dirs([run_dir])
 
@@ -888,11 +1102,28 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     guard.loc[0, "routing_complete"] = True
     guard.to_csv(run_dir / "parity_execution_guard.csv", index=False)
     legging.loc[0, "order_count"] = 3
+    legging.loc[0, "fill_count"] = 3
+    legging.loc[0, "filled_leg_count"] = 3
     legging.loc[0, "partial"] = False
     legging.loc[0, "route_rejection_count"] = 0
     legging.loc[0, "fully_filled_leg_count"] = 3
     legging.loc[0, "unfilled_leg_count"] = 0
     legging.loc[0, "routing_complete"] = True
+    legging.loc[0, "future_order_id"] = 3
+    legging.loc[0, "future_filled_qty"] = 75
+    legging.loc[0, "future_fill_vwap"] = 1008.0
+    legging.loc[0, "future_fill_cost"] = 3.0
+    legging.loc[0, "future_first_fill_ts_ns"] = 302
+    legging.loc[0, "future_last_fill_ts_ns"] = 302
+    legging.loc[0, "realized_edge_evaluable"] = True
+    legging.loc[0, "realized_edge_per_unit"] = 13.0
+    legging.loc[0, "realized_gross_edge"] = 975.0
+    legging.loc[0, "realized_total_cost"] = 6.0
+    legging.loc[0, "realized_net_edge"] = 969.0
+    legging.loc[0, "realized_vs_decision_net_edge"] = 0.0
+    legging.loc[0, "realized_edge_positive"] = True
+    legging.loc[0, "last_fill_ts_ns"] = 302
+    legging.loc[0, "fill_span_ns"] = 2
     legging = legging.drop(columns=["fills_complete"])
     legging.to_csv(run_dir / "legging.csv", index=False)
     missing = evaluate_replay_dirs([run_dir])
@@ -900,6 +1131,7 @@ def test_proof_report_recomputes_parity_execution_safety(tmp_path):
     missing_failed = missing.checks.loc[~missing.checks["passed"]]
     assert not missing.passed
     assert missing_failed["check"].tolist() == [
+        "parity_execution_realized_edge_missing_evidence_rows",
         "parity_execution_legging_missing_evidence_rows",
         "parity_execution_incomplete_count",
         "parity_execution_complete_count",

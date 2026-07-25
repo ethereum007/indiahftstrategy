@@ -106,10 +106,20 @@ class SignalExecution:
     signal_ts_ns: int
     ts_ns: int
     requested_qty: int
+    leg_instrument_ids: dict[str, str]
+    leg_sides: dict[str, int]
+    leg_limit_prices: dict[str, float]
+    contract_multiplier: float
+    decision_net_edge: float
     expected_order_count: int = 3
     order_ids: list[int] = field(default_factory=list)
+    order_id_by_leg: dict[str, int] = field(default_factory=dict)
     fill_count: int = 0
     filled_qty_by_order: dict[int, int] = field(default_factory=dict)
+    fill_value_by_order: dict[int, float] = field(default_factory=dict)
+    fill_cost_by_order: dict[int, float] = field(default_factory=dict)
+    first_fill_ts_by_order: dict[int, int] = field(default_factory=dict)
+    last_fill_ts_by_order: dict[int, int] = field(default_factory=dict)
 
 
 class ParityArbTakerStrategy(MultiInstrumentStrategy):
@@ -179,6 +189,28 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             execution.filled_qty_by_order[fill.oid] = (
                 execution.filled_qty_by_order.get(fill.oid, 0) + fill.qty
             )
+            execution.fill_value_by_order[fill.oid] = (
+                execution.fill_value_by_order.get(fill.oid, 0.0)
+                + fill.price * fill.qty
+            )
+            execution.fill_cost_by_order[fill.oid] = (
+                execution.fill_cost_by_order.get(fill.oid, 0.0)
+                + fill.cost
+            )
+            execution.first_fill_ts_by_order[fill.oid] = min(
+                execution.first_fill_ts_by_order.get(
+                    fill.oid,
+                    fill.ts_ns,
+                ),
+                fill.ts_ns,
+            )
+            execution.last_fill_ts_by_order[fill.oid] = max(
+                execution.last_fill_ts_by_order.get(
+                    fill.oid,
+                    fill.ts_ns,
+                ),
+                fill.ts_ns,
+            )
 
     def on_end(self, engine: MultiInstrumentEngine):
         pass
@@ -201,6 +233,78 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             )
             fills_complete = (
                 fully_filled_legs == execution.expected_order_count
+            )
+            leg_fills = {
+                leg: _execution_leg_fill(execution, leg)
+                for leg in ("call", "put", "future")
+            }
+            realized_edge_evaluable = (
+                routing_complete and fills_complete
+            )
+            realized_edge_per_unit = None
+            realized_gross_edge = None
+            realized_total_cost = None
+            realized_net_edge = None
+            realized_vs_decision_net_edge = None
+            if realized_edge_evaluable:
+                call_price = float(leg_fills["call"]["fill_vwap"])
+                put_price = float(leg_fills["put"]["fill_vwap"])
+                future_price = float(
+                    leg_fills["future"]["fill_vwap"]
+                )
+                if (
+                    execution.direction
+                    == "buy_synthetic_sell_future"
+                ):
+                    realized_edge_per_unit = (
+                        future_price
+                        - (
+                            call_price
+                            - put_price
+                            + execution.strike
+                        )
+                    )
+                else:
+                    realized_edge_per_unit = (
+                        call_price
+                        - put_price
+                        + execution.strike
+                        - future_price
+                    )
+                realized_gross_edge = (
+                    realized_edge_per_unit
+                    * execution.requested_qty
+                    * execution.contract_multiplier
+                )
+                realized_total_cost = sum(
+                    float(leg_fills[leg]["fill_cost"])
+                    for leg in ("call", "put", "future")
+                )
+                realized_net_edge = (
+                    realized_gross_edge - realized_total_cost
+                )
+                realized_vs_decision_net_edge = (
+                    realized_net_edge - execution.decision_net_edge
+                )
+            observed_first_fill_timestamps = [
+                int(evidence["first_fill_ts_ns"])
+                for evidence in leg_fills.values()
+                if evidence["first_fill_ts_ns"] is not None
+            ]
+            observed_last_fill_timestamps = [
+                int(evidence["last_fill_ts_ns"])
+                for evidence in leg_fills.values()
+                if evidence["last_fill_ts_ns"] is not None
+            ]
+            first_fill_ts_ns = (
+                min(observed_first_fill_timestamps)
+                if observed_first_fill_timestamps
+                else None
+            )
+            last_fill_ts_ns = (
+                max(observed_last_fill_timestamps)
+                if observed_last_fill_timestamps
+                else None
             )
             rows.append(
                 {
@@ -229,9 +333,81 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
                     "partial": not (
                         routing_complete and fills_complete
                     ),
+                    "realized_edge_evidence_enabled": True,
+                    **{
+                        f"{leg}_{key}": value
+                        for leg, evidence in leg_fills.items()
+                        for key, value in evidence.items()
+                    },
+                    "contract_multiplier": (
+                        execution.contract_multiplier
+                    ),
+                    "decision_net_edge": execution.decision_net_edge,
+                    "realized_edge_evaluable": (
+                        realized_edge_evaluable
+                    ),
+                    "realized_edge_per_unit": (
+                        realized_edge_per_unit
+                    ),
+                    "realized_gross_edge": realized_gross_edge,
+                    "realized_total_cost": realized_total_cost,
+                    "realized_net_edge": realized_net_edge,
+                    "realized_vs_decision_net_edge": (
+                        realized_vs_decision_net_edge
+                    ),
+                    "realized_edge_positive": (
+                        bool(
+                            realized_edge_evaluable
+                            and realized_net_edge is not None
+                            and realized_net_edge > 0.0
+                        )
+                    ),
+                    "first_fill_ts_ns": first_fill_ts_ns,
+                    "last_fill_ts_ns": last_fill_ts_ns,
+                    "fill_span_ns": (
+                        last_fill_ts_ns - first_fill_ts_ns
+                        if (
+                            first_fill_ts_ns is not None
+                            and last_fill_ts_ns is not None
+                        )
+                        else None
+                    ),
                 }
             )
-        return pd.DataFrame(rows)
+        frame = pd.DataFrame(rows)
+        nullable_integer_columns = [
+            "signal_index",
+            "signal_ts_ns",
+            "decision_ts_ns",
+            "signal_age_ns",
+            "requested_qty",
+            "expected_order_count",
+            "order_count",
+            "route_rejection_count",
+            "fill_count",
+            "filled_leg_count",
+            "fully_filled_leg_count",
+            "unfilled_leg_count",
+            "call_order_id",
+            "call_filled_qty",
+            "call_first_fill_ts_ns",
+            "call_last_fill_ts_ns",
+            "put_order_id",
+            "put_filled_qty",
+            "put_first_fill_ts_ns",
+            "put_last_fill_ts_ns",
+            "future_order_id",
+            "future_filled_qty",
+            "future_first_fill_ts_ns",
+            "future_last_fill_ts_ns",
+            "first_fill_ts_ns",
+            "last_fill_ts_ns",
+            "fill_span_ns",
+        ]
+        for column in nullable_integer_columns:
+            if column in frame.columns:
+                frame[column] = frame[column].astype("Int64")
+        return frame
 
     def execution_guard_report(self) -> pd.DataFrame:
         return pd.DataFrame(
@@ -505,13 +681,47 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
             signal_ts_ns=int(signal["ts"]),
             ts_ns=now,
             requested_qty=qty,
+            leg_instrument_ids={
+                "call": call_id,
+                "put": put_id,
+                "future": future_id,
+            },
+            leg_sides={
+                "call": int(edge_evidence["decision_call_side"]),
+                "put": int(edge_evidence["decision_put_side"]),
+                "future": int(
+                    edge_evidence["decision_future_side"]
+                ),
+            },
+            leg_limit_prices={
+                "call": float(
+                    edge_evidence["decision_call_price"]
+                ),
+                "put": float(
+                    edge_evidence["decision_put_price"]
+                ),
+                "future": float(
+                    edge_evidence["decision_future_price"]
+                ),
+            },
+            contract_multiplier=float(
+                edge_evidence["decision_contract_multiplier"]
+            ),
+            decision_net_edge=float(
+                edge_evidence["decision_net_edge"]
+            ),
         )
         self.executions.append(execution)
         execution_idx = len(self.executions) - 1
-        for leg_instrument_id, side, price in legs:
+        for leg, (
+            leg_instrument_id,
+            side,
+            price,
+        ) in zip(("call", "put", "future"), legs, strict=True):
             oid = engine.send(leg_instrument_id, side, qty, price, OrderType.IOC)
             if oid is not None:
                 execution.order_ids.append(oid)
+                execution.order_id_by_leg[leg] = oid
                 self.order_to_execution[oid] = execution_idx
         guard["orders_accepted"] = len(execution.order_ids)
         guard["routing_complete"] = len(execution.order_ids) == 3
@@ -617,6 +827,50 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
 
 def _source_book_ts(tick: dict) -> int:
     return int(tick.get("market_ts", tick["ts"]))
+
+
+def _execution_leg_fill(
+    execution: SignalExecution,
+    leg: str,
+) -> dict[str, object]:
+    order_id = execution.order_id_by_leg.get(leg)
+    filled_qty = (
+        execution.filled_qty_by_order.get(order_id, 0)
+        if order_id is not None
+        else 0
+    )
+    fill_value = (
+        execution.fill_value_by_order.get(order_id, 0.0)
+        if order_id is not None
+        else 0.0
+    )
+    return {
+        "instrument_id": execution.leg_instrument_ids[leg],
+        "order_id": order_id,
+        "side": execution.leg_sides[leg],
+        "limit_price": execution.leg_limit_prices[leg],
+        "filled_qty": int(filled_qty),
+        "fill_vwap": (
+            float(fill_value / filled_qty)
+            if filled_qty > 0
+            else None
+        ),
+        "fill_cost": (
+            float(execution.fill_cost_by_order.get(order_id, 0.0))
+            if order_id is not None
+            else None
+        ),
+        "first_fill_ts_ns": (
+            execution.first_fill_ts_by_order.get(order_id)
+            if order_id is not None
+            else None
+        ),
+        "last_fill_ts_ns": (
+            execution.last_fill_ts_by_order.get(order_id)
+            if order_id is not None
+            else None
+        ),
+    }
 
 
 def _decision_edge_evidence(

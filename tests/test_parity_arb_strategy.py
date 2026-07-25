@@ -23,10 +23,15 @@ def book(rows):
     )
 
 
-def venue():
+def venue(*, order_us=0):
     return VenueConfig(
         "NSE",
-        LatencyModel(feed_us=0, order_us=0, jitter_us=0, _rng=np.random.default_rng(1)),
+        LatencyModel(
+            feed_us=0,
+            order_us=order_us,
+            jitter_us=0,
+            _rng=np.random.default_rng(1),
+        ),
     )
 
 
@@ -100,6 +105,22 @@ def test_parity_arb_taker_routes_three_ioc_legs_and_tracks_fills():
     legging = strategy.legging_report()
     assert not bool(legging.iloc[0]["partial"])
     assert legging.iloc[0]["fill_count"] == 3
+    outcome = legging.iloc[0]
+    assert bool(outcome["realized_edge_evidence_enabled"])
+    assert bool(outcome["realized_edge_evaluable"])
+    assert bool(outcome["realized_edge_positive"])
+    assert int(outcome["call_order_id"]) == 1
+    assert int(outcome["put_order_id"]) == 2
+    assert int(outcome["future_order_id"]) == 3
+    assert int(outcome["call_filled_qty"]) == 75
+    assert int(outcome["put_filled_qty"]) == 75
+    assert int(outcome["future_filled_qty"]) == 75
+    assert float(outcome["realized_edge_per_unit"]) == 13.0
+    assert float(outcome["realized_gross_edge"]) == 975.0
+    assert float(outcome["realized_total_cost"]) == 0.0
+    assert float(outcome["realized_net_edge"]) == 975.0
+    assert float(outcome["realized_vs_decision_net_edge"]) == 0.0
+    assert int(outcome["fill_span_ns"]) == 0
     routed_guard = strategy.execution_guard_report().loc[
         lambda frame: frame["guard_passed"]
     ].iloc[0]
@@ -165,6 +186,118 @@ def test_parity_arb_taker_revalidates_decayed_edge_before_preflight():
     assert set(rejected["decision_net_edge"]) == {-375.0}
     assert not rejected["ioc_batch_preflight_attempted"].any()
     assert strategy.legging_report().empty
+
+
+def test_parity_arb_taker_recomputes_realized_edge_from_favorable_fills():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        order_latency_us=0.1,
+        call_quotes=[
+            (0, 54.0, 55.0, 75, 75, np.nan, 0),
+            (50, 53.0, 54.0, 75, 75, np.nan, 0),
+            (100, 53.0, 54.0, 75, 75, np.nan, 0),
+        ],
+        put_quotes=[
+            (0, 60.0, 61.0, 75, 75, np.nan, 0),
+            (50, 61.0, 62.0, 75, 75, np.nan, 0),
+            (100, 61.0, 62.0, 75, 75, np.nan, 0),
+        ],
+        future_quotes=[
+            (0, 1008.0, 1009.0, 75, 75, np.nan, 0),
+            (50, 1009.0, 1010.0, 75, 75, np.nan, 0),
+            (100, 1009.0, 1010.0, 75, 75, np.nan, 0),
+        ],
+    )
+
+    result = engine.run()
+
+    outcome = strategy.legging_report().iloc[0]
+    assert len(result.fills.loc[result.fills["oid"].isin([1, 2, 3])]) == 3
+    assert float(outcome["decision_net_edge"]) == 975.0
+    assert float(outcome["call_fill_vwap"]) == 54.0
+    assert float(outcome["put_fill_vwap"]) == 61.0
+    assert float(outcome["future_fill_vwap"]) == 1009.0
+    assert float(outcome["realized_edge_per_unit"]) == 16.0
+    assert float(outcome["realized_gross_edge"]) == 1200.0
+    assert float(outcome["realized_net_edge"]) == 1200.0
+    assert float(outcome["realized_vs_decision_net_edge"]) == 225.0
+    assert bool(outcome["realized_edge_positive"])
+
+
+def test_parity_arb_taker_recomputes_reverse_realized_edge():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "sell_synthetic_buy_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+    )
+    engine = _parity_engine(
+        strategy,
+        order_latency_us=0.1,
+        call_quotes=[
+            (0, 54.0, 55.0, 75, 75, np.nan, 0),
+            (50, 55.0, 56.0, 75, 75, np.nan, 0),
+            (100, 55.0, 56.0, 75, 75, np.nan, 0),
+        ],
+        put_quotes=[
+            (0, 60.0, 61.0, 75, 75, np.nan, 0),
+            (50, 59.0, 60.0, 75, 75, np.nan, 0),
+            (100, 59.0, 60.0, 75, 75, np.nan, 0),
+        ],
+        future_quotes=[
+            (0, 979.0, 980.0, 75, 75, np.nan, 0),
+            (50, 978.0, 979.0, 75, 75, np.nan, 0),
+            (100, 978.0, 979.0, 75, 75, np.nan, 0),
+        ],
+    )
+
+    result = engine.run()
+
+    outcome = strategy.legging_report().iloc[0]
+    strategy_fills = result.fills.loc[
+        result.fills["oid"].isin([1, 2, 3])
+    ]
+    assert len(strategy_fills) == 3
+    assert int(outcome["call_side"]) == -1
+    assert int(outcome["put_side"]) == 1
+    assert int(outcome["future_side"]) == 1
+    assert float(outcome["decision_net_edge"]) == 975.0
+    assert float(outcome["call_fill_vwap"]) == 55.0
+    assert float(outcome["put_fill_vwap"]) == 60.0
+    assert float(outcome["future_fill_vwap"]) == 979.0
+    assert float(outcome["realized_edge_per_unit"]) == 16.0
+    assert float(outcome["realized_gross_edge"]) == 1200.0
+    assert float(outcome["realized_net_edge"]) == 1200.0
+    assert float(outcome["realized_vs_decision_net_edge"]) == 225.0
+    assert bool(outcome["realized_edge_positive"])
 
 
 def test_parity_arb_taker_resets_run_state_when_reused():
@@ -469,6 +602,10 @@ def _parity_engine(
     future_quote_qty=75,
     future_bid=1008.0,
     future_ask=1009.0,
+    call_quotes=None,
+    put_quotes=None,
+    future_quotes=None,
+    order_latency_us=0,
 ):
     return MultiInstrumentEngine(
         instruments={
@@ -476,7 +613,8 @@ def _parity_engine(
                 Instrument("CALL1000", Kind.OPT, lot_size=75, tick=0.05),
                 "NSE",
                 book(
-                    [
+                    call_quotes
+                    or [
                         (
                             ts,
                             54.0,
@@ -495,7 +633,8 @@ def _parity_engine(
                 Instrument("PUT1000", Kind.OPT, lot_size=75, tick=0.05),
                 "NSE",
                 book(
-                    [
+                    put_quotes
+                    or [
                         (
                             ts,
                             60.0,
@@ -514,7 +653,8 @@ def _parity_engine(
                 Instrument("FUT", Kind.FUT, lot_size=75, tick=0.05),
                 "NSE",
                 book(
-                    [
+                    future_quotes
+                    or [
                         (
                             ts,
                             future_bid,
@@ -531,6 +671,6 @@ def _parity_engine(
                 max_position_lots=future_max_position_lots,
             ),
         },
-        venues={"NSE": venue()},
+        venues={"NSE": venue(order_us=order_latency_us)},
         strategy=strategy,
     )

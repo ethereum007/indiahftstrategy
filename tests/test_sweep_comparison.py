@@ -59,6 +59,18 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_edge_revalidation_consistency_violations": 0,
             "parity_execution_min_routed_net_edge": 100.0,
             "parity_execution_max_observed_edge_decay": 0.0,
+            "parity_execution_realized_edge_enabled": True,
+            "parity_execution_realized_edge_declared": True,
+            "parity_execution_fills_present": True,
+            "parity_execution_realized_edge_evaluable_count": 1,
+            "parity_execution_realized_edge_positive_count": 1,
+            "parity_execution_realized_edge_nonpositive_count": 0,
+            "parity_execution_realized_edge_missing_evidence_rows": 0,
+            "parity_execution_realized_edge_consistency_violations": 0,
+            "parity_execution_min_realized_net_edge": 90.0,
+            "parity_execution_total_realized_net_edge": 90.0,
+            "parity_execution_min_realized_vs_decision_net_edge": -10.0,
+            "parity_execution_max_fill_span_ns": 20,
             "parity_execution_ioc_batch_preflight_enabled": True,
             "parity_execution_ioc_batch_preflight_declared": True,
             "parity_execution_ioc_batch_preflight_attempts": 1,
@@ -184,6 +196,18 @@ def sweep_rows(day_pnl_a, day_pnl_b, *, b_passed):
             "parity_execution_edge_revalidation_consistency_violations": 1,
             "parity_execution_min_routed_net_edge": 0.5,
             "parity_execution_max_observed_edge_decay": 100.0,
+            "parity_execution_realized_edge_enabled": True,
+            "parity_execution_realized_edge_declared": True,
+            "parity_execution_fills_present": True,
+            "parity_execution_realized_edge_evaluable_count": 0,
+            "parity_execution_realized_edge_positive_count": 0,
+            "parity_execution_realized_edge_nonpositive_count": 0,
+            "parity_execution_realized_edge_missing_evidence_rows": 1,
+            "parity_execution_realized_edge_consistency_violations": 1,
+            "parity_execution_min_realized_net_edge": 0.0,
+            "parity_execution_total_realized_net_edge": 0.0,
+            "parity_execution_min_realized_vs_decision_net_edge": 0.0,
+            "parity_execution_max_fill_span_ns": 100,
             "parity_execution_ioc_batch_preflight_enabled": True,
             "parity_execution_ioc_batch_preflight_declared": True,
             "parity_execution_ioc_batch_preflight_attempts": 1,
@@ -334,6 +358,12 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
         best["parity_execution_edge_revalidation_declared_runs"]
     ) == 2
     assert int(
+        best["parity_execution_realized_edge_enabled_runs"]
+    ) == 2
+    assert int(
+        best["parity_execution_realized_edge_declared_runs"]
+    ) == 2
+    assert int(
         best["parity_execution_ioc_batch_preflight_enabled_runs"]
     ) == 2
     assert int(
@@ -341,6 +371,7 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     ) == 2
     assert int(best["parity_execution_guard_artifact_present_runs"]) == 2
     assert int(best["parity_execution_legging_artifact_present_runs"]) == 2
+    assert int(best["parity_execution_fills_artifact_present_runs"]) == 2
     assert int(best["total_parity_execution_guard_attempts"]) == 6
     assert int(best["total_parity_execution_guard_passed_attempts"]) == 2
     assert int(best["total_parity_execution_guard_deferred_attempts"]) == 4
@@ -391,6 +422,37 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert float(
         best["max_parity_execution_observed_edge_decay"]
     ) == 0.0
+    assert int(
+        best["total_parity_execution_realized_edge_evaluable_count"]
+    ) == 2
+    assert int(
+        best["total_parity_execution_realized_edge_positive_count"]
+    ) == 2
+    assert int(
+        best["total_parity_execution_realized_edge_nonpositive_count"]
+    ) == 0
+    assert int(
+        best[
+            "total_parity_execution_realized_edge_missing_evidence_rows"
+        ]
+    ) == 0
+    assert int(
+        best[
+            "total_parity_execution_realized_edge_consistency_violations"
+        ]
+    ) == 0
+    assert float(
+        best["total_parity_execution_realized_net_edge"]
+    ) == 180.0
+    assert float(
+        best["min_parity_execution_realized_net_edge"]
+    ) == 90.0
+    assert float(
+        best[
+            "min_parity_execution_realized_vs_decision_net_edge"
+        ]
+    ) == -10.0
+    assert int(best["max_parity_execution_fill_span_ns"]) == 20
     assert int(
         best["total_parity_execution_ioc_batch_preflight_attempts"]
     ) == 2
@@ -467,6 +529,26 @@ def test_compare_sweeps_ranks_consistent_scenario_across_days(tmp_path):
     assert float(
         weak["max_parity_execution_observed_edge_decay"]
     ) == 100.0
+    assert int(
+        weak["total_parity_execution_realized_edge_evaluable_count"]
+    ) == 0
+    assert int(
+        weak[
+            "total_parity_execution_realized_edge_missing_evidence_rows"
+        ]
+    ) == 2
+    assert int(
+        weak[
+            "total_parity_execution_realized_edge_consistency_violations"
+        ]
+    ) == 2
+    assert float(
+        weak["total_parity_execution_realized_net_edge"]
+    ) == 0.0
+    assert float(
+        weak["min_parity_execution_realized_net_edge"]
+    ) == 0.0
+    assert int(weak["max_parity_execution_fill_span_ns"]) == 100
     assert int(
         weak[
             "total_parity_execution_ioc_batch_preflight_rejected_attempts"
