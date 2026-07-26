@@ -6190,6 +6190,124 @@ def test_route_enable_revalidates_cutover_broker_readiness_lineage(tmp_path):
     assert manifest["extra"]["cutover_broker_readiness_matches_current"]
 
 
+def test_route_enable_blocks_remanifested_cutover_contract_identity_forgery(
+    tmp_path,
+):
+    from reports.cutover import write_cutover_gate_report
+    from tests.data_readiness_helpers import reseal_experiment_manifest
+    from tests.test_cutover_gate import (
+        write_contract_identity_cutover_inputs,
+    )
+
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_fields,
+    ) = write_contract_identity_cutover_inputs(tmp_path)
+    cutover = tmp_path / "cutover"
+    cutover_report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=cutover,
+    )
+    assert cutover_report.ready
+
+    identity_field = (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    )
+    forged_sha256 = "d" * 64
+    for name in ("cutover_authorization.csv", "cutover_summary.csv"):
+        path = cutover / name
+        frame = pd.read_csv(path).astype(object)
+        frame.loc[0, identity_field] = forged_sha256
+        frame.to_csv(path, index=False)
+    config_path = cutover / "cutover_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["runtime_lineage"][identity_field] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = cutover / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extra"][identity_field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(cutover)
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    upload = tmp_path / "upload"
+    export = tmp_path / "export"
+    upload.mkdir()
+    export.mkdir()
+    upload_summary(orders=2).to_csv(
+        upload / "broker_upload_summary.csv",
+        index=False,
+    )
+    order_export_summary(
+        orders=2,
+        total_notional=1_000.0,
+    ).to_csv(
+        export / "broker_order_summary.csv",
+        index=False,
+    )
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(
+            require_order_export_ready=True,
+        ),
+    )
+
+    current_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert "cutover_lineage_contract_consistent" not in failed
+    assert {
+        (
+            "cutover_runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_sha256_matches_current"
+        ),
+        "cutover_runtime_contract_identity_matches_current",
+        "cutover_runtime_lineage_matches_current",
+        "cutover_lineage_gate_passed",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary[
+        "cutover_current_runtime_contract_identity_sha256"
+    ] == current_sha256
+    assert not summary[
+        "cutover_runtime_contract_identity_matches_current"
+    ]
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == "cutover_runtime_contract_identity_matches_current"
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+
+
 def test_route_enable_blocks_remanifested_cutover_over_stale_broker_readiness(
     tmp_path,
 ):

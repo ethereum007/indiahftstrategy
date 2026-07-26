@@ -24,6 +24,7 @@ from reports.operational_lineage import (
     runtime_session_lineage_manifest_inputs,
 )
 from reports.scaleup_runtime_provenance import (
+    BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS,
     empty_scaleup_runtime_provenance,
     load_scaleup_runtime_provenance,
     scaleup_runtime_fields,
@@ -712,6 +713,12 @@ def _checks(
     ]
     checks.extend(
         _scaleup_provenance_checks(scaleup_provenance)
+    )
+    checks.extend(
+        _broker_readiness_contract_identity_checks(
+            scaleup_provenance,
+            runtime,
+        )
     )
     if _runtime_strategy_portfolio_active(runtime):
         checks.extend(
@@ -4309,6 +4316,222 @@ def _scaleup_provenance_checks(
     return checks
 
 
+def _broker_readiness_contract_identity_checks(
+    provenance: dict[str, Any],
+    runtime: dict[str, Any],
+) -> list[dict[str, object]]:
+    scaleup = scaleup_runtime_fields(provenance)
+    scaleup_prefix = (
+        "scaleup_broker_readiness_roundtrip_contract_identity_"
+    )
+    runtime_prefix = (
+        "runtime_telemetry_broker_readiness_roundtrip_contract_identity_"
+    )
+    active = bool(
+        _to_bool(scaleup.get(f"{scaleup_prefix}active", False))
+        or _to_bool(runtime.get(f"{runtime_prefix}active", False))
+        or _to_bool(
+            runtime.get(
+                (
+                    "runtime_lineage_broker_readiness_"
+                    "contract_identity_active"
+                ),
+                False,
+            )
+        )
+    )
+    if not active:
+        return []
+
+    scaleup_sha256 = _object_text(
+        scaleup.get(f"{scaleup_prefix}sha256", "")
+    ).strip()
+    runtime_sha256 = _object_text(
+        runtime.get(f"{runtime_prefix}sha256", "")
+    ).strip()
+    current_sha256 = _object_text(
+        runtime.get(
+            (
+                "runtime_lineage_current_broker_readiness_"
+                "contract_identity_sha256"
+            ),
+            "",
+        )
+    ).strip()
+    checks = [
+        _check(
+            f"{scaleup_prefix}active",
+            _to_bool(scaleup.get(f"{scaleup_prefix}active", False)),
+            "is",
+            True,
+            _to_bool(scaleup.get(f"{scaleup_prefix}active", False)),
+            (
+                "scale-up did not retain the active terminal round-trip "
+                "contract identity"
+            ),
+        )
+    ]
+    checks.extend(
+        [
+            _check(
+                f"{scaleup_prefix}{suffix}",
+                _to_bool(
+                    scaleup.get(f"{scaleup_prefix}{suffix}", False)
+                ),
+                "is",
+                True,
+                _to_bool(
+                    scaleup.get(f"{scaleup_prefix}{suffix}", False)
+                ),
+                reason,
+            )
+            for suffix, reason in (
+                BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS
+            )
+        ]
+    )
+    checks.extend(
+        [
+            _check(
+                f"{scaleup_prefix}sha256_present",
+                scaleup_sha256,
+                "present",
+                True,
+                bool(scaleup_sha256),
+                "scale-up terminal round-trip contract identity digest is missing",
+            ),
+            _check(
+                f"{scaleup_prefix}matches_current",
+                _to_bool(
+                    scaleup.get(
+                        f"{scaleup_prefix}matches_current",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    scaleup.get(
+                        f"{scaleup_prefix}matches_current",
+                        False,
+                    )
+                ),
+                (
+                    "scale-up terminal round-trip contract identity differs "
+                    "from current broker readiness"
+                ),
+            ),
+            _check(
+                f"{runtime_prefix}active",
+                _to_bool(runtime.get(f"{runtime_prefix}active", False)),
+                "is",
+                True,
+                _to_bool(runtime.get(f"{runtime_prefix}active", False)),
+                (
+                    "runtime session did not carry the active terminal "
+                    "round-trip contract identity"
+                ),
+            ),
+            _check(
+                f"{runtime_prefix}sha256_present",
+                runtime_sha256,
+                "present",
+                True,
+                bool(runtime_sha256),
+                "runtime terminal round-trip contract identity digest is missing",
+            ),
+            _check(
+                f"{runtime_prefix}sha256_matches_current",
+                runtime_sha256,
+                "==",
+                current_sha256,
+                bool(
+                    runtime_sha256
+                    and current_sha256
+                    and runtime_sha256 == current_sha256
+                ),
+                (
+                    "runtime terminal round-trip contract identity digest "
+                    "differs from current broker readiness"
+                ),
+            ),
+            _check(
+                f"{runtime_prefix}lineage_verified",
+                _to_bool(
+                    runtime.get(
+                        f"{runtime_prefix}lineage_verified",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    runtime.get(
+                        f"{runtime_prefix}lineage_verified",
+                        False,
+                    )
+                ),
+                (
+                    "runtime terminal round-trip contract identity lineage "
+                    "is not verified"
+                ),
+            ),
+            _check(
+                f"{runtime_prefix}matches_current",
+                _to_bool(
+                    runtime.get(
+                        f"{runtime_prefix}matches_current",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    runtime.get(
+                        f"{runtime_prefix}matches_current",
+                        False,
+                    )
+                ),
+                (
+                    "runtime terminal round-trip contract identity differs "
+                    "from current scale-up"
+                ),
+            ),
+            _check(
+                (
+                    "runtime_lineage_broker_readiness_"
+                    "contract_identity_matches_current"
+                ),
+                _to_bool(
+                    runtime.get(
+                        (
+                            "runtime_lineage_broker_readiness_"
+                            "contract_identity_matches_current"
+                        ),
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    runtime.get(
+                        (
+                            "runtime_lineage_broker_readiness_"
+                            "contract_identity_matches_current"
+                        ),
+                        False,
+                    )
+                ),
+                (
+                    "runtime contract identity no longer matches the current "
+                    "recursive broker-readiness source"
+                ),
+            ),
+        ]
+    )
+    return checks
+
+
 def _authorization(
     scaleup: dict[str, Any],
     broker: dict[str, Any],
@@ -5548,6 +5771,8 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
+    if "broker_readiness_roundtrip_contract_identity" in check:
+        return "broker_readiness"
     if check.startswith("runtime_lineage_broker_readiness_"):
         return "broker_readiness"
     if check.startswith("proof_refresh_") or check.startswith(
@@ -6587,6 +6812,10 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Runtime session ready: {_object_text(summary_row.get('runtime_session_ready')).strip()}",
         f"- Runtime guard action: {_object_text(summary_row.get('runtime_guard_action')).strip()}",
         f"- Runtime lineage current: {'yes' if _to_bool(summary_row.get('runtime_lineage_gate_passed')) else 'no'}",
+        f"- Broker contract identity active: {'yes' if _to_bool(summary_row.get('runtime_lineage_broker_readiness_contract_identity_active')) else 'no'}",
+        f"- Broker contract identity digest: {_code(summary_row.get('runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256'))}",
+        f"- Current broker contract identity digest: {_code(summary_row.get('runtime_lineage_current_broker_readiness_contract_identity_sha256'))}",
+        f"- Broker contract identity matches current: {'yes' if _to_bool(summary_row.get('runtime_lineage_broker_readiness_contract_identity_matches_current')) else 'no'}",
         f"- Research family: {_object_text(summary_row.get('runtime_scaleup_research_family_id')).strip()}",
         f"- Lead-lag lineage required: {'yes' if _to_bool(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_required')) else 'no'}",
         f"- Lead-lag lineage matches scale-up: {'yes' if _to_bool(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",

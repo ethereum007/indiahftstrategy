@@ -771,6 +771,78 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
                     ),
                 ]
             )
+            if cutover["cutover_runtime_contract_identity_active"]:
+                runtime_identity_sha256 = str(
+                    cutover[
+                        (
+                            "cutover_runtime_telemetry_broker_readiness_"
+                            "roundtrip_contract_identity_sha256"
+                        )
+                    ]
+                ).strip()
+                current_identity_sha256 = str(
+                    cutover[
+                        "cutover_current_runtime_contract_identity_sha256"
+                    ]
+                ).strip()
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "cutover_runtime_telemetry_broker_readiness_"
+                                "roundtrip_contract_identity_sha256_present"
+                            ),
+                            runtime_identity_sha256,
+                            "present",
+                            True,
+                            bool(runtime_identity_sha256),
+                            (
+                                "cutover runtime contract identity digest "
+                                "is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "cutover_runtime_telemetry_broker_readiness_"
+                                "roundtrip_contract_identity_sha256_"
+                                "matches_current"
+                            ),
+                            runtime_identity_sha256,
+                            "==",
+                            current_identity_sha256,
+                            bool(
+                                runtime_identity_sha256
+                                and current_identity_sha256
+                                and runtime_identity_sha256
+                                == current_identity_sha256
+                            ),
+                            (
+                                "cutover runtime contract identity digest "
+                                "differs from current broker readiness"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "cutover_runtime_"
+                                "contract_identity_matches_current"
+                            ),
+                            cutover[
+                                "cutover_runtime_contract_identity_matches_current"
+                            ],
+                            "is",
+                            True,
+                            bool(
+                                cutover[
+                                    "cutover_runtime_contract_identity_matches_current"
+                                ]
+                            ),
+                            (
+                                "cutover contract identity no longer matches "
+                                "the current recursive broker-readiness source"
+                            ),
+                        ),
+                    ]
+                )
         checks.append(
             _check(
                 "cutover_lineage_gate_passed",
@@ -5102,6 +5174,12 @@ def _component(check: str) -> str:
         return "proof_refresh"
     if check.startswith("cutover_broker_resume_") or check.startswith("broker_resume_"):
         return "resume_gate"
+    if (
+        "broker_readiness_roundtrip_contract_identity" in check
+        or "broker_readiness_contract_identity" in check
+        or "runtime_contract_identity" in check
+    ):
+        return "broker_readiness"
     if check.startswith("cutover_broker_readiness_") or check in {
         "cutover_runtime_lineage_source_bound",
         "cutover_runtime_lineage_matches_current",

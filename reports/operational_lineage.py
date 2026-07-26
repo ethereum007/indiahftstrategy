@@ -31,6 +31,36 @@ from reports.scaleup_runtime_provenance import (
 
 
 LINEAGE_COLUMNS = (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS)
+RUNTIME_CONTRACT_IDENTITY_FIELDS = (
+    (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_active"
+    ),
+    (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    ),
+    (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_lineage_verified"
+    ),
+    (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_matches_current"
+    ),
+    (
+        "runtime_lineage_broker_readiness_"
+        "contract_identity_active"
+    ),
+    (
+        "runtime_lineage_current_broker_readiness_"
+        "contract_identity_sha256"
+    ),
+    (
+        "runtime_lineage_broker_readiness_"
+        "contract_identity_matches_current"
+    ),
+)
 SCALEUP_PROVENANCE_DEFAULTS = scaleup_runtime_fields(
     empty_scaleup_runtime_provenance()
 )
@@ -277,6 +307,9 @@ def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
         "broker_readiness_source_matches_scaleup": not required,
         "current_broker_readiness_manifest_sha256": "",
         "broker_readiness_matches_current": not required,
+        "broker_readiness_contract_identity_active": False,
+        "current_broker_readiness_contract_identity_sha256": "",
+        "broker_readiness_contract_identity_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -403,6 +436,7 @@ def load_runtime_session_lineage(
         and lineage_current
         and state["broker_readiness_source_matches_scaleup"]
         and state["broker_readiness_matches_current"]
+        and state["broker_readiness_contract_identity_matches_current"]
     )
     return state
 
@@ -435,6 +469,27 @@ def runtime_session_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]
         ),
         "runtime_lineage_broker_readiness_matches_current": _bool(
             lineage.get("broker_readiness_matches_current", False)
+        ),
+        "runtime_lineage_broker_readiness_contract_identity_active": _bool(
+            lineage.get("broker_readiness_contract_identity_active", False)
+        ),
+        (
+            "runtime_lineage_current_broker_readiness_"
+            "contract_identity_sha256"
+        ): _text(
+            lineage.get(
+                "current_broker_readiness_contract_identity_sha256",
+                "",
+            )
+        ),
+        (
+            "runtime_lineage_broker_readiness_"
+            "contract_identity_matches_current"
+        ): _bool(
+            lineage.get(
+                "broker_readiness_contract_identity_matches_current",
+                False,
+            )
         ),
         "runtime_lineage_gate_passed": _bool(lineage.get("gate_passed", False)),
         "runtime_lineage_dependency_count": int(lineage.get("dependency_count", 0)),
@@ -494,6 +549,9 @@ def _runtime_session_broker_readiness_state(
             "broker_readiness_source_matches_scaleup": True,
             "current_broker_readiness_manifest_sha256": "",
             "broker_readiness_matches_current": True,
+            "broker_readiness_contract_identity_active": False,
+            "current_broker_readiness_contract_identity_sha256": "",
+            "broker_readiness_contract_identity_matches_current": True,
         }
 
     scaleup_manifest_path = _source_manifest_path(scaleup_config_path)
@@ -571,18 +629,116 @@ def _runtime_session_broker_readiness_state(
             lineage.get("runtime_telemetry_broker_readiness_matches_current")
         )
     )
+    current_contract_identity_active = _bool(
+        current_fields.get(
+            "broker_readiness_roundtrip_contract_identity_active",
+            False,
+        )
+    )
+    runtime_contract_identity_active = _bool(
+        lineage.get(
+            (
+                "runtime_telemetry_broker_readiness_roundtrip_"
+                "contract_identity_active"
+            ),
+            False,
+        )
+    )
+    scaleup_contract_identity_active = _bool(
+        lineage.get(
+            (
+                "scaleup_broker_readiness_roundtrip_"
+                "contract_identity_active"
+            ),
+            False,
+        )
+    )
+    contract_identity_active = bool(
+        current_contract_identity_active
+        or runtime_contract_identity_active
+        or scaleup_contract_identity_active
+    )
+    current_contract_identity_sha256 = _text(
+        current_fields.get(
+            "broker_readiness_roundtrip_contract_identity_sha256",
+            "",
+        )
+    )
+    contract_identity_matches_current = bool(
+        not contract_identity_active
+        or (
+            current_contract_identity_active
+            and runtime_contract_identity_active
+            and scaleup_contract_identity_active
+            and current_contract_identity_sha256
+            and _same(
+                lineage.get(
+                    (
+                        "runtime_telemetry_broker_readiness_roundtrip_"
+                        "contract_identity_sha256"
+                    )
+                ),
+                current_contract_identity_sha256,
+                "runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256",
+            )
+            and _bool(
+                current_fields.get(
+                    (
+                        "broker_readiness_roundtrip_"
+                        "contract_identity_lineage_verified"
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                lineage.get(
+                    (
+                        "runtime_telemetry_broker_readiness_roundtrip_"
+                        "contract_identity_lineage_verified"
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                lineage.get(
+                    (
+                        "runtime_telemetry_broker_readiness_roundtrip_"
+                        "contract_identity_matches_current"
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                lineage.get(
+                    (
+                        "scaleup_broker_readiness_roundtrip_"
+                        "contract_identity_matches_current"
+                    ),
+                    False,
+                )
+            )
+        )
+    )
     matches_current = bool(
         source_matches_scaleup
         and current_fields.get("broker_readiness_lineage_gate_passed", False)
         and carried_fields_match
         and source_claims_match
         and telemetry_matches
+        and contract_identity_matches_current
     )
     return {
         "broker_readiness_required": True,
         "broker_readiness_source_matches_scaleup": source_matches_scaleup,
         "current_broker_readiness_manifest_sha256": current_manifest_sha256,
         "broker_readiness_matches_current": matches_current,
+        "broker_readiness_contract_identity_active": contract_identity_active,
+        "current_broker_readiness_contract_identity_sha256": (
+            current_contract_identity_sha256
+        ),
+        "broker_readiness_contract_identity_matches_current": (
+            contract_identity_matches_current
+        ),
     }
 
 
@@ -603,6 +759,9 @@ def empty_cutover_lineage(*, required: bool = False) -> dict[str, Any]:
         "runtime_lineage_source_bound": not required,
         "current_runtime_session_manifest_sha256": "",
         "runtime_lineage_matches_current": not required,
+        "runtime_contract_identity_active": False,
+        "current_runtime_contract_identity_sha256": "",
+        "runtime_contract_identity_matches_current": not required,
         "broker_readiness_source_matches_scaleup": not required,
         "current_broker_readiness_manifest_sha256": "",
         "broker_readiness_matches_current": not required,
@@ -747,6 +906,7 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
         and runtime_gate
         and state["runtime_lineage_source_bound"]
         and state["runtime_lineage_matches_current"]
+        and state["runtime_contract_identity_matches_current"]
         and state["broker_readiness_source_matches_scaleup"]
         and state["broker_readiness_matches_current"]
         and state["scaleup_source_bound"]
@@ -784,6 +944,15 @@ def cutover_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "cutover_runtime_lineage_matches_current": _bool(
             lineage.get("runtime_lineage_matches_current", False)
+        ),
+        "cutover_runtime_contract_identity_active": _bool(
+            lineage.get("runtime_contract_identity_active", False)
+        ),
+        "cutover_current_runtime_contract_identity_sha256": _text(
+            lineage.get("current_runtime_contract_identity_sha256", "")
+        ),
+        "cutover_runtime_contract_identity_matches_current": _bool(
+            lineage.get("runtime_contract_identity_matches_current", False)
         ),
         "cutover_broker_readiness_source_matches_scaleup": _bool(
             lineage.get("broker_readiness_source_matches_scaleup", False)
@@ -886,6 +1055,9 @@ def _cutover_current_runtime_lineage_state(
             "runtime_lineage_source_bound": True,
             "current_runtime_session_manifest_sha256": "",
             "runtime_lineage_matches_current": True,
+            "runtime_contract_identity_active": False,
+            "current_runtime_contract_identity_sha256": "",
+            "runtime_contract_identity_matches_current": True,
             "broker_readiness_source_matches_scaleup": True,
             "current_broker_readiness_manifest_sha256": "",
             "broker_readiness_matches_current": True,
@@ -930,6 +1102,83 @@ def _cutover_current_runtime_lineage_state(
             for column in runtime_fields
         )
     )
+    current_contract_identity_active = _bool(
+        current_fields.get(
+            (
+                "runtime_lineage_broker_readiness_"
+                "contract_identity_active"
+            ),
+            False,
+        )
+    )
+    carried_contract_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "runtime_telemetry_broker_readiness_roundtrip_"
+                    "contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _bool(
+            lineage.get(
+                (
+                    "runtime_lineage_broker_readiness_"
+                    "contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_telemetry_broker_readiness_roundtrip_"
+                    "contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_lineage_current_broker_readiness_"
+                    "contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+    )
+    contract_identity_active = bool(
+        current_contract_identity_active
+        or carried_contract_identity_active
+    )
+    current_contract_identity_sha256 = _text(
+        current_fields.get(
+            (
+                "runtime_telemetry_broker_readiness_roundtrip_"
+                "contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    contract_identity_matches_current = bool(
+        not contract_identity_active
+        or (
+            source_bound
+            and current.get("gate_passed", False)
+            and current_contract_identity_active
+            and current_contract_identity_sha256
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_fields.get(column),
+                    column,
+                )
+                for column in RUNTIME_CONTRACT_IDENTITY_FIELDS
+            )
+        )
+    )
     return {
         "broker_readiness_required": True,
         "runtime_lineage_source_bound": source_bound,
@@ -937,6 +1186,13 @@ def _cutover_current_runtime_lineage_state(
             current.get("manifest_sha256", "")
         ),
         "runtime_lineage_matches_current": runtime_matches_current,
+        "runtime_contract_identity_active": contract_identity_active,
+        "current_runtime_contract_identity_sha256": (
+            current_contract_identity_sha256
+        ),
+        "runtime_contract_identity_matches_current": (
+            contract_identity_matches_current
+        ),
         "broker_readiness_source_matches_scaleup": bool(
             source_bound
             and current.get("broker_readiness_source_matches_scaleup", False)

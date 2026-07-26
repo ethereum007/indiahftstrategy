@@ -125,6 +125,15 @@
   runtime lineage. Changing the telemetry-carried digest and re-sealing its
   manifest therefore still halts the guard with an identity-specific failure;
   identity-inactive legacy evidence remains accepted through default values.
+- Cutover authorization now independently reopens the current broker-readiness
+  source and compares the runtime session's terminal contract-identity
+  activation, digest, lineage-verification flag, and current-source verdict.
+  Dedicated cutover checks, summary/config/manifest fields, and runbook lines
+  expose the exact digest under review. Route enable repeats the comparison
+  against the current runtime session, so a self-consistent, re-manifested
+  identity forgery at either the runtime-session or cutover boundary remains
+  blocked with a broker-readiness repair action while identity-inactive legacy
+  evidence remains compatible.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
@@ -7838,10 +7847,30 @@ affected tests). Source compilation succeeds. Repository collection is healthy
 at `2781 tests` across `169` files. The full suite was not rerun because recent
 complete runs exceed 40 minutes.
 
+Latest runtime-to-cutover contract-identity proof: runtime-session lineage now
+reopens current broker readiness and independently compares the active terminal
+contract identity, canonical SHA-256, lineage-verification flag, and the
+telemetry and scale-up current-source claims. Cutover emits dedicated identity
+checks and keeps both the carried and current digest visible in authorization,
+summary, config, manifest, and runbook evidence. Its recursive loader then
+reopens the current runtime session and publishes a cutover-specific identity
+verdict for route enable. A forged runtime digest and a forged cutover digest
+remain blocked even after every edited bundle is re-manifested and internally
+consistent. Identity-inactive legacy evidence continues through neutral
+defaults. All outputs remain non-authorizing. The full `253`-test cutover and
+route-enable set, `36` runtime/provenance/lineage/certificate tests, `169`
+dispatch and migration tests, all `111` acknowledgement tests, all `108`
+round-trip tests, all `134` broker-readiness tests, and `8` focused send
+identity/lineage tests pass (`819` unique affected tests). The full send module
+exceeded its 15-minute command window, so its unrelated cases were not claimed
+as rerun. Source compilation succeeds. Repository collection is healthy at
+`2794 tests` across `169` files.
+
 ## Next Build Targets
 
-1. Carry the verified contract identity through actual acknowledgement
-   reconciliation and final broker round-trip evidence.
+1. Give broker dispatch planning the same explicit route-to-dispatch
+   contract-identity digest/current-source verdict now enforced at cutover and
+   route enable.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

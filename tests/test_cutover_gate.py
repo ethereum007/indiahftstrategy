@@ -13,6 +13,7 @@ from reports.operational_lineage import (
     broker_readiness_lineage_fields,
     broker_readiness_lineage_manifest_inputs,
     load_broker_readiness_lineage,
+    load_cutover_lineage,
 )
 from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 from reports.runtime_session import write_runtime_session_monitor
@@ -1989,6 +1990,147 @@ def write_proof_refresh_cutover_inputs(root):
         proof_refresh,
         proof_source,
         thresholds,
+    )
+
+
+def write_contract_identity_cutover_inputs(root):
+    from tests.data_readiness_helpers import reseal_experiment_manifest
+    from tests.test_scaleup_runtime_provenance import (
+        _write_broker_readiness_bundle,
+        _write_scaleup_bundle,
+    )
+
+    broker = root / "broker_readiness"
+    broker_lineage = _write_broker_readiness_bundle(
+        broker,
+        contract_identity=True,
+    )
+    scaleup = _write_scaleup_bundle(
+        root / "scaleup",
+        broker_lineage,
+    )
+    broker_row = pd.read_csv(
+        broker / "broker_readiness_summary.csv"
+    ).iloc[0]
+    scaleup_config_path = scaleup / "scaleup_config.json"
+    scaleup_config_payload = json.loads(
+        scaleup_config_path.read_text(encoding="utf-8")
+    )
+    scaleup_config_payload["target_mode"] = "live_dryrun"
+    scaleup_config_payload["route_readiness"] = {
+        "required": True,
+        "provided": True,
+        "ready": True,
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "route_ready_pairs": 1,
+        "gap_pairs": 0,
+        "ops_launch_controls_present": True,
+        "ops_launch_controls_blocked_pairs": 0,
+        "ops_broker_roundtrip_portfolio_breach_pairs": 0,
+        "ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
+        "recommendation": "eligible_for_live_dryrun_route_review",
+    }
+    scaleup_config_payload["broker_readiness"][
+        "dispatch_roundtrip"
+    ] = {
+        "required": True,
+        "provided": True,
+        "ready": True,
+        "target_mode": "live_dryrun",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "dispatch_batch_id": broker_row[
+            "dispatch_roundtrip_batch_id"
+        ],
+        "requests": int(broker_row["dispatch_roundtrip_requests"]),
+        "acked_orders": int(
+            broker_row["dispatch_roundtrip_acked_orders"]
+        ),
+        "missing_request_acks": int(
+            broker_row["dispatch_roundtrip_missing_request_acks"]
+        ),
+        "rejected_orders": int(
+            broker_row["dispatch_roundtrip_rejected_orders"]
+        ),
+        "unmatched_acks": int(
+            broker_row["dispatch_roundtrip_unmatched_acks"]
+        ),
+        "failed_checks": int(
+            broker_row["dispatch_roundtrip_failed_checks"]
+        ),
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": int(
+                broker_row[
+                    "route_enable_dispatch_roundtrip_failed_checks"
+                ]
+            ),
+        },
+        "route_proof": {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "target_mode": "live_dryrun",
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "scenario_key": "trigger_ticks=2",
+            "dispatch_batch_id": broker_row[
+                "route_dispatch_roundtrip_batch_id"
+            ],
+            "requests": int(
+                broker_row["route_dispatch_roundtrip_requests"]
+            ),
+            "acked_orders": int(
+                broker_row[
+                    "route_dispatch_roundtrip_acked_orders"
+                ]
+            ),
+            "missing_request_acks": int(
+                broker_row[
+                    "route_dispatch_roundtrip_missing_request_acks"
+                ]
+            ),
+            "rejected_orders": int(
+                broker_row[
+                    "route_dispatch_roundtrip_rejected_orders"
+                ]
+            ),
+            "unmatched_acks": int(
+                broker_row[
+                    "route_dispatch_roundtrip_unmatched_acks"
+                ]
+            ),
+        },
+    }
+    scaleup_config_path.write_text(
+        json.dumps(scaleup_config_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    for name in ("scaleup_summary.csv", "scaleup_plan.csv"):
+        path = scaleup / name
+        frame = pd.read_csv(path)
+        frame.loc[0, "target_mode"] = "live_dryrun"
+        frame.to_csv(path, index=False)
+    reseal_experiment_manifest(scaleup)
+
+    runtime = root / "runtime"
+    runtime_report = write_runtime_session_monitor(
+        scaleup_dir=scaleup,
+        output_dir=runtime,
+        snapshot_ts_ns=1_000,
+        as_of_ts_ns=1_500,
+        max_telemetry_age_ns=1_000,
+    )
+    assert runtime_report.ready
+    review_path = root / "operator_review.csv"
+    operator_review().to_csv(review_path, index=False)
+    return (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_readiness_lineage_fields(broker_lineage),
     )
 
 
@@ -6327,6 +6469,225 @@ def test_cutover_revalidates_runtime_broker_readiness_lineage(tmp_path):
     assert manifest["extra"][
         "runtime_lineage_broker_readiness_matches_current"
     ]
+
+
+def test_cutover_verifies_runtime_broker_contract_identity(tmp_path):
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_fields,
+    ) = write_contract_identity_cutover_inputs(tmp_path)
+    out_dir = tmp_path / "cutover"
+
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=out_dir,
+    )
+
+    identity_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    summary = report.summary.iloc[0]
+    identity_checks = report.checks.loc[
+        report.checks["check"].astype(str).str.contains(
+            "contract_identity"
+        )
+    ]
+    assert report.ready
+    assert not identity_checks.empty
+    assert identity_checks["passed"].astype(bool).all()
+    assert summary[
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    ] == identity_sha256
+    assert summary[
+        "runtime_lineage_current_broker_readiness_"
+        "contract_identity_sha256"
+    ] == identity_sha256
+    assert summary[
+        "runtime_lineage_broker_readiness_"
+        "contract_identity_matches_current"
+    ]
+    assert report.config["runtime_lineage"][
+        "runtime_lineage_broker_readiness_"
+        "contract_identity_matches_current"
+    ]
+    runbook = (out_dir / "cutover_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert f"Broker contract identity digest: `{identity_sha256}`" in runbook
+    assert "Broker contract identity matches current: yes" in runbook
+    lineage = load_cutover_lineage(out_dir / "cutover_config.json")
+    assert lineage["gate_passed"]
+    assert lineage["runtime_contract_identity_active"]
+    assert lineage["runtime_contract_identity_matches_current"]
+    assert (
+        lineage["current_runtime_contract_identity_sha256"]
+        == identity_sha256
+    )
+
+
+def test_cutover_blocks_remanifested_runtime_contract_identity_forgery(
+    tmp_path,
+):
+    from tests.data_readiness_helpers import reseal_experiment_manifest
+
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_fields,
+    ) = write_contract_identity_cutover_inputs(tmp_path)
+    identity_field = (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    )
+    forged_sha256 = "f" * 64
+    summary_path = runtime / "runtime_session_summary.csv"
+    summary = pd.read_csv(summary_path).astype(object)
+    summary.loc[0, identity_field] = forged_sha256
+    summary.to_csv(summary_path, index=False)
+    config_path = runtime / "runtime_session_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["runtime_telemetry_lineage"][identity_field] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = runtime / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extra"][identity_field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(runtime)
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
+
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=tmp_path / "cutover",
+    )
+
+    current_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "runtime_session_manifest_current" not in failed
+    assert "runtime_lineage_contract_consistent" not in failed
+    assert {
+        (
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_sha256_matches_current"
+        ),
+        (
+            "runtime_lineage_broker_readiness_"
+            "contract_identity_matches_current"
+        ),
+        "runtime_lineage_broker_readiness_matches_current",
+        "runtime_lineage_gate_passed",
+    } <= failed
+    summary_row = report.summary.iloc[0]
+    assert summary_row[identity_field] == forged_sha256
+    assert summary_row[
+        "runtime_lineage_current_broker_readiness_"
+        "contract_identity_sha256"
+    ] == current_sha256
+    assert not summary_row[
+        "runtime_lineage_broker_readiness_"
+        "contract_identity_matches_current"
+    ]
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == (
+            "runtime_lineage_broker_readiness_"
+            "contract_identity_matches_current"
+        )
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+
+
+def test_cutover_lineage_blocks_remanifested_contract_identity_forgery(
+    tmp_path,
+):
+    from tests.data_readiness_helpers import reseal_experiment_manifest
+
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        _,
+    ) = write_contract_identity_cutover_inputs(tmp_path)
+    cutover = tmp_path / "cutover"
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=cutover,
+    )
+    assert report.ready
+
+    identity_field = (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    )
+    forged_sha256 = "e" * 64
+    for name in ("cutover_authorization.csv", "cutover_summary.csv"):
+        path = cutover / name
+        frame = pd.read_csv(path).astype(object)
+        frame.loc[0, identity_field] = forged_sha256
+        frame.to_csv(path, index=False)
+    config_path = cutover / "cutover_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["runtime_lineage"][identity_field] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = cutover / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["extra"][identity_field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(cutover)
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_cutover_lineage(config_path)
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["runtime_contract_identity_active"]
+    assert not lineage["runtime_lineage_matches_current"]
+    assert not lineage["runtime_contract_identity_matches_current"]
+    assert not lineage["gate_passed"]
 
 
 def test_cutover_blocks_remanifested_runtime_over_stale_broker_readiness(tmp_path):
