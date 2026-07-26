@@ -858,6 +858,14 @@ instrument_resolution_runbook.md
 manifest.json
 ```
 
+The manifest fingerprints the exact order candidates and broker instrument
+master used by the resolver. When this directory is handed to broker
+readiness, readiness verifies the `broker_instrument_resolution` run type,
+every artifact and source fingerprint, and then deterministically rebuilds
+all eight resolver artifacts from those bound inputs and the manifest config.
+Changing a CSV and regenerating only its manifest therefore cannot turn stale
+or forged contract coverage into an accepted broker handoff.
+
 ## Parity / Box Scan
 
 ```powershell
@@ -4038,10 +4046,21 @@ python -m hft_cli review-broker-readiness `
   --fail-on-breach
 ```
 
-`--require-instrument-resolution` requires a ready
-`instrument_resolution_summary.csv` for the same adapter. A supplied
-resolution is always checked even when optional, so partial or stale
-instrument-master coverage cannot silently accompany an otherwise ready
+`--require-instrument-resolution` requires a ready, manifest-bound
+instrument-resolution evidence directory for the same adapter. A supplied
+resolution is always checked even when optional. Broker readiness verifies
+the resolver manifest and its source fingerprints, rebuilds the resolved
+orders, row/group checks, summary, action queue, config, and runbook from the
+original orders and instrument master, and requires content-equivalent
+artifacts. If a summary-file path is supplied directly, it must resolve to the
+standard manifest-bound `instrument_resolution_summary.csv`; another CSV in
+the same directory cannot borrow the bundle's proof. The resulting
+`instrument_resolution_manifest_current`,
+`instrument_resolution_artifacts_consistent`, and
+`instrument_resolution_evidence_gate_passed` fields are retained in readiness
+items, summary, config, and manifest. The readiness manifest also fingerprints
+the resolver manifest and its raw dependencies, so partial, stale, or
+remanifested contract coverage cannot silently accompany an otherwise ready
 broker handoff.
 
 Use `--allow-placeholder-schema` only for dry-run review while Arrow.money/iRage

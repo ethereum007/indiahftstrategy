@@ -5,6 +5,10 @@ import warnings
 import pandas as pd
 import pytest
 
+from adapters.broker_instrument_resolution import (
+    BrokerInstrumentResolutionConfig,
+    write_broker_instrument_resolution,
+)
 from adapters.broker_readiness import (
     BrokerReadinessThresholds,
     evaluate_broker_readiness,
@@ -16,6 +20,7 @@ from reports.broker_dispatch_roundtrip import (
     write_broker_dispatch_roundtrip,
 )
 from reports.operational_lineage import load_broker_readiness_lineage
+from reports.manifest import write_experiment_manifest
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
@@ -179,6 +184,78 @@ def instrument_resolution_summary(adapter="normalized", ready=True):
                 "failed_checks": 0 if ready else 2,
             }
         ]
+    )
+
+
+def write_instrument_resolution_proof(tmp_path, adapter="normalized"):
+    orders_path = tmp_path / "resolution_orders.csv"
+    master_path = tmp_path / "instrument_master.csv"
+    resolution_dir = tmp_path / "instrument_resolution"
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "RES-1",
+                "instrument_id": "NIFTY_CALL",
+                "leg_group_id": "RES-GROUP-1",
+                "leg_role": "CALL",
+                "leg_count": 2,
+                "side": 1,
+                "qty": 75,
+                "price": 10.0,
+            },
+            {
+                "client_order_id": "RES-2",
+                "instrument_id": "NIFTY_PUT",
+                "leg_group_id": "RES-GROUP-1",
+                "leg_role": "PUT",
+                "leg_count": 2,
+                "side": -1,
+                "qty": 75,
+                "price": 9.0,
+            },
+        ]
+    ).to_csv(orders_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "source_instrument_id": "NIFTY_CALL",
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY26JUN25000CE",
+                "instrument_token": "51001",
+            },
+            {
+                "source_instrument_id": "NIFTY_PUT",
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY26JUN25000PE",
+                "instrument_token": "51002",
+            },
+        ]
+    ).to_csv(master_path, index=False)
+    write_broker_instrument_resolution(
+        orders_path,
+        master_path,
+        output_dir=resolution_dir,
+        config=BrokerInstrumentResolutionConfig(adapter=adapter),
+    )
+    return resolution_dir, orders_path, master_path
+
+
+def refresh_instrument_resolution_manifest(
+    resolution_dir,
+    orders_path,
+    master_path,
+):
+    payload = json.loads(
+        (resolution_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    write_experiment_manifest(
+        resolution_dir,
+        run_type="broker_instrument_resolution",
+        parameters=payload["parameters"],
+        inputs={
+            "orders": orders_path,
+            "instrument_master": master_path,
+        },
     )
 
 
@@ -1577,6 +1654,160 @@ def test_broker_readiness_requires_complete_instrument_resolution():
     assert bool(item["required"])
     assert bool(item["provided"])
     assert bool(item["ready"])
+
+
+def test_broker_readiness_rebuilds_manifest_bound_resolution_evidence(
+    tmp_path,
+):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    for path in (schema_dir, export_dir, upload_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(
+        schema_dir / "adapter_schema_summary.csv",
+        index=False,
+    )
+    order_export_summary("normalized", True).to_csv(
+        export_dir / "broker_order_summary.csv",
+        index=False,
+    )
+    upload_summary("normalized", True).to_csv(
+        upload_dir / "broker_upload_summary.csv",
+        index=False,
+    )
+    resolution_dir, orders_path, master_path = (
+        write_instrument_resolution_proof(tmp_path)
+    )
+    thresholds = BrokerReadinessThresholds(
+        adapter="normalized",
+        require_instrument_resolution=True,
+    )
+
+    accepted = write_broker_readiness_report(
+        output_dir=tmp_path / "accepted_readiness",
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        instrument_resolution_dir=resolution_dir,
+        upload_pack_dir=upload_dir,
+        thresholds=thresholds,
+    )
+
+    assert accepted.ready
+    accepted_summary = accepted.summary.iloc[0]
+    assert bool(
+        accepted_summary[
+            "instrument_resolution_manifest_current"
+        ]
+    )
+    assert bool(
+        accepted_summary[
+            "instrument_resolution_artifacts_consistent"
+        ]
+    )
+    assert bool(
+        accepted_summary[
+            "instrument_resolution_evidence_gate_passed"
+        ]
+    )
+    accepted_config = accepted.config["components"][
+        "instrument_resolution"
+    ]["evidence"]
+    assert accepted_config["gate_passed"]
+    assert accepted_config["dependency_count"] == 2
+
+    borrowed_summary_path = (
+        resolution_dir / "borrowed_ready_summary.csv"
+    )
+    pd.read_csv(
+        resolution_dir / "instrument_resolution_summary.csv"
+    ).to_csv(borrowed_summary_path, index=False)
+    borrowed = write_broker_readiness_report(
+        output_dir=tmp_path / "borrowed_readiness",
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        instrument_resolution_dir=borrowed_summary_path,
+        upload_pack_dir=upload_dir,
+        thresholds=thresholds,
+    )
+    assert not borrowed.ready
+    assert (
+        "summary_path_not_manifest_bound"
+        in borrowed.summary.loc[
+            0,
+            "instrument_resolution_consistency_error",
+        ]
+    )
+
+    resolution_path = (
+        resolution_dir / "instrument_resolution.csv"
+    )
+    resolution = pd.read_csv(resolution_path)
+    resolution.loc[0, "broker_symbol"] = "FORGED_CONTRACT"
+    resolution.to_csv(resolution_path, index=False)
+    refresh_instrument_resolution_manifest(
+        resolution_dir,
+        orders_path,
+        master_path,
+    )
+
+    blocked = write_broker_readiness_report(
+        output_dir=tmp_path / "blocked_readiness",
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        instrument_resolution_dir=resolution_dir,
+        upload_pack_dir=upload_dir,
+        thresholds=thresholds,
+    )
+
+    assert not blocked.ready
+    blocked_summary = blocked.summary.iloc[0]
+    assert bool(
+        blocked_summary[
+            "instrument_resolution_manifest_current"
+        ]
+    )
+    assert not bool(
+        blocked_summary[
+            "instrument_resolution_artifacts_consistent"
+        ]
+    )
+    assert not bool(
+        blocked_summary[
+            "instrument_resolution_evidence_gate_passed"
+        ]
+    )
+    assert (
+        "artifact_content_mismatch:instrument_resolution.csv"
+        in blocked_summary[
+            "instrument_resolution_consistency_error"
+        ]
+    )
+    failed = set(
+        blocked.checks.loc[
+            ~blocked.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert {
+        "instrument_resolution_ready",
+        "instrument_resolution_artifacts_consistent",
+        "instrument_resolution_evidence_gate_passed",
+    } <= failed
+    manifest = json.loads(
+        (
+            tmp_path
+            / "blocked_readiness"
+            / "manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert manifest["inputs"]["instrument_resolution_manifest"]
+    assert len(
+        manifest["inputs"]["instrument_resolution_dependencies"]
+    ) == 2
+    assert not manifest["extra"][
+        "instrument_resolution_evidence_gate_passed"
+    ]
 
 
 def test_broker_readiness_accepts_required_runtime_session():

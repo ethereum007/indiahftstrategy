@@ -7746,6 +7746,23 @@ targeted broker-readiness resolution check pass. Source compilation succeeds.
 Repository collection is healthy at `2772 tests` across `169` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes.
 
+Latest broker instrument-resolution evidence proof: file-backed broker
+readiness no longer trusts `instrument_resolution_summary.csv` in isolation.
+The resolver verifier checks the `broker_instrument_resolution` manifest,
+required artifacts, and current order/master fingerprints, then reconstructs
+the resolved candidates, row checks, group checks, summary, action queue,
+config, and runbook from those bound source files and the manifest config.
+Broker readiness requires both manifest currency and content-equivalent
+reconstruction whenever a resolution artifact is supplied, exposes the proof
+as `instrument_resolution_*` item/summary/config fields, and fingerprints the
+resolver manifest plus its raw dependencies in the downstream readiness
+manifest. A forged resolver CSV remains blocked even if its edited bundle is
+remanifested. All outputs remain paper/shadow and non-authorizing. The full
+`132`-test broker-readiness module and the `46`-test staging, export, upload,
+resolver, parity-launch, and promotion set pass. Source compilation succeeds.
+Repository collection is healthy at `2774 tests` across `169` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
 1. Run the first real Arrow.money/iRage H1 export through the authority-bound

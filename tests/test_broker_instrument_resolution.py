@@ -5,10 +5,14 @@ import pandas as pd
 from adapters.broker_instrument_resolution import (
     BrokerInstrumentResolutionConfig,
     resolve_broker_instruments,
+    verify_broker_instrument_resolution_evidence,
     write_broker_instrument_resolution,
 )
 from hft_cli import main
-from reports.manifest import verify_experiment_manifest
+from reports.manifest import (
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 def box_orders():
@@ -202,6 +206,77 @@ def test_write_broker_instrument_resolution_outputs_lineage_bound_artifacts(
         require_input_fingerprints=True,
     )
     assert integrity.passed, integrity.error
+    evidence = verify_broker_instrument_resolution_evidence(out_dir)
+    assert evidence.passed, evidence.consistency_error
+    assert evidence.manifest_current
+    assert evidence.artifacts_consistent
+    assert evidence.rebuilt_artifact_match_count == 8
+    assert evidence.dependency_count == 2
+    borrowed_summary_path = out_dir / "borrowed_ready_summary.csv"
+    report.summary.to_csv(borrowed_summary_path, index=False)
+    borrowed = verify_broker_instrument_resolution_evidence(
+        borrowed_summary_path
+    )
+    assert borrowed.manifest_current
+    assert not borrowed.artifacts_consistent
+    assert not borrowed.passed
+    assert (
+        "summary_path_not_manifest_bound"
+        in borrowed.consistency_error
+    )
+
+
+def test_resolution_evidence_rejects_remanifested_forged_ready_summary(
+    tmp_path,
+):
+    orders_path = tmp_path / "orders.csv"
+    master_path = tmp_path / "instrument_master.csv"
+    out_dir = tmp_path / "resolution"
+    box_orders().to_csv(orders_path, index=False)
+    instrument_master().iloc[:-1].to_csv(master_path, index=False)
+    write_broker_instrument_resolution(
+        orders_path,
+        master_path,
+        output_dir=out_dir,
+        config=BrokerInstrumentResolutionConfig(adapter="arrow_money"),
+    )
+    summary_path = out_dir / "instrument_resolution_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "ready"] = True
+    summary.loc[0, "resolved_orders"] = 4
+    summary.loc[0, "unresolved_orders"] = 0
+    summary.loc[0, "resolution_coverage"] = 1.0
+    summary.loc[0, "complete_leg_groups"] = 1
+    summary.loc[0, "failed_checks"] = 0
+    summary.to_csv(summary_path, index=False)
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    write_experiment_manifest(
+        out_dir,
+        run_type="broker_instrument_resolution",
+        parameters=manifest["parameters"],
+        inputs={
+            "orders": orders_path,
+            "instrument_master": master_path,
+        },
+    )
+
+    manifest_integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="broker_instrument_resolution",
+        require_input_fingerprints=True,
+    )
+    evidence = verify_broker_instrument_resolution_evidence(out_dir)
+
+    assert manifest_integrity.passed
+    assert evidence.manifest_current
+    assert not evidence.artifacts_consistent
+    assert not evidence.passed
+    assert (
+        "artifact_content_mismatch:instrument_resolution_summary.csv"
+        in evidence.consistency_error
+    )
 
 
 def test_cli_resolve_broker_instruments_fails_closed_on_missing_leg(

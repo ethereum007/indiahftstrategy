@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,12 @@ import numpy as np
 import pandas as pd
 
 from data.instruments import parse_option_instrument_id
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 MASTER_COLUMN_ALIASES = {
@@ -65,6 +71,16 @@ MASTER_COLUMN_ALIASES = {
     ),
 }
 
+BROKER_INSTRUMENT_RESOLUTION_ARTIFACTS = (
+    "instrument_resolution.csv",
+    "instrument_resolution_checks.csv",
+    "instrument_resolution_groups.csv",
+    "instrument_resolution_summary.csv",
+    "instrument_resolution_action_queue.csv",
+    "instrument_resolution_config.json",
+    "instrument_resolution_runbook.md",
+)
+
 
 @dataclass(frozen=True)
 class BrokerInstrumentResolutionConfig:
@@ -80,6 +96,26 @@ class BrokerInstrumentResolutionConfig:
     master_broker_symbol_column: str | None = None
     master_broker_token_column: str | None = None
     output_filename: str = "resolved_order_candidates.csv"
+
+
+@dataclass(frozen=True)
+class BrokerInstrumentResolutionEvidenceIntegrity:
+    manifest_path: Path
+    manifest_exists: bool = False
+    manifest_current: bool = False
+    manifest_run_type: str = ""
+    manifest_sha256: str = ""
+    manifest_error: str = ""
+    manifest_artifact_count: int = 0
+    manifest_artifact_match_count: int = 0
+    manifest_input_count: int = 0
+    manifest_input_match_count: int = 0
+    rebuilt_artifact_count: int = 0
+    rebuilt_artifact_match_count: int = 0
+    artifacts_consistent: bool = False
+    consistency_error: str = ""
+    dependency_count: int = 0
+    passed: bool = False
 
 
 @dataclass(frozen=True)
@@ -206,6 +242,202 @@ def write_broker_instrument_resolution(
         out,
         action_queue,
     )
+
+
+def verify_broker_instrument_resolution_evidence(
+    path: str | Path,
+) -> BrokerInstrumentResolutionEvidenceIntegrity:
+    candidate = Path(path).resolve()
+    root = candidate if candidate.is_dir() else candidate.parent
+    manifest_path = root / "manifest.json"
+    expected_summary_path = (
+        root / "instrument_resolution_summary.csv"
+    ).resolve()
+    binding_error = (
+        "summary_path_not_manifest_bound"
+        if candidate.is_file() and candidate != expected_summary_path
+        else ""
+    )
+    manifest_payload: dict[str, Any] = {}
+    config = BrokerInstrumentResolutionConfig()
+    payload_error = ""
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("manifest_not_object")
+        manifest_payload = payload
+        parameters = payload.get("parameters", {})
+        config_payload = (
+            parameters.get("config", {})
+            if isinstance(parameters, Mapping)
+            else {}
+        )
+        if not isinstance(config_payload, Mapping):
+            raise ValueError("resolution_config_missing")
+        config = BrokerInstrumentResolutionConfig(**dict(config_payload))
+        _validate_config(config)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        payload_error = _evidence_error("manifest_payload_invalid", exc)
+
+    required_artifacts = (
+        config.output_filename,
+        *BROKER_INSTRUMENT_RESOLUTION_ARTIFACTS,
+    )
+    manifest = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="broker_instrument_resolution",
+        required_artifacts=required_artifacts,
+        require_input_fingerprints=True,
+    )
+    manifest_sha256 = ""
+    if manifest_path.is_file():
+        try:
+            manifest_sha256 = file_sha256(manifest_path)
+        except OSError:
+            pass
+
+    rebuilt_count = 0
+    rebuilt_match_count = 0
+    consistency_errors = [binding_error] if binding_error else []
+    if payload_error:
+        consistency_errors.append(payload_error)
+    else:
+        try:
+            orders_path = _manifest_input_file(
+                manifest_payload,
+                "orders",
+            )
+            instrument_master_path = _manifest_input_file(
+                manifest_payload,
+                "instrument_master",
+            )
+            rebuilt = resolve_broker_instruments(
+                pd.read_csv(orders_path),
+                pd.read_csv(
+                    instrument_master_path,
+                    dtype=str,
+                    keep_default_na=False,
+                ),
+                config=config,
+            )
+            action_queue = (
+                rebuilt.action_queue
+                if rebuilt.action_queue is not None
+                else _action_queue(rebuilt.checks)
+            )
+            expected_artifacts = {
+                config.output_filename: rebuilt.orders.to_csv(index=False),
+                "instrument_resolution.csv": rebuilt.resolution.to_csv(
+                    index=False
+                ),
+                "instrument_resolution_checks.csv": rebuilt.checks.to_csv(
+                    index=False
+                ),
+                "instrument_resolution_groups.csv": rebuilt.groups.to_csv(
+                    index=False
+                ),
+                "instrument_resolution_summary.csv": rebuilt.summary.to_csv(
+                    index=False
+                ),
+                "instrument_resolution_action_queue.csv": action_queue.to_csv(
+                    index=False
+                ),
+                "instrument_resolution_config.json": (
+                    json.dumps(
+                        _config_payload(
+                            rebuilt.summary.iloc[0],
+                            action_queue,
+                            config,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ),
+                "instrument_resolution_runbook.md": _runbook_markdown(
+                    rebuilt.summary.iloc[0],
+                    action_queue,
+                ),
+            }
+            rebuilt_count = len(expected_artifacts)
+            for name, expected in expected_artifacts.items():
+                artifact_path = root / name
+                if not artifact_path.is_file():
+                    consistency_errors.append(f"artifact_missing:{name}")
+                    continue
+                actual = artifact_path.read_text(encoding="utf-8")
+                if _normalized_text(actual) != _normalized_text(expected):
+                    consistency_errors.append(
+                        f"artifact_content_mismatch:{name}"
+                    )
+                    continue
+                rebuilt_match_count += 1
+        except (
+            KeyError,
+            OSError,
+            TypeError,
+            ValueError,
+            pd.errors.ParserError,
+        ) as exc:
+            consistency_errors.append(
+                _evidence_error("evidence_rebuild_failed", exc)
+            )
+
+    artifacts_consistent = bool(
+        rebuilt_count > 0
+        and rebuilt_match_count == rebuilt_count
+        and not consistency_errors
+    )
+    dependency_count = (
+        len(manifest_dependency_paths(manifest_path))
+        if manifest_path.is_file()
+        else 0
+    )
+    passed = bool(manifest.passed and artifacts_consistent)
+    return BrokerInstrumentResolutionEvidenceIntegrity(
+        manifest_path=manifest_path,
+        manifest_exists=manifest.exists,
+        manifest_current=manifest.passed,
+        manifest_run_type=manifest.run_type,
+        manifest_sha256=manifest_sha256,
+        manifest_error=manifest.error,
+        manifest_artifact_count=manifest.artifact_count,
+        manifest_artifact_match_count=manifest.artifact_match_count,
+        manifest_input_count=manifest.input_fingerprint_count,
+        manifest_input_match_count=manifest.input_fingerprint_match_count,
+        rebuilt_artifact_count=rebuilt_count,
+        rebuilt_artifact_match_count=rebuilt_match_count,
+        artifacts_consistent=artifacts_consistent,
+        consistency_error=";".join(consistency_errors),
+        dependency_count=dependency_count,
+        passed=passed,
+    )
+
+
+def _manifest_input_file(
+    payload: Mapping[str, Any],
+    name: str,
+) -> Path:
+    inputs = payload.get("inputs", {})
+    value = inputs.get(name, {}) if isinstance(inputs, Mapping) else {}
+    if not isinstance(value, Mapping) or value.get("kind") != "file":
+        raise ValueError(f"{name}_fingerprint_missing")
+    raw_path = _text(value.get("path"))
+    if not raw_path:
+        raise ValueError(f"{name}_path_missing")
+    path = Path(raw_path).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"{name}_file_missing")
+    return path
+
+
+def _normalized_text(value: str) -> str:
+    return value.replace("\r\n", "\n")
+
+
+def _evidence_error(prefix: str, error: Exception) -> str:
+    detail = str(error).strip().replace(";", ",")
+    return f"{prefix}:{detail}" if detail else prefix
 
 
 def _resolve_master_columns(

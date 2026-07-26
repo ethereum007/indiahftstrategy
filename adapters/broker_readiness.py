@@ -10,7 +10,14 @@ from typing import Any
 import pandas as pd
 
 from adapters.broker import adapter_schema_status, get_adapter
-from reports.manifest import write_experiment_manifest
+from adapters.broker_instrument_resolution import (
+    BrokerInstrumentResolutionEvidenceIntegrity,
+    verify_broker_instrument_resolution_evidence,
+)
+from reports.manifest import (
+    manifest_dependency_paths,
+    write_experiment_manifest,
+)
 from reports.operational_lineage import (
     BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     broker_dispatch_roundtrip_lineage_fields,
@@ -68,6 +75,47 @@ BROKER_DISPATCH_ROUNDTRIP_LINEAGE_DEFAULTS = {
     ).items()
     if field in BROKER_DISPATCH_ROUNDTRIP_LINEAGE_RETAINED_FIELDS
 }
+INSTRUMENT_RESOLUTION_EVIDENCE_BOOL_FIELDS = (
+    "instrument_resolution_evidence_required",
+    "instrument_resolution_evidence_provided",
+    "instrument_resolution_manifest_current",
+    "instrument_resolution_artifacts_consistent",
+    "instrument_resolution_evidence_gate_passed",
+)
+INSTRUMENT_RESOLUTION_EVIDENCE_TEXT_FIELDS = (
+    "instrument_resolution_manifest_run_type",
+    "instrument_resolution_manifest_path",
+    "instrument_resolution_manifest_sha256",
+    "instrument_resolution_manifest_error",
+    "instrument_resolution_consistency_error",
+)
+INSTRUMENT_RESOLUTION_EVIDENCE_INT_FIELDS = (
+    "instrument_resolution_manifest_artifact_count",
+    "instrument_resolution_manifest_artifact_match_count",
+    "instrument_resolution_manifest_input_count",
+    "instrument_resolution_manifest_input_match_count",
+    "instrument_resolution_rebuilt_artifact_count",
+    "instrument_resolution_rebuilt_artifact_match_count",
+    "instrument_resolution_dependency_count",
+)
+INSTRUMENT_RESOLUTION_INTEGRITY_FIELD_MAP = {
+    "instrument_resolution_evidence_provided": "manifest_exists",
+    "instrument_resolution_manifest_current": "manifest_current",
+    "instrument_resolution_manifest_run_type": "manifest_run_type",
+    "instrument_resolution_manifest_path": "manifest_path",
+    "instrument_resolution_manifest_sha256": "manifest_sha256",
+    "instrument_resolution_manifest_error": "manifest_error",
+    "instrument_resolution_manifest_artifact_count": "manifest_artifact_count",
+    "instrument_resolution_manifest_artifact_match_count": "manifest_artifact_match_count",
+    "instrument_resolution_manifest_input_count": "manifest_input_count",
+    "instrument_resolution_manifest_input_match_count": "manifest_input_match_count",
+    "instrument_resolution_rebuilt_artifact_count": "rebuilt_artifact_count",
+    "instrument_resolution_rebuilt_artifact_match_count": "rebuilt_artifact_match_count",
+    "instrument_resolution_artifacts_consistent": "artifacts_consistent",
+    "instrument_resolution_consistency_error": "consistency_error",
+    "instrument_resolution_dependency_count": "dependency_count",
+    "instrument_resolution_evidence_gate_passed": "passed",
+}
 
 
 def _broker_dispatch_roundtrip_retained_lineage_fields(
@@ -104,6 +152,27 @@ def _broker_dispatch_roundtrip_lineage_item_fields(
     if component != "dispatch_roundtrip" or row.empty:
         return _broker_dispatch_roundtrip_lineage_record({})
     return _broker_dispatch_roundtrip_lineage_record(row)
+
+
+def _instrument_resolution_evidence_item_fields(
+    component: str,
+    row: pd.Series,
+) -> dict[str, Any]:
+    active = component == "instrument_resolution" and not row.empty
+    return {
+        **{
+            field: bool(active and _to_bool(row.get(field, False)))
+            for field in INSTRUMENT_RESOLUTION_EVIDENCE_BOOL_FIELDS
+        },
+        **{
+            field: _object_text(row.get(field, "")) if active else ""
+            for field in INSTRUMENT_RESOLUTION_EVIDENCE_TEXT_FIELDS
+        },
+        **{
+            field: int(_number(row, field, 0.0)) if active else 0
+            for field in INSTRUMENT_RESOLUTION_EVIDENCE_INT_FIELDS
+        },
+    }
 
 
 BROKER_READINESS_NEXT_GATES = {
@@ -633,6 +702,25 @@ def write_broker_readiness_report(
         input_paths["schema_review_checklist"] = schema_review_checklist_path
     if broker_vendor_data_readiness_config_path is not None:
         input_paths["broker_vendor_data_readiness_config"] = broker_vendor_data_readiness_config_path
+    instrument_resolution_integrity = (
+        verify_broker_instrument_resolution_evidence(
+            instrument_resolution_dir
+        )
+        if instrument_resolution_dir is not None
+        else None
+    )
+    if (
+        instrument_resolution_integrity is not None
+        and instrument_resolution_integrity.manifest_exists
+    ):
+        input_paths["instrument_resolution_manifest"] = (
+            instrument_resolution_integrity.manifest_path
+        )
+        input_paths["instrument_resolution_dependencies"] = (
+            manifest_dependency_paths(
+                instrument_resolution_integrity.manifest_path
+            )
+        )
     dispatch_roundtrip_config = _dispatch_roundtrip_config_with_vendor_market_data_batch(
         _read_optional_config(
             dispatch_roundtrip_dir,
@@ -648,9 +736,9 @@ def write_broker_readiness_report(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         schema_review_checklist=_read_optional_schema_review_checklist(schema_audit_dir),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),
-        instrument_resolution_summary=_read_optional_summary(
+        instrument_resolution_summary=_read_instrument_resolution_summary(
             instrument_resolution_dir,
-            "instrument_resolution",
+            instrument_resolution_integrity,
         ),
         mapping_draft_summary=_read_optional_summary(mapping_draft_dir, "mapping_draft"),
         mapped_order_summary=_read_optional_summary(mapped_orders_dir, "mapped_orders"),
@@ -686,6 +774,9 @@ def write_broker_readiness_report(
         inputs=input_paths,
         extra={
             "ready": bool(report.ready),
+            **_instrument_resolution_evidence_manifest_fields(
+                report.summary
+            ),
             **(
                 _broker_dispatch_roundtrip_retained_lineage_fields(
                     dispatch_roundtrip_lineage
@@ -2126,6 +2217,7 @@ def _item(
         "adapter_match": adapter_match,
         "adapter_schema_status": schema_status,
         **_schema_review_checklist_item_fields(component, schema_review_checklist),
+        **_instrument_resolution_evidence_item_fields(component, row),
         **dispatch_roundtrip_lineage,
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
         "runtime_guard_action": str(row.get("guard_action", "")).strip() if component == "runtime_session" else "",
@@ -3710,6 +3802,54 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                     bool(row.adapter_match),
                     f"{row.component} adapter does not match expected broker adapter",
                 )
+            )
+        if (
+            row.component == "instrument_resolution"
+            and bool(row.provided)
+            and bool(row.instrument_resolution_evidence_required)
+        ):
+            checks.extend(
+                [
+                    _check(
+                        "instrument_resolution_manifest_current",
+                        bool(
+                            row.instrument_resolution_manifest_current
+                        ),
+                        "is",
+                        True,
+                        bool(
+                            row.instrument_resolution_manifest_current
+                        ),
+                        "instrument-resolution manifest, artifacts, or source fingerprints are stale",
+                    ),
+                    _check(
+                        "instrument_resolution_artifacts_consistent",
+                        bool(
+                            row.instrument_resolution_artifacts_consistent
+                        ),
+                        "is",
+                        True,
+                        bool(
+                            row.instrument_resolution_artifacts_consistent
+                        ),
+                        (
+                            row.instrument_resolution_consistency_error
+                            or "instrument-resolution artifacts do not reproduce from manifest-bound inputs"
+                        ),
+                    ),
+                    _check(
+                        "instrument_resolution_evidence_gate_passed",
+                        bool(
+                            row.instrument_resolution_evidence_gate_passed
+                        ),
+                        "is",
+                        True,
+                        bool(
+                            row.instrument_resolution_evidence_gate_passed
+                        ),
+                        "instrument-resolution evidence integrity gate failed",
+                    ),
+                ]
             )
         if row.component == "resume_gate" and bool(row.provided):
             if _resume_broker_route_readiness_active(row):
@@ -6958,6 +7098,10 @@ def _summary(
     schema_review = _schema_review_state(items, thresholds)
     ready = failed == 0
     schema_item = _component_item(items, "schema_audit")
+    instrument_resolution_item = _component_item(
+        items,
+        "instrument_resolution",
+    )
     runtime_item = _component_item(items, "runtime_session")
     resume_item = _component_item(items, "resume_gate")
     dispatch_item = _component_item(items, "dispatch_roundtrip")
@@ -6980,6 +7124,10 @@ def _summary(
                 "ready_components": ready_items,
                 "missing_required_components": missing_required,
                 "failed_checks": failed,
+                **_instrument_resolution_evidence_item_fields(
+                    "instrument_resolution",
+                    instrument_resolution_item,
+                ),
                 "runtime_session_provided": _item_bool(runtime_item, "provided"),
                 "runtime_session_ready": _item_bool(runtime_item, "ready"),
                 "runtime_guard_action": _item_text(runtime_item, "runtime_guard_action"),
@@ -8185,13 +8333,28 @@ def _yes_no(value: bool) -> str:
 
 def _component_config(items: pd.DataFrame, component: str) -> dict[str, Any]:
     item = _component_item(items, component)
-    return {
+    config = {
         "required": _item_bool(item, "required"),
         "provided": _item_bool(item, "provided"),
         "ready": _item_bool(item, "ready"),
         "recommendation": _item_text(item, "recommendation"),
         "source_file": _item_text(item, "source_file"),
     }
+    if component == "instrument_resolution":
+        evidence = _instrument_resolution_evidence_item_fields(
+            component,
+            item,
+        )
+        config["evidence"] = {
+            _instrument_resolution_evidence_config_key(field): value
+            for field, value in evidence.items()
+        }
+    return config
+
+
+def _instrument_resolution_evidence_config_key(field: str) -> str:
+    key = field.removeprefix("instrument_resolution_")
+    return key.removeprefix("evidence_")
 
 
 def _runtime_session_config(row: pd.Series) -> dict[str, Any]:
@@ -8833,6 +8996,26 @@ def _component_required(component: str, thresholds: BrokerReadinessThresholds) -
 def _component_ready(component: str, row: pd.Series) -> bool:
     if component == "schema_audit":
         return _to_bool(row.get("all_required_present", False))
+    if component == "instrument_resolution":
+        ready = _to_bool(row.get("ready", False))
+        evidence_required = _to_bool(
+            row.get(
+                "instrument_resolution_evidence_required",
+                False,
+            )
+        )
+        return bool(
+            ready
+            and (
+                not evidence_required
+                or _to_bool(
+                    row.get(
+                        "instrument_resolution_evidence_gate_passed",
+                        False,
+                    )
+                )
+            )
+        )
     if component == "reconciliation":
         return _to_bool(row.get("passed", False))
     if component == "runtime_session":
@@ -9017,6 +9200,47 @@ def _route_readiness_required(row: Any, thresholds: BrokerReadinessThresholds) -
         thresholds.require_route_readiness
         or row.route_readiness_required
         or _identity_key(row.dispatch_roundtrip_target_mode) == "live_dryrun"
+    )
+
+
+def _read_instrument_resolution_summary(
+    path: str | Path | None,
+    integrity: BrokerInstrumentResolutionEvidenceIntegrity | None,
+) -> pd.DataFrame | None:
+    frame = _read_optional_summary(path, "instrument_resolution")
+    if frame is None:
+        return None
+    if integrity is None:
+        raise ValueError(
+            "instrument-resolution evidence integrity is required"
+        )
+    fields = {
+        "instrument_resolution_evidence_required": True,
+        **{
+            field: str(value) if isinstance(value, Path) else value
+            for field, attribute in (
+                INSTRUMENT_RESOLUTION_INTEGRITY_FIELD_MAP.items()
+            )
+            if (value := getattr(integrity, attribute)) is not None
+        },
+    }
+    enriched = frame.copy()
+    for field, value in fields.items():
+        enriched.loc[0, field] = value
+    return enriched
+
+
+def _instrument_resolution_evidence_manifest_fields(
+    summary: pd.DataFrame,
+) -> dict[str, Any]:
+    row = (
+        summary.iloc[0]
+        if summary is not None and not summary.empty
+        else pd.Series(dtype=object)
+    )
+    return _instrument_resolution_evidence_item_fields(
+        "instrument_resolution",
+        row,
     )
 
 
