@@ -7782,11 +7782,33 @@ send-packet integration tests pass. Source compilation succeeds. Repository
 collection is healthy at `2778 tests` across `169` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes.
 
+Latest dispatch-to-send contract-identity continuity proof: file-backed send
+preparation now reopens the upload identity sidecar referenced by the dispatch
+manifest, reruns the upload-pack reconstruction verifier, and reconciles every
+dispatch identity row against that current source before it can become ready.
+Send requests carry the canonical row number, source broker/client order IDs,
+leg identity, research and resolved broker instrument IDs, leading-zero-safe
+broker token, resolution method/status, upload identity, and readiness flags in
+separate audit columns plus a sibling `contract_identity` envelope object. The
+vendor `order` object remains free of internal research/resolution fields.
+Expected acknowledgement templates carry the same identity while reserving
+`broker_order_id` for the actual broker response. Summary, config, runbook, and
+manifest artifacts expose the continuity counts, source/upload hashes,
+canonical identity digest, and gate result. Operational lineage independently
+recomputes the digest and checks request, envelope, and expected-ack identity,
+so re-manifested dispatch-token or expected-ack drift remains blocked. Loose
+legacy dispatch fixtures stay compatible until contract-identity evidence is
+active. All outputs remain dry-run-only and non-authorizing. The full
+`154`-test broker-dispatch-send/ack/round-trip module, full `133`-test
+broker-dispatch module, and full `9`-test upload-pack module pass (`296`
+affected tests). Source compilation succeeds. Repository collection is healthy
+at `2781 tests` across `169` files. The full suite was not rerun because recent
+complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
-1. Carry the verified upload contract identity through send-packet and
-   acknowledgement evidence without adding internal fields to the broker order
-   payload.
+1. Carry the verified contract identity through actual acknowledgement
+   reconciliation and final broker round-trip evidence.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

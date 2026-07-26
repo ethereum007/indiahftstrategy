@@ -6775,9 +6775,22 @@ visible before acknowledgement reconciliation consumes the send packet.
 This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
-also requires a complete, current `broker_dispatch_plan` manifest and verifies
-all dispatch artifacts before preparing requests. The sender reconciles the
-route-enable lineage across every dispatch order, summary, config, and manifest,
+also revalidates an active upload-pack contract identity directly from the
+dispatch-manifest-bound sidecar and its reconstructed upload evidence. Identity
+is copied to request audit columns and a sibling `contract_identity` envelope
+object, not into the vendor `order` object. Expected acknowledgements preserve
+the same identity as `source_broker_order_id`, client/leg IDs, research and
+broker instrument IDs, leading-zero-safe broker token, resolution fields, and
+upload readiness fields; their blank `broker_order_id` remains reserved for
+the actual broker response. `send_contract_identity_*` summary fields, the
+`contract_identity` config block, runbook, and manifest extra record the source
+hashes, canonical digest, row counts, and continuity gate. The send-lineage
+loader recomputes this contract and rejects request, envelope, expected-ack, or
+digest drift even when the edited send directory is re-manifested.
+It also requires a complete, current `broker_dispatch_plan` manifest and
+verifies all dispatch artifacts before preparing requests. The sender
+reconciles the route-enable lineage across every dispatch order, summary,
+config, and manifest,
 requires explicit non-authorizing claims, and independently reopens the current
 route-enable source. This blocks stale dispatch files, freshly re-manifested
 cross-artifact disagreement, and a consistently relabeled dispatch bundle that

@@ -74,6 +74,39 @@ BROKER_DISPATCH_SEND_REQUIRED_ARTIFACTS = (
     "broker_dispatch_send_config.json",
     "broker_dispatch_send_runbook.md",
 )
+BROKER_DISPATCH_CONTRACT_IDENTITY_COLUMNS = (
+    ("contract_identity_row_number", "contract_identity_row_number"),
+    ("broker_order_id", "source_broker_order_id"),
+    ("client_order_id", "client_order_id"),
+    ("leg_group_id", "leg_group_id"),
+    ("leg_role", "leg_role"),
+    ("leg_index", "leg_index"),
+    ("leg_count", "leg_count"),
+    ("research_instrument_id", "research_instrument_id"),
+    ("broker_instrument_id", "broker_instrument_id"),
+    ("broker_instrument_token", "broker_instrument_token"),
+    ("instrument_resolution_method", "instrument_resolution_method"),
+    ("instrument_resolution_status", "instrument_resolution_status"),
+    ("upload_instrument_column", "upload_instrument_column"),
+    ("upload_instrument_id", "upload_instrument_id"),
+    ("upload_identity_matches", "upload_identity_matches"),
+    ("resolution_row_ready", "resolution_row_ready"),
+)
+BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS = tuple(
+    request_column
+    for _dispatch_column, request_column in (
+        BROKER_DISPATCH_CONTRACT_IDENTITY_COLUMNS
+    )
+)
+BROKER_DISPATCH_CONTRACT_IDENTITY_INTEGER_COLUMNS = {
+    "contract_identity_row_number",
+    "leg_index",
+    "leg_count",
+}
+BROKER_DISPATCH_CONTRACT_IDENTITY_BOOLEAN_COLUMNS = {
+    "upload_identity_matches",
+    "resolution_row_ready",
+}
 BROKER_DISPATCH_ACK_REQUIRED_ARTIFACTS = (
     "broker_dispatch_acknowledgements.csv",
     "broker_dispatch_unmatched_acks.csv",
@@ -1177,7 +1210,7 @@ def load_broker_dispatch_lineage(
     )
 
     summary = _read_csv(summary_path)
-    orders = _read_csv(orders_path)
+    orders = _read_csv_text(orders_path)
     config = _read_json(config_path)
     manifest = _read_json(manifest_path)
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -1380,8 +1413,8 @@ def load_broker_dispatch_send_lineage(
     )
 
     summary = _read_csv(summary_path)
-    requests = _read_csv(requests_path)
-    expected_acks = _read_csv(expected_acks_path)
+    requests = _read_csv_text(requests_path)
+    expected_acks = _read_csv_text(expected_acks_path)
     config = _read_json(config_path)
     manifest = _read_json(manifest_path)
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -3076,7 +3109,383 @@ def _broker_dispatch_contract_errors(
         errors.append("broker_dispatch_manifest_ready_mismatch")
     if not _frame_column_matches(orders, "dispatch_action", "dry_run_submit"):
         errors.append("broker_dispatch_orders_dispatch_action_mismatch")
+    errors.extend(
+        _broker_dispatch_contract_identity_errors(
+            row=row,
+            orders=orders,
+            config=config,
+            extra=extra,
+        )
+    )
     return errors
+
+
+def _broker_dispatch_contract_identity_errors(
+    *,
+    row: pd.Series,
+    orders: pd.DataFrame,
+    config: Mapping[str, Any],
+    extra: Mapping[str, Any],
+) -> list[str]:
+    upload = _mapping(config.get("upload"))
+    identity = _mapping(upload.get("contract_identity"))
+    all_columns_present = all(
+        dispatch_column in orders.columns
+        for dispatch_column, _request_column in (
+            BROKER_DISPATCH_CONTRACT_IDENTITY_COLUMNS
+        )
+    )
+    active = bool(
+        _bool(row.get("upload_contract_identity_active"))
+        or _bool(identity.get("active"))
+        or _bool(extra.get("upload_contract_identity_active"))
+        or all_columns_present
+    )
+    if not active:
+        return []
+
+    errors: list[str] = []
+    boolean_fields = {
+        "active": "upload_contract_identity_active",
+        "required": "upload_contract_identity_required",
+        "provided": "upload_contract_identity_provided",
+        "token_required": "upload_contract_identity_token_required",
+        "gate_required": "upload_contract_identity_gate_required",
+        "proof_required": "upload_contract_identity_proof_required",
+        "adapter_matches_route": "upload_contract_identity_adapter_matches_route",
+        "manifest_current": "upload_contract_identity_manifest_current",
+        "artifacts_consistent": "upload_contract_identity_artifacts_consistent",
+        "upload_file_bound": "upload_contract_identity_upload_file_bound",
+        "sidecar_present": "upload_contract_identity_present",
+        "upload_ids_match": "upload_contract_identity_upload_ids_match",
+        "gate_passed": "upload_contract_identity_gate_passed",
+    }
+    integer_fields = {
+        "orders": "upload_contract_identity_orders",
+        "ready_orders": "upload_contract_identity_ready_orders",
+        "research_id_orders": "upload_contract_identity_research_id_orders",
+        "broker_id_orders": "upload_contract_identity_broker_id_orders",
+        "token_orders": "upload_contract_identity_token_orders",
+    }
+    text_fields = {
+        "adapter": "upload_contract_identity_adapter",
+        "sidecar_sha256": "upload_contract_identity_sha256",
+        "manifest_sha256": "upload_pack_manifest_sha256",
+        "consistency_error": "upload_contract_identity_consistency_error",
+    }
+    for config_field, summary_field in boolean_fields.items():
+        if _bool(identity.get(config_field)) != _bool(row.get(summary_field)):
+            errors.append(
+                f"broker_dispatch_config_{summary_field}_mismatch"
+            )
+    for config_field, summary_field in integer_fields.items():
+        if _integer(identity.get(config_field)) != _integer(
+            row.get(summary_field)
+        ):
+            errors.append(
+                f"broker_dispatch_config_{summary_field}_mismatch"
+            )
+    for config_field, summary_field in text_fields.items():
+        if not _same_text(identity.get(config_field), row.get(summary_field)):
+            errors.append(
+                f"broker_dispatch_config_{summary_field}_mismatch"
+            )
+
+    for field in (
+        "upload_contract_identity_active",
+        "upload_contract_identity_gate_passed",
+    ):
+        if _bool(extra.get(field)) != _bool(row.get(field)):
+            errors.append(f"broker_dispatch_manifest_{field}_mismatch")
+    for field in (
+        "upload_contract_identity_sha256",
+        "upload_pack_manifest_sha256",
+    ):
+        if not _same_text(extra.get(field), row.get(field)):
+            errors.append(f"broker_dispatch_manifest_{field}_mismatch")
+
+    if not all_columns_present:
+        errors.append("broker_dispatch_orders_contract_identity_columns_missing")
+        return errors
+    records = _dispatch_contract_identity_records(orders)
+    order_count = len(orders)
+    if len(records) != order_count:
+        errors.append("broker_dispatch_orders_contract_identity_count_mismatch")
+        return errors
+    if [
+        record["contract_identity_row_number"] for record in records
+    ] != list(range(order_count)):
+        errors.append("broker_dispatch_orders_contract_identity_row_number_mismatch")
+    ready_orders = sum(
+        bool(record["resolution_row_ready"]) for record in records
+    )
+    token_orders = sum(
+        bool(record["broker_instrument_token"]) for record in records
+    )
+    if _integer(row.get("upload_contract_identity_orders")) != order_count:
+        errors.append("broker_dispatch_summary_contract_identity_order_count_mismatch")
+    if (
+        _integer(row.get("upload_contract_identity_ready_orders"))
+        != ready_orders
+    ):
+        errors.append("broker_dispatch_summary_contract_identity_ready_count_mismatch")
+    if (
+        _integer(row.get("upload_contract_identity_token_orders"))
+        != token_orders
+    ):
+        errors.append("broker_dispatch_summary_contract_identity_token_count_mismatch")
+    if not _bool(row.get("upload_contract_identity_gate_passed")):
+        errors.append("broker_dispatch_contract_identity_gate_failed")
+    return errors
+
+
+def _broker_dispatch_send_contract_identity_errors(
+    *,
+    row: pd.Series,
+    requests: pd.DataFrame,
+    expected_acks: pd.DataFrame,
+    config: Mapping[str, Any],
+    extra: Mapping[str, Any],
+) -> list[str]:
+    identity = _mapping(config.get("contract_identity"))
+    request_columns_present = all(
+        column in requests.columns
+        for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+    )
+    ack_columns_present = all(
+        column in expected_acks.columns
+        for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+    )
+    active = bool(
+        _bool(row.get("send_contract_identity_active"))
+        or _bool(identity.get("active"))
+        or _bool(extra.get("send_contract_identity_active"))
+        or request_columns_present
+        or ack_columns_present
+    )
+    if not active:
+        return []
+
+    errors: list[str] = []
+    boolean_fields = {
+        "active": "send_contract_identity_active",
+        "required": "send_contract_identity_required",
+        "provided": "send_contract_identity_provided",
+        "token_required": "send_contract_identity_token_required",
+        "gate_required": "send_contract_identity_gate_required",
+        "proof_required": "send_contract_identity_proof_required",
+        "dispatch_gate_passed": "send_contract_identity_dispatch_gate_passed",
+        "source_present": "send_contract_identity_source_present",
+        "source_manifest_current": (
+            "send_contract_identity_source_manifest_current"
+        ),
+        "source_artifacts_consistent": (
+            "send_contract_identity_source_artifacts_consistent"
+        ),
+        "source_matches_dispatch": (
+            "send_contract_identity_source_matches_dispatch"
+        ),
+        "proof_hashes_match": "send_contract_identity_proof_hashes_match",
+        "adapter_matches": "send_contract_identity_adapter_matches",
+        "requests_match_dispatch": (
+            "send_contract_identity_requests_match_dispatch"
+        ),
+        "payloads_match_requests": (
+            "send_contract_identity_payloads_match_requests"
+        ),
+        "vendor_order_isolated": (
+            "send_contract_identity_vendor_order_isolated"
+        ),
+        "expected_acks_match_requests": (
+            "send_contract_identity_expected_acks_match_requests"
+        ),
+        "gate_passed": "send_contract_identity_gate_passed",
+    }
+    integer_fields = {
+        "dispatch_orders": "send_contract_identity_dispatch_orders",
+        "ready_orders": "send_contract_identity_ready_orders",
+        "token_orders": "send_contract_identity_token_orders",
+        "request_orders": "send_contract_identity_request_orders",
+        "expected_ack_orders": "send_contract_identity_expected_ack_orders",
+    }
+    text_fields = {
+        "identity_sha256": "send_contract_identity_sha256",
+        "source_identity_sha256": "send_contract_identity_source_sha256",
+        "source_manifest_sha256": (
+            "send_contract_identity_source_manifest_sha256"
+        ),
+        "consistency_error": "send_contract_identity_consistency_error",
+    }
+    for config_field, summary_field in boolean_fields.items():
+        if _bool(identity.get(config_field)) != _bool(row.get(summary_field)):
+            errors.append(
+                f"broker_dispatch_send_config_{summary_field}_mismatch"
+            )
+    for config_field, summary_field in integer_fields.items():
+        if _integer(identity.get(config_field)) != _integer(
+            row.get(summary_field)
+        ):
+            errors.append(
+                f"broker_dispatch_send_config_{summary_field}_mismatch"
+            )
+    for config_field, summary_field in text_fields.items():
+        if not _same_text(identity.get(config_field), row.get(summary_field)):
+            errors.append(
+                f"broker_dispatch_send_config_{summary_field}_mismatch"
+            )
+
+    for field in (
+        "send_contract_identity_active",
+        "send_contract_identity_gate_passed",
+    ):
+        if _bool(extra.get(field)) != _bool(row.get(field)):
+            errors.append(f"broker_dispatch_send_manifest_{field}_mismatch")
+    for field in (
+        "send_contract_identity_sha256",
+        "send_contract_identity_source_sha256",
+        "send_contract_identity_source_manifest_sha256",
+    ):
+        if not _same_text(extra.get(field), row.get(field)):
+            errors.append(f"broker_dispatch_send_manifest_{field}_mismatch")
+
+    if not request_columns_present:
+        errors.append("broker_dispatch_send_request_identity_columns_missing")
+        return errors
+    if not ack_columns_present:
+        errors.append("broker_dispatch_send_expected_ack_identity_columns_missing")
+        return errors
+    request_records = _send_contract_identity_records(requests)
+    ack_records = _send_contract_identity_records(expected_acks)
+    if request_records != ack_records:
+        errors.append("broker_dispatch_send_expected_ack_identity_mismatch")
+    payload_records = _request_payload_contract_identity_records(requests)
+    if request_records != payload_records:
+        errors.append("broker_dispatch_send_payload_identity_mismatch")
+    if not _request_vendor_orders_exclude_internal_identity(requests):
+        errors.append("broker_dispatch_send_vendor_order_identity_leak")
+    identity_sha256 = _contract_identity_records_sha256(request_records)
+    if not _same_text(
+        identity_sha256,
+        row.get("send_contract_identity_sha256"),
+    ):
+        errors.append("broker_dispatch_send_identity_sha256_mismatch")
+    if _integer(row.get("send_contract_identity_request_orders")) != len(
+        request_records
+    ):
+        errors.append("broker_dispatch_send_identity_request_count_mismatch")
+    if _integer(
+        row.get("send_contract_identity_expected_ack_orders")
+    ) != len(ack_records):
+        errors.append("broker_dispatch_send_identity_expected_ack_count_mismatch")
+    if not _bool(row.get("send_contract_identity_gate_passed")):
+        errors.append("broker_dispatch_send_contract_identity_gate_failed")
+    return errors
+
+
+def _dispatch_contract_identity_records(
+    orders: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            request_column: _contract_identity_value(
+                row.get(dispatch_column),
+                request_column,
+            )
+            for dispatch_column, request_column in (
+                BROKER_DISPATCH_CONTRACT_IDENTITY_COLUMNS
+            )
+        }
+        for row in orders.to_dict(orient="records")
+    ]
+
+
+def _send_contract_identity_records(
+    frame: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            column: _contract_identity_value(row.get(column), column)
+            for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+        }
+        for row in frame.to_dict(orient="records")
+    ]
+
+
+def _request_payload_contract_identity_records(
+    requests: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    payloads = _request_payloads(requests)
+    if len(payloads) != len(requests):
+        return []
+    records: list[dict[str, Any]] = []
+    for payload in payloads:
+        identity = payload.get("contract_identity")
+        if not isinstance(identity, Mapping):
+            return []
+        records.append(
+            {
+                column: _contract_identity_value(
+                    identity.get(column),
+                    column,
+                )
+                for column in (
+                    BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+                )
+            }
+        )
+    return records
+
+
+def _request_vendor_orders_exclude_internal_identity(
+    requests: pd.DataFrame,
+) -> bool:
+    internal_fields = {
+        "research_instrument_id",
+        "broker_instrument_id",
+        "broker_instrument_token",
+        "instrument_resolution_method",
+        "instrument_resolution_status",
+        "upload_instrument_column",
+        "upload_identity_matches",
+        "resolution_row_ready",
+    }
+    payloads = _request_payloads(requests)
+    if len(payloads) != len(requests):
+        return False
+    return all(
+        isinstance(payload.get("order"), Mapping)
+        and not internal_fields.intersection(payload["order"])
+        for payload in payloads
+    )
+
+
+def _contract_identity_records_sha256(
+    records: list[dict[str, Any]],
+) -> str:
+    if not records:
+        return ""
+    return hashlib.sha256(
+        json.dumps(
+            records,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _contract_identity_value(value: Any, column: str) -> Any:
+    if column in BROKER_DISPATCH_CONTRACT_IDENTITY_BOOLEAN_COLUMNS:
+        return _bool(value)
+    if column in BROKER_DISPATCH_CONTRACT_IDENTITY_INTEGER_COLUMNS:
+        text = _text(value)
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+        return int(number) if number.is_integer() else None
+    return _text(value)
 
 
 def _broker_dispatch_leadlag_contract_errors(
@@ -3205,6 +3614,15 @@ def _broker_dispatch_send_contract_errors(
         errors.append("broker_dispatch_send_request_hash_contract_mismatch")
     if not _expected_ack_template_matches_requests(expected_acks, requests):
         errors.append("broker_dispatch_send_expected_ack_template_mismatch")
+    errors.extend(
+        _broker_dispatch_send_contract_identity_errors(
+            row=row,
+            requests=requests,
+            expected_acks=expected_acks,
+            config=config,
+            extra=extra,
+        )
+    )
     return errors
 
 
@@ -3959,6 +4377,15 @@ def _read_csv(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
     try:
         return pd.read_csv(path)
+    except (OSError, ValueError, pd.errors.EmptyDataError, pd.errors.ParserError):
+        return pd.DataFrame()
+
+
+def _read_csv_text(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path, dtype=str, keep_default_na=False)
     except (OSError, ValueError, pd.errors.EmptyDataError, pd.errors.ParserError):
         return pd.DataFrame()
 

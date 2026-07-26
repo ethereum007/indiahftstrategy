@@ -4,6 +4,10 @@ import json
 import pandas as pd
 import pytest
 
+from adapters.order_upload_pack import (
+    OrderUploadPackConfig,
+    write_order_upload_pack,
+)
 from hft_cli import main
 from reports.broker_dispatch_ack import (
     BrokerDispatchAckThresholds,
@@ -22,7 +26,11 @@ from reports.broker_dispatch_send import (
     write_broker_dispatch_send_packet,
 )
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import verify_experiment_manifest, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.operational_lineage import (
     broker_dispatch_roundtrip_lineage_fields,
     broker_dispatch_roundtrip_lineage_manifest_inputs,
@@ -1840,6 +1848,197 @@ def write_dispatch(
         },
     )
     return dispatch
+
+
+def attach_verified_contract_identity(tmp_path, dispatch):
+    export = tmp_path / "resolved_order_export"
+    upload = tmp_path / "verified_upload_pack"
+    export.mkdir()
+    broker_orders = pd.DataFrame(
+        [
+            {
+                "broker_order_id": "ARROW_MONEY-000000-ORD-1",
+                "client_order_id": "ORD-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "side": 1,
+                "side_text": "BUY",
+                "qty": 75,
+                "price": 10.0,
+                "order_type": "LIMIT",
+                "time_in_force": "DAY",
+                "route_tag": "shadow_nse",
+                "research_instrument_id": "NIFTY_20260630_22500C",
+                "broker_instrument_token": "001001",
+                "instrument_resolution_method": "semantic_option_identity",
+                "instrument_resolution_status": "resolved",
+                "leg_group_id": "PARITY-1",
+                "leg_role": "CALL",
+                "leg_index": 1,
+                "leg_count": 2,
+            },
+            {
+                "broker_order_id": "ARROW_MONEY-000001-ORD-2",
+                "client_order_id": "ORD-2",
+                "instrument_id": "NIFTY24JUN22500PE",
+                "side": -1,
+                "side_text": "SELL",
+                "qty": 75,
+                "price": 11.0,
+                "order_type": "LIMIT",
+                "time_in_force": "DAY",
+                "route_tag": "shadow_nse",
+                "research_instrument_id": "NIFTY_20260630_22500P",
+                "broker_instrument_token": "001002",
+                "instrument_resolution_method": "semantic_option_identity",
+                "instrument_resolution_status": "resolved",
+                "leg_group_id": "PARITY-1",
+                "leg_role": "PUT",
+                "leg_index": 2,
+                "leg_count": 2,
+            },
+        ]
+    )
+    broker_orders.to_csv(export / "broker_orders.csv", index=False)
+    write_order_upload_pack(
+        export,
+        output_dir=upload,
+        config=OrderUploadPackConfig(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_instrument_resolution=True,
+            require_broker_instrument_token=True,
+        ),
+    )
+
+    identity_path = upload / "broker_upload_contract_identity.csv"
+    upload_manifest_path = upload / "manifest.json"
+    identity = pd.read_csv(
+        identity_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    orders_path = dispatch / "broker_dispatch_orders.csv"
+    orders = pd.read_csv(orders_path, dtype=str, keep_default_na=False)
+    identity_columns = {
+        "row_number": "contract_identity_row_number",
+        "broker_order_id": "broker_order_id",
+        "client_order_id": "client_order_id",
+        "leg_group_id": "leg_group_id",
+        "leg_role": "leg_role",
+        "leg_index": "leg_index",
+        "leg_count": "leg_count",
+        "research_instrument_id": "research_instrument_id",
+        "broker_instrument_id": "broker_instrument_id",
+        "broker_instrument_token": "broker_instrument_token",
+        "instrument_resolution_method": "instrument_resolution_method",
+        "instrument_resolution_status": "instrument_resolution_status",
+        "upload_instrument_column": "upload_instrument_column",
+        "upload_instrument_id": "upload_instrument_id",
+        "upload_identity_matches": "upload_identity_matches",
+        "resolution_row_ready": "resolution_row_ready",
+    }
+    for source, target in identity_columns.items():
+        orders[target] = identity[source].tolist()
+    orders.to_csv(orders_path, index=False)
+
+    identity_sha256 = file_sha256(identity_path)
+    upload_manifest_sha256 = file_sha256(upload_manifest_path)
+    summary_path = dispatch / "broker_dispatch_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary_fields = {
+        "upload_contract_identity_active": True,
+        "upload_contract_identity_required": True,
+        "upload_contract_identity_provided": True,
+        "upload_contract_identity_token_required": True,
+        "upload_contract_identity_gate_required": True,
+        "upload_contract_identity_proof_required": True,
+        "upload_contract_identity_adapter": "arrow_money",
+        "upload_contract_identity_adapter_matches_route": True,
+        "upload_contract_identity_manifest_current": True,
+        "upload_contract_identity_artifacts_consistent": True,
+        "upload_contract_identity_upload_file_bound": True,
+        "upload_contract_identity_present": True,
+        "upload_contract_identity_orders": 2,
+        "upload_contract_identity_ready_orders": 2,
+        "upload_contract_identity_research_id_orders": 2,
+        "upload_contract_identity_broker_id_orders": 2,
+        "upload_contract_identity_token_orders": 2,
+        "upload_contract_identity_upload_ids_match": True,
+        "upload_contract_identity_gate_passed": True,
+        "upload_contract_identity_file": str(identity_path.resolve()),
+        "upload_contract_identity_sha256": identity_sha256,
+        "upload_pack_manifest_sha256": upload_manifest_sha256,
+        "upload_contract_identity_consistency_error": "",
+    }
+    for field, value in summary_fields.items():
+        summary[field] = value
+    summary.to_csv(summary_path, index=False)
+
+    config_path = dispatch / "broker_dispatch_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config.setdefault("upload", {})["contract_identity"] = {
+        "active": True,
+        "required": True,
+        "provided": True,
+        "token_required": True,
+        "gate_required": True,
+        "proof_required": True,
+        "adapter": "arrow_money",
+        "adapter_matches_route": True,
+        "manifest_current": True,
+        "artifacts_consistent": True,
+        "upload_file_bound": True,
+        "sidecar_present": True,
+        "orders": 2,
+        "ready_orders": 2,
+        "research_id_orders": 2,
+        "broker_id_orders": 2,
+        "token_orders": 2,
+        "upload_ids_match": True,
+        "gate_passed": True,
+        "sidecar_path": str(identity_path.resolve()),
+        "sidecar_sha256": identity_sha256,
+        "manifest_path": str(upload_manifest_path.resolve()),
+        "manifest_sha256": upload_manifest_sha256,
+        "consistency_error": "",
+    }
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    dispatch_manifest_path = dispatch / "manifest.json"
+    dispatch_manifest = json.loads(
+        dispatch_manifest_path.read_text(encoding="utf-8")
+    )
+    inputs = {
+        name: _manifest_input_values(value)
+        for name, value in dispatch_manifest.get("inputs", {}).items()
+    }
+    inputs.update(
+        {
+            "upload_contract_identity": identity_path,
+            "upload_config": upload / "broker_upload_config.json",
+            "upload_manifest": upload_manifest_path,
+        }
+    )
+    extra = dict(dispatch_manifest.get("extra", {}))
+    extra.update(
+        {
+            "upload_contract_identity_active": True,
+            "upload_contract_identity_gate_passed": True,
+            "upload_contract_identity_sha256": identity_sha256,
+            "upload_pack_manifest_sha256": upload_manifest_sha256,
+        }
+    )
+    write_experiment_manifest(
+        dispatch,
+        run_type="broker_dispatch_plan",
+        parameters=dispatch_manifest.get("parameters", {}),
+        inputs=inputs,
+        extra=extra,
+    )
+    return upload
 
 
 def _rewrite_dispatch_lineage_field(dispatch, column, value):
@@ -7353,3 +7552,188 @@ def test_cli_broker_dispatch_send_can_require_route_readiness(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "route_readiness_provided" in failed
+
+
+def test_broker_dispatch_send_preserves_verified_contract_identity(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    upload = attach_verified_contract_identity(tmp_path, dispatch)
+    out_dir = tmp_path / "dispatch_send"
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=out_dir,
+    )
+
+    assert report.ready
+    requests = pd.read_csv(
+        out_dir / "broker_dispatch_send_requests.csv",
+        dtype={
+            "source_broker_order_id": str,
+            "broker_instrument_token": str,
+        },
+    )
+    expected_acks = pd.read_csv(
+        out_dir / "broker_dispatch_expected_acks.csv",
+        dtype={
+            "source_broker_order_id": str,
+            "broker_instrument_token": str,
+        },
+    )
+    assert requests["broker_instrument_token"].tolist() == [
+        "001001",
+        "001002",
+    ]
+    assert requests["source_broker_order_id"].tolist() == [
+        "ARROW_MONEY-000000-ORD-1",
+        "ARROW_MONEY-000001-ORD-2",
+    ]
+    assert expected_acks["broker_instrument_token"].tolist() == [
+        "001001",
+        "001002",
+    ]
+    assert expected_acks["source_broker_order_id"].tolist() == [
+        "ARROW_MONEY-000000-ORD-1",
+        "ARROW_MONEY-000001-ORD-2",
+    ]
+    assert expected_acks["broker_order_id"].isna().all()
+
+    request = requests.iloc[0]
+    envelope = json.loads(request["request_payload_json"])
+    assert envelope["contract_identity"]["broker_instrument_token"] == "001001"
+    assert (
+        envelope["contract_identity"]["source_broker_order_id"]
+        == "ARROW_MONEY-000000-ORD-1"
+    )
+    assert envelope["contract_identity"]["research_instrument_id"] == (
+        "NIFTY_20260630_22500C"
+    )
+    assert "research_instrument_id" not in envelope["order"]
+    assert "broker_instrument_token" not in envelope["order"]
+    assert "instrument_resolution_status" not in envelope["order"]
+
+    summary = report.summary.iloc[0]
+    assert bool(summary["send_contract_identity_active"])
+    assert bool(summary["send_contract_identity_source_manifest_current"])
+    assert bool(
+        summary["send_contract_identity_source_artifacts_consistent"]
+    )
+    assert bool(summary["send_contract_identity_source_matches_dispatch"])
+    assert bool(summary["send_contract_identity_requests_match_dispatch"])
+    assert bool(
+        summary["send_contract_identity_expected_acks_match_requests"]
+    )
+    assert bool(summary["send_contract_identity_gate_passed"])
+    assert summary["send_contract_identity_source_sha256"] == file_sha256(
+        upload / "broker_upload_contract_identity.csv"
+    )
+    config = json.loads(
+        (out_dir / "broker_dispatch_send_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert config["contract_identity"]["gate_passed"]
+    assert config["contract_identity"]["request_orders"] == 2
+    assert config["contract_identity"]["expected_ack_orders"] == 2
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"]["send_contract_identity_gate_passed"]
+    assert (
+        manifest["extra"]["send_contract_identity_sha256"]
+        == summary["send_contract_identity_sha256"]
+    )
+    lineage = load_broker_dispatch_send_lineage(
+        out_dir / "broker_dispatch_send_config.json",
+        dispatch / "broker_dispatch_config.json",
+    )
+    assert lineage["contract_consistent"]
+    assert lineage["gate_passed"]
+
+    broker_acks = expected_acks.copy()
+    broker_acks["broker_order_id"] = ["AM-ACK-1", "AM-ACK-2"]
+    broker_acks["ack_status"] = "accepted"
+    broker_acks["ack_ts_ns"] = [1_000, 2_000]
+    acks_path = tmp_path / "broker_acks.csv"
+    broker_acks.to_csv(acks_path, index=False)
+    ack_report = write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        send_dir=out_dir,
+        acks_path=acks_path,
+        output_dir=tmp_path / "ack_reconciliation",
+        thresholds=BrokerDispatchAckThresholds(
+            require_send_packet=True,
+        ),
+    )
+    assert ack_report.passed
+    assert ack_report.acknowledgements["broker_order_id"].tolist() == [
+        "AM-ACK-1",
+        "AM-ACK-2",
+    ]
+
+
+def test_broker_dispatch_send_blocks_remanifested_identity_tamper(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    attach_verified_contract_identity(tmp_path, dispatch)
+    orders_path = dispatch / "broker_dispatch_orders.csv"
+    orders = pd.read_csv(orders_path, dtype=str, keep_default_na=False)
+    orders.loc[0, "broker_instrument_token"] = "009999"
+    orders.to_csv(orders_path, index=False)
+    _refresh_manifest(dispatch / "manifest.json")
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=tmp_path / "dispatch_send",
+    )
+
+    assert not report.ready
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert "upload_contract_identity_matches_dispatch" in failed
+    assert not bool(
+        report.summary.iloc[0][
+            "send_contract_identity_source_matches_dispatch"
+        ]
+    )
+    assert not bool(
+        report.summary.iloc[0]["send_contract_identity_gate_passed"]
+    )
+
+
+def test_send_lineage_blocks_remanifested_expected_ack_identity_tamper(
+    tmp_path,
+):
+    dispatch = write_dispatch(tmp_path)
+    attach_verified_contract_identity(tmp_path, dispatch)
+    send = tmp_path / "dispatch_send"
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=send,
+    )
+    assert report.ready
+
+    expected_acks_path = send / "broker_dispatch_expected_acks.csv"
+    expected_acks = pd.read_csv(
+        expected_acks_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    expected_acks.loc[0, "broker_instrument_token"] = "009999"
+    expected_acks.to_csv(expected_acks_path, index=False)
+    _refresh_manifest(send / "manifest.json")
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        dispatch / "broker_dispatch_config.json",
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_send_expected_ack_identity_mismatch"
+        in lineage["contract_error"]
+    )

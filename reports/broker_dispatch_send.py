@@ -9,13 +9,14 @@ from typing import Any
 import pandas as pd
 
 from adapters.broker import get_adapter
+from adapters.order_upload_pack import verify_order_upload_pack_evidence
 from reports.leadlag_lineage import (
     LEADLAG_LINEAGE_FIELDS,
     leadlag_lineage_field_matches,
     leadlag_lineage_fields,
     leadlag_lineage_ready,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.operational_lineage import (
     broker_dispatch_lineage_fields,
     broker_dispatch_lineage_manifest_inputs,
@@ -47,6 +48,46 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+CONTRACT_IDENTITY_COLUMNS = (
+    ("contract_identity_row_number", "contract_identity_row_number"),
+    ("broker_order_id", "source_broker_order_id"),
+    ("client_order_id", "client_order_id"),
+    ("leg_group_id", "leg_group_id"),
+    ("leg_role", "leg_role"),
+    ("leg_index", "leg_index"),
+    ("leg_count", "leg_count"),
+    ("research_instrument_id", "research_instrument_id"),
+    ("broker_instrument_id", "broker_instrument_id"),
+    ("broker_instrument_token", "broker_instrument_token"),
+    ("instrument_resolution_method", "instrument_resolution_method"),
+    ("instrument_resolution_status", "instrument_resolution_status"),
+    ("upload_instrument_column", "upload_instrument_column"),
+    ("upload_instrument_id", "upload_instrument_id"),
+    ("upload_identity_matches", "upload_identity_matches"),
+    ("resolution_row_ready", "resolution_row_ready"),
+)
+CONTRACT_IDENTITY_REQUEST_COLUMNS = tuple(
+    request_column for _dispatch_column, request_column in CONTRACT_IDENTITY_COLUMNS
+)
+CONTRACT_IDENTITY_INTEGER_COLUMNS = {
+    "contract_identity_row_number",
+    "leg_index",
+    "leg_count",
+}
+CONTRACT_IDENTITY_BOOLEAN_COLUMNS = {
+    "upload_identity_matches",
+    "resolution_row_ready",
+}
+INTERNAL_IDENTITY_ORDER_FIELDS = {
+    "research_instrument_id",
+    "broker_instrument_id",
+    "broker_instrument_token",
+    "instrument_resolution_method",
+    "instrument_resolution_status",
+    "upload_instrument_column",
+    "upload_identity_matches",
+    "resolution_row_ready",
+}
 BROKER_DISPATCH_LINEAGE_OUTPUT_COLUMNS = tuple(
     broker_dispatch_lineage_fields(empty_broker_dispatch_lineage()).keys()
 )
@@ -391,6 +432,8 @@ def evaluate_broker_dispatch_send_packet(
     dispatch_orders: pd.DataFrame,
     dispatch_config: dict[str, Any] | None = None,
     broker_dispatch_lineage: dict[str, Any] | None = None,
+    upload_contract_identity: pd.DataFrame | None = None,
+    upload_contract_identity_evidence: dict[str, Any] | None = None,
     thresholds: BrokerDispatchSendThresholds | None = None,
 ) -> BrokerDispatchSendReport:
     thresholds = thresholds or BrokerDispatchSendThresholds()
@@ -404,10 +447,40 @@ def evaluate_broker_dispatch_send_packet(
         broker_dispatch_lineage or empty_broker_dispatch_lineage()
     ).items():
         summary_row[column] = value
-    requests = _request_rows(summary_row, dispatch_orders)
+    identity_state = _contract_identity_state(
+        summary_row,
+        dispatch_orders,
+        upload_contract_identity,
+        upload_contract_identity_evidence,
+    )
+    for column, value in _contract_identity_state_fields(identity_state).items():
+        summary_row[column] = value
+    requests = _request_rows(summary_row, dispatch_orders, identity_state)
     expected_acks = _expected_ack_template(requests)
-    checks = _checks(summary_row, dispatch_orders, requests, thresholds)
-    summary = _summary(summary_row, requests, checks, thresholds)
+    identity_state = _complete_contract_identity_state(
+        identity_state,
+        dispatch_orders,
+        requests,
+        expected_acks,
+    )
+    for column, value in _contract_identity_state_fields(identity_state).items():
+        summary_row[column] = value
+    checks = _checks(
+        summary_row,
+        dispatch_orders,
+        requests,
+        expected_acks,
+        thresholds,
+        identity_state,
+    )
+    summary = _summary(
+        summary_row,
+        requests,
+        expected_acks,
+        checks,
+        thresholds,
+        identity_state,
+    )
     action_queue = _action_queue(summary.iloc[0], checks)
     summary = _summary_with_actions(summary, checks, action_queue)
     config = _config(summary.iloc[0], requests, thresholds, checks, action_queue)
@@ -438,6 +511,9 @@ def write_broker_dispatch_send_packet(
         if dispatch_config_path.exists()
         else {}
     )
+    contract_identity, identity_evidence = _load_upload_contract_identity(
+        dispatch_manifest_path
+    )
     route_manifest_path = _manifest_input_path(dispatch_manifest_path, "route_enable_manifest")
     cutover_manifest_path = _manifest_input_path(route_manifest_path, "cutover_manifest")
     broker_readiness_config_path = _manifest_input_path(cutover_manifest_path, "broker_readiness_config")
@@ -448,9 +524,11 @@ def write_broker_dispatch_send_packet(
         )
     report = evaluate_broker_dispatch_send_packet(
         dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
-        dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
+        dispatch_orders=_read_dispatch_orders(dispatch_orders_path),
         dispatch_config=dispatch_config,
         broker_dispatch_lineage=dispatch_lineage,
+        upload_contract_identity=contract_identity,
+        upload_contract_identity_evidence=identity_evidence,
         thresholds=thresholds,
     )
     out = Path(output_dir).resolve()
@@ -479,6 +557,14 @@ def write_broker_dispatch_send_packet(
         dispatch_manifest=dispatch_manifest_path,
     )
     inputs.update(broker_dispatch_lineage_manifest_inputs(dispatch_lineage))
+    for name, key in (
+        ("dispatch_upload_contract_identity", "identity_path"),
+        ("dispatch_upload_manifest", "manifest_path"),
+        ("dispatch_upload_config", "config_path"),
+    ):
+        path = identity_evidence.get(key)
+        if path is not None and Path(path).is_file():
+            inputs[name] = Path(path)
     write_experiment_manifest(
         out,
         run_type="broker_dispatch_send_packet",
@@ -490,6 +576,7 @@ def write_broker_dispatch_send_packet(
                 report.summary.iloc[0]
             ),
             **broker_dispatch_lineage_fields(dispatch_lineage),
+            **_contract_identity_manifest_fields(report.summary.iloc[0]),
             "submission_enabled": False,
             "authorizes_submission": False,
         },
@@ -509,14 +596,24 @@ def _manifest_inputs(**paths: Path) -> dict[str, Path]:
     return {name: path for name, path in paths.items() if path.exists()}
 
 
-def _request_rows(dispatch_summary: pd.Series, dispatch_orders: pd.DataFrame) -> pd.DataFrame:
+def _request_rows(
+    dispatch_summary: pd.Series,
+    dispatch_orders: pd.DataFrame,
+    identity_state: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     adapter = _text(dispatch_summary, "adapter") or _first_order_text(dispatch_orders, "adapter")
     target_mode = _identity_key(_text(dispatch_summary, "target_mode") or _first_order_text(dispatch_orders, "target_mode"))
     lineage_fields = _broker_dispatch_lineage_output_fields(dispatch_summary)
     leadlag_fields = _strategy_portfolio_leadlag_summary_fields(dispatch_summary)
+    identity_active = bool(identity_state and identity_state.get("active", False))
     for index, order in dispatch_orders.reset_index(drop=True).iterrows():
         payload, payload_error = _order_payload(order)
+        identity_fields = (
+            _contract_identity_request_fields(order)
+            if identity_active
+            else {}
+        )
         envelope = {
             "adapter": adapter,
             "target_mode": target_mode,
@@ -533,6 +630,8 @@ def _request_rows(dispatch_summary: pd.Series, dispatch_orders: pd.DataFrame) ->
             "source_payload_hash": _text(order, "source_payload_hash"),
             "order": payload,
         }
+        if identity_active:
+            envelope["contract_identity"] = identity_fields
         request_hash = hashlib.sha256(json.dumps(envelope, sort_keys=True).encode("utf-8")).hexdigest()
         rows.append(
             {
@@ -558,6 +657,7 @@ def _request_rows(dispatch_summary: pd.Series, dispatch_orders: pd.DataFrame) ->
                 "authorizes_submission": False,
                 "idempotency_key": f"IDEMP-{request_hash[:24]}",
                 "source_payload_hash": _text(order, "source_payload_hash"),
+                **identity_fields,
                 "request_payload_hash": request_hash,
                 "payload_valid": payload_error == "",
                 "payload_error": payload_error,
@@ -568,6 +668,11 @@ def _request_rows(dispatch_summary: pd.Series, dispatch_orders: pd.DataFrame) ->
 
 
 def _expected_ack_template(requests: pd.DataFrame) -> pd.DataFrame:
+    identity_columns = [
+        column
+        for column in CONTRACT_IDENTITY_REQUEST_COLUMNS
+        if column in requests.columns
+    ]
     if requests.empty:
         return pd.DataFrame(
             columns=[
@@ -579,6 +684,7 @@ def _expected_ack_template(requests: pd.DataFrame) -> pd.DataFrame:
                 "adapter",
                 "target_mode",
                 *STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_COLUMNS,
+                *identity_columns,
                 "broker_order_id",
                 "ack_status",
                 "ack_ts_ns",
@@ -599,6 +705,10 @@ def _expected_ack_template(requests: pd.DataFrame) -> pd.DataFrame:
                     column: getattr(row, column)
                     for column in STRATEGY_PORTFOLIO_LEADLAG_OUTPUT_COLUMNS
                 },
+                **{
+                    column: getattr(row, column)
+                    for column in identity_columns
+                },
                 "broker_order_id": "",
                 "ack_status": "",
                 "ack_ts_ns": "",
@@ -607,6 +717,484 @@ def _expected_ack_template(requests: pd.DataFrame) -> pd.DataFrame:
             for row in requests.itertuples(index=False)
         ]
     )
+
+
+def _contract_identity_request_fields(row: pd.Series) -> dict[str, Any]:
+    return {
+        request_column: _contract_identity_value(
+            row.get(dispatch_column),
+            request_column,
+        )
+        for dispatch_column, request_column in CONTRACT_IDENTITY_COLUMNS
+    }
+
+
+def _source_contract_identity_request_fields(row: pd.Series) -> dict[str, Any]:
+    return {
+        request_column: _contract_identity_value(
+            row.get(
+                "row_number"
+                if dispatch_column == "contract_identity_row_number"
+                else dispatch_column
+            ),
+            request_column,
+        )
+        for dispatch_column, request_column in CONTRACT_IDENTITY_COLUMNS
+    }
+
+
+def _request_contract_identity_fields(row: pd.Series) -> dict[str, Any]:
+    return {
+        column: _contract_identity_value(row.get(column), column)
+        for column in CONTRACT_IDENTITY_REQUEST_COLUMNS
+    }
+
+
+def _contract_identity_value(value: object, column: str) -> Any:
+    if column in CONTRACT_IDENTITY_BOOLEAN_COLUMNS:
+        return _to_bool(value)
+    if column in CONTRACT_IDENTITY_INTEGER_COLUMNS:
+        return _optional_int(value)
+    return _object_text(value).strip()
+
+
+def _optional_int(value: object) -> int | None:
+    text = _object_text(value).strip()
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return int(number) if number.is_integer() else None
+
+
+def _contract_identity_records(
+    frame: pd.DataFrame,
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    if source == "dispatch":
+        return [
+            _contract_identity_request_fields(row)
+            for _index, row in frame.reset_index(drop=True).iterrows()
+        ]
+    if source == "upload":
+        return [
+            _source_contract_identity_request_fields(row)
+            for _index, row in frame.reset_index(drop=True).iterrows()
+        ]
+    return [
+        _request_contract_identity_fields(row)
+        for _index, row in frame.reset_index(drop=True).iterrows()
+    ]
+
+
+def _contract_identity_sha256(records: list[dict[str, Any]]) -> str:
+    if not records:
+        return ""
+    return hashlib.sha256(
+        json.dumps(records, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _contract_identity_state(
+    dispatch_summary: pd.Series,
+    dispatch_orders: pd.DataFrame,
+    upload_contract_identity: pd.DataFrame | None,
+    evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    evidence = dict(evidence or {})
+    identity_columns_present = all(
+        dispatch_column in dispatch_orders.columns
+        for dispatch_column, _request_column in CONTRACT_IDENTITY_COLUMNS
+    )
+    source_present = upload_contract_identity is not None
+    active = bool(
+        _to_bool(dispatch_summary.get("upload_contract_identity_active", False))
+        or evidence.get("active", False)
+        or identity_columns_present
+        or source_present
+    )
+    required = _to_bool(
+        dispatch_summary.get("upload_contract_identity_required", False)
+    )
+    provided = _to_bool(
+        dispatch_summary.get("upload_contract_identity_provided", False)
+    )
+    token_required = _to_bool(
+        dispatch_summary.get("upload_contract_identity_token_required", False)
+    )
+    gate_required = bool(
+        _to_bool(
+            dispatch_summary.get(
+                "upload_contract_identity_gate_required",
+                required or provided,
+            )
+        )
+        or required
+        or provided
+    )
+    proof_required = bool(
+        _to_bool(
+            dispatch_summary.get("upload_contract_identity_proof_required", False)
+        )
+        or evidence.get("proof_required", False)
+    )
+    dispatch_records = (
+        _contract_identity_records(dispatch_orders, source="dispatch")
+        if identity_columns_present
+        else []
+    )
+    source_records = (
+        _contract_identity_records(upload_contract_identity, source="upload")
+        if upload_contract_identity is not None
+        else []
+    )
+    order_count = int(len(dispatch_orders))
+    row_numbers = [
+        record["contract_identity_row_number"]
+        for record in dispatch_records
+    ]
+    row_numbers_match = bool(
+        len(dispatch_records) == order_count
+        and row_numbers == list(range(order_count))
+    )
+    ready_orders = sum(
+        bool(record["resolution_row_ready"]) for record in dispatch_records
+    )
+    token_orders = sum(
+        bool(record["broker_instrument_token"]) for record in dispatch_records
+    )
+    research_id_orders = sum(
+        bool(record["research_instrument_id"]) for record in dispatch_records
+    )
+    broker_id_orders = sum(
+        bool(record["broker_instrument_id"]) for record in dispatch_records
+    )
+    upload_ids_match = bool(
+        dispatch_records
+        and all(
+            record["upload_identity_matches"]
+            and record["broker_instrument_id"]
+            and record["broker_instrument_id"] == record["upload_instrument_id"]
+            for record in dispatch_records
+        )
+    )
+    summary_counts_match = bool(
+        int(_number(dispatch_summary, "upload_contract_identity_orders", 0.0))
+        == order_count
+        and int(
+            _number(
+                dispatch_summary,
+                "upload_contract_identity_ready_orders",
+                0.0,
+            )
+        )
+        == ready_orders
+        and int(
+            _number(
+                dispatch_summary,
+                "upload_contract_identity_token_orders",
+                0.0,
+            )
+        )
+        == token_orders
+    )
+    route_adapter = _identity_key(dispatch_summary.get("adapter", ""))
+    dispatch_identity_adapter = _identity_key(
+        dispatch_summary.get("upload_contract_identity_adapter", "")
+    )
+    source_adapter = _identity_key(evidence.get("adapter", ""))
+    adapter_matches = bool(
+        not proof_required
+        or (
+            route_adapter
+            and dispatch_identity_adapter == route_adapter
+            and source_adapter == route_adapter
+        )
+    )
+    source_matches_dispatch = bool(
+        source_present
+        and len(source_records) == len(dispatch_records)
+        and source_records == dispatch_records
+    )
+    source_identity_sha256 = _object_text(
+        evidence.get("identity_sha256", "")
+    ).strip()
+    source_manifest_sha256 = _object_text(
+        evidence.get("manifest_sha256", "")
+    ).strip()
+    proof_hashes_match = bool(
+        not proof_required
+        or (
+            source_identity_sha256
+            and source_identity_sha256
+            == _text(dispatch_summary, "upload_contract_identity_sha256")
+            and source_manifest_sha256
+            and source_manifest_sha256
+            == _text(dispatch_summary, "upload_pack_manifest_sha256")
+        )
+    )
+    source_manifest_current = _to_bool(
+        evidence.get("manifest_current", not proof_required)
+    )
+    source_artifacts_consistent = _to_bool(
+        evidence.get("artifacts_consistent", not proof_required)
+    )
+    source_proof_passed = bool(
+        not proof_required
+        or (
+            source_present
+            and source_manifest_current
+            and source_artifacts_consistent
+            and _to_bool(evidence.get("passed", False))
+            and proof_hashes_match
+        )
+    )
+    resolution_ready = bool(
+        order_count > 0
+        and ready_orders == order_count
+        and research_id_orders == order_count
+        and broker_id_orders == order_count
+        and upload_ids_match
+        and (token_orders == order_count if token_required else True)
+    )
+    dispatch_gate_passed = _to_bool(
+        dispatch_summary.get("upload_contract_identity_gate_passed", False)
+    )
+    base_gate_passed = bool(
+        not active
+        or (
+            dispatch_gate_passed
+            and identity_columns_present
+            and len(dispatch_records) == order_count
+            and row_numbers_match
+            and summary_counts_match
+            and adapter_matches
+            and source_proof_passed
+            and (source_matches_dispatch if proof_required else True)
+            and (resolution_ready if gate_required else True)
+        )
+    )
+    return {
+        "active": active,
+        "required": required,
+        "provided": provided,
+        "token_required": token_required,
+        "gate_required": gate_required,
+        "proof_required": proof_required,
+        "dispatch_gate_passed": dispatch_gate_passed,
+        "identity_columns_present": identity_columns_present,
+        "dispatch_orders": order_count,
+        "identity_orders": len(dispatch_records),
+        "ready_orders": ready_orders,
+        "research_id_orders": research_id_orders,
+        "broker_id_orders": broker_id_orders,
+        "token_orders": token_orders,
+        "row_numbers_match": row_numbers_match,
+        "upload_ids_match": upload_ids_match,
+        "summary_counts_match": summary_counts_match,
+        "adapter": route_adapter,
+        "adapter_matches": adapter_matches,
+        "source_present": source_present,
+        "source_matches_dispatch": source_matches_dispatch,
+        "source_manifest_current": source_manifest_current,
+        "source_artifacts_consistent": source_artifacts_consistent,
+        "source_proof_passed": source_proof_passed,
+        "proof_hashes_match": proof_hashes_match,
+        "source_identity_path": _object_text(
+            evidence.get("identity_path", "")
+        ).strip(),
+        "source_identity_sha256": source_identity_sha256,
+        "source_manifest_path": _object_text(
+            evidence.get("manifest_path", "")
+        ).strip(),
+        "source_manifest_sha256": source_manifest_sha256,
+        "source_consistency_error": _object_text(
+            evidence.get("consistency_error", "")
+        ).strip(),
+        "resolution_ready": resolution_ready,
+        "contract_identity_sha256": _contract_identity_sha256(dispatch_records),
+        "base_gate_passed": base_gate_passed,
+        "request_columns_present": not active,
+        "request_matches_dispatch": not active,
+        "request_payload_matches": not active,
+        "request_order_payload_isolated": not active,
+        "expected_ack_columns_present": not active,
+        "expected_ack_matches_requests": not active,
+        "request_identity_orders": 0,
+        "expected_ack_identity_orders": 0,
+        "gate_passed": base_gate_passed,
+    }
+
+
+def _complete_contract_identity_state(
+    state: dict[str, Any],
+    dispatch_orders: pd.DataFrame,
+    requests: pd.DataFrame,
+    expected_acks: pd.DataFrame,
+) -> dict[str, Any]:
+    if not state["active"]:
+        return state
+    request_columns_present = all(
+        column in requests.columns for column in CONTRACT_IDENTITY_REQUEST_COLUMNS
+    )
+    expected_ack_columns_present = all(
+        column in expected_acks.columns
+        for column in CONTRACT_IDENTITY_REQUEST_COLUMNS
+    )
+    dispatch_records = _contract_identity_records(
+        dispatch_orders,
+        source="dispatch",
+    )
+    request_records = (
+        _contract_identity_records(requests, source="request")
+        if request_columns_present
+        else []
+    )
+    expected_ack_records = (
+        _contract_identity_records(expected_acks, source="request")
+        if expected_ack_columns_present
+        else []
+    )
+    request_matches_dispatch = bool(request_records == dispatch_records)
+    expected_ack_matches_requests = bool(expected_ack_records == request_records)
+    request_payload_matches = _request_payload_contract_identity_matches(
+        requests,
+        request_records,
+    )
+    request_order_payload_isolated = _request_order_payload_identity_isolated(
+        requests
+    )
+    state.update(
+        {
+            "request_columns_present": request_columns_present,
+            "request_matches_dispatch": request_matches_dispatch,
+            "request_payload_matches": request_payload_matches,
+            "request_order_payload_isolated": request_order_payload_isolated,
+            "expected_ack_columns_present": expected_ack_columns_present,
+            "expected_ack_matches_requests": expected_ack_matches_requests,
+            "request_identity_orders": len(request_records),
+            "expected_ack_identity_orders": len(expected_ack_records),
+            "gate_passed": bool(
+                state["base_gate_passed"]
+                and request_columns_present
+                and request_matches_dispatch
+                and request_payload_matches
+                and request_order_payload_isolated
+                and expected_ack_columns_present
+                and expected_ack_matches_requests
+            ),
+        }
+    )
+    return state
+
+
+def _request_payload_contract_identity_matches(
+    requests: pd.DataFrame,
+    expected_records: list[dict[str, Any]],
+) -> bool:
+    if len(requests) != len(expected_records):
+        return False
+    for raw, expected in zip(
+        requests.get("request_payload_json", pd.Series(dtype=str)),
+        expected_records,
+    ):
+        try:
+            payload = json.loads(_object_text(raw))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        identity = payload.get("contract_identity")
+        if not isinstance(identity, dict):
+            return False
+        actual = {
+            column: _contract_identity_value(identity.get(column), column)
+            for column in CONTRACT_IDENTITY_REQUEST_COLUMNS
+        }
+        if actual != expected:
+            return False
+    return True
+
+
+def _request_order_payload_identity_isolated(requests: pd.DataFrame) -> bool:
+    for raw in requests.get("request_payload_json", pd.Series(dtype=str)):
+        try:
+            payload = json.loads(_object_text(raw))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
+        order = payload.get("order") if isinstance(payload, dict) else None
+        if not isinstance(order, dict):
+            return False
+        if INTERNAL_IDENTITY_ORDER_FIELDS.intersection(order):
+            return False
+    return True
+
+
+def _contract_identity_state_fields(state: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "send_contract_identity_active": bool(state["active"]),
+        "send_contract_identity_required": bool(state["required"]),
+        "send_contract_identity_provided": bool(state["provided"]),
+        "send_contract_identity_token_required": bool(state["token_required"]),
+        "send_contract_identity_gate_required": bool(state["gate_required"]),
+        "send_contract_identity_proof_required": bool(state["proof_required"]),
+        "send_contract_identity_dispatch_gate_passed": bool(
+            state["dispatch_gate_passed"]
+        ),
+        "send_contract_identity_source_present": bool(state["source_present"]),
+        "send_contract_identity_source_manifest_current": bool(
+            state["source_manifest_current"]
+        ),
+        "send_contract_identity_source_artifacts_consistent": bool(
+            state["source_artifacts_consistent"]
+        ),
+        "send_contract_identity_source_matches_dispatch": bool(
+            state["source_matches_dispatch"]
+        ),
+        "send_contract_identity_proof_hashes_match": bool(
+            state["proof_hashes_match"]
+        ),
+        "send_contract_identity_adapter_matches": bool(state["adapter_matches"]),
+        "send_contract_identity_dispatch_orders": int(state["dispatch_orders"]),
+        "send_contract_identity_ready_orders": int(state["ready_orders"]),
+        "send_contract_identity_token_orders": int(state["token_orders"]),
+        "send_contract_identity_request_orders": int(
+            state["request_identity_orders"]
+        ),
+        "send_contract_identity_expected_ack_orders": int(
+            state["expected_ack_identity_orders"]
+        ),
+        "send_contract_identity_requests_match_dispatch": bool(
+            state["request_matches_dispatch"]
+        ),
+        "send_contract_identity_payloads_match_requests": bool(
+            state["request_payload_matches"]
+        ),
+        "send_contract_identity_vendor_order_isolated": bool(
+            state["request_order_payload_isolated"]
+        ),
+        "send_contract_identity_expected_acks_match_requests": bool(
+            state["expected_ack_matches_requests"]
+        ),
+        "send_contract_identity_sha256": _object_text(
+            state["contract_identity_sha256"]
+        ).strip(),
+        "send_contract_identity_source_sha256": _object_text(
+            state["source_identity_sha256"]
+        ).strip(),
+        "send_contract_identity_source_manifest_sha256": _object_text(
+            state["source_manifest_sha256"]
+        ).strip(),
+        "send_contract_identity_consistency_error": _object_text(
+            state["source_consistency_error"]
+        ).strip(),
+        "send_contract_identity_gate_passed": bool(state["gate_passed"]),
+    }
 
 
 def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
@@ -770,6 +1358,65 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
         ),
         _number(state, "dispatch_total_notional", 0.0),
     )
+    contract_identity = upload.get("contract_identity", {}) or {}
+    if isinstance(contract_identity, dict) and contract_identity:
+        identity_fields = {
+            "active": "upload_contract_identity_active",
+            "required": "upload_contract_identity_required",
+            "provided": "upload_contract_identity_provided",
+            "token_required": "upload_contract_identity_token_required",
+            "gate_required": "upload_contract_identity_gate_required",
+            "proof_required": "upload_contract_identity_proof_required",
+            "adapter": "upload_contract_identity_adapter",
+            "adapter_matches_route": "upload_contract_identity_adapter_matches_route",
+            "manifest_current": "upload_contract_identity_manifest_current",
+            "artifacts_consistent": "upload_contract_identity_artifacts_consistent",
+            "upload_file_bound": "upload_contract_identity_upload_file_bound",
+            "sidecar_present": "upload_contract_identity_present",
+            "orders": "upload_contract_identity_orders",
+            "ready_orders": "upload_contract_identity_ready_orders",
+            "research_id_orders": "upload_contract_identity_research_id_orders",
+            "broker_id_orders": "upload_contract_identity_broker_id_orders",
+            "token_orders": "upload_contract_identity_token_orders",
+            "upload_ids_match": "upload_contract_identity_upload_ids_match",
+            "gate_passed": "upload_contract_identity_gate_passed",
+            "sidecar_path": "upload_contract_identity_file",
+            "sidecar_sha256": "upload_contract_identity_sha256",
+            "manifest_sha256": "upload_pack_manifest_sha256",
+            "consistency_error": "upload_contract_identity_consistency_error",
+        }
+        boolean_fields = {
+            "active",
+            "required",
+            "provided",
+            "token_required",
+            "gate_required",
+            "proof_required",
+            "adapter_matches_route",
+            "manifest_current",
+            "artifacts_consistent",
+            "upload_file_bound",
+            "sidecar_present",
+            "upload_ids_match",
+            "gate_passed",
+        }
+        integer_fields = {
+            "orders",
+            "ready_orders",
+            "research_id_orders",
+            "broker_id_orders",
+            "token_orders",
+        }
+        for source, target in identity_fields.items():
+            if source not in contract_identity:
+                continue
+            value = contract_identity[source]
+            if source in boolean_fields:
+                state[target] = _to_bool(value)
+            elif source in integer_fields:
+                state[target] = int(_number_value(value, _number(state, target, 0.0)))
+            else:
+                state[target] = _object_text(value).strip()
     broker_readiness = config.get("broker_readiness", {}) or {}
     if "adapter_schema_status" in broker_readiness:
         state["broker_schema_status"] = _object_text(
@@ -2421,7 +3068,9 @@ def _checks(
     dispatch_summary: pd.Series,
     dispatch_orders: pd.DataFrame,
     requests: pd.DataFrame,
+    expected_acks: pd.DataFrame,
     thresholds: BrokerDispatchSendThresholds,
+    identity_state: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     orders = int(len(dispatch_orders))
     request_count = int(len(requests))
@@ -2546,6 +3195,149 @@ def _checks(
             _check("payloads_valid", payloads_valid, "is", True, payloads_valid, "dispatch payload JSON is invalid"),
         ]
     )
+    if identity_state and identity_state["active"]:
+        identity_checks = [
+            _check(
+                "dispatch_contract_identity_gate_passed",
+                identity_state["dispatch_gate_passed"],
+                "is",
+                True,
+                bool(identity_state["dispatch_gate_passed"]),
+                "broker dispatch did not retain a passing upload contract-identity gate",
+            ),
+            _check(
+                "dispatch_contract_identity_columns_present",
+                identity_state["identity_orders"],
+                "==",
+                identity_state["dispatch_orders"],
+                bool(
+                    identity_state["identity_columns_present"]
+                    and identity_state["identity_orders"]
+                    == identity_state["dispatch_orders"]
+                ),
+                "broker dispatch rows are missing contract-identity audit columns",
+            ),
+            _check(
+                "dispatch_contract_identity_row_numbers",
+                identity_state["row_numbers_match"],
+                "is",
+                True,
+                bool(identity_state["row_numbers_match"]),
+                "broker dispatch contract-identity row numbers are incomplete or reordered",
+            ),
+            _check(
+                "dispatch_contract_identity_summary_counts",
+                identity_state["summary_counts_match"],
+                "is",
+                True,
+                bool(identity_state["summary_counts_match"]),
+                "broker dispatch contract-identity counts disagree with its order rows",
+            ),
+            _check(
+                "dispatch_contract_identity_adapter_matches",
+                identity_state["adapter_matches"],
+                "is",
+                True,
+                bool(identity_state["adapter_matches"]),
+                "upload-pack contract identity adapter does not match the dispatch route",
+            ),
+            _check(
+                "send_contract_identity_requests_match_dispatch",
+                identity_state["request_identity_orders"],
+                "==",
+                identity_state["dispatch_orders"],
+                bool(
+                    identity_state["request_columns_present"]
+                    and identity_state["request_matches_dispatch"]
+                ),
+                "send requests do not preserve broker dispatch contract identity",
+            ),
+            _check(
+                "send_contract_identity_payloads_match_requests",
+                identity_state["request_payload_matches"],
+                "is",
+                True,
+                bool(identity_state["request_payload_matches"]),
+                "send request envelopes do not match their contract-identity audit columns",
+            ),
+            _check(
+                "send_contract_identity_vendor_order_isolated",
+                identity_state["request_order_payload_isolated"],
+                "is",
+                True,
+                bool(identity_state["request_order_payload_isolated"]),
+                "internal contract identity leaked into the vendor order body",
+            ),
+            _check(
+                "send_contract_identity_expected_acks_match_requests",
+                identity_state["expected_ack_identity_orders"],
+                "==",
+                identity_state["request_identity_orders"],
+                bool(
+                    identity_state["expected_ack_columns_present"]
+                    and identity_state["expected_ack_matches_requests"]
+                ),
+                "expected acknowledgements do not preserve send request contract identity",
+            ),
+        ]
+        if identity_state["proof_required"]:
+            identity_checks[5:5] = [
+                _check(
+                    "upload_contract_identity_source_present",
+                    identity_state["source_present"],
+                    "is",
+                    True,
+                    bool(identity_state["source_present"]),
+                    "manifest-bound upload contract-identity evidence is missing",
+                ),
+                _check(
+                    "upload_contract_identity_manifest_current",
+                    identity_state["source_manifest_current"],
+                    "is",
+                    True,
+                    bool(identity_state["source_manifest_current"]),
+                    "upload-pack manifest is stale or incomplete at send time",
+                ),
+                _check(
+                    "upload_contract_identity_artifacts_consistent",
+                    identity_state["source_artifacts_consistent"],
+                    "is",
+                    True,
+                    bool(identity_state["source_artifacts_consistent"]),
+                    "upload-pack artifacts no longer reconstruct from broker-order evidence",
+                ),
+                _check(
+                    "upload_contract_identity_proof_hashes_match",
+                    identity_state["proof_hashes_match"],
+                    "is",
+                    True,
+                    bool(identity_state["proof_hashes_match"]),
+                    "dispatch identity proof hashes do not match the current upload pack",
+                ),
+                _check(
+                    "upload_contract_identity_matches_dispatch",
+                    identity_state["source_matches_dispatch"],
+                    "is",
+                    True,
+                    bool(identity_state["source_matches_dispatch"]),
+                    "dispatch contract identity differs from the verified upload sidecar",
+                ),
+            ]
+        if identity_state["gate_required"]:
+            identity_checks.append(
+                _check(
+                    "send_contract_identity_resolution_ready",
+                    identity_state["ready_orders"],
+                    "==",
+                    identity_state["dispatch_orders"],
+                    bool(identity_state["resolution_ready"]),
+                    "one or more send requests lost verified broker instrument resolution",
+                )
+            )
+        checks = pd.concat(
+            [checks, pd.DataFrame(identity_checks)],
+            ignore_index=True,
+        )
     if _to_bool(dispatch_summary.get("broker_dispatch_lineage_required", False)):
         checks = pd.concat(
             [
@@ -6578,8 +7370,10 @@ def _prefixed_shadow_broker_summary_fields(dispatch_summary: pd.Series, *, field
 def _summary(
     dispatch_summary: pd.Series,
     requests: pd.DataFrame,
+    expected_acks: pd.DataFrame,
     checks: pd.DataFrame,
     thresholds: BrokerDispatchSendThresholds,
+    identity_state: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -6600,7 +7394,13 @@ def _summary(
                 "dispatch_orders": int(_number(dispatch_summary, "dispatch_orders", len(requests))),
                 "dispatch_total_notional": _number(dispatch_summary, "dispatch_total_notional", 0.0),
                 "requests": int(len(requests)),
+                "expected_ack_templates": int(len(expected_acks)),
                 **_broker_dispatch_lineage_output_fields(dispatch_summary),
+                **(
+                    _contract_identity_state_fields(identity_state)
+                    if identity_state is not None
+                    else {}
+                ),
                 "authorizes_submission": False,
                 "strategy_portfolio_required": _to_bool(
                     dispatch_summary.get("strategy_portfolio_required", False)
@@ -8156,6 +8956,136 @@ def _broker_dispatch_lineage_config(summary: pd.Series) -> dict[str, Any]:
     }
 
 
+def _contract_identity_config(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "active": _to_bool(summary.get("send_contract_identity_active", False)),
+        "required": _to_bool(
+            summary.get("send_contract_identity_required", False)
+        ),
+        "provided": _to_bool(
+            summary.get("send_contract_identity_provided", False)
+        ),
+        "token_required": _to_bool(
+            summary.get("send_contract_identity_token_required", False)
+        ),
+        "gate_required": _to_bool(
+            summary.get("send_contract_identity_gate_required", False)
+        ),
+        "proof_required": _to_bool(
+            summary.get("send_contract_identity_proof_required", False)
+        ),
+        "dispatch_gate_passed": _to_bool(
+            summary.get("send_contract_identity_dispatch_gate_passed", False)
+        ),
+        "source_present": _to_bool(
+            summary.get("send_contract_identity_source_present", False)
+        ),
+        "source_manifest_current": _to_bool(
+            summary.get(
+                "send_contract_identity_source_manifest_current",
+                False,
+            )
+        ),
+        "source_artifacts_consistent": _to_bool(
+            summary.get(
+                "send_contract_identity_source_artifacts_consistent",
+                False,
+            )
+        ),
+        "source_matches_dispatch": _to_bool(
+            summary.get(
+                "send_contract_identity_source_matches_dispatch",
+                False,
+            )
+        ),
+        "proof_hashes_match": _to_bool(
+            summary.get("send_contract_identity_proof_hashes_match", False)
+        ),
+        "adapter_matches": _to_bool(
+            summary.get("send_contract_identity_adapter_matches", False)
+        ),
+        "dispatch_orders": int(
+            _number(summary, "send_contract_identity_dispatch_orders", 0.0)
+        ),
+        "ready_orders": int(
+            _number(summary, "send_contract_identity_ready_orders", 0.0)
+        ),
+        "token_orders": int(
+            _number(summary, "send_contract_identity_token_orders", 0.0)
+        ),
+        "request_orders": int(
+            _number(summary, "send_contract_identity_request_orders", 0.0)
+        ),
+        "expected_ack_orders": int(
+            _number(
+                summary,
+                "send_contract_identity_expected_ack_orders",
+                0.0,
+            )
+        ),
+        "requests_match_dispatch": _to_bool(
+            summary.get(
+                "send_contract_identity_requests_match_dispatch",
+                False,
+            )
+        ),
+        "payloads_match_requests": _to_bool(
+            summary.get(
+                "send_contract_identity_payloads_match_requests",
+                False,
+            )
+        ),
+        "vendor_order_isolated": _to_bool(
+            summary.get("send_contract_identity_vendor_order_isolated", False)
+        ),
+        "expected_acks_match_requests": _to_bool(
+            summary.get(
+                "send_contract_identity_expected_acks_match_requests",
+                False,
+            )
+        ),
+        "identity_sha256": _text(summary, "send_contract_identity_sha256"),
+        "source_identity_sha256": _text(
+            summary,
+            "send_contract_identity_source_sha256",
+        ),
+        "source_manifest_sha256": _text(
+            summary,
+            "send_contract_identity_source_manifest_sha256",
+        ),
+        "consistency_error": _text(
+            summary,
+            "send_contract_identity_consistency_error",
+        ),
+        "gate_passed": _to_bool(
+            summary.get("send_contract_identity_gate_passed", False)
+        ),
+    }
+
+
+def _contract_identity_manifest_fields(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "send_contract_identity_active": _to_bool(
+            summary.get("send_contract_identity_active", False)
+        ),
+        "send_contract_identity_gate_passed": _to_bool(
+            summary.get("send_contract_identity_gate_passed", False)
+        ),
+        "send_contract_identity_sha256": _text(
+            summary,
+            "send_contract_identity_sha256",
+        ),
+        "send_contract_identity_source_sha256": _text(
+            summary,
+            "send_contract_identity_source_sha256",
+        ),
+        "send_contract_identity_source_manifest_sha256": _text(
+            summary,
+            "send_contract_identity_source_manifest_sha256",
+        ),
+    }
+
+
 def _config(
     summary: pd.Series,
     requests: pd.DataFrame,
@@ -8187,9 +9117,11 @@ def _config(
         "dispatch_batch_id": _text(summary, "dispatch_batch_id"),
         "dispatch_total_notional": float(summary["dispatch_total_notional"]),
         "requests": int(summary["requests"]),
+        "expected_ack_templates": int(summary["expected_ack_templates"]),
         "first_request_id": str(requests.iloc[0]["request_id"]) if not requests.empty else "",
         "last_request_id": str(requests.iloc[-1]["request_id"]) if not requests.empty else "",
         "broker_dispatch_lineage": _broker_dispatch_lineage_config(summary),
+        "contract_identity": _contract_identity_config(summary),
         "strategy_portfolio": {
             "required": _to_bool(summary["strategy_portfolio_required"]),
             "provided": _to_bool(summary["strategy_portfolio_provided"]),
@@ -8437,6 +9369,23 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Adapter: {_object_text(summary_row.get('adapter')).strip()}",
         f"- Dispatch batch: {_object_text(summary_row.get('dispatch_batch_id')).strip()}",
         f"- Requests: {_int_value(summary_row.get('requests'))}",
+        (
+            "- Contract identity active: "
+            f"{'yes' if _to_bool(summary_row.get('send_contract_identity_active')) else 'no'}"
+        ),
+        (
+            "- Contract identity source reconstructed: "
+            f"{'yes' if _to_bool(summary_row.get('send_contract_identity_source_artifacts_consistent')) else 'no'}"
+        ),
+        (
+            "- Contract identity requests / expected acknowledgements: "
+            f"{_int_value(summary_row.get('send_contract_identity_request_orders'))} / "
+            f"{_int_value(summary_row.get('send_contract_identity_expected_ack_orders'))}"
+        ),
+        (
+            "- Contract identity gate passed: "
+            f"{'yes' if _to_bool(summary_row.get('send_contract_identity_gate_passed')) else 'no'}"
+        ),
         f"- Submission enabled: {_object_text(summary_row.get('submission_enabled')).strip()}",
         "- Broker-dispatch lineage current: "
         f"{'yes' if _to_bool(summary_row.get('broker_dispatch_lineage_gate_passed')) else 'no'}",
@@ -8573,6 +9522,111 @@ def _order_payload(order: pd.Series) -> tuple[dict[str, Any], str]:
     if not isinstance(payload, dict):
         return {}, "order_payload_json is not an object"
     return _jsonable_row(payload), ""
+
+
+def _load_upload_contract_identity(
+    dispatch_manifest_path: Path,
+) -> tuple[pd.DataFrame | None, dict[str, Any]]:
+    identity_path = _manifest_input_path(
+        dispatch_manifest_path,
+        "upload_contract_identity",
+    )
+    config_path = _manifest_input_path(dispatch_manifest_path, "upload_config")
+    manifest_path = _manifest_input_path(
+        dispatch_manifest_path,
+        "upload_manifest",
+    )
+    active = bool(identity_path or config_path or manifest_path)
+    proof_required = active
+    errors: list[str] = []
+
+    identity: pd.DataFrame | None = None
+    if identity_path is not None:
+        try:
+            identity = pd.read_csv(
+                identity_path,
+                dtype=str,
+                keep_default_na=False,
+            )
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            identity = pd.DataFrame()
+            errors.append(
+                f"contract_identity_invalid:{str(exc).strip()}"
+            )
+    elif active:
+        errors.append("contract_identity_manifest_input_missing")
+
+    upload_config: dict[str, Any] = {}
+    if config_path is not None:
+        try:
+            value = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError("upload_config_not_object")
+            upload_config = value
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"upload_config_invalid:{str(exc).strip()}")
+    elif active:
+        errors.append("upload_config_manifest_input_missing")
+
+    integrity = None
+    if identity_path is not None:
+        try:
+            integrity = verify_order_upload_pack_evidence(identity_path)
+        except (OSError, TypeError, ValueError, pd.errors.ParserError) as exc:
+            errors.append(
+                f"upload_pack_evidence_invalid:{str(exc).strip()}"
+            )
+    if manifest_path is None and active:
+        errors.append("upload_manifest_manifest_input_missing")
+    elif (
+        integrity is not None
+        and manifest_path is not None
+        and integrity.manifest_path.resolve() != manifest_path.resolve()
+    ):
+        errors.append("upload_manifest_path_mismatch")
+    if integrity is not None and integrity.consistency_error:
+        errors.append(integrity.consistency_error)
+
+    identity_sha256 = ""
+    if identity_path is not None:
+        try:
+            identity_sha256 = file_sha256(identity_path)
+        except OSError:
+            errors.append("contract_identity_sha256_unavailable")
+    return identity, {
+        "active": active,
+        "proof_required": proof_required,
+        "adapter": _object_text(upload_config.get("adapter", "")).strip(),
+        "identity_path": identity_path or "",
+        "identity_sha256": identity_sha256,
+        "config_path": config_path or "",
+        "manifest_path": manifest_path or "",
+        "manifest_sha256": (
+            integrity.manifest_sha256 if integrity is not None else ""
+        ),
+        "manifest_current": bool(
+            integrity is not None and integrity.manifest_current
+        ),
+        "artifacts_consistent": bool(
+            integrity is not None and integrity.artifacts_consistent
+        ),
+        "passed": bool(integrity is not None and integrity.passed),
+        "consistency_error": ";".join(value for value in errors if value),
+    }
+
+
+def _read_dispatch_orders(path: str | Path) -> pd.DataFrame:
+    file_path = Path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"required broker dispatch send input not found: {file_path}"
+        )
+    frame = pd.read_csv(file_path, dtype=str, keep_default_na=False)
+    if frame.empty:
+        raise ValueError(
+            "required broker dispatch send input is empty: broker_dispatch_orders"
+        )
+    return frame
 
 
 def _read_required(path: str | Path, name: str) -> pd.DataFrame:
