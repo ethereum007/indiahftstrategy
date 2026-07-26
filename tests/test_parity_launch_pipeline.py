@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.manifest import write_experiment_manifest
 from reports.parity_launch_pipeline import (
     ParityLaunchPipelineConfig,
     write_parity_launch_pipeline,
@@ -63,9 +64,25 @@ def scenario_key():
 def write_promotion(path, *, ready=True):
     path.mkdir(parents=True, exist_ok=True)
     promotion_summary(ready=ready).to_csv(path / "promotion_summary.csv", index=False)
+    pd.DataFrame(
+        [{"scenario_key": scenario_key()}]
+    ).to_csv(path / "promotion_candidate.csv", index=False)
+    pd.DataFrame(
+        [{"check": "proof", "passed": ready}]
+    ).to_csv(path / "promotion_checks.csv", index=False)
     (path / "candidate_config.json").write_text(
         json.dumps(candidate_config(ready=ready), indent=2) + "\n",
         encoding="utf-8",
+    )
+    source = path.parent / f"{path.name}_source.csv"
+    pd.DataFrame([{"proof": "current"}]).to_csv(
+        source,
+        index=False,
+    )
+    write_experiment_manifest(
+        path,
+        run_type="promotion_report",
+        inputs={"source": source},
     )
 
 
@@ -116,6 +133,18 @@ def test_write_parity_launch_pipeline_runs_full_shadow_handoff(tmp_path):
     assert report.summary.loc[0, "direction"] == "buy_synthetic_sell_future"
     assert manifest["parameters"]["strategy"] == "parity_box"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    assert bool(
+        report.summary.loc[
+            0,
+            "order_plan_promotion_manifest_current",
+        ]
+    )
+    assert manifest["extra"][
+        "order_plan_promotion_manifest_current"
+    ]
+    assert "promotion_manifest" in manifest["inputs"]
+    assert "order_plan_manifest" in manifest["inputs"]
+    assert "order_plan_dependencies" in manifest["inputs"]
     assert report.output_dir == out_dir
     assert report.broker_readiness is not None
     assert bool(broker_summary.loc[0, "runtime_session_ready"])
@@ -376,6 +405,58 @@ def test_parity_launch_pipeline_skips_downstream_when_promotion_unready(tmp_path
     assert components.loc["staged_orders", "status"] == "skipped"
     assert components.loc["upload_pack", "reason"] == "export_not_ready"
     assert components.loc["broker_readiness", "reason"] == "upload_pack_not_available"
+
+
+def test_parity_launch_pipeline_skips_drifted_promotion(
+    tmp_path,
+):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+    candidate_path = promotion_dir / "candidate_config.json"
+    candidate = json.loads(
+        candidate_path.read_text(encoding="utf-8")
+    )
+    candidate["parameters"]["call_price"] = 999.0
+    candidate_path.write_text(
+        json.dumps(candidate, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_parity_launch_pipeline(
+        promotion_dir,
+        output_dir=out_dir,
+        config=ParityLaunchPipelineConfig(
+            require_reviewed_schema=False,
+        ),
+    )
+
+    components = report.components.set_index("component")
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert not report.ready
+    assert report.order_plan.orders.empty
+    assert not bool(
+        report.summary.loc[
+            0,
+            "order_plan_promotion_manifest_current",
+        ]
+    )
+    assert (
+        report.summary.loc[
+            0,
+            "order_plan_promotion_manifest_error",
+        ]
+        == "artifact_drift"
+    )
+    assert components.loc["order_plan", "status"] == "not_ready"
+    assert components.loc["staged_orders", "status"] == "skipped"
+    assert not manifest["extra"][
+        "order_plan_promotion_manifest_current"
+    ]
 
 
 def test_cli_pipeline_parity_launch_fails_until_placeholder_schema_allowed(tmp_path):

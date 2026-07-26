@@ -10,13 +10,25 @@ import numpy as np
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    ManifestIntegrity,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 PARITY_BOX_STRATEGY = "parity_box"
 PARITY_DIRECTIONS = {"buy_synthetic_sell_future", "sell_synthetic_buy_future"}
 BOX_DIRECTIONS = {"buy_box", "sell_box"}
 SUPPORTED_DIRECTIONS = PARITY_DIRECTIONS | BOX_DIRECTIONS
+PROMOTION_RUN_TYPE = "promotion_report"
+PROMOTION_REQUIRED_ARTIFACTS = (
+    "promotion_candidate.csv",
+    "promotion_checks.csv",
+    "promotion_summary.csv",
+    "candidate_config.json",
+)
 
 
 @dataclass(frozen=True)
@@ -83,6 +95,7 @@ def build_parity_order_plan(
     candidate_config: dict[str, Any],
     *,
     config: ParityOrderPlanConfig | None = None,
+    _additional_checks: pd.DataFrame | None = None,
 ) -> ParityOrderPlanReport:
     config = config or ParityOrderPlanConfig()
     _validate_config(config)
@@ -92,6 +105,23 @@ def build_parity_order_plan(
     metrics = _dict(candidate_config.get("metrics"))
     ctx = _plan_context(promotion_summary.iloc[0], candidate_config, parameters, replay_defaults, metrics, config)
     checks = _checks(promotion_summary.iloc[0], candidate_config, ctx, config)
+    if _additional_checks is not None and not _additional_checks.empty:
+        _require(
+            _additional_checks,
+            [
+                "check",
+                "value",
+                "operator",
+                "threshold",
+                "passed",
+                "reason",
+            ],
+            "additional_checks",
+        )
+        checks = pd.concat(
+            [_additional_checks, checks],
+            ignore_index=True,
+        )
     orders = _orders(ctx, config) if bool(checks["passed"].all()) else _empty_orders()
     summary = _summary(orders, checks, ctx, config)
     return ParityOrderPlanReport(orders=orders, checks=checks, summary=summary)
@@ -111,10 +141,24 @@ def write_parity_order_plan(
     if not candidate_path.exists():
         raise FileNotFoundError(f"candidate_config.json not found: {candidate_path}")
     config = config or ParityOrderPlanConfig()
+    promotion_manifest = promotion / "manifest.json"
+    integrity = verify_experiment_manifest(
+        promotion_manifest,
+        expected_run_type=PROMOTION_RUN_TYPE,
+        required_artifacts=PROMOTION_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
     report = build_parity_order_plan(
         pd.read_csv(summary_path),
         json.loads(candidate_path.read_text(encoding="utf-8")),
         config=config,
+        _additional_checks=_promotion_manifest_check(integrity),
+    )
+    report.summary["promotion_manifest_current"] = bool(
+        integrity.passed
+    )
+    report.summary["promotion_manifest_error"] = str(
+        integrity.error
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -129,7 +173,18 @@ def write_parity_order_plan(
             "market": str(report.summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
             "config": asdict(config),
         },
-        inputs={"promotion": promotion, "summary": summary_path, "candidate_config": candidate_path},
+        inputs={
+            "promotion": promotion,
+            "promotion_manifest": promotion_manifest,
+            "promotion_dependencies": manifest_dependency_paths(
+                promotion_manifest
+            ),
+            "summary": summary_path,
+            "candidate_config": candidate_path,
+        },
+        extra={
+            "promotion_manifest_current": bool(integrity.passed),
+        },
     )
     return ParityOrderPlanReport(report.orders, report.checks, report.summary, out)
 
@@ -627,6 +682,28 @@ def _check(
         "passed": bool(passed),
         "reason": "" if passed else reason,
     }
+
+
+def _promotion_manifest_check(
+    integrity: ManifestIntegrity,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "check": "promotion_manifest_current",
+                "value": float(bool(integrity.passed)),
+                "operator": "is",
+                "threshold": 1.0,
+                "passed": bool(integrity.passed),
+                "reason": (
+                    ""
+                    if integrity.passed
+                    else "parity/box promotion manifest failed: "
+                    f"{integrity.error or 'verification_failed'}"
+                ),
+            }
+        ]
+    )
 
 
 def _validate_config(config: ParityOrderPlanConfig) -> None:

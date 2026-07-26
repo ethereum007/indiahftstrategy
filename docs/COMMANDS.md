@@ -1370,6 +1370,11 @@ For boxes, use `--direction buy_box` or `--direction sell_box` with
 `--low-strike`, `--high-strike`, `--low-call-price`, `--low-put-price`,
 `--high-call-price`, and `--high-put-price`.
 
+The file-backed order-plan command verifies the complete promotion manifest
+and recursively fingerprints its declared dependencies. A missing, stale, or
+drifted promotion package fails `promotion_manifest_current` and produces no
+order candidates.
+
 Outputs:
 
 ```text
@@ -1404,6 +1409,11 @@ python -m hft_cli pipeline-parity-launch `
   --allow-placeholder-schema `
   --fail-on-breach
 ```
+
+The pipeline carries the verified promotion and order-plan manifests into its
+own lineage and exposes `order_plan_promotion_manifest_current` in the summary.
+For a promoted box candidate, use `--max-orders 4`; the launch bundle retains
+one shared `MULTI_LEG_TEMPLATE` lifecycle ID and a four-message package count.
 
 Outputs:
 

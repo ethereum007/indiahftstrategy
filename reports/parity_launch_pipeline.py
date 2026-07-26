@@ -19,7 +19,10 @@ from adapters.order_upload_pack import (
 from adapters.orders import OrderStagingLimits, OrderStagingReport, write_staged_orders
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.launch import LaunchBundleReport, LaunchThresholds, write_launch_bundle
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    manifest_dependency_paths,
+    write_experiment_manifest,
+)
 from reports.parity_order_plan import (
     PARITY_BOX_STRATEGY,
     ParityOrderPlanConfig,
@@ -247,6 +250,7 @@ def write_parity_launch_pipeline(
     summary = _summary(component_frame, config, order_plan=order_plan, broker_readiness=broker_readiness)
     component_frame.to_csv(out / "parity_launch_pipeline_components.csv", index=False)
     summary.to_csv(out / "parity_launch_pipeline_summary.csv", index=False)
+    order_plan_manifest = order_plan_dir / "manifest.json"
     write_experiment_manifest(
         out,
         run_type="parity_launch_pipeline",
@@ -255,7 +259,22 @@ def write_parity_launch_pipeline(
             "market": str(summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
             "config": asdict(config),
         },
-        inputs={"promotion": promotion},
+        inputs={
+            "promotion": promotion,
+            "promotion_manifest": promotion / "manifest.json",
+            "order_plan_manifest": order_plan_manifest,
+            "order_plan_dependencies": manifest_dependency_paths(
+                order_plan_manifest
+            ),
+        },
+        extra={
+            "order_plan_promotion_manifest_current": bool(
+                summary.iloc[0].get(
+                    "order_plan_promotion_manifest_current",
+                    False,
+                )
+            ),
+        },
     )
     return ParityLaunchPipelineReport(
         order_plan,
@@ -334,6 +353,15 @@ def _summary(
                 "ready_components": int(components["ready"].astype(bool).sum()) if not components.empty else 0,
                 "failed_components": failed,
                 "skipped_components": skipped,
+                "order_plan_promotion_manifest_current": bool(
+                    order_row.get(
+                        "promotion_manifest_current",
+                        False,
+                    )
+                ),
+                "order_plan_promotion_manifest_error": str(
+                    order_row.get("promotion_manifest_error", "")
+                ),
                 **_broker_readiness_summary_fields(broker_readiness),
                 "recommendation": "paper_or_shadow_handoff" if ready else "keep_in_research",
             }

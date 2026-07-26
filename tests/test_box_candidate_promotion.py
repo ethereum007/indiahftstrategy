@@ -10,6 +10,10 @@ from reports.parity_candidate_promotion import (
     write_parity_candidate_promotion,
 )
 from reports.parity_edge import write_parity_edge_audit
+from reports.parity_launch_pipeline import (
+    ParityLaunchPipelineConfig,
+    write_parity_launch_pipeline,
+)
 from reports.parity_order_plan import (
     ParityOrderPlanConfig,
     build_parity_order_plan,
@@ -229,6 +233,73 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
         require_input_fingerprints=True,
     )
     assert integrity.passed, integrity.error
+
+    launch_dir = tmp_path / "launch"
+    launch = write_parity_launch_pipeline(
+        promotion_dir,
+        output_dir=launch_dir,
+        config=ParityLaunchPipelineConfig(
+            adapter="arrow_money",
+            mode="shadow",
+            route_tag="box_shadow",
+            require_reviewed_schema=False,
+            max_order_qty=75,
+            max_notional=1_000_000,
+            max_orders=4,
+        ),
+    )
+    assert launch.ready
+    assert launch.summary.iloc[0]["leg_family"] == "box"
+    assert bool(
+        launch.summary.iloc[0][
+            "order_plan_promotion_manifest_current"
+        ]
+    )
+    assert launch.order_plan is not None
+    assert int(
+        launch.order_plan.summary.iloc[0]["orders"]
+    ) == 4
+    assert launch.staging is not None
+    assert int(
+        launch.staging.summary.iloc[0]["accepted_orders"]
+    ) == 4
+    assert launch.launch is not None
+    assert len(launch.launch.launch_orders) == 4
+    assert set(
+        launch.launch.launch_orders["lifecycle_action"]
+    ) == {"MULTI_LEG_TEMPLATE"}
+    assert (
+        launch.launch.launch_orders[
+            "lifecycle_action_id"
+        ].nunique()
+        == 1
+    )
+    assert set(
+        launch.launch.launch_orders[
+            "lifecycle_message_count"
+        ]
+    ) == {4}
+    launch_manifest = json.loads(
+        (launch_dir / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert launch_manifest["extra"][
+        "order_plan_promotion_manifest_current"
+    ]
+    assert "promotion_manifest" in launch_manifest["inputs"]
+    assert "order_plan_manifest" in launch_manifest["inputs"]
+    assert "order_plan_dependencies" in launch_manifest["inputs"]
+    launch_integrity = verify_experiment_manifest(
+        launch_dir / "manifest.json",
+        expected_run_type="parity_launch_pipeline",
+        required_artifacts=(
+            "parity_launch_pipeline_components.csv",
+            "parity_launch_pipeline_summary.csv",
+        ),
+        require_input_fingerprints=True,
+    )
+    assert launch_integrity.passed, launch_integrity.error
 
 
 def test_box_promotion_rejects_refingerprinted_incomplete_package(

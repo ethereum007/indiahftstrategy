@@ -58,17 +58,22 @@
   verifies its replay manifest, source/parameter continuity, and raw
   sweep-row economics/count reconciliation, and requires the exact scanned
   opportunity to appear once in replay signals, pass the guard at full scanned
-  quantity, fill all three legs, and retain positive realized edge. Candidate
-  and replay SHA-256 identities, signal index, guard attempts, and realized
-  outcome stay attached to downstream evidence. Four-leg boxes remain
-  research-only until the replay layer can prove the same candidate-level
-  execution lineage.
+  quantity, fill every leg, and retain positive realized edge. Parity sweeps
+  bind three-leg replays; box sweeps independently reconstruct latency-seed
+  robustness and bind exact four-leg replays, including fair-box assumptions
+  and complete-package realized economics. Candidate and replay SHA-256
+  identities, signal index, guard attempts, and realized outcome stay attached
+  to downstream evidence.
 - Parity/box order-plan bridge converts promoted candidates into grouped
   broker-neutral multi-leg paper/shadow templates for synthetic/future and box
-  directions, with quantity, price, notional, and strike/expiry gates.
+  directions, with quantity, price, notional, and strike/expiry gates. The
+  file-backed handoff now verifies the complete promotion manifest and its
+  recursive dependencies before emitting any order candidates.
 - Parity/box launch pipeline runs promoted candidates through order planning,
   staging, launch bundle creation, broker export, upload pack, and broker
-  readiness review for Arrow.money/iRage-style paper or shadow handoff.
+  readiness review for Arrow.money/iRage-style paper or shadow handoff. Its
+  summary and manifest carry the order plan's promotion-integrity result, and a
+  proven four-leg box can complete the same shadow-package path.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,

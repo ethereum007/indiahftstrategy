@@ -4,6 +4,7 @@ import pandas as pd
 
 from adapters.orders import OrderStagingLimits, stage_orders
 from hft_cli import main
+from reports.manifest import write_experiment_manifest
 from reports.parity_order_plan import (
     ParityOrderPlanConfig,
     build_parity_order_plan,
@@ -73,10 +74,27 @@ def scenario_key():
 
 def write_promotion(path, *, ready=True, config=None):
     path.mkdir(parents=True, exist_ok=True)
+    candidate = config or candidate_config(ready=ready)
     promotion_summary(ready=ready).to_csv(path / "promotion_summary.csv", index=False)
+    pd.DataFrame(
+        [{"scenario_key": candidate["scenario_key"]}]
+    ).to_csv(path / "promotion_candidate.csv", index=False)
+    pd.DataFrame(
+        [{"check": "proof", "passed": ready}]
+    ).to_csv(path / "promotion_checks.csv", index=False)
     (path / "candidate_config.json").write_text(
-        json.dumps(config or candidate_config(ready=ready), indent=2) + "\n",
+        json.dumps(candidate, indent=2) + "\n",
         encoding="utf-8",
+    )
+    source = path.parent / f"{path.name}_source.csv"
+    pd.DataFrame([{"proof": "current"}]).to_csv(
+        source,
+        index=False,
+    )
+    write_experiment_manifest(
+        path,
+        run_type="promotion_report",
+        inputs={"source": source},
     )
 
 
@@ -141,6 +159,10 @@ def test_write_parity_order_plan_outputs_files_and_manifest(tmp_path):
     assert manifest["run_type"] == "parity_order_plan"
     assert manifest["parameters"]["strategy"] == "parity_box"
     assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.loc[0, "promotion_manifest_current"])
+    assert manifest["extra"]["promotion_manifest_current"]
+    assert "promotion_manifest" in manifest["inputs"]
+    assert "promotion_dependencies" in manifest["inputs"]
     assert (out_dir / "parity_order_candidates.csv").exists()
     assert (out_dir / "parity_order_checks.csv").exists()
     assert (out_dir / "parity_order_summary.csv").exists()
@@ -185,3 +207,46 @@ def test_cli_plan_parity_orders_fails_closed_for_unready_promotion(tmp_path):
     assert not bool(summary.loc[0, "ready"])
     assert orders.empty
     assert {"promotion_ready", "candidate_config_ready"}.issubset(set(checks["check"]))
+
+
+def test_write_parity_order_plan_rejects_drifted_promotion(
+    tmp_path,
+):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "orders"
+    write_promotion(promotion_dir)
+    candidate_path = promotion_dir / "candidate_config.json"
+    candidate = json.loads(
+        candidate_path.read_text(encoding="utf-8")
+    )
+    candidate["parameters"]["call_price"] = 999.0
+    candidate_path.write_text(
+        json.dumps(candidate, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_parity_order_plan(
+        promotion_dir,
+        output_dir=out_dir,
+        config=ParityOrderPlanConfig(
+            max_order_qty=75,
+            max_notional=2_000_000,
+        ),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert report.orders.empty
+    assert failed == {"promotion_manifest_current"}
+    assert not bool(
+        report.summary.loc[0, "promotion_manifest_current"]
+    )
+    assert (
+        report.summary.loc[0, "promotion_manifest_error"]
+        == "artifact_drift"
+    )
