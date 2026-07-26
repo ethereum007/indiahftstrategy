@@ -57,6 +57,7 @@ def run_scan(
     asof_latency_ns: int = 0,
     tolerance_ns: Optional[int] = 1_000_000,
     depth_fraction: float = 0.25,
+    fair_value_adjustment: float = 0.0,
 ) -> ParityBoxRunResult:
     chain = load_option_chain_csv(
         chain_path,
@@ -98,6 +99,7 @@ def run_scan(
         option_instrument=option,
         option_costs=costs.option,
         depth_fraction=depth_fraction,
+        fair_value_adjustment=fair_value_adjustment,
     )
     combined = pd.concat(
         [
@@ -138,6 +140,9 @@ def run_scan(
                 "asof_latency_ns": asof_latency_ns,
                 "max_futures_quote_age_ns": tolerance_ns,
                 "depth_fraction": depth_fraction,
+                "fair_value_adjustment": (
+                    fair_value_adjustment
+                ),
             },
         )
     return ParityBoxRunResult(
@@ -170,6 +175,11 @@ def main(argv: list[str] | None = None) -> int:
         default=1_000_000,
     )
     parser.add_argument("--depth-fraction", type=float, default=0.25)
+    parser.add_argument(
+        "--fair-value-adjustment",
+        type=float,
+        default=0.0,
+    )
     args = parser.parse_args(argv)
 
     result = run_scan(
@@ -186,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
         asof_latency_ns=args.asof_latency_ns,
         tolerance_ns=args.tolerance_ns,
         depth_fraction=args.depth_fraction,
+        fair_value_adjustment=args.fair_value_adjustment,
     )
     print(result.report.to_string(index=False))
     return 0

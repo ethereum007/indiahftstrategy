@@ -681,6 +681,11 @@ def main(argv: list[str] | None = None) -> int:
         default=1_000_000,
     )
     scan.add_argument("--depth-fraction", type=float, default=0.25)
+    scan.add_argument(
+        "--fair-value-adjustment",
+        type=float,
+        default=0.0,
+    )
 
     parity_edge = sub.add_parser("audit-parity-edge", help="Gate parity/box scan opportunities before replay.")
     parity_edge.add_argument("--scan", required=True)
@@ -4294,7 +4299,10 @@ def main(argv: list[str] | None = None) -> int:
 
     parity_promotion = sub.add_parser(
         "promote-parity-candidate",
-        help="Promote passed parity scan/audit/sweep evidence into a launch-compatible candidate.",
+        help=(
+            "Promote passed parity/box scan, audit, and sweep evidence "
+            "into a launch-compatible candidate."
+        ),
     )
     parity_promotion.add_argument("--scan", required=True)
     parity_promotion.add_argument("--edge-audit", required=True)
@@ -5569,6 +5577,7 @@ def main(argv: list[str] | None = None) -> int:
             asof_latency_ns=args.asof_latency_ns,
             tolerance_ns=args.max_futures_quote_age_ns,
             depth_fraction=args.depth_fraction,
+            fair_value_adjustment=args.fair_value_adjustment,
         )
         print(result.report.to_string(index=False))
         return 0

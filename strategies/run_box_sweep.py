@@ -204,6 +204,7 @@ def run_box_sweep(
         inputs={"chain": chain_path},
         parameters={
             "market": INDIA_NSE_INDEX_DERIVATIVES.name,
+            "chain_column_map": None,
             "depth_fraction_values": depth_fraction_values,
             "fair_value_adjustment_values": (
                 fair_value_adjustment_values

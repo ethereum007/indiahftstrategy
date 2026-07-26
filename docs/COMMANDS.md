@@ -818,7 +818,9 @@ python -m hft_cli scan-parity-box `
   --chain data\chain.csv `
   --futures data\futures.csv `
   --out runs\scan_2026_06_10 `
-  --max-futures-quote-age-ns 1000000
+  --max-futures-quote-age-ns 1000000 `
+  --depth-fraction 0.25 `
+  --fair-value-adjustment 0
 ```
 
 Outputs:
@@ -1296,41 +1298,35 @@ selected run without depending on the caller's working directory.
 ## Parity / Box Candidate Promotion
 
 Promote a passed parity/box scan, edge audit, and replay sweep into the
-launch-compatible `promotion_report` shape. This bridge preserves the selected
-opportunity's executable leg prices so `plan-parity-orders` can generate the
-multi-leg order template without manually re-entering prices. It also binds
-the selected futures quote-age limit, three-leg book-age/skew limits, and the
-opportunity's observed as-of and decision ages into `candidate_config.json`,
-preventing a later handoff from silently relaxing the researched freshness
-assumption. Promotion verifies all scan, edge, and sweep manifests, proves the
-edge audit is bound to the exact supplied scan manifest, requires the scan and
-sweep to fingerprint identical chain/futures content, and selects only a sweep
-group matching the scan's depth and as-of latency. Market, column-map,
-timestamp/session, lot-size, and tick-size assumptions must match, as must the
-selected futures quote-age ceiling. The selected worst-seed replay must itself
-have a current `parity_replay` manifest, live at
-`<sweep>/runs/<selected-run>`, and contain exactly one full-field match for the
-promoted opportunity in `signals.csv`. Its chain/futures fingerprints and
-normalization, instrument, latency, freshness, risk, and signal-limit parameters
-must match the sweep contract and selected run. The selected sweep row's
-PnL, fills, drawdown, signal count, execution count, and partial count must also
-reproduce the nested replay. That signal must pass the execution guard at its
-scanned quantity, map to exactly one completely filled legging record, and
-retain positive realized edge. The opportunity SHA-256, replay manifest
-SHA-256, signal index, guard attempts, and realized result are carried into the
-promotion artifacts and manifest.
+launch-compatible `promotion_report` shape. The command auto-detects a
+`parity_sweep` or `box_sweep`, selects an opportunity from that leg family, and
+preserves its executable prices so `plan-parity-orders` can generate the
+multi-leg order template without manual re-entry.
 
-The standalone `box_replay` now provides four-leg candidate-level execution
-evidence. The current sweep and promotion bridge still select nested
-three-leg `parity_replay` runs, however. If a box is the highest-ranked scan
-opportunity, promotion therefore stays research-only until a box robustness
-sweep binds one exact box replay into the candidate lineage:
+For parity, promotion binds identical chain/futures fingerprints, depth and
+as-of latency, the selected futures quote-age limit, three-leg book-age/skew
+limits, and the exact nested `parity_replay`. For boxes, it binds the chain
+fingerprint, depth and fair-value adjustment, four-leg book-age/skew limits,
+and the exact nested `box_replay`. Common market, normalization, column-map,
+timestamp/session, lot-size, tick-size, latency, risk, and signal-limit
+assumptions must match across the supplied evidence.
+
+Promotion independently reconstructs each latency-seed group from raw
+`sweep_runs.csv`, selects the strongest worst-seed group, and verifies its
+reported aggregate. The selected replay must have a current manifest at
+`<sweep>/runs/<selected-run>` and contain exactly one full-field match for the
+promoted opportunity in `signals.csv`. Its result must reproduce the selected
+sweep row, pass the execution guard at the scanned quantity, map to one
+complete three- or four-leg execution, and retain positive realized edge. The
+opportunity SHA-256, replay manifest SHA-256, signal index, guard attempts,
+realized result, and detected sweep family are carried into the promotion
+artifacts and manifest.
 
 ```powershell
 python -m hft_cli promote-parity-candidate `
   --scan runs\scan_2026_06_10 `
   --edge-audit runs\parity_edge\2026_06_10 `
-  --sweep runs\parity_sweep_2026_06_10 `
+  --sweep runs\box_sweep_2026_06_10 `
   --out runs\promotion\parity_box `
   --min-candidate-net-edge 100 `
   --min-passed-scenarios 1 `

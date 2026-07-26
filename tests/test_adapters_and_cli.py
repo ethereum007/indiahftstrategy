@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from adapters.broker import (
@@ -126,6 +128,8 @@ def test_unified_cli_scan_parity_box_dispatch(tmp_path):
             str(out_dir),
             "--max-futures-quote-age-ns",
             "0",
+            "--fair-value-adjustment",
+            "0.5",
         ]
     )
 
@@ -133,3 +137,7 @@ def test_unified_cli_scan_parity_box_dispatch(tmp_path):
     assert (out_dir / "parity_opportunities.csv").exists()
     assert (out_dir / "opportunity_report.csv").exists()
     assert (out_dir / "parity_futures_join_audit.csv").exists()
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["parameters"]["fair_value_adjustment"] == 0.5

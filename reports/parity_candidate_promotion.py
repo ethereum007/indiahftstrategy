@@ -22,10 +22,22 @@ from reports.parity_edge import (
     PARITY_EDGE_REQUIRED_ARTIFACTS,
     PARITY_EDGE_RUN_TYPE,
 )
-from reports.parity_order_plan import PARITY_BOX_STRATEGY, BOX_DIRECTIONS, PARITY_DIRECTIONS
+from reports.parity_order_plan import (
+    BOX_DIRECTIONS,
+    PARITY_BOX_STRATEGY,
+    PARITY_DIRECTIONS,
+)
 from scanners.run_parity_box import (
     PARITY_SCAN_REQUIRED_ARTIFACTS,
     PARITY_SCAN_RUN_TYPE,
+)
+from strategies.run_box_replay import (
+    BOX_REPLAY_REQUIRED_ARTIFACTS,
+    BOX_REPLAY_RUN_TYPE,
+)
+from strategies.run_box_sweep import (
+    BOX_SWEEP_REQUIRED_ARTIFACTS,
+    BOX_SWEEP_RUN_TYPE,
 )
 from strategies.run_parity_replay import (
     PARITY_REPLAY_REQUIRED_ARTIFACTS,
@@ -79,6 +91,47 @@ LATENCY_SEED_PROMOTION_METRICS = (
     "latency_seed_best_net_pnl",
     "latency_seed_min_fills",
     "latency_seed_worst_drawdown",
+    "latency_seed_bound_violations",
+)
+
+BOX_LATENCY_SEED_ROBUSTNESS_COLUMNS = (
+    "latency_seed_group",
+    "depth_fraction",
+    "fair_value_adjustment",
+    "feed_latency_us",
+    "order_latency_us",
+    "latency_jitter_us",
+    "latency_seed_values",
+    "latency_seed_runs",
+    "latency_seed_expected_runs",
+    "latency_seed_count",
+    "latency_seed_passed_runs",
+    "latency_seed_pass_rate",
+    "latency_seed_group_passed",
+    "latency_seed_worst_run",
+    "latency_seed_worst_seed",
+    "latency_seed_worst_robust_score",
+    "latency_seed_worst_total_realized_net_edge",
+    "latency_seed_worst_min_realized_net_edge",
+    "latency_seed_max_incomplete_executions",
+    "latency_seed_bound_violations",
+)
+
+BOX_LATENCY_SEED_PROMOTION_METRICS = (
+    "latency_seed_group",
+    "latency_seed_values",
+    "latency_seed_runs",
+    "latency_seed_expected_runs",
+    "latency_seed_count",
+    "latency_seed_passed_runs",
+    "latency_seed_pass_rate",
+    "latency_seed_group_passed",
+    "latency_seed_worst_run",
+    "latency_seed_worst_seed",
+    "latency_seed_worst_robust_score",
+    "latency_seed_worst_total_realized_net_edge",
+    "latency_seed_worst_min_realized_net_edge",
+    "latency_seed_max_incomplete_executions",
     "latency_seed_bound_violations",
 )
 
@@ -162,6 +215,7 @@ def evaluate_parity_candidate_promotion(
     *,
     latency_seed_robustness: pd.DataFrame | None = None,
     sweep_run_constraints: Mapping[str, Any] | None = None,
+    sweep_leg_family: str | None = None,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     thresholds: ParityCandidatePromotionThresholds | None = None,
 ) -> ParityCandidatePromotionReport:
@@ -177,20 +231,29 @@ def evaluate_parity_candidate_promotion(
         else latency_seed_robustness.copy()
     )
     if seed_robustness_enabled and not latency_seed_robustness.empty:
+        robustness_columns = (
+            BOX_LATENCY_SEED_ROBUSTNESS_COLUMNS
+            if sweep_leg_family == "box"
+            else LATENCY_SEED_ROBUSTNESS_COLUMNS
+        )
         _require(
             latency_seed_robustness,
-            list(LATENCY_SEED_ROBUSTNESS_COLUMNS),
+            list(robustness_columns),
             "latency_seed_robustness",
         )
 
     opportunities = _combined_opportunities(parity_opportunities, box_opportunities)
-    candidate_row = _select_candidate(opportunities)
+    candidate_row = _select_candidate(
+        opportunities,
+        leg_family=sweep_leg_family,
+    )
     sweep_row = _select_sweep_run(
         sweep_summary.iloc[0],
         sweep_runs,
         latency_seed_robustness=latency_seed_robustness,
         seed_robustness_enabled=seed_robustness_enabled,
         constraints=sweep_run_constraints,
+        leg_family=sweep_leg_family or "parity",
     )
     checks = _checks(
         edge_summary.iloc[0],
@@ -238,6 +301,25 @@ def write_parity_candidate_promotion(
             raise FileNotFoundError(f"required parity promotion input missing: {path}")
 
     thresholds = thresholds or ParityCandidatePromotionThresholds()
+    sweep_manifest = _read_manifest(sweep_manifest_path)
+    sweep_run_type = str(
+        sweep_manifest.get("run_type", "")
+    ).strip()
+    sweep_leg_family = (
+        "box"
+        if sweep_run_type == BOX_SWEEP_RUN_TYPE
+        else "parity"
+    )
+    expected_sweep_run_type = (
+        BOX_SWEEP_RUN_TYPE
+        if sweep_leg_family == "box"
+        else PARITY_SWEEP_RUN_TYPE
+    )
+    required_sweep_artifacts = (
+        BOX_SWEEP_REQUIRED_ARTIFACTS
+        if sweep_leg_family == "box"
+        else PARITY_SWEEP_REQUIRED_ARTIFACTS
+    )
     scan_integrity = verify_experiment_manifest(
         scan_manifest_path,
         expected_run_type=PARITY_SCAN_RUN_TYPE,
@@ -252,13 +334,12 @@ def write_parity_candidate_promotion(
     )
     sweep_integrity = verify_experiment_manifest(
         sweep_manifest_path,
-        expected_run_type=PARITY_SWEEP_RUN_TYPE,
-        required_artifacts=PARITY_SWEEP_REQUIRED_ARTIFACTS,
+        expected_run_type=expected_sweep_run_type,
+        required_artifacts=required_sweep_artifacts,
         require_input_fingerprints=True,
     )
     scan_manifest = _read_manifest(scan_manifest_path)
     edge_manifest = _read_manifest(edge_manifest_path)
-    sweep_manifest = _read_manifest(sweep_manifest_path)
     base_report = evaluate_parity_candidate_promotion(
         pd.read_csv(parity_path),
         pd.read_csv(box_path),
@@ -271,8 +352,10 @@ def write_parity_candidate_promotion(
             else None
         ),
         sweep_run_constraints=_scan_sweep_constraints(
-            scan_manifest
+            scan_manifest,
+            leg_family=sweep_leg_family,
         ),
+        sweep_leg_family=sweep_leg_family,
         market=market,
         thresholds=thresholds,
     )
@@ -287,12 +370,14 @@ def write_parity_candidate_promotion(
         edge_integrity=edge_integrity,
         sweep_integrity=sweep_integrity,
         candidate=base_report.candidate,
+        leg_family=sweep_leg_family,
     )
     replay_checks, replay_evidence, replay_inputs = (
         _selected_replay_evidence(
             sweep,
             base_report.candidate,
             sweep_manifest=sweep_manifest,
+            leg_family=sweep_leg_family,
         )
     )
     checks = pd.concat(
@@ -378,7 +463,17 @@ def write_parity_candidate_promotion(
         },
         inputs=manifest_inputs,
         extra={
-            "promotion_source": "parity_scan_edge_sweep",
+            "promotion_source": (
+                "parity_scan_edge_box_sweep"
+                if sweep_leg_family == "box"
+                else "parity_scan_edge_sweep"
+            ),
+            "sweep_leg_family": sweep_leg_family,
+            "selected_replay_run_type": (
+                BOX_REPLAY_RUN_TYPE
+                if sweep_leg_family == "box"
+                else PARITY_REPLAY_RUN_TYPE
+            ),
             "scan_manifest_current": bool(
                 scan_integrity.passed
             ),
@@ -494,6 +589,7 @@ def _selected_replay_evidence(
     candidate: pd.DataFrame,
     *,
     sweep_manifest: Mapping[str, Any],
+    leg_family: str,
 ) -> tuple[pd.DataFrame, dict[str, Any], dict[str, Any]]:
     row = (
         candidate.iloc[0]
@@ -508,10 +604,26 @@ def _selected_replay_evidence(
         declared_run_dir=declared_run_dir,
     )
     manifest_path = replay_dir / "manifest.json"
+    replay_run_type = (
+        BOX_REPLAY_RUN_TYPE
+        if leg_family == "box"
+        else PARITY_REPLAY_RUN_TYPE
+    )
+    replay_required_artifacts = (
+        BOX_REPLAY_REQUIRED_ARTIFACTS
+        if leg_family == "box"
+        else PARITY_REPLAY_REQUIRED_ARTIFACTS
+    )
+    guard_filename = (
+        "box_execution_guard.csv"
+        if leg_family == "box"
+        else "parity_execution_guard.csv"
+    )
+    expected_leg_count = 4 if leg_family == "box" else 3
     integrity = verify_experiment_manifest(
         manifest_path,
-        expected_run_type=PARITY_REPLAY_RUN_TYPE,
-        required_artifacts=PARITY_REPLAY_REQUIRED_ARTIFACTS,
+        expected_run_type=replay_run_type,
+        required_artifacts=replay_required_artifacts,
         require_input_fingerprints=True,
     )
     manifest_current = bool(
@@ -521,11 +633,13 @@ def _selected_replay_evidence(
     source_match = _selected_replay_source_match(
         replay_manifest,
         sweep_manifest,
+        leg_family=leg_family,
     )
     parameters_match = _selected_replay_parameters_match(
         replay_manifest,
         sweep_manifest,
         row,
+        leg_family=leg_family,
     )
 
     signals = (
@@ -535,7 +649,7 @@ def _selected_replay_evidence(
     )
     guard = (
         _read_csv_or_empty(
-            replay_dir / "parity_execution_guard.csv"
+            replay_dir / guard_filename
         )
         if run_dir_bound
         else pd.DataFrame()
@@ -708,7 +822,7 @@ def _selected_replay_evidence(
                     "candidate_replay_execution_complete"
                 ],
                 "selected opportunity did not route and fill all "
-                "three legs in the worst-seed replay",
+                f"{expected_leg_count} legs in the worst-seed replay",
             ),
             _check(
                 "candidate_replay_realized_edge_positive",
@@ -737,7 +851,7 @@ def _selected_replay_evidence(
             ("selected_replay_signals", replay_dir / "signals.csv"),
             (
                 "selected_replay_execution_guard",
-                replay_dir / "parity_execution_guard.csv",
+                replay_dir / guard_filename,
             ),
             (
                 "selected_replay_legging",
@@ -800,6 +914,8 @@ def _bound_replay_dir(
 def _selected_replay_source_match(
     replay_manifest: Mapping[str, Any],
     sweep_manifest: Mapping[str, Any],
+    *,
+    leg_family: str,
 ) -> bool:
     replay_chain = _manifest_input_signature(
         replay_manifest,
@@ -817,9 +933,14 @@ def _selected_replay_source_match(
         sweep_manifest,
         "futures",
     )
-    return bool(
+    chain_matches = bool(
         replay_chain is not None
         and replay_chain == sweep_chain
+    )
+    if leg_family == "box":
+        return chain_matches
+    return bool(
+        chain_matches
         and replay_futures is not None
         and replay_futures == sweep_futures
     )
@@ -829,6 +950,8 @@ def _selected_replay_parameters_match(
     replay_manifest: Mapping[str, Any],
     sweep_manifest: Mapping[str, Any],
     candidate: pd.Series,
+    *,
+    leg_family: str,
 ) -> bool:
     if candidate.empty:
         return False
@@ -846,7 +969,6 @@ def _selected_replay_parameters_match(
         "filter_session",
         "lot_size",
         "option_tick",
-        "future_tick",
         "max_signal_age_ns",
         "max_qty",
         "max_position_lots",
@@ -854,11 +976,6 @@ def _selected_replay_parameters_match(
     ]
     selected_parameters = [
         ("depth_fraction", "depth_fraction"),
-        ("asof_latency_ns", "asof_latency_ns"),
-        (
-            "max_futures_quote_age_ns",
-            "max_futures_quote_age_ns",
-        ),
         ("feed_latency_us", "feed_latency_us"),
         ("order_latency_us", "order_latency_us"),
         ("latency_jitter_us", "latency_jitter_us"),
@@ -872,6 +989,24 @@ def _selected_replay_parameters_match(
             "max_leg_book_skew_ns",
         ),
     ]
+    if leg_family == "box":
+        selected_parameters.append(
+            (
+                "fair_value_adjustment",
+                "fair_value_adjustment",
+            )
+        )
+    else:
+        shared_parameters.append("future_tick")
+        selected_parameters.extend(
+            [
+                ("asof_latency_ns", "asof_latency_ns"),
+                (
+                    "max_futures_quote_age_ns",
+                    "max_futures_quote_age_ns",
+                ),
+            ]
+        )
     return bool(
         all(
             name in replay
@@ -979,13 +1114,16 @@ def _candidate_signal_matches(
     signals: pd.DataFrame,
     candidate: pd.Series,
 ) -> tuple[int, int]:
+    if signals.empty or candidate.empty or "ts" not in signals.columns:
+        return 0, -1
+    leg_family = str(candidate.get("leg_family", ""))
+    direction = str(candidate.get("direction", ""))
     if (
-        signals.empty
-        or candidate.empty
-        or str(candidate.get("direction", ""))
-        not in PARITY_DIRECTIONS
-        or str(candidate.get("leg_family", "")) != "parity"
-        or "ts" not in signals.columns
+        leg_family == "box"
+        and direction not in BOX_DIRECTIONS
+    ) or (
+        leg_family == "parity"
+        and direction not in PARITY_DIRECTIONS
     ):
         return 0, -1
     ordered = signals.sort_values(
@@ -999,36 +1137,67 @@ def _candidate_signal_matches(
             column,
             candidate.get(column),
         )
-    for column in (
+    common_integer_columns = [
         "ts",
         "qty",
         "displayed_depth",
-        "future_ts",
-        "futures_lookup_ts",
-        "future_asof_age_ns",
-        "future_decision_age_ns",
         "persistence_ticks",
-    ):
+    ]
+    for column in common_integer_columns:
         mask &= _integer_match(
             ordered,
             column,
             candidate.get(column),
         )
-    for column in (
-        "strike",
+    common_number_columns = [
         "edge_per_unit",
         "gross_edge",
         "total_cost",
         "net_edge",
-        "call_price",
-        "put_price",
-        "future_price",
-    ):
+    ]
+    for column in common_number_columns:
         mask &= _number_match(
             ordered,
             column,
             candidate.get(column),
         )
+    if leg_family == "box":
+        for column in (
+            "low_strike",
+            "high_strike",
+            "low_call_price",
+            "low_put_price",
+            "high_call_price",
+            "high_put_price",
+        ):
+            mask &= _number_match(
+                ordered,
+                column,
+                candidate.get(column),
+            )
+    else:
+        for column in (
+            "future_ts",
+            "futures_lookup_ts",
+            "future_asof_age_ns",
+            "future_decision_age_ns",
+        ):
+            mask &= _integer_match(
+                ordered,
+                column,
+                candidate.get(column),
+            )
+        for column in (
+            "strike",
+            "call_price",
+            "put_price",
+            "future_price",
+        ):
+            mask &= _number_match(
+                ordered,
+                column,
+                candidate.get(column),
+            )
     matched = ordered.loc[mask]
     if len(matched) != 1:
         return int(len(matched)), -1
@@ -1058,11 +1227,19 @@ def _candidate_guard_evidence(
         "signal_ts_ns",
         candidate.get("ts"),
     )
-    mask &= _number_match(
-        guard,
-        "strike",
-        candidate.get("strike"),
-    )
+    if str(candidate.get("leg_family", "")) == "box":
+        for column in ("low_strike", "high_strike"):
+            mask &= _number_match(
+                guard,
+                column,
+                candidate.get(column),
+            )
+    else:
+        mask &= _number_match(
+            guard,
+            "strike",
+            candidate.get("strike"),
+        )
     mask &= _number_match(
         guard,
         "signal_net_edge",
@@ -1113,11 +1290,19 @@ def _candidate_execution_evidence(
         "signal_ts_ns",
         candidate.get("ts"),
     )
-    mask &= _number_match(
-        legging,
-        "strike",
-        candidate.get("strike"),
-    )
+    if str(candidate.get("leg_family", "")) == "box":
+        for column in ("low_strike", "high_strike"):
+            mask &= _number_match(
+                legging,
+                column,
+                candidate.get(column),
+            )
+    else:
+        mask &= _number_match(
+            legging,
+            "strike",
+            candidate.get("strike"),
+        )
     mask &= _integer_match(
         legging,
         "requested_qty",
@@ -1132,10 +1317,34 @@ def _candidate_execution_evidence(
             ),
         }
     execution = executions.iloc[0]
+    leg_family = str(candidate.get("leg_family", ""))
     complete = bool(
         _to_bool(execution.get("routing_complete", False))
         and _to_bool(execution.get("fills_complete", False))
     )
+    if leg_family == "box":
+        complete = bool(
+            complete
+            and not _to_bool(
+                execution.get("partial", True)
+            )
+            and _exact_integer(
+                execution.get("expected_order_count")
+            )
+            == 4
+            and _exact_integer(
+                execution.get("order_count")
+            )
+            == 4
+            and _exact_integer(
+                execution.get("fully_filled_leg_count")
+            )
+            == 4
+            and _exact_integer(
+                execution.get("unfilled_leg_count")
+            )
+            == 0
+        )
     evaluable = _to_bool(
         execution.get("realized_edge_evaluable", False)
     )
@@ -1298,6 +1507,7 @@ def _parity_lineage(
     edge_integrity: ManifestIntegrity,
     sweep_integrity: ManifestIntegrity,
     candidate: pd.DataFrame,
+    leg_family: str,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     scan_parameters = _manifest_mapping(
         scan_manifest,
@@ -1307,6 +1517,12 @@ def _parity_lineage(
         sweep_manifest,
         "parameters",
     )
+    if (
+        leg_family == "box"
+        and "fair_value_adjustment"
+        not in scan_parameters
+    ):
+        scan_parameters["fair_value_adjustment"] = 0.0
     scan_chain = _manifest_input_signature(
         scan_manifest,
         "chain",
@@ -1344,21 +1560,28 @@ def _parity_lineage(
         and sweep_integrity.passed
         and scan_chain is not None
         and scan_chain == sweep_chain
-        and scan_futures is not None
-        and scan_futures == sweep_futures
+        and (
+            leg_family == "box"
+            or (
+                scan_futures is not None
+                and scan_futures == sweep_futures
+            )
+        )
     )
 
     static_parameter_names = [
         "market",
         "chain_column_map",
-        "futures_column_map",
         "timestamp_unit",
         "timestamp_tz",
         "filter_session",
         "lot_size",
         "option_tick",
-        "future_tick",
     ]
+    if leg_family == "parity":
+        static_parameter_names.extend(
+            ["futures_column_map", "future_tick"]
+        )
     static_parameters_match = bool(
         scan_integrity.passed
         and sweep_integrity.passed
@@ -1379,12 +1602,24 @@ def _parity_lineage(
     selected_pairs = [
         ("market", "market"),
         ("depth_fraction", "depth_fraction"),
-        ("asof_latency_ns", "asof_latency_ns"),
-        (
-            "max_futures_quote_age_ns",
-            "max_futures_quote_age_ns",
-        ),
     ]
+    if leg_family == "box":
+        selected_pairs.append(
+            (
+                "fair_value_adjustment",
+                "fair_value_adjustment",
+            )
+        )
+    else:
+        selected_pairs.extend(
+            [
+                ("asof_latency_ns", "asof_latency_ns"),
+                (
+                    "max_futures_quote_age_ns",
+                    "max_futures_quote_age_ns",
+                ),
+            ]
+        )
     selected_scenario_match = bool(
         scan_integrity.passed
         and sweep_integrity.passed
@@ -1458,8 +1693,8 @@ def _parity_lineage(
                 "is",
                 True,
                 source_match,
-                "parity scan and sweep do not fingerprint the "
-                "same chain and futures inputs",
+                "parity/box scan and sweep do not fingerprint "
+                "the same required market-data inputs",
             ),
             _check(
                 "scan_sweep_static_parameters_match",
@@ -1467,7 +1702,7 @@ def _parity_lineage(
                 "is",
                 True,
                 static_parameters_match,
-                "parity scan and sweep normalization or "
+                "parity/box scan and sweep normalization or "
                 "instrument assumptions differ",
             ),
             _check(
@@ -1476,8 +1711,8 @@ def _parity_lineage(
                 "is",
                 True,
                 selected_scenario_match,
-                "selected parity sweep scenario does not match "
-                "the scan depth, as-of latency, quote age, or market",
+                "selected parity/box sweep scenario does not match "
+                "the scan's family-specific economic assumptions",
             ),
         ]
     )
@@ -1541,13 +1776,23 @@ def _file_sha256_or_empty(path: Path) -> str:
 
 def _scan_sweep_constraints(
     scan_manifest: Mapping[str, Any],
+    *,
+    leg_family: str,
 ) -> dict[str, Any]:
     parameters = _manifest_mapping(
         scan_manifest,
         "parameters",
     )
     constraints: dict[str, Any] = {}
-    for name in ["depth_fraction", "asof_latency_ns"]:
+    names = ["depth_fraction"]
+    if leg_family == "box":
+        constraints["fair_value_adjustment"] = _number(
+            parameters.get("fair_value_adjustment", 0.0),
+            0.0,
+        )
+    else:
+        names.append("asof_latency_ns")
+    for name in names:
         value = _number(parameters.get(name), np.nan)
         if np.isfinite(value):
             constraints[name] = value
@@ -1595,10 +1840,34 @@ def _combined_opportunities(parity: pd.DataFrame, boxes: pd.DataFrame) -> pd.Dat
     return combined
 
 
-def _select_candidate(opportunities: pd.DataFrame) -> pd.Series | None:
+def _select_candidate(
+    opportunities: pd.DataFrame,
+    *,
+    leg_family: str | None = None,
+) -> pd.Series | None:
     if opportunities.empty:
         return None
     work = opportunities.copy()
+    if leg_family in {"parity", "box"}:
+        scanner = work.get(
+            "scanner",
+            pd.Series("", index=work.index),
+        ).astype(str)
+        directions = work.get(
+            "direction",
+            pd.Series("", index=work.index),
+        ).astype(str)
+        family_mask = (
+            scanner.eq("box")
+            | directions.isin(BOX_DIRECTIONS)
+        )
+        work = work.loc[
+            family_mask
+            if leg_family == "box"
+            else ~family_mask
+        ].copy()
+        if work.empty:
+            return None
     if "net_edge" not in work.columns:
         return None
     work["_net_edge_sort"] = pd.to_numeric(work["net_edge"], errors="coerce")
@@ -1616,6 +1885,7 @@ def _select_sweep_run(
     latency_seed_robustness: pd.DataFrame,
     seed_robustness_enabled: bool,
     constraints: Mapping[str, Any] | None,
+    leg_family: str,
 ) -> pd.Series:
     work = _constrain_sweep_rows(
         sweep_runs.copy(),
@@ -1638,7 +1908,11 @@ def _select_sweep_run(
         selected_group = passed_groups.sort_values(
             [
                 "latency_seed_worst_robust_score",
-                "latency_seed_worst_net_pnl",
+                (
+                    "latency_seed_worst_total_realized_net_edge"
+                    if leg_family == "box"
+                    else "latency_seed_worst_net_pnl"
+                ),
                 "latency_seed_group",
             ],
             ascending=[False, False, True],
@@ -1653,6 +1927,7 @@ def _select_sweep_run(
         if not _seed_group_consistent(
             group_runs,
             selected_group,
+            leg_family=leg_family,
         ):
             return pd.Series(dtype=object)
         worst_run = str(
@@ -1670,7 +1945,12 @@ def _select_sweep_run(
         if matched.empty:
             return pd.Series(dtype=object)
         selected = matched.iloc[0].copy()
-        for key in LATENCY_SEED_ROBUSTNESS_COLUMNS:
+        robustness_columns = (
+            BOX_LATENCY_SEED_ROBUSTNESS_COLUMNS
+            if leg_family == "box"
+            else LATENCY_SEED_ROBUSTNESS_COLUMNS
+        )
+        for key in robustness_columns:
             selected[key] = selected_group[key]
         return selected
     if "proof_passed" in work.columns:
@@ -1718,6 +1998,17 @@ def _constrain_sweep_rows(
 
 
 def _seed_group_consistent(
+    runs: pd.DataFrame,
+    aggregate: pd.Series,
+    *,
+    leg_family: str,
+) -> bool:
+    if leg_family == "box":
+        return _box_seed_group_consistent(runs, aggregate)
+    return _parity_seed_group_consistent(runs, aggregate)
+
+
+def _parity_seed_group_consistent(
     runs: pd.DataFrame,
     aggregate: pd.Series,
 ) -> bool:
@@ -1801,7 +2092,10 @@ def _seed_group_consistent(
     ]
     if expected_seed_runs is None or expected_seed_runs <= 0:
         return False
-    bound_violations = _raw_seed_bound_violations(runs)
+    bound_violations = _raw_seed_bound_violations(
+        runs,
+        leg_family="parity",
+    )
     if bound_violations is None:
         return False
     expected_values = {
@@ -1911,14 +2205,231 @@ def _seed_group_consistent(
     return True
 
 
+def _box_seed_group_consistent(
+    runs: pd.DataFrame,
+    aggregate: pd.Series,
+) -> bool:
+    required = [
+        "run",
+        "latency_seed_group",
+        "latency_seed",
+        "proof_passed",
+        "robust_score",
+        "net_pnl",
+        "fills",
+        "max_drawdown",
+        "depth_fraction",
+        "fair_value_adjustment",
+        "feed_latency_us",
+        "order_latency_us",
+        "latency_jitter_us",
+        "box_execution_total_realized_net_edge",
+        "box_execution_min_realized_net_edge",
+        "box_execution_incomplete_count",
+    ]
+    if (
+        runs.empty
+        or any(column not in runs.columns for column in required)
+        or runs["run"].astype(str).duplicated().any()
+    ):
+        return False
+    aggregate_group = str(
+        aggregate.get("latency_seed_group", "")
+    )
+    if (
+        not aggregate_group
+        or not runs["latency_seed_group"]
+        .astype(str)
+        .eq(aggregate_group)
+        .all()
+    ):
+        return False
+    seeds = pd.to_numeric(
+        runs["latency_seed"],
+        errors="coerce",
+    )
+    if (
+        seeds.isna().any()
+        or seeds.lt(0).any()
+        or seeds.mod(1).ne(0).any()
+    ):
+        return False
+    seed_values = sorted(seeds.astype(int).unique().tolist())
+    try:
+        declared_seed_values = sorted(
+            int(value.strip())
+            for value in str(
+                aggregate.get("latency_seed_values", "")
+            ).split(",")
+            if value.strip()
+        )
+    except ValueError:
+        return False
+    if (
+        declared_seed_values != seed_values
+        or len(declared_seed_values)
+        != len(set(declared_seed_values))
+    ):
+        return False
+
+    passed = runs["proof_passed"].map(_to_bool)
+    integer_fields = {
+        key: _exact_integer(aggregate.get(key))
+        for key in [
+            "latency_seed_runs",
+            "latency_seed_expected_runs",
+            "latency_seed_count",
+            "latency_seed_passed_runs",
+            "latency_seed_max_incomplete_executions",
+            "latency_seed_bound_violations",
+        ]
+    }
+    if any(value is None for value in integer_fields.values()):
+        return False
+    expected_seed_runs = integer_fields[
+        "latency_seed_expected_runs"
+    ]
+    if expected_seed_runs is None or expected_seed_runs <= 0:
+        return False
+    bound_violations = _raw_seed_bound_violations(
+        runs,
+        leg_family="box",
+    )
+    if bound_violations is None:
+        return False
+    incomplete = pd.to_numeric(
+        runs["box_execution_incomplete_count"],
+        errors="coerce",
+    )
+    if (
+        incomplete.isna().any()
+        or incomplete.lt(0).any()
+        or incomplete.mod(1).ne(0).any()
+    ):
+        return False
+    expected_integer_fields = {
+        "latency_seed_runs": len(runs),
+        "latency_seed_count": len(seed_values),
+        "latency_seed_passed_runs": int(passed.sum()),
+        "latency_seed_max_incomplete_executions": int(
+            incomplete.max()
+        ),
+        "latency_seed_bound_violations": bound_violations,
+    }
+    if any(
+        integer_fields[key] != value
+        for key, value in expected_integer_fields.items()
+    ):
+        return False
+
+    for column in [
+        "depth_fraction",
+        "fair_value_adjustment",
+        "feed_latency_us",
+        "order_latency_us",
+        "latency_jitter_us",
+    ]:
+        values = pd.to_numeric(
+            runs[column],
+            errors="coerce",
+        )
+        if (
+            values.isna().any()
+            or not np.allclose(
+                values.to_numpy(dtype=float),
+                float(values.iloc[0]),
+                rtol=0.0,
+                atol=1e-12,
+            )
+            or not _numbers_match(
+                aggregate.get(column),
+                values.iloc[0],
+            )
+        ):
+            return False
+
+    scored = runs.copy()
+    for column in [
+        "robust_score",
+        "box_execution_total_realized_net_edge",
+        "box_execution_min_realized_net_edge",
+    ]:
+        scored[column] = pd.to_numeric(
+            scored[column],
+            errors="coerce",
+        )
+    if scored[
+        [
+            "robust_score",
+            "box_execution_total_realized_net_edge",
+            "box_execution_min_realized_net_edge",
+        ]
+    ].isna().any().any():
+        return False
+    worst = scored.sort_values(
+        [
+            "robust_score",
+            "box_execution_min_realized_net_edge",
+            "run",
+        ],
+        ascending=[True, True, True],
+        kind="stable",
+    ).iloc[0]
+    pass_rate = _number(
+        aggregate.get("latency_seed_pass_rate"),
+        np.nan,
+    )
+    if (
+        not np.isfinite(pass_rate)
+        or abs(pass_rate - float(passed.mean())) > 1e-12
+    ):
+        return False
+    expected_group_passed = bool(
+        passed.all()
+        and len(runs) == expected_seed_runs
+        and len(seed_values) == expected_seed_runs
+        and bound_violations == 0
+    )
+    if _to_bool(
+        aggregate.get("latency_seed_group_passed", False)
+    ) != expected_group_passed:
+        return False
+    if str(
+        aggregate.get("latency_seed_worst_run", "")
+    ) != str(worst["run"]):
+        return False
+    if _exact_integer(
+        aggregate.get("latency_seed_worst_seed")
+    ) != int(worst["latency_seed"]):
+        return False
+    expected_metrics = {
+        "latency_seed_worst_robust_score": worst[
+            "robust_score"
+        ],
+        "latency_seed_worst_total_realized_net_edge": worst[
+            "box_execution_total_realized_net_edge"
+        ],
+        "latency_seed_worst_min_realized_net_edge": worst[
+            "box_execution_min_realized_net_edge"
+        ],
+    }
+    return all(
+        _numbers_match(aggregate.get(key), value)
+        for key, value in expected_metrics.items()
+    )
+
+
 def _raw_seed_bound_violations(
     runs: pd.DataFrame,
+    *,
+    leg_family: str,
 ) -> int | None:
     total = 0
+    prefix = "box" if leg_family == "box" else "parity"
     for column in [
-        "parity_feed_latency_bound_violations",
-        "parity_order_latency_bound_violations",
-        "parity_latency_configuration_violations",
+        f"{prefix}_feed_latency_bound_violations",
+        f"{prefix}_order_latency_bound_violations",
+        f"{prefix}_latency_configuration_violations",
     ]:
         if column not in runs.columns:
             continue
@@ -2080,15 +2591,22 @@ def _candidate_record(
 ) -> dict[str, Any]:
     direction = str(opportunity.get("direction", ""))
     scanner = str(opportunity.get("scanner", "parity"))
+    box_candidate = (
+        direction in BOX_DIRECTIONS or scanner == "box"
+    )
     scenario_key = _scenario_key(opportunity, market)
     record = {
         "scenario_key": scenario_key,
         "strategy": PARITY_BOX_STRATEGY,
         "market": market,
-        "source_run_type": "parity_scan_edge_sweep",
+        "source_run_type": (
+            "parity_scan_edge_box_sweep"
+            if box_candidate
+            else "parity_scan_edge_sweep"
+        ),
         "scanner": scanner,
         "direction": direction,
-        "leg_family": "box" if direction in BOX_DIRECTIONS or scanner == "box" else "parity",
+        "leg_family": "box" if box_candidate else "parity",
         "ts": _jsonable(opportunity.get("ts")),
         "expiry": _jsonable(opportunity.get("expiry")),
         "qty": _jsonable(opportunity.get("qty")),
@@ -2106,6 +2624,9 @@ def _candidate_record(
         "sweep_best_run": _jsonable(sweep_run.get("run", sweep.get("best_run"))),
         "sweep_run_dir": _jsonable(sweep_run.get("run_dir")),
         "depth_fraction": _jsonable(sweep_run.get("depth_fraction")),
+        "fair_value_adjustment": _jsonable(
+            sweep_run.get("fair_value_adjustment")
+        ),
         "asof_latency_ns": _jsonable(sweep_run.get("asof_latency_ns")),
         "feed_latency_us": _jsonable(sweep_run.get("feed_latency_us")),
         "order_latency_us": _jsonable(sweep_run.get("order_latency_us")),
@@ -2124,14 +2645,38 @@ def _candidate_record(
             sweep_run.get("signal_count")
         ),
         "sweep_execution_count": _jsonable(
-            sweep_run.get("execution_count")
+            sweep_run.get(
+                "execution_count",
+                sweep_run.get("box_execution_count"),
+            )
         ),
         "sweep_partial_execution_count": _jsonable(
-            sweep_run.get("partial_execution_count")
+            sweep_run.get(
+                "partial_execution_count",
+                sweep_run.get(
+                    "box_execution_incomplete_count"
+                ),
+            )
         ),
         "sweep_robust_score": _jsonable(sweep_run.get("robust_score")),
     }
-    for key in LATENCY_SEED_PROMOTION_METRICS:
+    if box_candidate:
+        record["sweep_total_realized_net_edge"] = _jsonable(
+            sweep_run.get(
+                "box_execution_total_realized_net_edge"
+            )
+        )
+        record["sweep_min_realized_net_edge"] = _jsonable(
+            sweep_run.get(
+                "box_execution_min_realized_net_edge"
+            )
+        )
+    seed_metrics = (
+        BOX_LATENCY_SEED_PROMOTION_METRICS
+        if box_candidate
+        else LATENCY_SEED_PROMOTION_METRICS
+    )
+    for key in seed_metrics:
         if key in sweep_run.index:
             record[key] = _jsonable(sweep_run.get(key))
     if (
@@ -2144,21 +2689,26 @@ def _candidate_record(
                 sweep_run.get("parity_futures_max_quote_age_ns"),
             )
         )
+    execution_prefix = (
+        "box_execution"
+        if box_candidate
+        else "parity_execution"
+    )
     for target, source in [
         (
             "max_leg_book_age_ns",
-            "parity_execution_max_leg_book_age_ns",
+            f"{execution_prefix}_max_leg_book_age_ns",
         ),
         (
             "max_leg_book_skew_ns",
-            "parity_execution_max_leg_book_skew_ns",
+            f"{execution_prefix}_max_leg_book_skew_ns",
         ),
     ]:
         if target in sweep_run.index or source in sweep_run.index:
             record[target] = _jsonable(
                 sweep_run.get(target, sweep_run.get(source))
             )
-    if direction in BOX_DIRECTIONS or scanner == "box":
+    if box_candidate:
         record.update(
             {
                 "low_strike": _jsonable(opportunity.get("low_strike")),
@@ -2273,6 +2823,7 @@ def _promotion_candidate_config(
         key: _jsonable(row.get(key))
         for key in [
             "depth_fraction",
+            "fair_value_adjustment",
             "asof_latency_ns",
             "max_futures_quote_age_ns",
             "max_leg_book_age_ns",
@@ -2302,7 +2853,10 @@ def _promotion_candidate_config(
             "sweep_execution_count",
             "sweep_partial_execution_count",
             "sweep_robust_score",
+            "sweep_total_realized_net_edge",
+            "sweep_min_realized_net_edge",
             *LATENCY_SEED_PROMOTION_METRICS,
+            *BOX_LATENCY_SEED_PROMOTION_METRICS,
             *PARITY_PROMOTION_LINEAGE_METRICS,
             *PARITY_PROMOTION_REPLAY_EVIDENCE_METRICS,
         ]
