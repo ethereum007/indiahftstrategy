@@ -7993,11 +7993,29 @@ runtime-provenance module and five focused runtime-session/cutover continuity
 tests pass. Source compilation succeeds. Repository collection is healthy at
 `2808 tests` across `169` files.
 
+Latest runtime-session-to-cutover route contract-identity proof: cutover now
+requires an active route identity to converge across the scale-up carried
+digest, scale-up claimed-current digest, runtime-telemetry carried digest,
+runtime-telemetry claimed-current digest, and the digest independently
+recovered by runtime lineage from the current recursive broker-readiness
+source. It also requires the scale-up, telemetry, and runtime-lineage
+source-match verdicts to remain true. Authorization, summary, nested config,
+manifest metadata, and runbook evidence retain the route facts, while the
+cutover lineage loader publishes a dedicated active flag, current digest, and
+runtime-route-to-current verdict for route enable. A runtime-session bundle
+with every copied route digest forged is blocked after its summary, nested
+config, and manifest are made internally consistent and re-manifested; the
+cutover action queue routes remediation to broker-readiness review.
+Identity-inactive legacy sessions continue through neutral defaults. The full
+`127`-test cutover module and one downstream route-enable lineage case pass.
+Source compilation succeeds. Repository collection is healthy at `2810 tests`
+across `169` files.
+
 ## Next Build Targets
 
-1. Carry the runtime-session broker-readiness route-contract-identity
-   digest/current-source verdict explicitly into cutover authorization checks,
-   and block a re-manifested runtime-session forgery before route enable.
+1. Carry the cutover runtime-route contract-identity digest/current-source
+   verdict into explicit route-enable checks, and block a re-manifested cutover
+   forgery before broker dispatch.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

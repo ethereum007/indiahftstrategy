@@ -5730,6 +5730,21 @@ The cutover manifest fingerprints the scale-up manifest, all required scale-up
 artifacts, and its recursively flattened dependencies, so source drift
 invalidates the handoff. Re-sealing structurally valid manifests cannot conceal
 a proof-refresh semantic mismatch.
+For an active broker-readiness route contract identity, cutover also reopens
+the runtime session and current recursive broker-readiness source. Its checks
+require the scale-up carried and claimed-current digests, runtime-telemetry
+carried and claimed-current digests, and runtime-lineage current digest to
+converge, while the scale-up, telemetry, and runtime-lineage source-match
+verdicts all remain true. The `runtime_telemetry_broker_readiness_*` and
+`runtime_lineage_broker_readiness_*` route identity fields survive in the
+authorization, summary, nested config, manifest, and runbook. A runtime session
+with every copied route digest forged remains blocked after its summary,
+config, and manifest are made internally consistent and re-manifested.
+Downstream cutover lineage derives
+`cutover_runtime_route_contract_identity_active`,
+`cutover_current_runtime_route_contract_identity_sha256`, and
+`cutover_runtime_route_contract_identity_matches_current` before route enable
+can consume the bundle.
 
 `cutover_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so schedulers can route the first

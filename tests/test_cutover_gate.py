@@ -17,6 +17,10 @@ from reports.operational_lineage import (
 )
 from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 from reports.runtime_session import write_runtime_session_monitor
+from reports.scaleup_runtime_provenance import (
+    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+)
 
 
 def leadlag_lineage(prefix=""):
@@ -1993,7 +1997,12 @@ def write_proof_refresh_cutover_inputs(root):
     )
 
 
-def write_contract_identity_cutover_inputs(root):
+def write_contract_identity_cutover_inputs(
+    root,
+    *,
+    contract_identity=True,
+    route_contract_identity=False,
+):
     from tests.data_readiness_helpers import reseal_experiment_manifest
     from tests.test_scaleup_runtime_provenance import (
         _write_broker_readiness_bundle,
@@ -2003,7 +2012,8 @@ def write_contract_identity_cutover_inputs(root):
     broker = root / "broker_readiness"
     broker_lineage = _write_broker_readiness_bundle(
         broker,
-        contract_identity=True,
+        contract_identity=contract_identity,
+        route_contract_identity=route_contract_identity,
     )
     scaleup = _write_scaleup_bundle(
         root / "scaleup",
@@ -2132,6 +2142,86 @@ def write_contract_identity_cutover_inputs(root):
         review_path,
         broker_readiness_lineage_fields(broker_lineage),
     )
+
+
+@pytest.fixture(scope="module")
+def route_contract_identity_cutover_inputs(tmp_path_factory):
+    return write_contract_identity_cutover_inputs(
+        tmp_path_factory.mktemp("cutover_route_contract_identity"),
+        contract_identity=False,
+        route_contract_identity=True,
+    )
+
+
+def _forge_runtime_route_contract_identity(runtime, forged_sha256):
+    from tests.data_readiness_helpers import reseal_experiment_manifest
+
+    fields = (
+        "scaleup_broker_readiness_route_contract_identity_sha256",
+        (
+            "scaleup_broker_readiness_current_"
+            "route_contract_identity_sha256"
+        ),
+        f"scaleup_{BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD}",
+        (
+            "scaleup_"
+            f"{BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD}"
+        ),
+        (
+            "runtime_telemetry_broker_readiness_"
+            "route_contract_identity_sha256"
+        ),
+        (
+            "runtime_telemetry_current_broker_readiness_"
+            "route_contract_identity_sha256"
+        ),
+    )
+    summary_path = runtime / "runtime_session_summary.csv"
+    summary = pd.read_csv(
+        summary_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    current_sha256 = str(
+        summary.loc[
+            0,
+            (
+                "runtime_telemetry_current_broker_readiness_"
+                "route_contract_identity_sha256"
+            ),
+        ]
+    )
+    for field in fields:
+        assert field in summary.columns
+        summary.loc[0, field] = forged_sha256
+    summary.to_csv(summary_path, index=False)
+
+    config_path = runtime / "runtime_session_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for field in fields:
+        section = (
+            "scaleup_provenance"
+            if field.startswith("scaleup_")
+            else "runtime_telemetry_lineage"
+        )
+        assert field in config[section]
+        config[section][field] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = runtime / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for field in fields:
+        assert field in manifest["extra"]
+        manifest["extra"][field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(runtime)
+    return current_sha256
 
 
 def test_cutover_gate_authorizes_clean_live_dryrun():
@@ -6530,6 +6620,195 @@ def test_cutover_verifies_runtime_broker_contract_identity(tmp_path):
         lineage["current_runtime_contract_identity_sha256"]
         == identity_sha256
     )
+
+
+def test_cutover_verifies_runtime_broker_route_contract_identity(
+    tmp_path,
+    route_contract_identity_cutover_inputs,
+):
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_fields,
+    ) = route_contract_identity_cutover_inputs
+    out_dir = tmp_path / "cutover"
+
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=out_dir,
+    )
+
+    identity_sha256 = broker_fields[
+        BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    summary = report.summary.iloc[0]
+    identity_checks = report.checks.loc[
+        report.checks["check"].astype(str).str.contains(
+            "route_contract_identity"
+        )
+    ]
+    assert report.ready
+    assert not identity_checks.empty
+    assert identity_checks["passed"].astype(bool).all()
+    assert summary[
+        (
+            "runtime_telemetry_broker_readiness_"
+            "route_contract_identity_sha256"
+        )
+    ] == identity_sha256
+    assert summary[
+        (
+            "runtime_telemetry_current_broker_readiness_"
+            "route_contract_identity_sha256"
+        )
+    ] == identity_sha256
+    assert summary[
+        (
+            "runtime_lineage_current_broker_readiness_"
+            "route_contract_identity_sha256"
+        )
+    ] == identity_sha256
+    assert summary[
+        (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    assert report.config["runtime_lineage"][
+        (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    runbook = (out_dir / "cutover_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        f"Broker route contract identity digest: `{identity_sha256}`"
+        in runbook
+    )
+    assert "Broker route contract identity matches current: yes" in runbook
+
+    lineage = load_cutover_lineage(out_dir / "cutover_config.json")
+    assert lineage["gate_passed"]
+    assert lineage["runtime_route_contract_identity_active"]
+    assert lineage["runtime_route_contract_identity_matches_current"]
+    assert (
+        lineage["current_runtime_route_contract_identity_sha256"]
+        == identity_sha256
+    )
+
+
+def test_cutover_blocks_remanifested_runtime_route_contract_identity_forgery(
+    tmp_path,
+    route_contract_identity_cutover_inputs,
+):
+    (
+        scaleup,
+        broker,
+        runtime_source,
+        review_path,
+        _,
+    ) = route_contract_identity_cutover_inputs
+    runtime = tmp_path / "forged_runtime"
+    shutil.copytree(runtime_source, runtime)
+    forged_sha256 = "d" * 64
+    current_sha256 = _forge_runtime_route_contract_identity(
+        runtime,
+        forged_sha256,
+    )
+    runtime_manifest_path = runtime / "manifest.json"
+    assert verify_experiment_manifest(
+        runtime_manifest_path,
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
+
+    out_dir = tmp_path / "cutover"
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=out_dir,
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "runtime_session_manifest_current" not in failed
+    assert "runtime_lineage_contract_consistent" not in failed
+    assert {
+        (
+            "runtime_telemetry_broker_readiness_route_contract_"
+            "identity_sha256_matches_current"
+        ),
+        (
+            "runtime_telemetry_current_broker_readiness_route_contract_"
+            "identity_sha256_matches_current"
+        ),
+        (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_matches_current"
+        ),
+        "runtime_lineage_broker_readiness_matches_current",
+        "runtime_lineage_gate_passed",
+    } <= failed
+
+    summary = report.summary.iloc[0]
+    assert summary[
+        (
+            "runtime_telemetry_broker_readiness_"
+            "route_contract_identity_sha256"
+        )
+    ] == forged_sha256
+    assert summary[
+        (
+            "runtime_lineage_current_broker_readiness_"
+            "route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not summary[
+        (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_matches_current"
+        )
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_cutover_lineage(out_dir / "cutover_config.json")
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["runtime_route_contract_identity_active"]
+    assert (
+        lineage["current_runtime_route_contract_identity_sha256"]
+        == current_sha256
+    )
+    assert not lineage["runtime_lineage_matches_current"]
+    assert not lineage["runtime_route_contract_identity_matches_current"]
+    assert not lineage["gate_passed"]
 
 
 def test_cutover_blocks_remanifested_runtime_contract_identity_forgery(
