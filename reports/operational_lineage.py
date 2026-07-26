@@ -2001,6 +2001,9 @@ def empty_broker_dispatch_ack_lineage(*, required: bool = False) -> dict[str, An
         "send_lineage_gate_passed": not required,
         "send_matches_current": not required,
         "expected_send_matches_current": not required,
+        "send_route_contract_identity_active": False,
+        "current_send_route_contract_identity_sha256": "",
+        "send_route_contract_identity_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -2110,7 +2113,7 @@ def load_broker_dispatch_ack_lineage(
     send_lineage_gate_passed = _bool(
         state.get("broker_dispatch_send_lineage_gate_passed", False)
     )
-    send_matches_current = _ack_send_matches_current(
+    current_send = _ack_current_broker_dispatch_send_lineage_state(
         ack_manifest=manifest,
         ack_manifest_path=manifest_path,
         lineage=state,
@@ -2119,6 +2122,7 @@ def load_broker_dispatch_ack_lineage(
             expected_broker_dispatch_config_path
         ),
     )
+    state.update(current_send)
     expected_send_matches_current = _ack_matches_expected_send(
         lineage=state,
         expected_broker_dispatch_send_config_path=(
@@ -2129,7 +2133,6 @@ def load_broker_dispatch_ack_lineage(
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
     state["send_lineage_gate_passed"] = send_lineage_gate_passed
-    state["send_matches_current"] = send_matches_current
     state["expected_send_matches_current"] = expected_send_matches_current
     state["gate_passed"] = bool(
         state["provided"]
@@ -2137,8 +2140,9 @@ def load_broker_dispatch_ack_lineage(
         and state["contract_consistent"]
         and non_authorizing
         and send_lineage_gate_passed
-        and send_matches_current
+        and state["send_matches_current"]
         and expected_send_matches_current
+        and state["send_route_contract_identity_matches_current"]
     )
     return state
 
@@ -2185,6 +2189,25 @@ def broker_dispatch_ack_lineage_fields(
         ),
         "broker_dispatch_ack_expected_send_matches_current": _bool(
             lineage.get("expected_send_matches_current", False)
+        ),
+        "broker_dispatch_ack_send_route_contract_identity_active": _bool(
+            lineage.get("send_route_contract_identity_active", False)
+        ),
+        "broker_dispatch_ack_current_send_route_contract_identity_sha256": (
+            _text(
+                lineage.get(
+                    "current_send_route_contract_identity_sha256",
+                    "",
+                )
+            )
+        ),
+        "broker_dispatch_ack_send_route_contract_identity_matches_current": (
+            _bool(
+                lineage.get(
+                    "send_route_contract_identity_matches_current",
+                    False,
+                )
+            )
         ),
         "broker_dispatch_ack_lineage_gate_passed": _bool(
             lineage.get("gate_passed", False)
@@ -4886,14 +4909,29 @@ def _broker_dispatch_ack_count_contract_errors(
     return errors
 
 
-def _ack_send_matches_current(
+def _ack_current_broker_dispatch_send_lineage_state(
     *,
     ack_manifest: Mapping[str, Any],
     ack_manifest_path: Path,
     lineage: Mapping[str, Any],
     send_fields: tuple[str, ...],
     expected_broker_dispatch_config_path: str | Path | None,
-) -> bool:
+) -> dict[str, Any]:
+    identity_fields = tuple(
+        column for column in send_fields if "contract_identity" in column
+    )
+    carried_identity_active = bool(
+        any(
+            _bool(lineage.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(lineage.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
     send_manifest_path = _manifest_input_path(
         ack_manifest,
         ack_manifest_path,
@@ -4903,27 +4941,108 @@ def _ack_send_matches_current(
         ack_manifest_path,
         "send_manifest",
     )
-    if send_manifest_path is None or not send_manifest_path.is_file():
-        return False
-    send_config_path = send_manifest_path.with_name(
-        "broker_dispatch_send_config.json"
+    send_config_path = (
+        send_manifest_path.with_name("broker_dispatch_send_config.json")
+        if send_manifest_path is not None
+        else None
     )
-    if not send_config_path.is_file():
-        return False
-    current = load_broker_dispatch_send_lineage(
-        send_config_path,
-        expected_broker_dispatch_config_path=(
-            expected_broker_dispatch_config_path
-        ),
+    source_bound = bool(
+        send_manifest_path is not None
+        and send_manifest_path.is_file()
+        and send_config_path is not None
+        and send_config_path.is_file()
     )
+    current = empty_broker_dispatch_send_lineage(required=True)
+    if source_bound and send_config_path is not None:
+        current = load_broker_dispatch_send_lineage(
+            send_config_path,
+            expected_broker_dispatch_config_path=(
+                expected_broker_dispatch_config_path
+            ),
+        )
     current_fields = broker_dispatch_send_lineage_fields(current)
-    return bool(
-        current.get("gate_passed", False)
+    current_identity_active = bool(
+        _bool(
+            current_fields.get(
+                (
+                    "broker_dispatch_send_dispatch_route_"
+                    "contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or any(
+            _bool(current_fields.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(current_fields.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    contract_identity_active = bool(
+        carried_identity_active or current_identity_active
+    )
+    current_identity_sha256 = _text(
+        current_fields.get(
+            (
+                "broker_dispatch_send_current_dispatch_route_"
+                "contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    carried_identity_sha256 = _text(
+        lineage.get(
+            (
+                "broker_dispatch_send_broker_dispatch_route_enable_"
+                "cutover_runtime_telemetry_broker_readiness_"
+                "roundtrip_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    contract_identity_matches_current = bool(
+        not contract_identity_active
+        or (
+            source_bound
+            and current.get("gate_passed", False)
+            and current_identity_active
+            and carried_identity_sha256
+            and current_identity_sha256
+            and carried_identity_sha256 == current_identity_sha256
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_fields.get(column),
+                    column,
+                )
+                for column in identity_fields
+            )
+        )
+    )
+    send_matches_current = bool(
+        source_bound
+        and current.get("gate_passed", False)
         and all(
             _same(lineage.get(column), current_fields.get(column), column)
             for column in send_fields
         )
     )
+    return {
+        "send_matches_current": send_matches_current,
+        "send_route_contract_identity_active": (
+            contract_identity_active
+        ),
+        "current_send_route_contract_identity_sha256": (
+            current_identity_sha256
+        ),
+        "send_route_contract_identity_matches_current": (
+            contract_identity_matches_current
+        ),
+    }
 
 
 def _ack_matches_expected_send(

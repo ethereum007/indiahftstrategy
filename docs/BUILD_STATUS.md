@@ -7918,11 +7918,30 @@ artifact compatibility cases plus `2` downstream round-trip binding cases
 pass. Source compilation succeeds. Repository collection is healthy at
 `2800 tests` across `169` files.
 
+Latest ack-to-round-trip route contract-identity proof: broker-dispatch
+acknowledgement lineage now reopens the manifest-bound current send packet and
+independently compares every active route identity claim carried by the
+acknowledgement bundle. It publishes the acknowledgement-carried canonical
+digest, the digest recovered from the current recursive send source, and a
+dedicated acknowledgement-to-current identity verdict. Final round-trip review
+requires the carried digest to be present, equal the recovered current digest,
+and retain that passing verdict before terminal broker evidence can pass.
+These facts survive in every final order plus summary, config, manifest, and
+runbook evidence, and identity failures route to broker-readiness review. An
+acknowledgement bundle with a forged route digest is blocked even after its
+rows, summary, config, and manifest are made internally consistent and
+re-manifested; authorization remains disabled. Identity-inactive legacy
+packets continue through neutral defaults. The full `108`-test broker-dispatch
+round-trip module, `2` new recursive ack-to-round-trip identity tests, and `10`
+focused lineage, legacy, source-binding, and artifact compatibility cases
+pass. Source compilation succeeds. Repository collection is healthy at
+`2802 tests` across `169` files.
+
 ## Next Build Targets
 
-1. Give broker dispatch round-trip review the same explicit ack-to-round-trip
-   route-contract-identity digest/current-source verdict now enforced at
-   acknowledgement reconciliation.
+1. Give broker readiness review the same explicit round-trip-to-readiness
+   route-contract-identity digest/current-source verdict now enforced at final
+   broker dispatch round-trip review.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

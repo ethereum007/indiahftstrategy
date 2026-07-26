@@ -3054,6 +3054,35 @@ def _checks(
     if _to_bool(
         ack_summary.get("broker_dispatch_ack_lineage_required", False)
     ):
+        route_identity_active = _to_bool(
+            ack_summary.get(
+                (
+                    "broker_dispatch_ack_send_route_"
+                    "contract_identity_active"
+                ),
+                False,
+            )
+        )
+        route_identity_sha256 = _object_text(
+            ack_summary.get(
+                (
+                    "broker_dispatch_ack_broker_dispatch_send_"
+                    "broker_dispatch_route_enable_cutover_runtime_"
+                    "telemetry_broker_readiness_roundtrip_"
+                    "contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
+        current_route_identity_sha256 = _object_text(
+            ack_summary.get(
+                (
+                    "broker_dispatch_ack_current_send_route_"
+                    "contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
         ack_lineage_checks = [
             _check(
                 "broker_dispatch_ack_lineage_provided",
@@ -3168,6 +3197,79 @@ def _checks(
                     )
                 ),
                 "acknowledgement source does not match the send packet under review",
+            ),
+            *(
+                [
+                    _check(
+                        (
+                            "broker_dispatch_ack_broker_dispatch_send_"
+                            "broker_dispatch_route_enable_cutover_runtime_"
+                            "telemetry_broker_readiness_roundtrip_"
+                            "contract_identity_sha256_present"
+                        ),
+                        route_identity_sha256,
+                        "present",
+                        True,
+                        bool(route_identity_sha256),
+                        (
+                            "acknowledgement route contract identity digest "
+                            "is missing"
+                        ),
+                    ),
+                    _check(
+                        (
+                            "broker_dispatch_ack_broker_dispatch_send_"
+                            "broker_dispatch_route_enable_cutover_runtime_"
+                            "telemetry_broker_readiness_roundtrip_"
+                            "contract_identity_sha256_matches_current"
+                        ),
+                        route_identity_sha256,
+                        "==",
+                        current_route_identity_sha256,
+                        bool(
+                            route_identity_sha256
+                            and current_route_identity_sha256
+                            and route_identity_sha256
+                            == current_route_identity_sha256
+                        ),
+                        (
+                            "acknowledgement route contract identity digest "
+                            "differs from the current send source"
+                        ),
+                    ),
+                    _check(
+                        (
+                            "broker_dispatch_ack_send_route_"
+                            "contract_identity_matches_current"
+                        ),
+                        _to_bool(
+                            ack_summary.get(
+                                (
+                                    "broker_dispatch_ack_send_route_"
+                                    "contract_identity_matches_current"
+                                ),
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            ack_summary.get(
+                                (
+                                    "broker_dispatch_ack_send_route_"
+                                    "contract_identity_matches_current"
+                                ),
+                                False,
+                            )
+                        ),
+                        (
+                            "acknowledgement route contract identity no "
+                            "longer matches the current send source"
+                        ),
+                    ),
+                ]
+                if route_identity_active
+                else []
             ),
             *(
                 [
@@ -7535,12 +7637,28 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
-    if check.startswith(
-        "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_"
-    ) or check in {
-        "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
-        "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
-    }:
+    if (
+        check.startswith(
+            "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_"
+            "route_enable_cutover_broker_readiness_"
+        )
+        or (
+            check.startswith("broker_dispatch_ack_")
+            and "contract_identity" in check
+            and (
+                "broker_dispatch_send_broker_dispatch_route_enable_cutover"
+                in check
+                or check.startswith(
+                    "broker_dispatch_ack_send_route_contract_identity_"
+                )
+            )
+        )
+        or check
+        in {
+            "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_source_bound",
+            "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_lineage_matches_current",
+        }
+    ):
         return "broker_readiness"
     if check.startswith("broker_dispatch_ack_"):
         return "broker_dispatch_ack"
@@ -7620,8 +7738,14 @@ def _next_gate(check: str) -> str:
 
 def _action_recommendation(check: str) -> str:
     component = _component(check)
-    if component == "broker_readiness" and check.startswith(
-        "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+    if component == "broker_readiness" and (
+        check.startswith(
+            "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_"
+            "route_enable_cutover_"
+        )
+        or check.startswith(
+            "broker_dispatch_ack_send_route_contract_identity_"
+        )
     ):
         return "rebuild_broker_readiness_lineage_before_roundtrip_review"
     if component == "broker_dispatch_plan":
@@ -8983,6 +9107,22 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Missing request acknowledgements: {_int_value(summary_row.get('missing_request_acks'))}",
         f"- Rejected orders: {_int_value(summary_row.get('rejected_orders'))}",
         f"- Acknowledgement lineage current: {ack_lineage_label}",
+        (
+            "- Acknowledgement route contract identity active: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_ack_send_route_contract_identity_active')) else 'no'}"
+        ),
+        (
+            "- Acknowledgement carried route contract identity: "
+            f"{_code(summary_row.get('broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256'))}"
+        ),
+        (
+            "- Current send route contract identity: "
+            f"{_code(summary_row.get('broker_dispatch_ack_current_send_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Acknowledgement route contract identity matches current: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_ack_send_route_contract_identity_matches_current')) else 'no'}"
+        ),
         "- Round-trip contract identity active: "
         f"{'yes' if _to_bool(summary_row.get('roundtrip_contract_identity_active')) else 'no'}",
         "- Round-trip contract identity verified: "

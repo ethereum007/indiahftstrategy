@@ -7248,6 +7248,22 @@ The final manifest fingerprints all acknowledgement artifacts and recursively
 flattened dependencies, source/output overlap is rejected, and final artifacts
 remain explicitly non-authorizing.
 
+For an active route contract identity, final round-trip review now reopens the
+ack-manifest-bound current send packet and independently compares every
+acknowledgement-carried route identity claim. The carried digest, current send
+digest, and acknowledgement-to-current verdict surface as
+`broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256`,
+`broker_dispatch_ack_current_send_route_contract_identity_sha256`, and
+`broker_dispatch_ack_send_route_contract_identity_matches_current` in every
+final order plus summary, config, manifest, and runbook evidence. Dedicated
+round-trip checks require the carried digest to be present, equal the
+independently recovered current digest, and retain a passing current-source
+verdict. An acknowledgement bundle with a consistently forged route digest
+remains blocked after its rows, summary, config, and manifest are rewritten
+and re-manifested; remediation routes to `review-broker-readiness`, and final
+artifacts remain non-authorizing. Identity-inactive legacy acknowledgement
+packets retain neutral defaults.
+
 For the exact `leadlag` portfolio profile, or whenever
 `leadlag_edge_lineage_required` is set, final review also owns a direct
 `leadlag_ack_contract_consistent` decision. It independently compares the
