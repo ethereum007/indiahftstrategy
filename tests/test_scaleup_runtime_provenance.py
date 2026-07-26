@@ -20,7 +20,7 @@ from reports.scaleup_runtime_provenance import load_scaleup_runtime_provenance
 from tests.data_readiness_helpers import reseal_experiment_manifest
 
 
-def _write_broker_readiness_bundle(root):
+def _write_broker_readiness_bundle(root, *, contract_identity=False):
     from adapters.broker_readiness import (
         BrokerReadinessThresholds,
         write_broker_readiness_report,
@@ -31,6 +31,7 @@ def _write_broker_readiness_bundle(root):
         root.parent / "broker_readiness_sources",
         "arrow_money",
         verified_roundtrip=True,
+        contract_identity=contract_identity,
     )
     report = write_broker_readiness_report(
         output_dir=root,
@@ -623,3 +624,66 @@ def test_runtime_rejects_remanifested_broker_readiness_lineage_forgery(tmp_path)
         "runtime_telemetry_broker_readiness_matches_current",
         "runtime_telemetry_lineage_matches_current",
     } <= guard_failed
+
+
+def test_scaleup_runtime_rejects_remanifested_contract_identity_tamper(
+    tmp_path,
+):
+    broker_root = tmp_path / "broker_readiness"
+    broker_lineage = _write_broker_readiness_bundle(
+        broker_root,
+        contract_identity=True,
+    )
+    scaleup_dir = _write_scaleup_bundle(
+        tmp_path / "scaleup",
+        broker_lineage,
+    )
+    clean = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+    identity_sha256 = clean[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    assert clean["provenance_gate_passed"]
+    assert clean[
+        "broker_readiness_roundtrip_contract_identity_lineage_verified"
+    ]
+    assert len(identity_sha256) == 64
+
+    roundtrip_dir = (
+        tmp_path / "broker_readiness_sources" / "roundtrip"
+    )
+    orders_path = (
+        roundtrip_dir / "broker_dispatch_roundtrip_orders.csv"
+    )
+    orders = pd.read_csv(
+        orders_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    orders.loc[0, "broker_instrument_token"] = "LATE-SCALEUP-FORGERY"
+    orders.to_csv(orders_path, index=False)
+    reseal_experiment_manifest(roundtrip_dir)
+    reseal_experiment_manifest(broker_root)
+    reseal_experiment_manifest(scaleup_dir)
+
+    reopened = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+
+    assert reopened["manifest_current"]
+    assert reopened["broker_readiness_source_manifest_current"]
+    assert not reopened["broker_readiness_source_provenance_gate_passed"]
+    assert not reopened["broker_readiness_matches_current"]
+    assert not reopened["contract_consistent"]
+    assert not reopened["provenance_gate_passed"]
+    assert (
+        "scaleup_broker_readiness_"
+        "roundtrip_contract_identity_lineage_verified_source_mismatch"
+        in reopened["contract_error"]
+    )
+    assert (
+        "scaleup_broker_readiness_"
+        "roundtrip_contract_identity_lineage_error_source_mismatch"
+        in reopened["contract_error"]
+    )

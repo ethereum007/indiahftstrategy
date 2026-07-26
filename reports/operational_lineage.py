@@ -222,6 +222,17 @@ BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS = (
     "broker_dispatch_roundtrip_contract_identity_lineage_verified",
     "broker_dispatch_roundtrip_contract_identity_lineage_error",
 )
+BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP = tuple(
+    (
+        field.replace(
+            "broker_dispatch_roundtrip_",
+            "broker_readiness_roundtrip_",
+            1,
+        ),
+        field,
+    )
+    for field in BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS
+)
 BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
     "broker_dispatch_roundtrip_lineage_required",
     "broker_dispatch_roundtrip_lineage_provided",
@@ -2466,7 +2477,7 @@ def load_broker_readiness_lineage(
 def broker_readiness_lineage_fields(
     lineage: Mapping[str, Any],
 ) -> dict[str, Any]:
-    return {
+    fields = {
         "broker_readiness_lineage_required": _bool(
             lineage.get("required", False)
         ),
@@ -2510,6 +2521,46 @@ def broker_readiness_lineage_fields(
             lineage.get("dependency_count", 0)
         ),
     }
+    fields.update(
+        {
+            target_field: _normalize(
+                lineage.get(source_field),
+                target_field,
+            )
+            for (
+                target_field,
+                source_field,
+            ) in BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP
+        }
+    )
+    identity_errors = [
+        _text(
+            lineage.get(
+                "broker_dispatch_roundtrip_contract_identity_lineage_error",
+                "",
+            )
+        ),
+        *(
+            error
+            for error in _text(lineage.get("contract_error", "")).split(";")
+            if "contract_identity" in error
+        ),
+    ]
+    identity_error = ";".join(
+        dict.fromkeys(error for error in identity_errors if error)
+    )
+    fields[
+        "broker_readiness_roundtrip_contract_identity_lineage_verified"
+    ] = bool(
+        fields[
+            "broker_readiness_roundtrip_contract_identity_lineage_verified"
+        ]
+        and not identity_error
+    )
+    fields[
+        "broker_readiness_roundtrip_contract_identity_lineage_error"
+    ] = identity_error
+    return fields
 
 
 def broker_readiness_lineage_manifest_inputs(

@@ -1890,7 +1890,12 @@ def write_broker_readiness_bundle(
     return root
 
 
-def write_verified_broker_readiness_bundle(root, output_dir):
+def write_verified_broker_readiness_bundle(
+    root,
+    output_dir,
+    *,
+    contract_identity=False,
+):
     from adapters.broker_readiness import (
         BrokerReadinessThresholds,
         write_broker_readiness_report,
@@ -1901,6 +1906,7 @@ def write_verified_broker_readiness_bundle(root, output_dir):
         root,
         "arrow_money",
         verified_roundtrip=True,
+        contract_identity=contract_identity,
     )
     report = write_broker_readiness_report(
         output_dir=output_dir,
@@ -6713,6 +6719,81 @@ def test_write_scaleup_plan_seals_broker_readiness_lineage(tmp_path):
     )
     assert not drifted.passed
     assert drifted.error == "input_drift"
+
+
+def test_write_scaleup_plan_promotes_verified_broker_contract_identity(
+    tmp_path,
+):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    broker = write_verified_broker_readiness_bundle(
+        tmp_path / "broker_readiness_sources",
+        launch / "06_broker_readiness",
+        contract_identity=True,
+    )
+    readiness_summary = pd.read_csv(
+        broker / "broker_readiness_summary.csv"
+    ).iloc[0]
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(
+            require_broker_readiness=True,
+        ),
+    )
+
+    identity_sha256 = readiness_summary[
+        "broker_dispatch_roundtrip_contract_identity_sha256"
+    ]
+    identity_field = (
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    )
+    summary = report.summary.iloc[0]
+    plan = report.plan.iloc[0]
+    lineage = report.config["broker_readiness"]["lineage"]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    checks = report.checks.set_index("check")
+
+    assert bool(
+        summary[
+            "broker_readiness_roundtrip_contract_identity_lineage_verified"
+        ]
+    )
+    assert summary[identity_field] == identity_sha256
+    assert plan[identity_field] == identity_sha256
+    assert (
+        lineage["roundtrip_contract_identity_sha256"]
+        == identity_sha256
+    )
+    assert lineage[
+        "roundtrip_contract_identity_lineage_verified"
+    ]
+    assert manifest["extra"][identity_field] == identity_sha256
+    assert manifest["extra"][
+        "broker_readiness_roundtrip_contract_identity_lineage_verified"
+    ]
+    assert bool(
+        checks.loc[
+            "broker_readiness_roundtrip_contract_identity_lineage_verified",
+            "passed",
+        ]
+    )
+    assert checks.loc[
+        checks.index.str.startswith(
+            "broker_readiness_roundtrip_contract_identity_"
+        ),
+        "passed",
+    ].astype(bool).all()
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
 
 
 def test_write_scaleup_plan_hydrates_resume_route_readiness_from_broker_config(tmp_path):

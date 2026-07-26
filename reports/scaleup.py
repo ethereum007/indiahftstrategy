@@ -4922,7 +4922,7 @@ def _broker_readiness_lineage_checks(
             "broker readiness recursive lineage gate failed",
         ),
     )
-    return [
+    checks = [
         _check(
             f"broker_readiness_lineage_{name}",
             value,
@@ -4933,12 +4933,83 @@ def _broker_readiness_lineage_checks(
         )
         for name, value, reason in specs
     ]
+    if _to_bool(
+        broker_readiness.get(
+            "broker_readiness_roundtrip_contract_identity_active",
+            False,
+        )
+    ):
+        identity_specs = (
+            (
+                "required",
+                "terminal round-trip contract identity is not required",
+            ),
+            (
+                "send_gate_passed",
+                "terminal round-trip send identity gate failed",
+            ),
+            (
+                "ack_gate_passed",
+                "terminal round-trip acknowledgement identity gate failed",
+            ),
+            (
+                "request_columns_present",
+                "sent requests are missing contract identity columns",
+            ),
+            (
+                "ack_columns_present",
+                "acknowledgements are missing contract identity columns",
+            ),
+            (
+                "stage_digests_match",
+                "terminal round-trip identity digests disagree across stages",
+            ),
+            (
+                "acknowledgements_match_requests",
+                "acknowledgement identities do not match sent requests",
+            ),
+            (
+                "roundtrip_matches_requests",
+                "terminal round-trip identities do not match sent requests",
+            ),
+            (
+                "gate_passed",
+                "terminal round-trip contract identity gate failed",
+            ),
+            (
+                "lineage_verified",
+                "terminal round-trip contract identity lineage is not current",
+            ),
+        )
+        checks.extend(
+            _check(
+                f"broker_readiness_roundtrip_contract_identity_{name}",
+                value,
+                "is",
+                True,
+                value,
+                reason,
+            )
+            for name, reason in identity_specs
+            for value in (
+                _to_bool(
+                    broker_readiness.get(
+                        (
+                            "broker_readiness_roundtrip_contract_identity_"
+                            f"{name}"
+                        ),
+                        False,
+                    )
+                ),
+            )
+        )
+    return checks
 
 
 def _broker_readiness_lineage_report_fields(
     source: pd.Series,
 ) -> dict[str, object]:
-    return {
+    fields = {
         "broker_readiness_lineage_required": _to_bool(
             source.get("broker_readiness_lineage_required", False)
         ),
@@ -4998,6 +5069,20 @@ def _broker_readiness_lineage_report_fields(
             )
         ),
     }
+    from reports.operational_lineage import (
+        BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP,
+    )
+
+    for field, _source_field in (
+        BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP
+    ):
+        if field.endswith("_orders"):
+            fields[field] = int(_number(source, field, fallback=0.0))
+        elif field.endswith(("_sha256", "_error")):
+            fields[field] = _text(source.get(field, ""))
+        else:
+            fields[field] = _to_bool(source.get(field, False))
+    return fields
 
 
 def _load_broker_readiness_lineage(

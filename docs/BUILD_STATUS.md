@@ -107,6 +107,15 @@
   recursively verified lineage verdict. A re-manifested terminal identity
   mutation therefore remains blocked at readiness with a targeted repair
   action, while inactive legacy round-trips remain compatible.
+- Scale-up promotion now preserves the broker-readiness contract-identity
+  verdict instead of reducing it back to a generic readiness bit. The plan,
+  summary, config, manifest, and dedicated checks carry the canonical digest,
+  stage counts, cross-stage comparisons, and recursive identity verdict.
+  Runtime provenance reopens the current broker-readiness and terminal
+  round-trip chain and compares that identity contract field by field, so
+  re-sealing every affected manifest after a terminal token mutation still
+  blocks the scale-up proof while legacy identity-inactive bundles continue
+  through the existing lineage path.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,

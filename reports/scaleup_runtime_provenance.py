@@ -26,7 +26,7 @@ SCALEUP_REQUIRED_ARTIFACTS = (
     "scaleup_config.json",
 )
 
-BROKER_READINESS_LINEAGE_FIELDS = (
+BROKER_READINESS_BASE_LINEAGE_FIELDS = (
     ("lineage_required", "broker_readiness_lineage_required"),
     ("lineage_provided", "broker_readiness_lineage_provided"),
     ("manifest_current", "broker_readiness_manifest_current"),
@@ -56,6 +56,36 @@ BROKER_READINESS_LINEAGE_FIELDS = (
         "lineage_dependency_count",
         "broker_readiness_lineage_dependency_count",
     ),
+)
+BROKER_READINESS_CONTRACT_IDENTITY_SUFFIXES = (
+    "active",
+    "required",
+    "send_gate_passed",
+    "ack_gate_passed",
+    "request_columns_present",
+    "ack_columns_present",
+    "request_orders",
+    "ack_orders",
+    "roundtrip_orders",
+    "stage_digests_match",
+    "acknowledgements_match_requests",
+    "roundtrip_matches_requests",
+    "sha256",
+    "consistency_error",
+    "gate_passed",
+    "lineage_verified",
+    "lineage_error",
+)
+BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS = tuple(
+    (
+        f"roundtrip_contract_identity_{suffix}",
+        f"broker_readiness_roundtrip_contract_identity_{suffix}",
+    )
+    for suffix in BROKER_READINESS_CONTRACT_IDENTITY_SUFFIXES
+)
+BROKER_READINESS_LINEAGE_FIELDS = (
+    *BROKER_READINESS_BASE_LINEAGE_FIELDS,
+    *BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS,
 )
 
 PROOF_REFRESH_REPORT_FIELDS = (
@@ -113,7 +143,7 @@ PROOF_REFRESH_SEMANTIC_FIELDS = (
 
 
 def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any]:
-    return {
+    evidence = {
         "manifest_required": required,
         "manifest_provided": False,
         "manifest_current": not required,
@@ -188,6 +218,20 @@ def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any
         "broker_readiness_source_provenance_gate_passed": False,
         "broker_readiness_matches_current": not required,
     }
+    evidence.update(
+        {
+            report_field: _broker_readiness_contract_identity_value(
+                {},
+                config_field,
+                report_field,
+            )
+            for (
+                config_field,
+                report_field,
+            ) in BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        }
+    )
+    return evidence
 
 
 def load_scaleup_runtime_provenance(
@@ -1004,7 +1048,25 @@ def _broker_readiness_contract_errors(
 ) -> list[str]:
     errors: list[str] = []
     lineage = _mapping(broker_readiness.get("lineage"))
-    for config_field, report_field in BROKER_READINESS_LINEAGE_FIELDS:
+    identity_active = any(
+        _broker_readiness_contract_identity_present(value, report_field)
+        for config_field, report_field in (
+            BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        )
+        for value in (
+            lineage.get(config_field),
+            summary.get(report_field),
+            plan.get(report_field),
+            manifest_extra.get(report_field),
+            current_fields.get(report_field),
+        )
+    )
+    lineage_fields = (
+        BROKER_READINESS_LINEAGE_FIELDS
+        if identity_active
+        else BROKER_READINESS_BASE_LINEAGE_FIELDS
+    )
+    for config_field, report_field in lineage_fields:
         if config_field not in lineage:
             errors.append(
                 f"scaleup_broker_readiness_{config_field}_missing:config"
@@ -1036,7 +1098,7 @@ def _broker_readiness_contract_errors(
     if broker_readiness_config_path is None:
         errors.append("scaleup_broker_readiness_source_missing")
         return errors
-    for config_field, report_field in BROKER_READINESS_LINEAGE_FIELDS:
+    for config_field, report_field in lineage_fields:
         if config_field not in lineage:
             continue
         if not _same(lineage.get(config_field), current_fields.get(report_field)):
@@ -1190,7 +1252,7 @@ def _lineage(config: dict[str, Any]) -> dict[str, Any]:
     family = _mapping(portfolio.get("research_family"))
     broker_readiness = _mapping(config.get("broker_readiness"))
     broker_lineage = _mapping(broker_readiness.get("lineage"))
-    return {
+    lineage_state = {
         "proof_refresh_required": _bool(
             proof_refresh.get("required", False)
         ),
@@ -1319,6 +1381,44 @@ def _lineage(config: dict[str, Any]) -> dict[str, Any]:
             broker_lineage.get("lineage_dependency_count", 0)
         ),
     }
+    lineage_state.update(
+        {
+            report_field: _broker_readiness_contract_identity_value(
+                broker_lineage,
+                config_field,
+                report_field,
+            )
+            for (
+                config_field,
+                report_field,
+            ) in BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        }
+    )
+    return lineage_state
+
+
+def _broker_readiness_contract_identity_value(
+    lineage: Mapping[str, Any],
+    config_field: str,
+    report_field: str,
+) -> Any:
+    value = lineage.get(config_field)
+    if report_field.endswith("_orders"):
+        return _integer(value)
+    if report_field.endswith(("_sha256", "_error")):
+        return _text(value)
+    return _bool(value)
+
+
+def _broker_readiness_contract_identity_present(
+    value: Any,
+    report_field: str,
+) -> bool:
+    if report_field.endswith("_orders"):
+        return _integer(value) > 0
+    if report_field.endswith(("_sha256", "_error")):
+        return bool(_text(value))
+    return _bool(value)
 
 
 def _broker_readiness_active(
