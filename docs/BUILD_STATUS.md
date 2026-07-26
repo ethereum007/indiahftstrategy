@@ -7899,11 +7899,30 @@ continue through neutral defaults. The full `135`-test broker-dispatch module,
 acknowledgement/round-trip continuity tests pass. Source compilation succeeds.
 Repository collection is healthy at `2798 tests` across `169` files.
 
+Latest send-to-ack route contract-identity proof: broker-dispatch send lineage
+now reopens the manifest-bound current dispatch packet and independently
+compares every active route identity claim carried by the send packet. It
+publishes the send-carried canonical digest, the digest recovered from the
+current recursive dispatch source, and a dedicated send-to-current identity
+verdict. Acknowledgement reconciliation requires the carried digest to be
+present, equal the recovered current digest, and retain that passing verdict
+before accepted evidence can advance. These facts survive in every
+acknowledgement row plus summary, config, manifest, and runbook evidence, and
+identity failures route to broker-readiness review. A send packet with a forged
+route digest is blocked even after request payloads, hashes, IDs, summary,
+config, and manifest are made internally consistent and re-manifested;
+authorization remains disabled. Identity-inactive legacy packets continue
+through neutral defaults. The full `111`-test acknowledgement module, `2` new
+recursive send-to-ack identity tests, and `10` focused lineage, legacy, and
+artifact compatibility cases plus `2` downstream round-trip binding cases
+pass. Source compilation succeeds. Repository collection is healthy at
+`2800 tests` across `169` files.
+
 ## Next Build Targets
 
-1. Give broker acknowledgement reconciliation the same explicit send-to-ack
-   route-contract-identity digest/current-source verdict now enforced at send
-   preparation.
+1. Give broker dispatch round-trip review the same explicit ack-to-round-trip
+   route-contract-identity digest/current-source verdict now enforced at
+   acknowledgement reconciliation.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

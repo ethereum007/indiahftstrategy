@@ -7029,6 +7029,21 @@ flattened dependencies, so later research or operational drift invalidates the
 ack evidence. Dispatch/send source overlap is rejected and acknowledgement
 outputs remain explicitly non-authorizing.
 
+For an active route contract identity, acknowledgement reconciliation now
+reopens the send-manifest-bound current dispatch and independently compares
+every send-carried route identity claim. The carried digest, current dispatch
+digest, and send-to-current verdict surface as
+`broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256`,
+`broker_dispatch_send_current_dispatch_route_contract_identity_sha256`, and
+`broker_dispatch_send_dispatch_route_contract_identity_matches_current` in
+every acknowledgement row plus summary, config, manifest, and runbook
+evidence. Dedicated acknowledgement checks require the carried digest to be
+present, equal the independently recovered current digest, and retain a
+passing current-source verdict. A send packet with a consistently forged route
+digest remains blocked after request rehashing and re-manifesting; the repair
+action routes to `review-broker-readiness`, and acknowledgement outputs remain
+non-authorizing. Identity-inactive legacy send packets retain neutral defaults.
+
 When the provider broker-dispatch-send wrapper retained validated dispatch
 round-trip capture provenance, acknowledgement reconciliation carries the same
 `dispatch_roundtrip_capture_bundle_*`,

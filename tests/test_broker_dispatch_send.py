@@ -2159,6 +2159,23 @@ def _write_rehashed_send_requests(send, requests):
     expected_acks.to_csv(expected_acks_path, index=False)
 
 
+def _write_ack_log_from_send(send, acks_path):
+    broker_acks = pd.read_csv(
+        send / "broker_dispatch_expected_acks.csv",
+        dtype=str,
+        keep_default_na=False,
+    )
+    broker_acks["broker_order_id"] = [
+        f"ACK-{index + 1}" for index in range(len(broker_acks))
+    ]
+    broker_acks["ack_status"] = "dry_run_accepted"
+    broker_acks["ack_ts_ns"] = [
+        str(1_000_000 + index) for index in range(len(broker_acks))
+    ]
+    broker_acks.to_csv(acks_path, index=False)
+    return acks_path
+
+
 def _write_verified_ack_chain(
     tmp_path,
     *,
@@ -6259,6 +6276,222 @@ def test_broker_dispatch_send_blocks_remanifested_dispatch_route_identity_forger
     assert action["next_gate"] == "review-broker-readiness"
     assert not report.requests["submission_enabled"].astype(bool).any()
     assert not report.requests["authorizes_submission"].astype(bool).any()
+
+
+def test_broker_dispatch_ack_revalidates_send_route_contract_identity(
+    tmp_path,
+):
+    dispatch, broker_fields = write_route_identity_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    send_report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=send,
+    )
+    assert send_report.ready
+    acks_path = _write_ack_log_from_send(
+        send,
+        tmp_path / "broker_dispatch_acks.csv",
+    )
+    ack = tmp_path / "dispatch_ack"
+
+    report = write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        send_dir=send,
+        acks_path=acks_path,
+        output_dir=ack,
+        thresholds=BrokerDispatchAckThresholds(
+            require_send_packet=True,
+        ),
+    )
+
+    assert report.passed
+    current_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    carried_field = (
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    )
+    current_field = (
+        "broker_dispatch_send_current_dispatch_route_"
+        "contract_identity_sha256"
+    )
+    verdict_field = (
+        "broker_dispatch_send_dispatch_route_"
+        "contract_identity_matches_current"
+    )
+    active_field = (
+        "broker_dispatch_send_dispatch_route_contract_identity_active"
+    )
+    summary = report.summary.iloc[0]
+    assert bool(summary[active_field])
+    assert summary[carried_field] == current_sha256
+    assert summary[current_field] == current_sha256
+    assert bool(summary[verdict_field])
+    identity_checks = {
+        (
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_sha256_present"
+        ),
+        (
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_sha256_matches_current"
+        ),
+        verdict_field,
+    }
+    assert identity_checks.isdisjoint(
+        set(
+            report.checks.loc[
+                ~report.checks["passed"].astype(bool),
+                "check",
+            ]
+        )
+    )
+    assert report.acknowledgements[verdict_field].astype(bool).all()
+    assert (
+        report.config["broker_dispatch_send_lineage"][current_field]
+        == current_sha256
+    )
+    assert report.config["broker_dispatch_send_lineage"][verdict_field]
+    manifest = json.loads(
+        (ack / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][current_field] == current_sha256
+    assert manifest["extra"][verdict_field]
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+    assert lineage["gate_passed"]
+    assert lineage[verdict_field]
+    runbook = (ack / "broker_dispatch_ack_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        f"Current dispatch route contract identity: `{current_sha256}`"
+        in runbook
+    )
+    assert "Send route contract identity matches current: yes" in runbook
+
+
+def test_broker_dispatch_ack_blocks_remanifested_send_route_identity_forgery(
+    tmp_path,
+):
+    dispatch, broker_fields = write_route_identity_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    send_report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=send,
+    )
+    assert send_report.ready
+    identity_field = (
+        "broker_dispatch_route_enable_cutover_runtime_telemetry_"
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    )
+    forged_sha256 = "e" * 64
+    _rewrite_send_dispatch_lineage_field(
+        send,
+        identity_field,
+        forged_sha256,
+    )
+    assert verify_experiment_manifest(
+        send / "manifest.json",
+        expected_run_type="broker_dispatch_send_packet",
+        require_input_fingerprints=True,
+    ).passed
+    acks_path = _write_ack_log_from_send(
+        send,
+        tmp_path / "broker_dispatch_acks.csv",
+    )
+    ack = tmp_path / "dispatch_ack"
+
+    report = write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        send_dir=send,
+        acks_path=acks_path,
+        output_dir=ack,
+        thresholds=BrokerDispatchAckThresholds(
+            require_send_packet=True,
+        ),
+    )
+
+    current_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    carried_field = (
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    )
+    current_field = (
+        "broker_dispatch_send_current_dispatch_route_"
+        "contract_identity_sha256"
+    )
+    digest_check = (
+        "broker_dispatch_send_broker_dispatch_route_enable_cutover_"
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256_matches_current"
+    )
+    verdict_check = (
+        "broker_dispatch_send_dispatch_route_"
+        "contract_identity_matches_current"
+    )
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.passed
+    assert "broker_dispatch_send_manifest_current" not in failed
+    assert (
+        "broker_dispatch_send_lineage_contract_consistent" not in failed
+    )
+    assert {
+        "broker_dispatch_send_broker_dispatch_matches_current",
+        digest_check,
+        verdict_check,
+        "broker_dispatch_send_lineage_gate_passed",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary[carried_field] == forged_sha256
+    assert summary[current_field] == current_sha256
+    assert not bool(summary[verdict_check])
+    action = report.action_queue.loc[
+        report.action_queue["check"] == verdict_check
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert (
+        action["recommendation"]
+        == "rebuild_broker_readiness_lineage_before_ack_reconciliation"
+    )
+    assert not report.acknowledgements[
+        "authorizes_submission"
+    ].astype(bool).any()
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"], lineage["contract_error"]
+    assert not lineage["send_lineage_gate_passed"]
+    assert not lineage["send_matches_current"]
+    assert not lineage[verdict_check]
+    assert not lineage["gate_passed"]
 
 
 def test_broker_dispatch_send_lineage_verifies_complete_current_packet(tmp_path):
