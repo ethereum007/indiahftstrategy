@@ -6621,6 +6621,20 @@ artifact set and recursively flattened route dependencies, so later research or
 operational drift invalidates the plan. Dispatch output may not overlap its
 route-enable or upload source directory.
 
+For an active broker contract identity, dispatch planning now reopens the
+manifest-bound current cutover bundle and independently compares every carried
+cutover identity claim plus the canonical digest. The carried digest, current
+cutover digest, and route-to-current verdict surface as
+`route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256`,
+`route_enable_current_cutover_contract_identity_sha256`, and
+`route_enable_cutover_contract_identity_matches_current` in every dispatch
+order, summary, config, runbook, and manifest. Dedicated dispatch checks require
+the carried digest to be present, equal the independently recovered current
+digest, and retain a passing current-source verdict. This blocks a route packet
+whose identity was consistently forged across packet, summary, config, and
+manifest before dry-run dispatch can arm. Identity-inactive legacy packets keep
+neutral defaults.
+
 When route-enable retained strategy portfolio allocation, dispatch
 planning carries the `strategy_portfolio_*` fields into summary/config,
 including concentration counts, top concentration names, and maximum allocation

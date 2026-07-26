@@ -826,6 +826,86 @@ def _checks(
                     ),
                 ]
             )
+            if route["route_enable_cutover_contract_identity_active"]:
+                route_identity_sha256 = _object_text(
+                    route[
+                        (
+                            "route_enable_cutover_runtime_telemetry_"
+                            "broker_readiness_roundtrip_"
+                            "contract_identity_sha256"
+                        )
+                    ]
+                ).strip()
+                current_identity_sha256 = _object_text(
+                    route[
+                        "route_enable_current_cutover_contract_identity_sha256"
+                    ]
+                ).strip()
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "route_enable_cutover_runtime_telemetry_"
+                                "broker_readiness_roundtrip_"
+                                "contract_identity_sha256_present"
+                            ),
+                            route_identity_sha256,
+                            "present",
+                            True,
+                            bool(route_identity_sha256),
+                            (
+                                "route-enable broker contract identity digest "
+                                "is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "route_enable_cutover_runtime_telemetry_"
+                                "broker_readiness_roundtrip_"
+                                "contract_identity_sha256_matches_current"
+                            ),
+                            route_identity_sha256,
+                            "==",
+                            current_identity_sha256,
+                            bool(
+                                route_identity_sha256
+                                and current_identity_sha256
+                                and route_identity_sha256
+                                == current_identity_sha256
+                            ),
+                            (
+                                "route-enable broker contract identity digest "
+                                "differs from the current cutover source"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "route_enable_cutover_"
+                                "contract_identity_matches_current"
+                            ),
+                            route[
+                                (
+                                    "route_enable_cutover_"
+                                    "contract_identity_matches_current"
+                                )
+                            ],
+                            "is",
+                            True,
+                            bool(
+                                route[
+                                    (
+                                        "route_enable_cutover_"
+                                        "contract_identity_matches_current"
+                                    )
+                                ]
+                            ),
+                            (
+                                "route-enable broker contract identity no "
+                                "longer matches the current cutover source"
+                            ),
+                        ),
+                    ]
+                )
         checks.append(
             _check(
                 "route_enable_lineage_gate_passed",
@@ -4825,10 +4905,18 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
-    if check.startswith("route_enable_cutover_broker_readiness_") or check in {
-        "route_enable_cutover_runtime_lineage_source_bound",
-        "route_enable_cutover_runtime_lineage_matches_current",
-    }:
+    if (
+        check.startswith("route_enable_cutover_broker_readiness_")
+        or (
+            check.startswith("route_enable_cutover_")
+            and "contract_identity" in check
+        )
+        or check
+        in {
+            "route_enable_cutover_runtime_lineage_source_bound",
+            "route_enable_cutover_runtime_lineage_matches_current",
+        }
+    ):
         return "broker_readiness"
     if check in {"route_enabled", "target_mode_matches", "adapter_matches"} or check.startswith(
         ("route_enable_lineage_", "route_enable_manifest_", "route_enable_non_authorizing")
@@ -6315,6 +6403,22 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Route dispatch round-trip ready: {_object_text(summary_row.get('route_dispatch_roundtrip_ready')).strip()}",
         f"- Route-enable lineage current: {'yes' if _to_bool(summary_row.get('route_enable_lineage_gate_passed')) else 'no'}",
+        (
+            "- Route-enable broker contract identity active: "
+            f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_contract_identity_active')) else 'no'}"
+        ),
+        (
+            "- Route-enable carried broker contract identity: "
+            f"{_code(summary_row.get('route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256'))}"
+        ),
+        (
+            "- Current cutover broker contract identity: "
+            f"{_code(summary_row.get('route_enable_current_cutover_contract_identity_sha256'))}"
+        ),
+        (
+            "- Route-enable broker contract identity matches current: "
+            f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_contract_identity_matches_current')) else 'no'}"
+        ),
         (
             "- Broker-readiness source matches scale-up: "
             f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_broker_readiness_source_matches_scaleup')) else 'no'}"

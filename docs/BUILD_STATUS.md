@@ -7866,11 +7866,27 @@ exceeded its 15-minute command window, so its unrelated cases were not claimed
 as rerun. Source compilation succeeds. Repository collection is healthy at
 `2794 tests` across `169` files.
 
+Latest route-to-dispatch contract-identity proof: the route-enable lineage
+loader now reopens the manifest-bound current cutover and independently
+compares every active cutover contract-identity claim. It publishes the carried
+canonical digest, the digest recovered from the current recursive cutover
+source, and a dedicated route-to-current identity verdict. Broker dispatch
+planning requires the carried digest to be present, equal the current digest,
+and retain that passing verdict before it can enter `armed_dry_run`. These
+facts survive in every dispatch order, summary, config, manifest, and runbook,
+and identity failures route to broker-readiness review. A route packet with a
+forged digest is blocked even after packet, summary, config, and manifest are
+made internally consistent and re-manifested. Identity-inactive legacy packets
+continue through neutral defaults. The full `135`-test broker-dispatch module
+and `3` focused downstream send/lineage continuity tests pass. Source
+compilation succeeds. Repository collection is healthy at `2796 tests` across
+`169` files.
+
 ## Next Build Targets
 
-1. Give broker dispatch planning the same explicit route-to-dispatch
-   contract-identity digest/current-source verdict now enforced at cutover and
-   route enable.
+1. Give broker send preparation the same explicit dispatch-to-send
+   route-contract-identity digest/current-source verdict now enforced at
+   broker dispatch planning.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

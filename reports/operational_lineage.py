@@ -1319,6 +1319,9 @@ def empty_route_enable_lineage(*, required: bool = False) -> dict[str, Any]:
         "contract_error": "",
         "non_authorizing": not required,
         "cutover_matches_current": not required,
+        "cutover_contract_identity_active": False,
+        "current_cutover_contract_identity_sha256": "",
+        "cutover_contract_identity_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -1408,23 +1411,24 @@ def load_route_enable_lineage(route_enable_config_path: str | Path) -> dict[str,
         and not _bool(extra.get("authorizes_submission"))
     )
     cutover_gate = _bool(state.get("cutover_lineage_gate_passed", False))
-    cutover_matches_current = _route_cutover_matches_current(
+    current_cutover = _route_current_cutover_lineage_state(
         route_manifest=manifest,
         route_manifest_path=manifest_path,
         lineage=state,
         route_fields=tuple(route_fields),
     )
+    state.update(current_cutover)
     state["contract_consistent"] = not errors
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
-    state["cutover_matches_current"] = cutover_matches_current
     state["gate_passed"] = bool(
         state["provided"]
         and state["manifest_current"]
         and state["contract_consistent"]
         and non_authorizing
         and cutover_gate
-        and cutover_matches_current
+        and state["cutover_matches_current"]
+        and state["cutover_contract_identity_matches_current"]
     )
     return state
 
@@ -1452,6 +1456,15 @@ def route_enable_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "route_enable_cutover_matches_current": _bool(
             lineage.get("cutover_matches_current", False)
+        ),
+        "route_enable_cutover_contract_identity_active": _bool(
+            lineage.get("cutover_contract_identity_active", False)
+        ),
+        "route_enable_current_cutover_contract_identity_sha256": _text(
+            lineage.get("current_cutover_contract_identity_sha256", "")
+        ),
+        "route_enable_cutover_contract_identity_matches_current": _bool(
+            lineage.get("cutover_contract_identity_matches_current", False)
         ),
         "route_enable_lineage_gate_passed": _bool(lineage.get("gate_passed", False)),
         "route_enable_lineage_dependency_count": int(
@@ -4987,36 +5000,126 @@ def _dispatch_route_enable_matches_current(
     )
 
 
-def _route_cutover_matches_current(
+def _route_current_cutover_lineage_state(
     *,
     route_manifest: Mapping[str, Any],
     route_manifest_path: Path,
     lineage: Mapping[str, Any],
     route_fields: tuple[str, ...],
-) -> bool:
+) -> dict[str, Any]:
+    identity_fields = tuple(
+        column for column in route_fields if "contract_identity" in column
+    )
+    carried_identity_active = bool(
+        any(
+            _bool(lineage.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(lineage.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
     cutover_manifest_path = _manifest_input_path(
         route_manifest,
         route_manifest_path,
         "cutover_manifest",
     )
-    if cutover_manifest_path is None or not cutover_manifest_path.is_file():
-        return False
-    cutover_config_path = cutover_manifest_path.with_name("cutover_config.json")
-    if not cutover_config_path.is_file():
-        return False
-    current = load_cutover_lineage(cutover_config_path)
+    cutover_config_path = (
+        cutover_manifest_path.with_name("cutover_config.json")
+        if cutover_manifest_path is not None
+        else None
+    )
+    source_bound = bool(
+        cutover_manifest_path is not None
+        and cutover_manifest_path.is_file()
+        and cutover_config_path is not None
+        and cutover_config_path.is_file()
+    )
+    current = empty_cutover_lineage(required=True)
+    if source_bound and cutover_config_path is not None:
+        current = load_cutover_lineage(cutover_config_path)
     current_fields = cutover_lineage_fields(current)
-    return bool(
-        current.get("gate_passed", False)
+    current_identity_active = bool(
+        _bool(
+            current_fields.get(
+                "cutover_runtime_contract_identity_active",
+                False,
+            )
+        )
+        or any(
+            _bool(current_fields.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(current_fields.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    contract_identity_active = bool(
+        carried_identity_active or current_identity_active
+    )
+    current_identity_sha256 = _text(
+        current_fields.get(
+            "cutover_current_runtime_contract_identity_sha256",
+            "",
+        )
+    )
+    carried_identity_sha256 = _text(
+        lineage.get(
+            (
+                "cutover_runtime_telemetry_broker_readiness_"
+                "roundtrip_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    contract_identity_matches_current = bool(
+        not contract_identity_active
+        or (
+            source_bound
+            and current.get("gate_passed", False)
+            and current_identity_active
+            and carried_identity_sha256
+            and current_identity_sha256
+            and carried_identity_sha256 == current_identity_sha256
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_fields.get(column),
+                    column,
+                )
+                for column in identity_fields
+            )
+        )
+    )
+    cutover_matches_current = bool(
+        source_bound
+        and current.get("gate_passed", False)
         and all(
             _same(lineage.get(column), current_fields.get(column), column)
             for column in route_fields
         )
+        and cutover_config_path is not None
         and _route_leadlag_matches_current_cutover(
             lineage=lineage,
             cutover_config_path=cutover_config_path,
         )
     )
+    return {
+        "cutover_matches_current": cutover_matches_current,
+        "cutover_contract_identity_active": contract_identity_active,
+        "current_cutover_contract_identity_sha256": (
+            current_identity_sha256
+        ),
+        "cutover_contract_identity_matches_current": (
+            contract_identity_matches_current
+        ),
+    }
 
 
 def _route_leadlag_matches_current_cutover(

@@ -1900,6 +1900,70 @@ def write_inputs(
     return route, upload
 
 
+def write_contract_identity_dispatch_inputs(root):
+    from reports.cutover import write_cutover_gate_report
+    from reports.route_enable import (
+        RouteEnableThresholds,
+        write_route_enable_packet,
+    )
+    from tests.test_cutover_gate import (
+        write_contract_identity_cutover_inputs,
+    )
+    from tests.test_route_enable import (
+        order_export_summary,
+        upload_summary,
+    )
+
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_fields,
+    ) = write_contract_identity_cutover_inputs(root)
+    cutover = root / "cutover"
+    cutover_report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=cutover,
+    )
+    assert cutover_report.ready
+
+    upload = root / "upload"
+    export = root / "export"
+    upload.mkdir()
+    export.mkdir()
+    upload_summary(orders=2).to_csv(
+        upload / "broker_upload_summary.csv",
+        index=False,
+    )
+    upload_orders().to_csv(
+        upload / "broker_upload_orders.csv",
+        index=False,
+    )
+    order_export_summary(
+        orders=2,
+        total_notional=1_575.0,
+    ).to_csv(
+        export / "broker_order_summary.csv",
+        index=False,
+    )
+    route = root / "route_enable"
+    route_report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=route,
+        thresholds=RouteEnableThresholds(
+            require_order_export_ready=True,
+        ),
+    )
+    assert route_report.ready
+    return route, upload, broker_fields
+
+
 def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     report = evaluate_broker_dispatch_plan(
         route_enable_summary=route_summary(),
@@ -5800,6 +5864,194 @@ def test_broker_dispatch_binds_verified_upload_contract_identity(tmp_path):
     assert manifest["extra"]["upload_pack_manifest_sha256"] == file_sha256(
         upload / "manifest.json"
     )
+
+
+def test_broker_dispatch_revalidates_route_contract_identity(tmp_path):
+    route, upload, broker_fields = write_contract_identity_dispatch_inputs(
+        tmp_path
+    )
+    out_dir = tmp_path / "dispatch"
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=out_dir,
+    )
+
+    assert report.ready
+    current_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    summary = report.summary.iloc[0]
+    assert bool(
+        summary["route_enable_cutover_contract_identity_active"]
+    )
+    assert (
+        summary[
+            (
+                "route_enable_cutover_runtime_telemetry_"
+                "broker_readiness_roundtrip_contract_identity_sha256"
+            )
+        ]
+        == current_sha256
+    )
+    assert (
+        summary[
+            "route_enable_current_cutover_contract_identity_sha256"
+        ]
+        == current_sha256
+    )
+    assert bool(
+        summary[
+            "route_enable_cutover_contract_identity_matches_current"
+        ]
+    )
+    assert {
+        (
+            "route_enable_cutover_runtime_telemetry_"
+            "broker_readiness_roundtrip_contract_identity_sha256_present"
+        ),
+        (
+            "route_enable_cutover_runtime_telemetry_"
+            "broker_readiness_roundtrip_"
+            "contract_identity_sha256_matches_current"
+        ),
+        "route_enable_cutover_contract_identity_matches_current",
+    }.isdisjoint(
+        set(
+            report.checks.loc[
+                ~report.checks["passed"].astype(bool),
+                "check",
+            ]
+        )
+    )
+    orders = pd.read_csv(out_dir / "broker_dispatch_orders.csv")
+    assert orders[
+        "route_enable_cutover_contract_identity_matches_current"
+    ].astype(bool).all()
+    config = json.loads(
+        (out_dir / "broker_dispatch_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert config["route_enable_lineage"][
+        "route_enable_cutover_contract_identity_matches_current"
+    ]
+    assert (
+        config["route_enable_lineage"][
+            "route_enable_current_cutover_contract_identity_sha256"
+        ]
+        == current_sha256
+    )
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][
+        "route_enable_cutover_contract_identity_matches_current"
+    ]
+    dispatch_lineage = load_broker_dispatch_lineage(
+        out_dir / "broker_dispatch_config.json"
+    )
+    assert dispatch_lineage["gate_passed"]
+    assert dispatch_lineage[
+        "route_enable_cutover_contract_identity_matches_current"
+    ]
+    assert (
+        dispatch_lineage[
+            "route_enable_current_cutover_contract_identity_sha256"
+        ]
+        == current_sha256
+    )
+    runbook = (out_dir / "broker_dispatch_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        f"Current cutover broker contract identity: `{current_sha256}`"
+        in runbook
+    )
+
+
+def test_broker_dispatch_blocks_remanifested_route_contract_identity_forgery(
+    tmp_path,
+):
+    route, upload, broker_fields = write_contract_identity_dispatch_inputs(
+        tmp_path
+    )
+    identity_field = (
+        "cutover_runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    )
+    forged_sha256 = "d" * 64
+    cutover = tmp_path / "cutover"
+    lineage = cutover_lineage_fields(
+        load_cutover_lineage(cutover / "cutover_config.json")
+    )
+    lineage[identity_field] = forged_sha256
+    refresh_route_manifest(
+        route,
+        lineage_override=lineage,
+    )
+    assert verify_experiment_manifest(
+        route / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    ).passed
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=tmp_path / "dispatch",
+    )
+
+    current_sha256 = broker_fields[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "route_enable_manifest_current" not in failed
+    assert "route_enable_lineage_contract_consistent" not in failed
+    assert {
+        "route_enable_cutover_matches_current",
+        (
+            "route_enable_cutover_runtime_telemetry_"
+            "broker_readiness_roundtrip_"
+            "contract_identity_sha256_matches_current"
+        ),
+        "route_enable_cutover_contract_identity_matches_current",
+        "route_enable_lineage_gate_passed",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert (
+        summary[
+            (
+                "route_enable_cutover_runtime_telemetry_"
+                "broker_readiness_roundtrip_contract_identity_sha256"
+            )
+        ]
+        == forged_sha256
+    )
+    assert (
+        summary[
+            "route_enable_current_cutover_contract_identity_sha256"
+        ]
+        == current_sha256
+    )
+    assert not bool(
+        summary[
+            "route_enable_cutover_contract_identity_matches_current"
+        ]
+    )
+    action = report.action_queue.loc[
+        report.action_queue["check"]
+        == "route_enable_cutover_contract_identity_matches_current"
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
 
 
 def test_broker_dispatch_blocks_remanifested_upload_identity_tamper(
