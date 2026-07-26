@@ -7882,11 +7882,28 @@ and `3` focused downstream send/lineage continuity tests pass. Source
 compilation succeeds. Repository collection is healthy at `2796 tests` across
 `169` files.
 
+Latest dispatch-to-send route contract-identity proof: broker-dispatch lineage
+now reopens the manifest-bound current route-enable packet and independently
+compares every active route identity claim. It publishes the dispatch-carried
+canonical digest, the digest recovered from the current recursive route source,
+and a dedicated dispatch-to-current identity verdict. Send preparation requires
+the carried digest to be present, equal the current digest, and retain that
+passing verdict before it can emit a ready request packet. These facts survive
+in every request and hashed request envelope plus summary, config, manifest,
+and runbook evidence. Identity failures route to broker-readiness review. A
+dispatch bundle with a forged route digest is blocked even after orders,
+summary, config, and manifest are made internally consistent and re-manifested;
+submission and authorization remain disabled. Identity-inactive legacy packets
+continue through neutral defaults. The full `135`-test broker-dispatch module,
+`13` focused sender lineage/legacy/identity tests, and `3` focused
+acknowledgement/round-trip continuity tests pass. Source compilation succeeds.
+Repository collection is healthy at `2798 tests` across `169` files.
+
 ## Next Build Targets
 
-1. Give broker send preparation the same explicit dispatch-to-send
-   route-contract-identity digest/current-source verdict now enforced at
-   broker dispatch planning.
+1. Give broker acknowledgement reconciliation the same explicit send-to-ack
+   route-contract-identity digest/current-source verdict now enforced at send
+   preparation.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

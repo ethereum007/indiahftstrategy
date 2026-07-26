@@ -6814,15 +6814,30 @@ plus a flat `broker_dispatch_lineage` config block and send summary/manifest
 metadata. The send manifest fingerprints the complete dispatch artifact set and
 recursively flattened dependencies; later research or operational drift
 invalidates it. Send output may not overlap the dispatch source, and both
-`submission_enabled=false` and `authorizes_submission=false` are enforced. It
-carries route dispatch round-trip proof into the sender request envelope and
-expected acknowledgement rows, then fails closed if the dispatch plan is not
-ready and armed, target mode does not match, route-readiness proof is missing
-or identity-mismatched, route round-trip proof is missing or dirty for live
-dry-run sending, route-enable dispatch round-trip failed checks read from the
-dispatch config are nonzero, any dispatch row or request carries a mismatched
-route proof batch id, any dispatch-carried shadow broker-readiness aggregate is
-mixed or dirty, any dispatch-carried broker-readiness shadow broker proof is
+`submission_enabled=false` and `authorizes_submission=false` are enforced.
+
+For an active route contract identity, send preparation now reopens the
+dispatch-manifest-bound current route packet and independently compares every
+dispatch-carried route identity claim. The carried digest, current route digest,
+and dispatch-to-current verdict surface as
+`broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256`,
+`broker_dispatch_current_route_contract_identity_sha256`, and
+`broker_dispatch_route_contract_identity_matches_current` in each request,
+hashed request envelope, summary, config, runbook, and manifest. Dedicated
+sender checks require the carried digest to be present, equal the independently
+recovered current digest, and retain a passing current-source verdict. A
+dispatch bundle with a consistently forged route digest remains blocked after
+re-manifesting, with both submission and authorization disabled. Identity-
+inactive legacy dispatch packets retain neutral defaults.
+
+The sender carries route dispatch round-trip proof into the sender request
+envelope and expected acknowledgement rows, then fails closed if the dispatch
+plan is not ready and armed, target mode does not match, route-readiness proof
+is missing or identity-mismatched, route round-trip proof is missing or dirty
+for live dry-run sending, route-enable dispatch round-trip failed checks read
+from the dispatch config are nonzero, any dispatch row or request carries a
+mismatched route proof batch id, any dispatch-carried shadow broker-readiness
+aggregate is mixed or dirty, any dispatch-carried broker-readiness shadow broker proof is
 mixed or dirty, the adapter is unknown, payload JSON is invalid, idempotency
 keys are not unique, request limits are exceeded, or any request is not
 dry-run-only. If dispatch planning retained strategy portfolio allocation

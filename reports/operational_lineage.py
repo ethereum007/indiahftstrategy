@@ -1517,6 +1517,9 @@ def empty_broker_dispatch_lineage(*, required: bool = False) -> dict[str, Any]:
         "contract_error": "",
         "non_authorizing": not required,
         "route_enable_matches_current": not required,
+        "route_contract_identity_active": False,
+        "current_route_contract_identity_sha256": "",
+        "route_contract_identity_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -1615,23 +1618,24 @@ def load_broker_dispatch_lineage(
         and not _bool(extra.get("authorizes_submission"))
     )
     route_gate = _bool(state.get("route_enable_lineage_gate_passed", False))
-    route_enable_matches_current = _dispatch_route_enable_matches_current(
+    current_route = _dispatch_current_route_enable_lineage_state(
         dispatch_manifest=manifest,
         dispatch_manifest_path=manifest_path,
         lineage=state,
         route_fields=tuple(route_fields),
     )
+    state.update(current_route)
     state["contract_consistent"] = not errors
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
-    state["route_enable_matches_current"] = route_enable_matches_current
     state["gate_passed"] = bool(
         state["provided"]
         and state["manifest_current"]
         and state["contract_consistent"]
         and non_authorizing
         and route_gate
-        and route_enable_matches_current
+        and state["route_enable_matches_current"]
+        and state["route_contract_identity_matches_current"]
     )
     return state
 
@@ -1659,6 +1663,15 @@ def broker_dispatch_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]
         ),
         "broker_dispatch_route_enable_matches_current": _bool(
             lineage.get("route_enable_matches_current", False)
+        ),
+        "broker_dispatch_route_contract_identity_active": _bool(
+            lineage.get("route_contract_identity_active", False)
+        ),
+        "broker_dispatch_current_route_contract_identity_sha256": _text(
+            lineage.get("current_route_contract_identity_sha256", "")
+        ),
+        "broker_dispatch_route_contract_identity_matches_current": _bool(
+            lineage.get("route_contract_identity_matches_current", False)
         ),
         "broker_dispatch_lineage_gate_passed": _bool(
             lineage.get("gate_passed", False)
@@ -4972,32 +4985,121 @@ def _send_matches_expected_dispatch(
     )
 
 
-def _dispatch_route_enable_matches_current(
+def _dispatch_current_route_enable_lineage_state(
     *,
     dispatch_manifest: Mapping[str, Any],
     dispatch_manifest_path: Path,
     lineage: Mapping[str, Any],
     route_fields: tuple[str, ...],
-) -> bool:
+) -> dict[str, Any]:
+    identity_fields = tuple(
+        column for column in route_fields if "contract_identity" in column
+    )
+    carried_identity_active = bool(
+        any(
+            _bool(lineage.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(lineage.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
     route_manifest_path = _manifest_input_path(
         dispatch_manifest,
         dispatch_manifest_path,
         "route_enable_manifest",
     )
-    if route_manifest_path is None or not route_manifest_path.is_file():
-        return False
-    route_enable_config_path = route_manifest_path.with_name("route_enable_config.json")
-    if not route_enable_config_path.is_file():
-        return False
-    current = load_route_enable_lineage(route_enable_config_path)
+    route_enable_config_path = (
+        route_manifest_path.with_name("route_enable_config.json")
+        if route_manifest_path is not None
+        else None
+    )
+    source_bound = bool(
+        route_manifest_path is not None
+        and route_manifest_path.is_file()
+        and route_enable_config_path is not None
+        and route_enable_config_path.is_file()
+    )
+    current = empty_route_enable_lineage(required=True)
+    if source_bound and route_enable_config_path is not None:
+        current = load_route_enable_lineage(route_enable_config_path)
     current_fields = route_enable_lineage_fields(current)
-    return bool(
-        current.get("gate_passed", False)
+    current_identity_active = bool(
+        _bool(
+            current_fields.get(
+                "route_enable_cutover_contract_identity_active",
+                False,
+            )
+        )
+        or any(
+            _bool(current_fields.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(current_fields.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    contract_identity_active = bool(
+        carried_identity_active or current_identity_active
+    )
+    current_identity_sha256 = _text(
+        current_fields.get(
+            "route_enable_current_cutover_contract_identity_sha256",
+            "",
+        )
+    )
+    carried_identity_sha256 = _text(
+        lineage.get(
+            (
+                "route_enable_cutover_runtime_telemetry_"
+                "broker_readiness_roundtrip_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    contract_identity_matches_current = bool(
+        not contract_identity_active
+        or (
+            source_bound
+            and current.get("gate_passed", False)
+            and current_identity_active
+            and carried_identity_sha256
+            and current_identity_sha256
+            and carried_identity_sha256 == current_identity_sha256
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_fields.get(column),
+                    column,
+                )
+                for column in identity_fields
+            )
+        )
+    )
+    route_enable_matches_current = bool(
+        source_bound
+        and current.get("gate_passed", False)
         and all(
             _same(lineage.get(column), current_fields.get(column), column)
             for column in route_fields
         )
     )
+    return {
+        "route_enable_matches_current": route_enable_matches_current,
+        "route_contract_identity_active": contract_identity_active,
+        "current_route_contract_identity_sha256": (
+            current_identity_sha256
+        ),
+        "route_contract_identity_matches_current": (
+            contract_identity_matches_current
+        ),
+    }
 
 
 def _route_current_cutover_lineage_state(
