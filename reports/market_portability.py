@@ -89,6 +89,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
             "scan-parity-box",
             "audit-parity-edge",
             "replay-parity",
+            "replay-box",
             "sweep-parity",
             "promote-parity-candidate",
             "plan-parity-orders",

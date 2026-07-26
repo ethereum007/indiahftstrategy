@@ -402,6 +402,7 @@ from reports.vendor_data_onboarding import (
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
+from strategies.run_box_replay import run_box_replay
 from strategies.run_imbalance_replay import run_imbalance_replay
 from strategies.run_imbalance_sweep import run_imbalance_sweep
 from strategies.run_leadlag_replay import run_leadlag_replay
@@ -723,6 +724,69 @@ def main(argv: list[str] | None = None) -> int:
     )
     parity.add_argument("--fill-model", default=None)
     parity.add_argument("--allow-unready-fill-model", action="store_true")
+
+    box = sub.add_parser(
+        "replay-box",
+        help="Replay four-leg box taker strategy.",
+    )
+    box.add_argument("--chain", required=True)
+    box.add_argument("--out", required=True)
+    box.add_argument(
+        "--no-filter-session",
+        action="store_true",
+    )
+    box.add_argument("--signal-limit", type=int, default=None)
+    box.add_argument(
+        "--depth-fraction",
+        type=float,
+        default=0.25,
+    )
+    box.add_argument(
+        "--fair-value-adjustment",
+        type=float,
+        default=0.0,
+    )
+    box.add_argument(
+        "--feed-latency-us",
+        type=float,
+        default=0.0,
+    )
+    box.add_argument(
+        "--order-latency-us",
+        type=float,
+        default=0.0,
+    )
+    box.add_argument(
+        "--latency-jitter-us",
+        type=float,
+        default=0.0,
+    )
+    box.add_argument(
+        "--latency-seed",
+        type=int,
+        default=17,
+    )
+    box.add_argument(
+        "--max-signal-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    box.add_argument(
+        "--max-leg-book-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    box.add_argument(
+        "--max-leg-book-skew-ns",
+        type=int,
+        default=1_000_000,
+    )
+    box.add_argument("--max-qty", type=int, default=None)
+    box.add_argument("--fill-model", default=None)
+    box.add_argument(
+        "--allow-unready-fill-model",
+        action="store_true",
+    )
 
     leadlag = sub.add_parser("measure-leadlag", help="Measure lead-lag relationship.")
     leadlag.add_argument("--leader", required=True)
@@ -5470,6 +5534,40 @@ def main(argv: list[str] | None = None) -> int:
             max_signal_age_ns=args.max_signal_age_ns,
             max_leg_book_age_ns=args.max_leg_book_age_ns,
             max_leg_book_skew_ns=args.max_leg_book_skew_ns,
+        )
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "replay-box":
+        replay_params = calibrated_replay_params_from_path(
+            "parity",
+            {
+                "order_latency_us": args.order_latency_us,
+                "depth_fraction": args.depth_fraction,
+            },
+            args.fill_model,
+            require_ready=not args.allow_unready_fill_model,
+        )
+        result = run_box_replay(
+            chain_path=args.chain,
+            output_dir=args.out,
+            filter_session=not args.no_filter_session,
+            signal_limit=args.signal_limit,
+            depth_fraction=replay_params["depth_fraction"],
+            fair_value_adjustment=(
+                args.fair_value_adjustment
+            ),
+            feed_latency_us=args.feed_latency_us,
+            order_latency_us=(
+                replay_params["order_latency_us"]
+            ),
+            latency_jitter_us=args.latency_jitter_us,
+            latency_seed=args.latency_seed,
+            max_signal_age_ns=args.max_signal_age_ns,
+            max_leg_book_age_ns=args.max_leg_book_age_ns,
+            max_leg_book_skew_ns=(
+                args.max_leg_book_skew_ns
+            ),
+            max_qty=args.max_qty,
         )
         print(result.summary.to_string(index=False))
         return 0

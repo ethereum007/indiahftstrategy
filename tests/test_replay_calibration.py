@@ -49,6 +49,11 @@ def test_fill_model_calibrates_depth_without_loosening_existing_conservatism():
         {"order_latency_us": 0.0, "depth_fraction": 1.0},
         fill_model_config(),
     )
+    box = apply_fill_model_to_replay_params(
+        "box_replay",
+        {"order_latency_us": 0.0, "depth_fraction": 1.0},
+        fill_model_config(),
+    )
     surface = apply_fill_model_to_replay_params(
         "surface_mm",
         {"order_latency_us": 500.0, "fill_depth_fraction": 0.1},
@@ -57,6 +62,7 @@ def test_fill_model_calibrates_depth_without_loosening_existing_conservatism():
 
     assert parity.params["order_latency_us"] == 250.0
     assert parity.params["depth_fraction"] == 0.25
+    assert box.params == parity.params
     assert surface.params["order_latency_us"] == 500.0
     assert surface.params["fill_depth_fraction"] == 0.1
 

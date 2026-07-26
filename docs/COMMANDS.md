@@ -1169,6 +1169,45 @@ incomplete-event metrics. Residual inventory remains marked in final equity for
 measurement, but a depth-constrained replay with an incomplete terminal close
 fails its proof check and cannot qualify as a paper/shadow candidate.
 
+## Box Replay
+
+Replay scanned four-leg box opportunities directly from an option chain:
+
+```powershell
+python -m hft_cli replay-box `
+  --chain data\chain.csv `
+  --out runs\box_replay_2026_06_10 `
+  --signal-limit 100 `
+  --depth-fraction 0.25 `
+  --fair-value-adjustment 0 `
+  --max-signal-age-ns 1000000 `
+  --max-leg-book-age-ns 1000000 `
+  --max-leg-book-skew-ns 250000 `
+  --feed-latency-us 50 `
+  --order-latency-us 250 `
+  --latency-jitter-us 25 `
+  --latency-seed 20260726 `
+  --fill-model runs\fill_model\parity_shadow_latest
+```
+
+The runner treats each `(expiry, strike)` call and put as a distinct replay
+instrument, so weekly and monthly contracts cannot share a cached book. Before
+routing, it requires all four signal-source books to be visible and within the
+configured age/skew limits, then recomputes the buy- or sell-box edge and the
+four Indian option cost legs at current executable touches. A non-mutating
+package preflight must admit all four IOC legs and reserve one full lot of
+visible capacity on each touch before any order receives an ID.
+
+Outputs use the standard replay artifact set plus `signals.csv`,
+`legging.csv`, `box_execution_guard.csv`, and `input_quarantine.csv`.
+`legging.csv` binds the signal index to every order and fill, reports incomplete
+packages, and reconstructs realized box edge from the four fill VWAPs and
+actual costs. `summary.csv` includes source-causality, edge-revalidation,
+package-preflight, order-timing, IOC-arrival, realized-edge, and seeded-latency
+evidence. The `box_replay` manifest fingerprints the normalized chain input
+and every replay parameter. This is research evidence only; it does not
+authorize broker routing.
+
 ## Parity Sweep
 
 Run replay robustness scenarios across executable depth, as-of latency, and
@@ -1245,10 +1284,11 @@ retain positive realized edge. The opportunity SHA-256, replay manifest
 SHA-256, signal index, guard attempts, and realized result are carried into the
 promotion artifacts and manifest.
 
-The current sweep engine replays three-leg put-call parity. If a four-leg box
-is the highest-ranked scan opportunity, manifest-backed promotion therefore
-stays research-only until a box replay can provide equivalent candidate-level
-evidence:
+The standalone `box_replay` now provides four-leg candidate-level execution
+evidence. The current sweep and promotion bridge still select nested
+three-leg `parity_replay` runs, however. If a box is the highest-ranked scan
+opportunity, promotion therefore stays research-only until a box robustness
+sweep binds one exact box replay into the candidate lineage:
 
 ```powershell
 python -m hft_cli promote-parity-candidate `

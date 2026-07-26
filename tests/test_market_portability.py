@@ -107,6 +107,7 @@ def test_market_portability_report_marks_us_options_portable_with_fee_model():
     assert report.ready
     assert set(report.matrix["next_gate"]) == {"run_walkforward_and_paper_shadow_gates"}
     parity_commands = report.matrix.set_index("strategy").loc["parity_box", "workflow_commands"]
+    assert "replay-box" in parity_commands
     assert "promote-parity-candidate" in parity_commands
     assert "plan-parity-orders" in parity_commands
     assert "pipeline-parity-launch" in parity_commands

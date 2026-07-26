@@ -206,6 +206,8 @@ def _strategy_key(strategy: str) -> str:
     aliases = {
         "lead_lag": "leadlag",
         "leadlag_replay": "leadlag",
+        "box": "parity",
+        "box_replay": "parity",
         "parity_replay": "parity",
         "surface": "surface_mm",
         "surface_market_making": "surface_mm",
