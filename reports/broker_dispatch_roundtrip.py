@@ -16,6 +16,10 @@ from reports.leadlag_lineage import (
 )
 from reports.manifest import write_experiment_manifest
 from reports.operational_lineage import (
+    BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS,
+    broker_dispatch_contract_identity_record,
+    broker_dispatch_contract_identity_records,
+    broker_dispatch_contract_identity_records_sha256,
     broker_dispatch_ack_lineage_fields,
     broker_dispatch_ack_lineage_manifest_inputs,
     empty_broker_dispatch_ack_lineage,
@@ -50,6 +54,23 @@ BROKER_DISPATCH_ACK_LINEAGE_OUTPUT_COLUMNS = tuple(
     broker_dispatch_ack_lineage_fields(
         empty_broker_dispatch_ack_lineage()
     ).keys()
+)
+ROUNDTRIP_CONTRACT_IDENTITY_OUTPUT_COLUMNS = (
+    "roundtrip_contract_identity_active",
+    "roundtrip_contract_identity_required",
+    "roundtrip_contract_identity_send_gate_passed",
+    "roundtrip_contract_identity_ack_gate_passed",
+    "roundtrip_contract_identity_request_columns_present",
+    "roundtrip_contract_identity_ack_columns_present",
+    "roundtrip_contract_identity_request_orders",
+    "roundtrip_contract_identity_ack_orders",
+    "roundtrip_contract_identity_roundtrip_orders",
+    "roundtrip_contract_identity_stage_digests_match",
+    "roundtrip_contract_identity_acknowledgements_match_requests",
+    "roundtrip_contract_identity_roundtrip_matches_requests",
+    "roundtrip_contract_identity_sha256",
+    "roundtrip_contract_identity_consistency_error",
+    "roundtrip_contract_identity_gate_passed",
 )
 STRATEGY_PORTFOLIO_LEADLAG_DISPATCH_FIELDS = (
     "leadlag_edge_lineage_required",
@@ -402,9 +423,31 @@ def evaluate_broker_dispatch_roundtrip(
     ).items():
         ack_row[column] = value
 
-    orders = _roundtrip_orders(dispatch_orders, send_requests, acknowledgements)
+    contract_identity = _roundtrip_contract_identity_state(
+        send_config=send_config,
+        ack_config=ack_config,
+        send_requests=send_requests,
+        acknowledgements=acknowledgements,
+    )
+    orders = _roundtrip_orders(
+        dispatch_orders,
+        send_requests,
+        acknowledgements,
+        contract_identity_active=bool(contract_identity["active"]),
+    )
+    contract_identity = _complete_roundtrip_contract_identity_state(
+        contract_identity,
+        orders,
+        send_requests,
+    )
+    contract_identity_fields = _roundtrip_contract_identity_state_fields(
+        contract_identity
+    )
+    for column, value in contract_identity_fields.items():
+        ack_row[column] = value
     roundtrip_metadata = {
         **ack_lineage_fields,
+        **contract_identity_fields,
         **_strategy_portfolio_leadlag_summary_fields(ack_row),
         "authorizes_submission": False,
     }
@@ -512,9 +555,12 @@ def write_broker_dispatch_roundtrip(
         dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
         dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
         send_summary=_read_required(send_summary_path, "broker_dispatch_send_summary"),
-        send_requests=_read_required(send_requests_path, "broker_dispatch_send_requests"),
+        send_requests=_read_required_text(
+            send_requests_path,
+            "broker_dispatch_send_requests",
+        ),
         ack_summary=_read_required(ack_summary_path, "broker_dispatch_ack_summary"),
-        acknowledgements=_read_required(
+        acknowledgements=_read_required_text(
             acknowledgements_path,
             "broker_dispatch_acknowledgements",
         ),
@@ -574,6 +620,9 @@ def write_broker_dispatch_roundtrip(
         extra={
             "passed": bool(report.passed),
             **broker_dispatch_ack_lineage_fields(ack_lineage),
+            **_roundtrip_contract_identity_manifest_fields(
+                report.summary.iloc[0]
+            ),
             **_strategy_portfolio_leadlag_summary_fields(
                 report.summary.iloc[0]
             ),
@@ -617,10 +666,221 @@ def _broker_readiness_config_from_dispatch_manifest(dispatch_manifest_path: Path
     return _manifest_input_path(cutover_manifest_path, "broker_readiness_config")
 
 
+def _roundtrip_contract_identity_state(
+    *,
+    send_config: dict[str, Any],
+    ack_config: dict[str, Any],
+    send_requests: pd.DataFrame,
+    acknowledgements: pd.DataFrame,
+) -> dict[str, Any]:
+    raw_send_identity = send_config.get("contract_identity", {})
+    send_identity = (
+        raw_send_identity if isinstance(raw_send_identity, dict) else {}
+    )
+    raw_ack_identity = ack_config.get("contract_identity", {})
+    ack_identity = (
+        raw_ack_identity if isinstance(raw_ack_identity, dict) else {}
+    )
+    request_columns_present = all(
+        column in send_requests.columns
+        for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+    )
+    ack_columns_present = all(
+        column in acknowledgements.columns
+        for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+    )
+    active = bool(
+        _to_bool(send_identity.get("active", False))
+        or _to_bool(ack_identity.get("active", False))
+        or (request_columns_present and ack_columns_present)
+    )
+    request_records = (
+        broker_dispatch_contract_identity_records(send_requests)
+        if request_columns_present
+        else []
+    )
+    request_sha256 = broker_dispatch_contract_identity_records_sha256(
+        request_records
+    )
+    send_sha256 = _object_text(
+        send_identity.get("identity_sha256", "")
+    ).strip()
+    ack_sha256 = _object_text(
+        ack_identity.get("identity_sha256", "")
+    ).strip()
+    stage_digests_match = bool(
+        not active
+        or (
+            request_sha256
+            and request_sha256 == send_sha256
+            and request_sha256 == ack_sha256
+        )
+    )
+    return {
+        "active": active,
+        "required": bool(
+            _to_bool(send_identity.get("required", False))
+            or _to_bool(ack_identity.get("required", False))
+        ),
+        "send_gate_passed": bool(
+            not active or _to_bool(send_identity.get("gate_passed", False))
+        ),
+        "ack_gate_passed": bool(
+            not active or _to_bool(ack_identity.get("gate_passed", False))
+        ),
+        "request_columns_present": bool(
+            not active or request_columns_present
+        ),
+        "ack_columns_present": bool(not active or ack_columns_present),
+        "request_orders": len(request_records),
+        "ack_orders": int(len(acknowledgements)) if active else 0,
+        "roundtrip_orders": 0,
+        "stage_digests_match": stage_digests_match,
+        "acknowledgements_match_requests": not active,
+        "roundtrip_matches_requests": not active,
+        "identity_sha256": request_sha256 if active else "",
+        "consistency_error": "",
+        "gate_passed": not active,
+    }
+
+
+def _complete_roundtrip_contract_identity_state(
+    state: dict[str, Any],
+    orders: pd.DataFrame,
+    send_requests: pd.DataFrame,
+) -> dict[str, Any]:
+    if not state["active"]:
+        return state
+    roundtrip_records = (
+        broker_dispatch_contract_identity_records(orders)
+        if all(
+            column in orders.columns
+            for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+        )
+        else []
+    )
+    request_records = (
+        broker_dispatch_contract_identity_records(send_requests)
+        if state["request_columns_present"]
+        else []
+    )
+    acknowledgements_match = bool(
+        not orders.empty
+        and "roundtrip_contract_identity_ack_matches_request"
+        in orders.columns
+        and orders["roundtrip_contract_identity_ack_matches_request"]
+        .map(_to_bool)
+        .all()
+    )
+    roundtrip_matches = bool(
+        roundtrip_records and roundtrip_records == request_records
+    )
+    state.update(
+        {
+            "roundtrip_orders": len(roundtrip_records),
+            "acknowledgements_match_requests": acknowledgements_match,
+            "roundtrip_matches_requests": roundtrip_matches,
+        }
+    )
+    failures = [
+        name
+        for name, passed in (
+            ("send_gate_failed", state["send_gate_passed"]),
+            ("ack_gate_failed", state["ack_gate_passed"]),
+            (
+                "request_columns_missing",
+                state["request_columns_present"],
+            ),
+            ("ack_columns_missing", state["ack_columns_present"]),
+            ("stage_digest_mismatch", state["stage_digests_match"]),
+            ("ack_request_mismatch", acknowledgements_match),
+            ("roundtrip_request_mismatch", roundtrip_matches),
+        )
+        if not passed
+    ]
+    state["consistency_error"] = ";".join(failures)
+    state["gate_passed"] = not failures
+    return state
+
+
+def _roundtrip_contract_identity_state_fields(
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "roundtrip_contract_identity_active": bool(state["active"]),
+        "roundtrip_contract_identity_required": bool(state["required"]),
+        "roundtrip_contract_identity_send_gate_passed": bool(
+            state["send_gate_passed"]
+        ),
+        "roundtrip_contract_identity_ack_gate_passed": bool(
+            state["ack_gate_passed"]
+        ),
+        "roundtrip_contract_identity_request_columns_present": bool(
+            state["request_columns_present"]
+        ),
+        "roundtrip_contract_identity_ack_columns_present": bool(
+            state["ack_columns_present"]
+        ),
+        "roundtrip_contract_identity_request_orders": int(
+            state["request_orders"]
+        ),
+        "roundtrip_contract_identity_ack_orders": int(state["ack_orders"]),
+        "roundtrip_contract_identity_roundtrip_orders": int(
+            state["roundtrip_orders"]
+        ),
+        "roundtrip_contract_identity_stage_digests_match": bool(
+            state["stage_digests_match"]
+        ),
+        "roundtrip_contract_identity_acknowledgements_match_requests": bool(
+            state["acknowledgements_match_requests"]
+        ),
+        "roundtrip_contract_identity_roundtrip_matches_requests": bool(
+            state["roundtrip_matches_requests"]
+        ),
+        "roundtrip_contract_identity_sha256": _object_text(
+            state["identity_sha256"]
+        ).strip(),
+        "roundtrip_contract_identity_consistency_error": _object_text(
+            state["consistency_error"]
+        ).strip(),
+        "roundtrip_contract_identity_gate_passed": bool(
+            state["gate_passed"]
+        ),
+    }
+
+
+def _roundtrip_contract_identity_output_fields(
+    row: pd.Series,
+) -> dict[str, Any]:
+    return {
+        column: row.get(column, "")
+        for column in ROUNDTRIP_CONTRACT_IDENTITY_OUTPUT_COLUMNS
+    }
+
+
+def _roundtrip_contract_identity_manifest_fields(
+    row: pd.Series,
+) -> dict[str, Any]:
+    return {
+        "roundtrip_contract_identity_active": _to_bool(
+            row.get("roundtrip_contract_identity_active", False)
+        ),
+        "roundtrip_contract_identity_gate_passed": _to_bool(
+            row.get("roundtrip_contract_identity_gate_passed", False)
+        ),
+        "roundtrip_contract_identity_sha256": _text(
+            row,
+            "roundtrip_contract_identity_sha256",
+        ),
+    }
+
+
 def _roundtrip_orders(
     dispatch_orders: pd.DataFrame,
     send_requests: pd.DataFrame,
     acknowledgements: pd.DataFrame,
+    *,
+    contract_identity_active: bool,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for _, dispatch in dispatch_orders.reset_index(drop=True).iterrows():
@@ -630,8 +890,7 @@ def _roundtrip_orders(
         ack_matches = _matches(acknowledgements, "dispatch_order_id", dispatch_order_id)
         ack = ack_matches.iloc[-1] if not ack_matches.empty else pd.Series(dtype=object)
         request = send_matches.iloc[-1] if not send_matches.empty else pd.Series(dtype=object)
-        rows.append(
-            {
+        row = {
                 "dispatch_batch_id": _text(dispatch, "dispatch_batch_id"),
                 "dispatch_order_id": dispatch_order_id,
                 "dispatch_route_roundtrip_batch_id": _text(dispatch, "route_dispatch_roundtrip_batch_id"),
@@ -666,7 +925,18 @@ def _roundtrip_orders(
                 "duplicate_ack": _to_bool(ack.get("duplicate_ack", False)) if not ack.empty else False,
                 "missing_ack": _to_bool(ack.get("missing_ack", True)) if not ack.empty else True,
             }
-        )
+        if contract_identity_active:
+            request_identity = broker_dispatch_contract_identity_record(
+                request
+            )
+            row.update(request_identity)
+            row["roundtrip_contract_identity_ack_matches_request"] = bool(
+                not request.empty
+                and not ack.empty
+                and broker_dispatch_contract_identity_record(ack)
+                == request_identity
+            )
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -2634,6 +2904,153 @@ def _checks(
             ),
         ]
     )
+    if _to_bool(
+        ack_summary.get("roundtrip_contract_identity_active", False)
+    ):
+        identity_checks = [
+            _check(
+                "roundtrip_contract_identity_send_gate",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_send_gate_passed",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_send_gate_passed",
+                        False,
+                    )
+                ),
+                "round-trip source send identity gate failed",
+            ),
+            _check(
+                "roundtrip_contract_identity_ack_gate",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_ack_gate_passed",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_ack_gate_passed",
+                        False,
+                    )
+                ),
+                "round-trip source acknowledgement identity gate failed",
+            ),
+            _check(
+                "roundtrip_contract_identity_columns",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_request_columns_present",
+                        False,
+                    )
+                )
+                and _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_ack_columns_present",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_request_columns_present",
+                        False,
+                    )
+                )
+                and _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_ack_columns_present",
+                        False,
+                    )
+                ),
+                "round-trip source rows omit verified contract identity",
+            ),
+            _check(
+                "roundtrip_contract_identity_stage_digests",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_stage_digests_match",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_stage_digests_match",
+                        False,
+                    )
+                ),
+                "send and acknowledgement contract identity digests differ",
+            ),
+            _check(
+                "roundtrip_contract_identity_acknowledgements_match_requests",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_acknowledgements_match_requests",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_acknowledgements_match_requests",
+                        False,
+                    )
+                ),
+                "acknowledgement identity differs from its send request",
+            ),
+            _check(
+                "roundtrip_contract_identity_rows_match_requests",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_roundtrip_matches_requests",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_roundtrip_matches_requests",
+                        False,
+                    )
+                ),
+                "final round-trip rows differ from send contract identity",
+            ),
+            _check(
+                "roundtrip_contract_identity_gate",
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_gate_passed",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    ack_summary.get(
+                        "roundtrip_contract_identity_gate_passed",
+                        False,
+                    )
+                ),
+                "final round-trip contract identity gate failed",
+            ),
+        ]
+        checks = pd.concat(
+            [checks, pd.DataFrame(identity_checks)],
+            ignore_index=True,
+        )
     if _to_bool(
         ack_summary.get("broker_dispatch_ack_lineage_required", False)
     ):
@@ -6597,6 +7014,96 @@ def _broker_dispatch_ack_lineage_config(summary: pd.Series) -> dict[str, Any]:
     }
 
 
+def _roundtrip_contract_identity_config(
+    summary: pd.Series,
+) -> dict[str, Any]:
+    return {
+        "active": _to_bool(
+            summary.get("roundtrip_contract_identity_active", False)
+        ),
+        "required": _to_bool(
+            summary.get("roundtrip_contract_identity_required", False)
+        ),
+        "send_gate_passed": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_send_gate_passed",
+                False,
+            )
+        ),
+        "ack_gate_passed": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_ack_gate_passed",
+                False,
+            )
+        ),
+        "request_columns_present": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_request_columns_present",
+                False,
+            )
+        ),
+        "ack_columns_present": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_ack_columns_present",
+                False,
+            )
+        ),
+        "request_orders": int(
+            _number(
+                summary,
+                "roundtrip_contract_identity_request_orders",
+                0.0,
+            )
+        ),
+        "ack_orders": int(
+            _number(
+                summary,
+                "roundtrip_contract_identity_ack_orders",
+                0.0,
+            )
+        ),
+        "roundtrip_orders": int(
+            _number(
+                summary,
+                "roundtrip_contract_identity_roundtrip_orders",
+                0.0,
+            )
+        ),
+        "stage_digests_match": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_stage_digests_match",
+                False,
+            )
+        ),
+        "acknowledgements_match_requests": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_acknowledgements_match_requests",
+                False,
+            )
+        ),
+        "roundtrip_matches_requests": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_roundtrip_matches_requests",
+                False,
+            )
+        ),
+        "identity_sha256": _text(
+            summary,
+            "roundtrip_contract_identity_sha256",
+        ),
+        "consistency_error": _text(
+            summary,
+            "roundtrip_contract_identity_consistency_error",
+        ),
+        "gate_passed": _to_bool(
+            summary.get(
+                "roundtrip_contract_identity_gate_passed",
+                False,
+            )
+        ),
+    }
+
+
 def _summary(
     dispatch_summary: pd.Series,
     send_summary: pd.Series,
@@ -6618,6 +7125,7 @@ def _summary(
                 "scenario_key": _text(dispatch_summary, "scenario_key"),
                 "adapter": _text(dispatch_summary, "adapter"),
                 **_broker_dispatch_ack_lineage_output_fields(ack_summary),
+                **_roundtrip_contract_identity_output_fields(ack_summary),
                 **_strategy_portfolio_leadlag_summary_fields(ack_summary),
                 "authorizes_submission": False,
                 "broker_schema_status": _broker_schema_text(proof_rows, "broker_schema_status"),
@@ -7036,6 +7544,15 @@ def _component(check: str) -> str:
         return "broker_readiness"
     if check.startswith("broker_dispatch_ack_"):
         return "broker_dispatch_ack"
+    if check == "roundtrip_contract_identity_send_gate":
+        return "broker_dispatch_send"
+    if check in {
+        "roundtrip_contract_identity_ack_gate",
+        "roundtrip_contract_identity_acknowledgements_match_requests",
+    }:
+        return "broker_dispatch_ack"
+    if check.startswith("roundtrip_contract_identity_"):
+        return "broker_dispatch_roundtrip"
     if check == "strategy_portfolio_leadlag_ack_contract_consistent":
         return "broker_dispatch_roundtrip"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
@@ -8231,6 +8748,7 @@ def _config(
         "broker_dispatch_ack_lineage": _broker_dispatch_ack_lineage_config(
             summary
         ),
+        "contract_identity": _roundtrip_contract_identity_config(summary),
         "broker_readiness": {
             "adapter_schema_status": _text(summary, "broker_schema_status"),
             "schema_reviewed": _to_bool(summary["broker_schema_reviewed"]),
@@ -8465,6 +8983,12 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Missing request acknowledgements: {_int_value(summary_row.get('missing_request_acks'))}",
         f"- Rejected orders: {_int_value(summary_row.get('rejected_orders'))}",
         f"- Acknowledgement lineage current: {ack_lineage_label}",
+        "- Round-trip contract identity active: "
+        f"{'yes' if _to_bool(summary_row.get('roundtrip_contract_identity_active')) else 'no'}",
+        "- Round-trip contract identity verified: "
+        f"{'yes' if _to_bool(summary_row.get('roundtrip_contract_identity_gate_passed')) else 'no'}",
+        "- Round-trip contract identity digest: "
+        f"{_code(summary_row.get('roundtrip_contract_identity_sha256'))}",
         (
             "- Broker-readiness source matches scale-up: "
             f"{'yes' if _to_bool(summary_row.get('broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup')) else 'no'}"
@@ -9414,6 +9938,21 @@ def _read_required(path: str | Path, name: str) -> pd.DataFrame:
     frame = pd.read_csv(file_path)
     if frame.empty:
         raise ValueError(f"required broker dispatch round-trip input is empty: {name}")
+    return frame
+
+
+def _read_required_text(path: str | Path, name: str) -> pd.DataFrame:
+    file_path = Path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(
+            "required broker dispatch round-trip input not found: "
+            f"{file_path}"
+        )
+    frame = pd.read_csv(file_path, dtype=str, keep_default_na=False)
+    if frame.empty:
+        raise ValueError(
+            f"required broker dispatch round-trip input is empty: {name}"
+        )
     return frame
 
 

@@ -16,6 +16,10 @@ from reports.leadlag_lineage import (
 )
 from reports.manifest import write_experiment_manifest
 from reports.operational_lineage import (
+    BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS,
+    broker_dispatch_contract_identity_record,
+    broker_dispatch_contract_identity_records,
+    broker_dispatch_contract_identity_records_sha256,
     broker_dispatch_send_lineage_fields,
     broker_dispatch_send_lineage_manifest_inputs,
     empty_broker_dispatch_send_lineage,
@@ -62,6 +66,22 @@ ACTION_QUEUE_COLUMNS = [
 ]
 BROKER_DISPATCH_SEND_LINEAGE_OUTPUT_COLUMNS = tuple(
     broker_dispatch_send_lineage_fields(empty_broker_dispatch_send_lineage()).keys()
+)
+ACK_CONTRACT_IDENTITY_OUTPUT_COLUMNS = (
+    "ack_contract_identity_active",
+    "ack_contract_identity_required",
+    "ack_contract_identity_send_gate_passed",
+    "ack_contract_identity_expected_columns_present",
+    "ack_contract_identity_broker_columns_present",
+    "ack_contract_identity_expected_orders",
+    "ack_contract_identity_broker_ack_orders",
+    "ack_contract_identity_reconciled_orders",
+    "ack_contract_identity_expected_matches_send",
+    "ack_contract_identity_broker_acks_match_expected",
+    "ack_contract_identity_reconciled_matches_expected",
+    "ack_contract_identity_sha256",
+    "ack_contract_identity_consistency_error",
+    "ack_contract_identity_gate_passed",
 )
 STRATEGY_PORTFOLIO_LEADLAG_DISPATCH_FIELDS = (
     "leadlag_edge_lineage_required",
@@ -392,6 +412,7 @@ def evaluate_broker_dispatch_acknowledgements(
     dispatch_summary: pd.DataFrame,
     dispatch_orders: pd.DataFrame,
     broker_acks: pd.DataFrame,
+    expected_acks: pd.DataFrame | None = None,
     dispatch_config: dict[str, Any] | None = None,
     send_config: dict[str, Any] | None = None,
     broker_dispatch_send_lineage: dict[str, Any] | None = None,
@@ -408,6 +429,11 @@ def evaluate_broker_dispatch_acknowledgements(
             send_config,
         )
     broker_acks = _normalize_acks(broker_acks)
+    expected_acks = (
+        expected_acks.copy().reset_index(drop=True)
+        if expected_acks is not None
+        else pd.DataFrame()
+    )
     dispatch_summary_row = dispatch_summary.iloc[0]
     summary_row = _dispatch_summary_state(dispatch_summary_row, dispatch_config)
     send_lineage = broker_dispatch_send_lineage or empty_broker_dispatch_send_lineage(
@@ -422,9 +448,30 @@ def evaluate_broker_dispatch_acknowledgements(
         send_lineage,
     ).items():
         summary_row[column] = value
-    acknowledgements = _acknowledgements(dispatch_orders, broker_acks)
+    contract_identity = _ack_contract_identity_state(
+        send_config=send_config or {},
+        expected_acks=expected_acks,
+        broker_acks=broker_acks,
+    )
+    acknowledgements = _acknowledgements(
+        dispatch_orders,
+        broker_acks,
+        expected_acks=expected_acks,
+        contract_identity_active=bool(contract_identity["active"]),
+    )
+    contract_identity = _complete_ack_contract_identity_state(
+        contract_identity,
+        acknowledgements,
+        expected_acks,
+    )
+    contract_identity_fields = _ack_contract_identity_state_fields(
+        contract_identity
+    )
+    for column, value in contract_identity_fields.items():
+        summary_row[column] = value
     acknowledgement_lineage = {
         **send_lineage_fields,
+        **contract_identity_fields,
         **_strategy_portfolio_leadlag_summary_fields(summary_row),
         "authorizes_submission": False,
     }
@@ -476,6 +523,8 @@ def write_broker_dispatch_acknowledgements(
         required=thresholds.require_send_packet
     )
     send_config_path: Path | None = None
+    expected_acks_path: Path | None = None
+    expected_acks = pd.DataFrame()
     send_config: dict[str, Any] = {}
     if send_dir is not None:
         send_candidate = Path(send_dir)
@@ -489,6 +538,13 @@ def write_broker_dispatch_acknowledgements(
             expected_broker_dispatch_config_path=dispatch_config_path,
         )
         send_config = json.loads(send_config_path.read_text(encoding="utf-8"))
+        expected_acks_path = (
+            send_config_path.parent / "broker_dispatch_expected_acks.csv"
+        )
+        expected_acks = _read_required_text(
+            expected_acks_path,
+            "broker_dispatch_expected_acks",
+        )
     dispatch_config = (
         json.loads(dispatch_config_path.read_text(encoding="utf-8"))
         if dispatch_config_path.exists()
@@ -505,7 +561,8 @@ def write_broker_dispatch_acknowledgements(
     report = evaluate_broker_dispatch_acknowledgements(
         dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
         dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
-        broker_acks=pd.read_csv(acks),
+        broker_acks=_read_required_text(acks, "broker_acks"),
+        expected_acks=expected_acks,
         dispatch_config=dispatch_config,
         send_config=send_config,
         broker_dispatch_send_lineage=send_lineage,
@@ -546,6 +603,8 @@ def write_broker_dispatch_acknowledgements(
         dispatch_manifest=dispatch_manifest_path,
         broker_acks=acks,
     )
+    if expected_acks_path is not None:
+        inputs["send_expected_acks"] = expected_acks_path
     inputs.update(broker_dispatch_send_lineage_manifest_inputs(send_lineage))
     write_experiment_manifest(
         out,
@@ -558,6 +617,9 @@ def write_broker_dispatch_acknowledgements(
                 report.summary.iloc[0]
             ),
             **broker_dispatch_send_lineage_fields(send_lineage),
+            **_ack_contract_identity_manifest_fields(
+                report.summary.iloc[0]
+            ),
             "authorizes_submission": False,
         },
     )
@@ -593,18 +655,226 @@ def _manifest_input_path(manifest_path: Path | None, input_name: str) -> Path | 
     return path if path.exists() else None
 
 
-def _acknowledgements(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.DataFrame:
+def _ack_contract_identity_state(
+    *,
+    send_config: dict[str, Any],
+    expected_acks: pd.DataFrame,
+    broker_acks: pd.DataFrame,
+) -> dict[str, Any]:
+    raw_identity = send_config.get("contract_identity", {})
+    identity = raw_identity if isinstance(raw_identity, dict) else {}
+    expected_columns_present = all(
+        column in expected_acks.columns
+        for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+    )
+    active = bool(
+        _to_bool(identity.get("active", False))
+        or expected_columns_present
+    )
+    broker_columns_present = all(
+        column in broker_acks.columns
+        for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+    )
+    expected_records = (
+        broker_dispatch_contract_identity_records(expected_acks)
+        if expected_columns_present
+        else []
+    )
+    expected_sha256 = broker_dispatch_contract_identity_records_sha256(
+        expected_records
+    )
+    send_sha256 = _object_text(identity.get("identity_sha256", "")).strip()
+    expected_count = int(
+        _number_value(identity.get("expected_ack_orders", 0), 0.0)
+    )
+    expected_matches_send = bool(
+        not active
+        or (
+            expected_records
+            and len(expected_records) == expected_count
+            and expected_sha256 == send_sha256
+        )
+    )
+    return {
+        "active": active,
+        "required": _to_bool(identity.get("required", False)),
+        "send_gate_passed": bool(
+            not active or _to_bool(identity.get("gate_passed", False))
+        ),
+        "expected_columns_present": bool(
+            not active or expected_columns_present
+        ),
+        "broker_columns_present": bool(
+            not active or broker_columns_present
+        ),
+        "expected_orders": len(expected_records),
+        "broker_ack_orders": int(len(broker_acks)) if active else 0,
+        "reconciled_orders": 0,
+        "expected_matches_send": expected_matches_send,
+        "broker_acks_match_expected": not active,
+        "reconciled_matches_expected": not active,
+        "identity_sha256": expected_sha256 if active else "",
+        "consistency_error": "",
+        "gate_passed": not active,
+    }
+
+
+def _complete_ack_contract_identity_state(
+    state: dict[str, Any],
+    acknowledgements: pd.DataFrame,
+    expected_acks: pd.DataFrame,
+) -> dict[str, Any]:
+    if not state["active"]:
+        return state
+    reconciled_records = (
+        broker_dispatch_contract_identity_records(acknowledgements)
+        if all(
+            column in acknowledgements.columns
+            for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+        )
+        else []
+    )
+    expected_records = (
+        broker_dispatch_contract_identity_records(expected_acks)
+        if state["expected_columns_present"]
+        else []
+    )
+    broker_matches = bool(
+        not acknowledgements.empty
+        and "ack_contract_identity_broker_matches_expected"
+        in acknowledgements.columns
+        and acknowledgements[
+            "ack_contract_identity_broker_matches_expected"
+        ]
+        .map(_to_bool)
+        .all()
+    )
+    reconciled_matches = bool(
+        reconciled_records
+        and reconciled_records == expected_records
+    )
+    state.update(
+        {
+            "reconciled_orders": len(reconciled_records),
+            "broker_acks_match_expected": broker_matches,
+            "reconciled_matches_expected": reconciled_matches,
+        }
+    )
+    failures = [
+        name
+        for name, passed in (
+            ("send_gate_failed", state["send_gate_passed"]),
+            (
+                "expected_columns_missing",
+                state["expected_columns_present"],
+            ),
+            ("broker_columns_missing", state["broker_columns_present"]),
+            ("expected_send_mismatch", state["expected_matches_send"]),
+            ("broker_ack_mismatch", broker_matches),
+            ("reconciled_mismatch", reconciled_matches),
+        )
+        if not passed
+    ]
+    state["consistency_error"] = ";".join(failures)
+    state["gate_passed"] = not failures
+    return state
+
+
+def _ack_contract_identity_state_fields(
+    state: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "ack_contract_identity_active": bool(state["active"]),
+        "ack_contract_identity_required": bool(state["required"]),
+        "ack_contract_identity_send_gate_passed": bool(
+            state["send_gate_passed"]
+        ),
+        "ack_contract_identity_expected_columns_present": bool(
+            state["expected_columns_present"]
+        ),
+        "ack_contract_identity_broker_columns_present": bool(
+            state["broker_columns_present"]
+        ),
+        "ack_contract_identity_expected_orders": int(
+            state["expected_orders"]
+        ),
+        "ack_contract_identity_broker_ack_orders": int(
+            state["broker_ack_orders"]
+        ),
+        "ack_contract_identity_reconciled_orders": int(
+            state["reconciled_orders"]
+        ),
+        "ack_contract_identity_expected_matches_send": bool(
+            state["expected_matches_send"]
+        ),
+        "ack_contract_identity_broker_acks_match_expected": bool(
+            state["broker_acks_match_expected"]
+        ),
+        "ack_contract_identity_reconciled_matches_expected": bool(
+            state["reconciled_matches_expected"]
+        ),
+        "ack_contract_identity_sha256": _object_text(
+            state["identity_sha256"]
+        ).strip(),
+        "ack_contract_identity_consistency_error": _object_text(
+            state["consistency_error"]
+        ).strip(),
+        "ack_contract_identity_gate_passed": bool(state["gate_passed"]),
+    }
+
+
+def _ack_contract_identity_output_fields(
+    row: pd.Series,
+) -> dict[str, Any]:
+    return {
+        column: row.get(column, "")
+        for column in ACK_CONTRACT_IDENTITY_OUTPUT_COLUMNS
+    }
+
+
+def _ack_contract_identity_manifest_fields(
+    row: pd.Series,
+) -> dict[str, Any]:
+    return {
+        "ack_contract_identity_active": _to_bool(
+            row.get("ack_contract_identity_active", False)
+        ),
+        "ack_contract_identity_gate_passed": _to_bool(
+            row.get("ack_contract_identity_gate_passed", False)
+        ),
+        "ack_contract_identity_sha256": _text(
+            row,
+            "ack_contract_identity_sha256",
+        ),
+    }
+
+
+def _acknowledgements(
+    dispatch_orders: pd.DataFrame,
+    acks: pd.DataFrame,
+    *,
+    expected_acks: pd.DataFrame,
+    contract_identity_active: bool,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for _, order in dispatch_orders.reset_index(drop=True).iterrows():
         matches, match_key = _matching_acks(order, acks)
+        expected_matches, _expected_match_key = _matching_acks(
+            order,
+            expected_acks,
+        )
+        expected = (
+            expected_matches.iloc[-1]
+            if len(expected_matches) == 1
+            else pd.Series(dtype=object)
+        )
         status = _latest_text(matches, "ack_status")
         broker_order_id = _latest_text(matches, "broker_order_id")
         ack_ts_ns = _latest_number(matches, "ack_ts_ns")
         dispatch_route_batch_id = _text(order, "route_dispatch_roundtrip_batch_id")
         ack_route_batch_ids = _unique_text_values(matches, "route_dispatch_roundtrip_batch_id")
         ack_count = int(len(matches))
-        rows.append(
-            {
+        row = {
                 "dispatch_batch_id": _text(order, "dispatch_batch_id"),
                 "dispatch_order_id": _text(order, "dispatch_order_id"),
                 "route_dispatch_roundtrip_batch_id": (
@@ -627,7 +897,31 @@ def _acknowledgements(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.D
                 "duplicate_ack": ack_count > 1,
                 "missing_ack": ack_count == 0,
             }
-        )
+        if contract_identity_active:
+            expected_identity = broker_dispatch_contract_identity_record(
+                expected
+            )
+            broker_matches_expected = bool(
+                len(expected_matches) == 1
+                and not matches.empty
+                and all(
+                    broker_dispatch_contract_identity_record(match)
+                    == expected_identity
+                    for _index, match in matches.iterrows()
+                )
+            )
+            row.update(expected_identity)
+            row.update(
+                {
+                    "ack_contract_identity_expected_row_count": int(
+                        len(expected_matches)
+                    ),
+                    "ack_contract_identity_broker_matches_expected": (
+                        broker_matches_expected
+                    ),
+                }
+            )
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -2488,6 +2782,129 @@ def _checks(
             ),
         ]
     )
+    if _to_bool(
+        dispatch_summary.get("ack_contract_identity_active", False)
+    ):
+        identity_checks = [
+            _check(
+                "ack_contract_identity_send_gate_passed",
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_send_gate_passed",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_send_gate_passed",
+                        False,
+                    )
+                ),
+                "verified send contract identity did not pass its source gate",
+            ),
+            _check(
+                "ack_contract_identity_expected_template",
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_expected_columns_present",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_expected_columns_present",
+                        False,
+                    )
+                )
+                and _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_expected_matches_send",
+                        False,
+                    )
+                ),
+                "expected acknowledgement identity does not match the verified send packet",
+            ),
+            _check(
+                "ack_contract_identity_broker_columns",
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_broker_columns_present",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_broker_columns_present",
+                        False,
+                    )
+                ),
+                "broker acknowledgement rows omit verified contract identity",
+            ),
+            _check(
+                "broker_ack_contract_identity_matches_expected",
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_broker_acks_match_expected",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_broker_acks_match_expected",
+                        False,
+                    )
+                ),
+                "broker acknowledgement identity differs from the expected acknowledgement template",
+            ),
+            _check(
+                "ack_contract_identity_reconciled_matches_expected",
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_reconciled_matches_expected",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_reconciled_matches_expected",
+                        False,
+                    )
+                ),
+                "reconciled acknowledgement identity differs from the send contract",
+            ),
+            _check(
+                "ack_contract_identity_gate",
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_gate_passed",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "ack_contract_identity_gate_passed",
+                        False,
+                    )
+                ),
+                "acknowledgement contract identity gate failed",
+            ),
+        ]
+        checks = pd.concat(
+            [checks, pd.DataFrame(identity_checks)],
+            ignore_index=True,
+        )
     if _to_bool(
         dispatch_summary.get("broker_dispatch_send_lineage_required", False)
     ):
@@ -6421,6 +6838,7 @@ def _summary(
                 "dispatch_orders": orders,
                 "dispatch_total_notional": _number(dispatch_summary, "dispatch_total_notional", 0.0),
                 **_broker_dispatch_send_lineage_output_fields(dispatch_summary),
+                **_ack_contract_identity_output_fields(dispatch_summary),
                 **_strategy_portfolio_leadlag_summary_fields(dispatch_summary),
                 "authorizes_submission": False,
                 "strategy_portfolio_required": _to_bool(
@@ -6868,6 +7286,13 @@ def _component(check: str) -> str:
         return "broker_readiness"
     if check.startswith("broker_dispatch_send_"):
         return "broker_dispatch_send"
+    if check in {
+        "ack_contract_identity_send_gate_passed",
+        "ack_contract_identity_expected_template",
+    }:
+        return "broker_dispatch_send"
+    if "contract_identity" in check:
+        return "broker_dispatch_ack"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
         return "strategy_portfolio"
     if "vendor_market_data_batch" in check:
@@ -7893,6 +8318,74 @@ def _broker_dispatch_send_lineage_config(summary: pd.Series) -> dict[str, Any]:
     }
 
 
+def _ack_contract_identity_config(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "active": _to_bool(
+            summary.get("ack_contract_identity_active", False)
+        ),
+        "required": _to_bool(
+            summary.get("ack_contract_identity_required", False)
+        ),
+        "send_gate_passed": _to_bool(
+            summary.get("ack_contract_identity_send_gate_passed", False)
+        ),
+        "expected_columns_present": _to_bool(
+            summary.get(
+                "ack_contract_identity_expected_columns_present",
+                False,
+            )
+        ),
+        "broker_columns_present": _to_bool(
+            summary.get(
+                "ack_contract_identity_broker_columns_present",
+                False,
+            )
+        ),
+        "expected_orders": int(
+            _number(summary, "ack_contract_identity_expected_orders", 0.0)
+        ),
+        "broker_ack_orders": int(
+            _number(summary, "ack_contract_identity_broker_ack_orders", 0.0)
+        ),
+        "reconciled_orders": int(
+            _number(
+                summary,
+                "ack_contract_identity_reconciled_orders",
+                0.0,
+            )
+        ),
+        "expected_matches_send": _to_bool(
+            summary.get(
+                "ack_contract_identity_expected_matches_send",
+                False,
+            )
+        ),
+        "broker_acks_match_expected": _to_bool(
+            summary.get(
+                "ack_contract_identity_broker_acks_match_expected",
+                False,
+            )
+        ),
+        "reconciled_matches_expected": _to_bool(
+            summary.get(
+                "ack_contract_identity_reconciled_matches_expected",
+                False,
+            )
+        ),
+        "identity_sha256": _text(
+            summary,
+            "ack_contract_identity_sha256",
+        ),
+        "consistency_error": _text(
+            summary,
+            "ack_contract_identity_consistency_error",
+        ),
+        "gate_passed": _to_bool(
+            summary.get("ack_contract_identity_gate_passed", False)
+        ),
+    }
+
+
 def _config(
     summary: pd.Series,
     thresholds: BrokerDispatchAckThresholds,
@@ -7922,6 +8415,7 @@ def _config(
         "broker_dispatch_send_lineage": _broker_dispatch_send_lineage_config(
             summary
         ),
+        "contract_identity": _ack_contract_identity_config(summary),
         "strategy_portfolio": {
             "required": _to_bool(summary["strategy_portfolio_required"]),
             "provided": _to_bool(summary["strategy_portfolio_provided"]),
@@ -8182,6 +8676,12 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Unmatched acknowledgements: {_int_value(summary_row.get('unmatched_acks'))}",
         "- Broker-dispatch send lineage current: "
         f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_lineage_gate_passed')) else 'no'}",
+        "- Broker acknowledgement contract identity active: "
+        f"{'yes' if _to_bool(summary_row.get('ack_contract_identity_active')) else 'no'}",
+        "- Broker acknowledgement contract identity verified: "
+        f"{'yes' if _to_bool(summary_row.get('ack_contract_identity_gate_passed')) else 'no'}",
+        "- Broker acknowledgement contract identity digest: "
+        f"{_code(summary_row.get('ack_contract_identity_sha256'))}",
         (
             "- Broker-readiness source matches scale-up: "
             f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_broker_dispatch_route_enable_cutover_broker_readiness_source_matches_scaleup')) else 'no'}"
@@ -8387,6 +8887,21 @@ def _read_required(path: str | Path, name: str) -> pd.DataFrame:
     frame = pd.read_csv(file_path)
     if frame.empty:
         raise ValueError(f"required broker dispatch acknowledgement input is empty: {name}")
+    return frame
+
+
+def _read_required_text(path: str | Path, name: str) -> pd.DataFrame:
+    file_path = Path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(
+            "required broker dispatch acknowledgement input not found: "
+            f"{file_path}"
+        )
+    frame = pd.read_csv(file_path, dtype=str, keep_default_na=False)
+    if frame.empty:
+        raise ValueError(
+            f"required broker dispatch acknowledgement input is empty: {name}"
+        )
     return frame
 
 

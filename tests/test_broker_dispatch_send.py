@@ -2181,6 +2181,42 @@ def _write_verified_ack_chain(
     return dispatch, send, ack
 
 
+def _write_verified_contract_identity_ack_chain(
+    tmp_path,
+    *,
+    broker_token_override=None,
+):
+    dispatch = write_dispatch(tmp_path)
+    attach_verified_contract_identity(tmp_path, dispatch)
+    send = tmp_path / "identity_send"
+    send_report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=send,
+    )
+    assert send_report.ready
+    broker_acks = pd.read_csv(
+        send / "broker_dispatch_expected_acks.csv",
+        dtype=str,
+        keep_default_na=False,
+    )
+    if broker_token_override is not None:
+        broker_acks.loc[0, "broker_instrument_token"] = broker_token_override
+    broker_acks["broker_order_id"] = ["AM-ACK-1", "AM-ACK-2"]
+    broker_acks["ack_status"] = "accepted"
+    broker_acks["ack_ts_ns"] = ["1000", "2000"]
+    acks_path = tmp_path / "identity_broker_acks.csv"
+    broker_acks.to_csv(acks_path, index=False)
+    ack = tmp_path / "identity_ack"
+    ack_report = write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        send_dir=send,
+        acks_path=acks_path,
+        output_dir=ack,
+        thresholds=BrokerDispatchAckThresholds(require_send_packet=True),
+    )
+    return dispatch, send, ack, ack_report
+
+
 def _rewrite_ack_send_lineage_field(ack, column, value):
     summary_path = ack / "broker_dispatch_ack_summary.csv"
     acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
@@ -7655,11 +7691,12 @@ def test_broker_dispatch_send_preserves_verified_contract_identity(tmp_path):
     broker_acks["ack_ts_ns"] = [1_000, 2_000]
     acks_path = tmp_path / "broker_acks.csv"
     broker_acks.to_csv(acks_path, index=False)
+    ack_dir = tmp_path / "ack_reconciliation"
     ack_report = write_broker_dispatch_acknowledgements(
         dispatch_dir=dispatch,
         send_dir=out_dir,
         acks_path=acks_path,
-        output_dir=tmp_path / "ack_reconciliation",
+        output_dir=ack_dir,
         thresholds=BrokerDispatchAckThresholds(
             require_send_packet=True,
         ),
@@ -7669,6 +7706,185 @@ def test_broker_dispatch_send_preserves_verified_contract_identity(tmp_path):
         "AM-ACK-1",
         "AM-ACK-2",
     ]
+    reconciled = pd.read_csv(
+        ack_dir / "broker_dispatch_acknowledgements.csv",
+        dtype=str,
+        keep_default_na=False,
+    )
+    assert reconciled["broker_instrument_token"].tolist() == [
+        "001001",
+        "001002",
+    ]
+    assert reconciled["source_broker_order_id"].tolist() == [
+        "ARROW_MONEY-000000-ORD-1",
+        "ARROW_MONEY-000001-ORD-2",
+    ]
+    ack_summary = ack_report.summary.iloc[0]
+    assert bool(ack_summary["ack_contract_identity_active"])
+    assert bool(
+        ack_summary["ack_contract_identity_broker_acks_match_expected"]
+    )
+    assert bool(ack_summary["ack_contract_identity_gate_passed"])
+    assert (
+        ack_summary["ack_contract_identity_sha256"]
+        == summary["send_contract_identity_sha256"]
+    )
+    ack_lineage = load_broker_dispatch_ack_lineage(
+        ack_dir / "broker_dispatch_ack_config.json",
+        out_dir / "broker_dispatch_send_config.json",
+        dispatch / "broker_dispatch_config.json",
+    )
+    assert ack_lineage["contract_consistent"], ack_lineage["contract_error"]
+    assert ack_lineage["gate_passed"]
+
+    roundtrip_dir = tmp_path / "roundtrip"
+    roundtrip_report = write_broker_dispatch_roundtrip(
+        dispatch_dir=dispatch,
+        send_dir=out_dir,
+        ack_dir=ack_dir,
+        output_dir=roundtrip_dir,
+        thresholds=BrokerDispatchRoundTripThresholds(
+            require_ack_lineage=True,
+        ),
+    )
+    assert roundtrip_report.passed
+    roundtrip_orders = pd.read_csv(
+        roundtrip_dir / "broker_dispatch_roundtrip_orders.csv",
+        dtype=str,
+        keep_default_na=False,
+    )
+    assert roundtrip_orders["broker_instrument_token"].tolist() == [
+        "001001",
+        "001002",
+    ]
+    assert roundtrip_orders["broker_order_id"].tolist() == [
+        "AM-ACK-1",
+        "AM-ACK-2",
+    ]
+    roundtrip_summary = roundtrip_report.summary.iloc[0]
+    assert bool(roundtrip_summary["roundtrip_contract_identity_active"])
+    assert bool(
+        roundtrip_summary[
+            "roundtrip_contract_identity_acknowledgements_match_requests"
+        ]
+    )
+    assert bool(
+        roundtrip_summary["roundtrip_contract_identity_gate_passed"]
+    )
+    assert (
+        roundtrip_summary["roundtrip_contract_identity_sha256"]
+        == summary["send_contract_identity_sha256"]
+    )
+    roundtrip_lineage = load_broker_dispatch_roundtrip_lineage(
+        roundtrip_dir / "broker_dispatch_roundtrip_config.json",
+        ack_dir / "broker_dispatch_ack_config.json",
+        out_dir / "broker_dispatch_send_config.json",
+        dispatch / "broker_dispatch_config.json",
+    )
+    assert roundtrip_lineage["contract_consistent"]
+    assert roundtrip_lineage["gate_passed"]
+
+
+def test_broker_dispatch_ack_blocks_broker_contract_identity_mismatch(
+    tmp_path,
+):
+    _dispatch, _send, _ack, report = (
+        _write_verified_contract_identity_ack_chain(
+            tmp_path,
+            broker_token_override="009999",
+        )
+    )
+
+    assert not report.passed
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert "broker_ack_contract_identity_matches_expected" in failed
+    assert not bool(
+        report.summary.iloc[0][
+            "ack_contract_identity_broker_acks_match_expected"
+        ]
+    )
+    assert not bool(
+        report.summary.iloc[0]["ack_contract_identity_gate_passed"]
+    )
+
+
+def test_ack_lineage_blocks_remanifested_contract_identity_tamper(tmp_path):
+    dispatch, send, ack, report = (
+        _write_verified_contract_identity_ack_chain(tmp_path)
+    )
+    assert report.passed
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    acknowledgements = pd.read_csv(
+        acknowledgements_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    acknowledgements.loc[0, "broker_instrument_token"] = "009999"
+    acknowledgements.to_csv(acknowledgements_path, index=False)
+    _refresh_manifest(ack / "manifest.json")
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        send / "broker_dispatch_send_config.json",
+        dispatch / "broker_dispatch_config.json",
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_ack_contract_identity_source_mismatch"
+        in lineage["contract_error"]
+    )
+
+
+def test_roundtrip_lineage_blocks_remanifested_contract_identity_tamper(
+    tmp_path,
+):
+    dispatch, send, ack, ack_report = (
+        _write_verified_contract_identity_ack_chain(tmp_path)
+    )
+    assert ack_report.passed
+    roundtrip = tmp_path / "identity_roundtrip"
+    report = write_broker_dispatch_roundtrip(
+        dispatch_dir=dispatch,
+        send_dir=send,
+        ack_dir=ack,
+        output_dir=roundtrip,
+        thresholds=BrokerDispatchRoundTripThresholds(
+            require_ack_lineage=True,
+        ),
+    )
+    assert report.passed
+    orders_path = roundtrip / "broker_dispatch_roundtrip_orders.csv"
+    orders = pd.read_csv(
+        orders_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    orders.loc[0, "broker_instrument_token"] = "009999"
+    orders.to_csv(orders_path, index=False)
+    _refresh_manifest(roundtrip / "manifest.json")
+
+    lineage = load_broker_dispatch_roundtrip_lineage(
+        roundtrip / "broker_dispatch_roundtrip_config.json",
+        ack / "broker_dispatch_ack_config.json",
+        send / "broker_dispatch_send_config.json",
+        dispatch / "broker_dispatch_config.json",
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert not lineage["gate_passed"]
+    assert (
+        "broker_dispatch_roundtrip_contract_identity_source_mismatch"
+        in lineage["contract_error"]
+    )
 
 
 def test_broker_dispatch_send_blocks_remanifested_identity_tamper(tmp_path):

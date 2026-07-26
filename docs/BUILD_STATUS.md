@@ -92,6 +92,14 @@
   complete resolution-to-upload lineage. The root manifest binds the
   resolution manifest, its instrument-master dependency, and all downstream
   identity artifacts.
+- Verified broker contract identity now survives the complete non-authorizing
+  dispatch path. Acknowledgement reconciliation reopens the send packet's
+  expected-ack template, requires every matched broker acknowledgement to
+  return the same source order, leg, research instrument, broker instrument,
+  and token identity, while keeping the broker-returned `broker_order_id`
+  separate. Final round-trip evidence carries the same canonical identity
+  digest, and both acknowledgement and round-trip lineage loaders independently
+  reopen their source CSVs to reject re-manifested identity drift.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
