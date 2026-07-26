@@ -7976,11 +7976,28 @@ pass (`17` affected tests). Source compilation succeeds. Repository collection
 is healthy at `2806 tests` across `169` files. The full suite was not rerun
 because recent complete runs exceed 40 minutes.
 
+Latest controlled-scale-up-to-runtime route contract-identity proof: runtime
+provenance now reopens the manifest-bound current broker-readiness bundle and
+independently compares the scale-up-carried route digest, the digest recovered
+from the current recursive readiness source, every detailed route identity
+field, and both source-match verdicts. Runtime telemetry retains the carried
+and current digests plus a dedicated match verdict and blocks readiness on a
+missing or drifted identity. Runtime guard repeats the comparison against the
+current scale-up and publishes a telemetry-to-current verdict; runtime-session
+lineage reopens the readiness source once more before its gate can pass. A
+scale-up bundle with both carried and claimed-current route digests forged is
+blocked even after its plan, summary, nested config, and manifest are made
+internally consistent and re-manifested. Identity-inactive legacy scale-up
+bundles continue through neutral defaults. The full `12`-test
+runtime-provenance module and five focused runtime-session/cutover continuity
+tests pass. Source compilation succeeds. Repository collection is healthy at
+`2808 tests` across `169` files.
+
 ## Next Build Targets
 
-1. Carry the controlled-scale-up broker-readiness route-contract-identity
-   digest/current-source verdict into runtime telemetry and guard enforcement,
-   and block a re-manifested scale-up forgery before runtime or cutover.
+1. Carry the runtime-session broker-readiness route-contract-identity
+   digest/current-source verdict explicitly into cutover authorization checks,
+   and block a re-manifested runtime-session forgery before route enable.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

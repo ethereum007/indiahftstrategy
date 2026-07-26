@@ -626,6 +626,15 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                     False,
                 )
             )
+            or _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_"
+                        "route_contract_identity_active"
+                    ),
+                    False,
+                )
+            )
         )
         if broker_readiness_active:
             for name, reason in (
@@ -726,6 +735,103 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                             (
                                 "terminal round-trip contract identity "
                                 "differs from current broker readiness"
+                            ),
+                        ),
+                    ]
+                )
+            route_identity_active = _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_"
+                        "route_contract_identity_active"
+                    ),
+                    False,
+                )
+            )
+            if route_identity_active:
+                route_identity_sha = str(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_"
+                            "route_contract_identity_sha256"
+                        ),
+                        "",
+                    )
+                ).strip()
+                current_route_identity_sha = str(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_current_"
+                            "route_contract_identity_sha256"
+                        ),
+                        "",
+                    )
+                ).strip()
+                route_identity_matches = _to_bool(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_"
+                            "route_contract_identity_matches_current"
+                        ),
+                        False,
+                    )
+                )
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "scaleup_broker_readiness_"
+                                "route_contract_identity_sha256_present"
+                            ),
+                            route_identity_sha,
+                            "present",
+                            True,
+                            bool(route_identity_sha),
+                            (
+                                "scale-up broker-readiness route contract "
+                                "identity digest is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "scaleup_broker_readiness_route_contract_"
+                                "identity_sha256_matches_current"
+                            ),
+                            bool(
+                                route_identity_sha
+                                and current_route_identity_sha
+                                and (
+                                    route_identity_sha
+                                    == current_route_identity_sha
+                                )
+                            ),
+                            "is",
+                            True,
+                            bool(
+                                route_identity_sha
+                                and current_route_identity_sha
+                                and (
+                                    route_identity_sha
+                                    == current_route_identity_sha
+                                )
+                            ),
+                            (
+                                "scale-up broker-readiness route contract "
+                                "identity differs from the current source"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "scaleup_broker_readiness_"
+                                "route_contract_identity_matches_current"
+                            ),
+                            route_identity_matches,
+                            "is",
+                            True,
+                            route_identity_matches,
+                            (
+                                "scale-up broker-readiness route contract "
+                                "identity current-source verdict failed"
                             ),
                         ),
                     ]

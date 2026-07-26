@@ -5180,6 +5180,14 @@ The scale-up provenance reader activates optional broker-readiness lineage only
 from explicit required/provided state or a concrete fingerprinted manifest
 path. A legacy JSON-null input is treated as absent; a fingerprinted broker
 source remains active and fails closed if the source is later removed.
+For an active broker-readiness route contract identity, the reader also reopens
+the current readiness bundle and independently compares its recursive route
+digest and detailed identity fields with the scale-up copy. Telemetry carries
+`scaleup_broker_readiness_route_contract_identity_sha256`,
+`scaleup_broker_readiness_current_route_contract_identity_sha256`, and
+`scaleup_broker_readiness_route_contract_identity_matches_current`; a missing
+digest, current-source drift, or internally resealed scale-up forgery blocks
+telemetry readiness. Identity-inactive legacy bundles retain neutral defaults.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
@@ -5231,6 +5239,12 @@ proof-refresh manifest hash and source-gate/current-match fields carried by
 telemetry with the source revalidated during guard evaluation, so a snapshot
 built before later refresh drift halts independently of the ordinary runtime
 limits.
+For an active broker-readiness route contract identity, the guard reopens the
+current scale-up and broker-readiness source, compares both route digests and
+the detailed route lineage against telemetry, and emits
+`runtime_telemetry_broker_readiness_route_contract_identity_matches_current`.
+Any mismatch halts before runtime limits can authorize continuation, even when
+the forged scale-up artifacts and manifest are internally consistent.
 If broker resume-gate evidence was required or supplied at scale-up, the guard
 also requires runtime telemetry to carry a ready resume authorization and ready
 resume proof-refresh identity matching the scale-up strategy and market.
@@ -5342,6 +5356,12 @@ selected strategy/market, eligibility, allocation weight/notional, pre-cap
 notional, and whether the portfolio cap constrained session notional, plus the
 carried strategy/market concentration counts and maximum aggregate allocation
 weights.
+For active broker-readiness route identity, the session-lineage reopen compares
+the telemetry and scale-up digests with the current readiness source again. The
+session gate retains the active flag, current digest, and dedicated
+`runtime_lineage_broker_readiness_route_contract_identity_matches_current`
+verdict so downstream cutover cannot rely only on an earlier in-memory guard
+decision.
 For canonical `leadlag`, every session step also retains the complete
 `strategy_portfolio_leadlag_*` measured-edge contract and the guard's
 `leadlag_edge_lineage_matches_scaleup` decision. The session summary, runbook,

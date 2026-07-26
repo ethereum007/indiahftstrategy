@@ -24,6 +24,10 @@ from reports.manifest import (
 )
 from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 from reports.scaleup_runtime_provenance import (
+    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD,
+    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SOURCE_VERDICT_FIELD,
     empty_scaleup_runtime_provenance,
     load_scaleup_runtime_provenance,
     scaleup_runtime_fields,
@@ -337,6 +341,11 @@ def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
         "broker_readiness_contract_identity_active": False,
         "current_broker_readiness_contract_identity_sha256": "",
         "broker_readiness_contract_identity_matches_current": not required,
+        "broker_readiness_route_contract_identity_active": False,
+        "current_broker_readiness_route_contract_identity_sha256": "",
+        "broker_readiness_route_contract_identity_matches_current": (
+            not required
+        ),
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -464,6 +473,7 @@ def load_runtime_session_lineage(
         and state["broker_readiness_source_matches_scaleup"]
         and state["broker_readiness_matches_current"]
         and state["broker_readiness_contract_identity_matches_current"]
+        and state["broker_readiness_route_contract_identity_matches_current"]
     )
     return state
 
@@ -515,6 +525,33 @@ def runtime_session_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]
         ): _bool(
             lineage.get(
                 "broker_readiness_contract_identity_matches_current",
+                False,
+            )
+        ),
+        (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_active"
+        ): _bool(
+            lineage.get(
+                "broker_readiness_route_contract_identity_active",
+                False,
+            )
+        ),
+        (
+            "runtime_lineage_current_broker_readiness_"
+            "route_contract_identity_sha256"
+        ): _text(
+            lineage.get(
+                "current_broker_readiness_route_contract_identity_sha256",
+                "",
+            )
+        ),
+        (
+            "runtime_lineage_broker_readiness_"
+            "route_contract_identity_matches_current"
+        ): _bool(
+            lineage.get(
+                "broker_readiness_route_contract_identity_matches_current",
                 False,
             )
         ),
@@ -579,6 +616,9 @@ def _runtime_session_broker_readiness_state(
             "broker_readiness_contract_identity_active": False,
             "current_broker_readiness_contract_identity_sha256": "",
             "broker_readiness_contract_identity_matches_current": True,
+            "broker_readiness_route_contract_identity_active": False,
+            "current_broker_readiness_route_contract_identity_sha256": "",
+            "broker_readiness_route_contract_identity_matches_current": True,
         }
 
     scaleup_manifest_path = _source_manifest_path(scaleup_config_path)
@@ -746,6 +786,184 @@ def _runtime_session_broker_readiness_state(
             )
         )
     )
+    current_route_identity_active = bool(
+        _bool(
+            current_fields.get(
+                BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD,
+                False,
+            )
+        )
+        or _text(
+            current_fields.get(
+                BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+                "",
+            )
+        )
+        or _text(
+            current_fields.get(
+                BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
+                "",
+            )
+        )
+    )
+    runtime_route_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "runtime_telemetry_broker_readiness_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_telemetry_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_telemetry_current_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+    )
+    scaleup_route_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "scaleup_broker_readiness_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "scaleup_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "scaleup_broker_readiness_current_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+    )
+    route_identity_active = bool(
+        current_route_identity_active
+        or runtime_route_identity_active
+        or scaleup_route_identity_active
+    )
+    current_route_identity_sha256 = _text(
+        current_fields.get(
+            BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
+            "",
+        )
+        or current_fields.get(
+            BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+            "",
+        )
+    )
+    route_identity_matches_current = bool(
+        not route_identity_active
+        or (
+            current_route_identity_active
+            and runtime_route_identity_active
+            and scaleup_route_identity_active
+            and current_route_identity_sha256
+            and _same(
+                lineage.get(
+                    (
+                        "runtime_telemetry_broker_readiness_"
+                        "route_contract_identity_sha256"
+                    )
+                ),
+                current_route_identity_sha256,
+                (
+                    "runtime_telemetry_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+            )
+            and _same(
+                lineage.get(
+                    (
+                        "runtime_telemetry_current_broker_readiness_"
+                        "route_contract_identity_sha256"
+                    )
+                ),
+                current_route_identity_sha256,
+                (
+                    "runtime_telemetry_current_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+            )
+            and _same(
+                lineage.get(
+                    (
+                        "scaleup_broker_readiness_"
+                        "route_contract_identity_sha256"
+                    )
+                ),
+                current_route_identity_sha256,
+                (
+                    "scaleup_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+            )
+            and _same(
+                lineage.get(
+                    (
+                        "scaleup_broker_readiness_current_"
+                        "route_contract_identity_sha256"
+                    )
+                ),
+                current_route_identity_sha256,
+                (
+                    "scaleup_broker_readiness_current_"
+                    "route_contract_identity_sha256"
+                ),
+            )
+            and _bool(
+                current_fields.get(
+                    BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SOURCE_VERDICT_FIELD,
+                    False,
+                )
+            )
+            and _bool(
+                lineage.get(
+                    (
+                        "scaleup_broker_readiness_"
+                        "route_contract_identity_matches_current"
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                lineage.get(
+                    (
+                        "runtime_telemetry_broker_readiness_"
+                        "route_contract_identity_matches_current"
+                    ),
+                    False,
+                )
+            )
+        )
+    )
     matches_current = bool(
         source_matches_scaleup
         and current_fields.get("broker_readiness_lineage_gate_passed", False)
@@ -753,6 +971,7 @@ def _runtime_session_broker_readiness_state(
         and source_claims_match
         and telemetry_matches
         and contract_identity_matches_current
+        and route_identity_matches_current
     )
     return {
         "broker_readiness_required": True,
@@ -765,6 +984,15 @@ def _runtime_session_broker_readiness_state(
         ),
         "broker_readiness_contract_identity_matches_current": (
             contract_identity_matches_current
+        ),
+        "broker_readiness_route_contract_identity_active": (
+            route_identity_active
+        ),
+        "current_broker_readiness_route_contract_identity_sha256": (
+            current_route_identity_sha256
+        ),
+        "broker_readiness_route_contract_identity_matches_current": (
+            route_identity_matches_current
         ),
     }
 
