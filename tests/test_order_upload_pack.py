@@ -5,9 +5,11 @@ import pandas as pd
 from adapters.order_upload_pack import (
     OrderUploadPackConfig,
     build_order_upload_pack,
+    verify_order_upload_pack_evidence,
     write_order_upload_pack,
 )
 from hft_cli import main
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 
 
 def broker_orders():
@@ -270,6 +272,63 @@ def test_write_order_upload_pack_outputs_files_and_manifest(tmp_path):
     assert "broker_upload_config.json" in artifact_paths
     assert "broker_upload_runbook.md" in artifact_paths
     assert "broker_upload_contract_identity.csv" in artifact_paths
+    integrity = verify_order_upload_pack_evidence(out_dir)
+    assert integrity.passed
+    assert integrity.manifest_current
+    assert integrity.artifacts_consistent
+    assert integrity.rebuilt_artifact_count == 9
+    assert integrity.rebuilt_artifact_match_count == 9
+
+
+def test_order_upload_pack_verifier_rejects_remanifested_sidecar_tamper(
+    tmp_path,
+):
+    export_dir = tmp_path / "export"
+    out_dir = tmp_path / "upload"
+    write_export(export_dir)
+    config = OrderUploadPackConfig(
+        adapter="arrow_money",
+        require_reviewed_schema=False,
+    )
+    write_order_upload_pack(
+        export_dir,
+        output_dir=out_dir,
+        config=config,
+    )
+    identity_path = out_dir / "broker_upload_contract_identity.csv"
+    identity = pd.read_csv(identity_path)
+    identity.loc[0, "broker_instrument_id"] = "FORGED-CONTRACT"
+    identity.to_csv(identity_path, index=False)
+    write_experiment_manifest(
+        out_dir,
+        run_type="order_upload_pack",
+        parameters={"config": config.__dict__},
+        inputs={"broker_orders": export_dir / "broker_orders.csv"},
+    )
+
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="order_upload_pack",
+        require_input_fingerprints=True,
+    ).passed
+    integrity = verify_order_upload_pack_evidence(out_dir)
+    assert integrity.manifest_current
+    assert not integrity.artifacts_consistent
+    assert not integrity.passed
+    assert (
+        "artifact_content_mismatch:broker_upload_contract_identity.csv"
+        in integrity.consistency_error
+    )
+
+    borrowed = out_dir / "borrowed_contract_identity.csv"
+    borrowed.write_bytes(identity_path.read_bytes())
+    borrowed_integrity = verify_order_upload_pack_evidence(borrowed)
+    assert not borrowed_integrity.artifacts_consistent
+    assert not borrowed_integrity.passed
+    assert (
+        "contract_identity_path_not_manifest_bound"
+        in borrowed_integrity.consistency_error
+    )
 
 
 def test_cli_pack_broker_upload_returns_failure_until_schema_allowed(tmp_path):

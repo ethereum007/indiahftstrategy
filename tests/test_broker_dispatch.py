@@ -4,6 +4,10 @@ import json
 import pandas as pd
 import pytest
 
+from adapters.order_upload_pack import (
+    OrderUploadPackConfig,
+    write_order_upload_pack,
+)
 from hft_cli import main
 from reports.broker_dispatch import (
     BrokerDispatchThresholds,
@@ -1527,6 +1531,74 @@ def upload_orders(duplicate=False):
             },
         ]
     )
+
+
+def resolved_broker_orders():
+    return pd.DataFrame(
+        [
+            {
+                "broker_order_id": "ARROW_MONEY-000000-ORD-1",
+                "client_order_id": "ORD-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "side": 1,
+                "side_text": "BUY",
+                "qty": 75,
+                "price": 10.0,
+                "order_type": "LIMIT",
+                "time_in_force": "DAY",
+                "route_tag": "shadow_nse",
+                "research_instrument_id": "NIFTY_20260630_22500C",
+                "broker_instrument_token": "001001",
+                "instrument_resolution_method": "semantic_option_identity",
+                "instrument_resolution_status": "resolved",
+                "leg_group_id": "PARITY-1",
+                "leg_role": "CALL",
+                "leg_index": 1,
+                "leg_count": 2,
+            },
+            {
+                "broker_order_id": "ARROW_MONEY-000001-ORD-2",
+                "client_order_id": "ORD-2",
+                "instrument_id": "NIFTY24JUN22500PE",
+                "side": -1,
+                "side_text": "SELL",
+                "qty": 75,
+                "price": 11.0,
+                "order_type": "LIMIT",
+                "time_in_force": "DAY",
+                "route_tag": "shadow_nse",
+                "research_instrument_id": "NIFTY_20260630_22500P",
+                "broker_instrument_token": "001002",
+                "instrument_resolution_method": "semantic_option_identity",
+                "instrument_resolution_status": "resolved",
+                "leg_group_id": "PARITY-1",
+                "leg_role": "PUT",
+                "leg_index": 2,
+                "leg_count": 2,
+            },
+        ]
+    )
+
+
+def write_resolved_upload_pack(upload, *, adapter="arrow_money"):
+    export = upload.parent / "resolved_order_export"
+    export.mkdir(parents=True, exist_ok=True)
+    resolved_broker_orders().to_csv(
+        export / "broker_orders.csv",
+        index=False,
+    )
+    config = OrderUploadPackConfig(
+        adapter=adapter,
+        require_reviewed_schema=False,
+        require_instrument_resolution=True,
+        require_broker_instrument_token=True,
+    )
+    write_order_upload_pack(
+        export,
+        output_dir=upload,
+        config=config,
+    )
+    return export, config
 
 
 def path_tail(value):
@@ -5639,6 +5711,177 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     )
     assert not drifted.passed
     assert drifted.error == "input_drift"
+
+
+def test_broker_dispatch_binds_verified_upload_contract_identity(tmp_path):
+    route, upload = write_inputs(tmp_path, canonical_leadlag=True)
+    write_resolved_upload_pack(upload)
+    out_dir = tmp_path / "dispatch"
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=out_dir,
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["upload_contract_identity_active"])
+    assert bool(summary["upload_contract_identity_gate_required"])
+    assert bool(summary["upload_contract_identity_manifest_current"])
+    assert bool(summary["upload_contract_identity_artifacts_consistent"])
+    assert bool(summary["upload_contract_identity_upload_file_bound"])
+    assert summary["upload_contract_identity_adapter"] == "arrow_money"
+    assert bool(
+        summary["upload_contract_identity_adapter_matches_route"]
+    )
+    assert bool(summary["upload_contract_identity_gate_passed"])
+    assert int(summary["upload_contract_identity_orders"]) == 2
+    assert int(summary["upload_contract_identity_ready_orders"]) == 2
+    assert int(summary["upload_contract_identity_token_orders"]) == 2
+
+    orders = pd.read_csv(
+        out_dir / "broker_dispatch_orders.csv",
+        dtype=str,
+        keep_default_na=False,
+    )
+    assert orders["research_instrument_id"].tolist() == [
+        "NIFTY_20260630_22500C",
+        "NIFTY_20260630_22500P",
+    ]
+    assert orders["broker_instrument_id"].tolist() == [
+        "NIFTY24JUN22500CE",
+        "NIFTY24JUN22500PE",
+    ]
+    assert orders["broker_instrument_token"].tolist() == [
+        "001001",
+        "001002",
+    ]
+    assert orders["instrument_resolution_status"].tolist() == [
+        "resolved",
+        "resolved",
+    ]
+    assert (
+        orders["resolution_row_ready"].str.lower().eq("true").all()
+    )
+    for payload in orders["order_payload_json"].map(json.loads):
+        assert "research_instrument_id" not in payload
+        assert "broker_instrument_token" not in payload
+        assert "instrument_resolution_status" not in payload
+
+    config = json.loads(
+        (out_dir / "broker_dispatch_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    identity_config = config["upload"]["contract_identity"]
+    assert identity_config["gate_passed"]
+    assert identity_config["artifacts_consistent"]
+    assert identity_config["adapter"] == "arrow_money"
+    assert identity_config["adapter_matches_route"]
+    assert identity_config["orders"] == 2
+    assert identity_config["token_orders"] == 2
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert {
+        "upload_orders",
+        "upload_contract_identity",
+        "upload_config",
+        "upload_manifest",
+        "upload_dependencies",
+    } <= set(manifest["inputs"])
+    assert manifest["extra"]["upload_contract_identity_active"]
+    assert manifest["extra"]["upload_contract_identity_gate_passed"]
+    assert (
+        manifest["extra"]["upload_contract_identity_sha256"]
+        == file_sha256(upload / "broker_upload_contract_identity.csv")
+    )
+    assert manifest["extra"]["upload_pack_manifest_sha256"] == file_sha256(
+        upload / "manifest.json"
+    )
+
+
+def test_broker_dispatch_blocks_remanifested_upload_identity_tamper(
+    tmp_path,
+):
+    route, upload = write_inputs(tmp_path, canonical_leadlag=True)
+    export, config = write_resolved_upload_pack(upload)
+    identity_path = upload / "broker_upload_contract_identity.csv"
+    identity = pd.read_csv(
+        identity_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    identity.loc[0, "broker_instrument_token"] = "FORGED-TOKEN"
+    identity.to_csv(identity_path, index=False)
+    write_experiment_manifest(
+        upload,
+        run_type="order_upload_pack",
+        parameters={"config": config.__dict__},
+        inputs={"broker_orders": export / "broker_orders.csv"},
+    )
+    out_dir = tmp_path / "dispatch"
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=out_dir,
+    )
+
+    assert not report.ready
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert "upload_pack_artifacts_consistent" in failed
+    summary = report.summary.iloc[0]
+    assert bool(summary["upload_contract_identity_manifest_current"])
+    assert not bool(
+        summary["upload_contract_identity_artifacts_consistent"]
+    )
+    assert not bool(summary["upload_contract_identity_gate_passed"])
+    assert (
+        "artifact_content_mismatch:broker_upload_contract_identity.csv"
+        in summary["upload_contract_identity_consistency_error"]
+    )
+    orders = report.dispatch_orders
+    assert orders.loc[0, "broker_instrument_token"] == "FORGED-TOKEN"
+    assert not orders["authorizes_submission"].astype(bool).any()
+    assert "broker_instrument_token" not in json.loads(
+        orders.loc[0, "order_payload_json"]
+    )
+
+
+def test_broker_dispatch_blocks_upload_pack_for_different_adapter(
+    tmp_path,
+):
+    route, upload = write_inputs(tmp_path, canonical_leadlag=True)
+    write_resolved_upload_pack(upload, adapter="irage")
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=tmp_path / "dispatch",
+    )
+
+    assert not report.ready
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert failed == {"upload_pack_adapter_matches_route"}
+    summary = report.summary.iloc[0]
+    assert summary["upload_contract_identity_adapter"] == "irage"
+    assert not bool(
+        summary["upload_contract_identity_adapter_matches_route"]
+    )
+    assert bool(summary["upload_contract_identity_manifest_current"])
+    assert bool(summary["upload_contract_identity_artifacts_consistent"])
 
 
 def test_broker_dispatch_lineage_blocks_remanifested_contract_detached_from_route(

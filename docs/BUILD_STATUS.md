@@ -7763,15 +7763,37 @@ resolver, parity-launch, and promotion set pass. Source compilation succeeds.
 Repository collection is healthy at `2774 tests` across `169` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes.
 
+Latest upload-to-dispatch contract-identity proof: order upload packs now have
+an independent evidence verifier that checks their manifest and source
+fingerprint, then reconstructs the vendor orders, mapping, checks, summary,
+schema, contract-identity sidecar, action queue, config, and runbook from the
+manifest-bound broker orders. File-backed dispatch planning invokes that
+verifier for every real upload pack, binds the selected vendor file to the
+configured output and route adapter, and reconciles sidecar row numbers, client
+order IDs, research IDs, resolved broker symbols, tokens, methods/statuses, and
+readiness flags before it can arm. Dispatch rows retain the verified identity in
+separate audit columns while their broker `order_payload_json` remains clean.
+The dispatch manifest fingerprints the sidecar, upload config/manifest, and
+raw upload dependencies. Re-manifesting a forged sidecar therefore remains
+blocked. Loose legacy upload CSV fixtures stay compatible until pack evidence
+is supplied. All outputs remain dry-run-only and non-authorizing. The full
+`133`-test broker-dispatch module, the `9`-test upload-pack module, and focused
+send-packet integration tests pass. Source compilation succeeds. Repository
+collection is healthy at `2778 tests` across `169` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
-1. Run the first real Arrow.money/iRage H1 export through the authority-bound
+1. Carry the verified upload contract identity through send-packet and
+   acknowledgement evidence without adding internal fields to the broker order
+   payload.
+2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
-2. Add data adapters for the first real vendor export once files are available.
-3. Replace placeholder Arrow.money/iRage column maps once real export schemas
+3. Add data adapters for the first real vendor export once files are available.
+4. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-4. Replace the built-in upload review templates with broker-signed
+5. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-5. Extend the 2026 calendar beyond H1 after authoritative Muhurat Trading
+6. Extend the 2026 calendar beyond H1 after authoritative Muhurat Trading
    timings are published and captured.

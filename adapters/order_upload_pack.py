@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -14,10 +15,24 @@ from adapters.mapped_order_export import (
     map_broker_orders,
 )
 from adapters.orders import read_order_csv
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 TEMPLATE_COLUMNS = [*MAPPING_COLUMNS, "template_status", "notes"]
+ORDER_UPLOAD_PACK_ARTIFACTS = (
+    "broker_upload_checks.csv",
+    "broker_upload_summary.csv",
+    "broker_upload_schema.csv",
+    "broker_upload_contract_identity.csv",
+    "broker_upload_action_queue.csv",
+    "broker_upload_config.json",
+    "broker_upload_runbook.md",
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +63,26 @@ class OrderUploadPackReport:
         if self.summary.empty:
             return False
         return bool(self.summary.iloc[0]["ready"])
+
+
+@dataclass(frozen=True)
+class OrderUploadPackEvidenceIntegrity:
+    manifest_path: Path
+    manifest_exists: bool = False
+    manifest_current: bool = False
+    manifest_run_type: str = ""
+    manifest_sha256: str = ""
+    manifest_error: str = ""
+    manifest_artifact_count: int = 0
+    manifest_artifact_match_count: int = 0
+    manifest_input_count: int = 0
+    manifest_input_match_count: int = 0
+    rebuilt_artifact_count: int = 0
+    rebuilt_artifact_match_count: int = 0
+    artifacts_consistent: bool = False
+    consistency_error: str = ""
+    dependency_count: int = 0
+    passed: bool = False
 
 
 def build_order_upload_pack(
@@ -157,6 +192,169 @@ def write_order_upload_pack(
         report.contract_identity,
         out,
         action_queue,
+    )
+
+
+def verify_order_upload_pack_evidence(
+    path: str | Path,
+) -> OrderUploadPackEvidenceIntegrity:
+    candidate = Path(path).resolve()
+    root = candidate if candidate.is_dir() else candidate.parent
+    manifest_path = root / "manifest.json"
+    expected_identity_path = (
+        root / "broker_upload_contract_identity.csv"
+    ).resolve()
+    binding_error = (
+        "contract_identity_path_not_manifest_bound"
+        if candidate.is_file() and candidate != expected_identity_path
+        else ""
+    )
+    manifest_payload: dict[str, Any] = {}
+    config = OrderUploadPackConfig()
+    payload_error = ""
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("manifest_not_object")
+        manifest_payload = payload
+        parameters = payload.get("parameters", {})
+        config_payload = (
+            parameters.get("config", {})
+            if isinstance(parameters, Mapping)
+            else {}
+        )
+        if not isinstance(config_payload, Mapping):
+            raise ValueError("upload_pack_config_missing")
+        config = OrderUploadPackConfig(**dict(config_payload))
+        _validate_config(config)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        payload_error = _evidence_error("manifest_payload_invalid", exc)
+
+    required_artifacts = (
+        config.output_filename,
+        config.mapping_filename,
+        *ORDER_UPLOAD_PACK_ARTIFACTS,
+    )
+    manifest = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="order_upload_pack",
+        required_artifacts=required_artifacts,
+        require_input_fingerprints=True,
+    )
+    manifest_sha256 = ""
+    if manifest_path.is_file():
+        try:
+            manifest_sha256 = file_sha256(manifest_path)
+        except OSError:
+            pass
+
+    rebuilt_count = 0
+    rebuilt_match_count = 0
+    consistency_errors = [binding_error] if binding_error else []
+    if payload_error:
+        consistency_errors.append(payload_error)
+    else:
+        try:
+            orders_path = _manifest_input_file(
+                manifest_payload,
+                "broker_orders",
+            )
+            rebuilt = build_order_upload_pack(
+                read_order_csv(orders_path),
+                config=config,
+            )
+            action_queue = (
+                rebuilt.action_queue
+                if rebuilt.action_queue is not None
+                else _action_queue(rebuilt.summary.iloc[0], rebuilt.checks)
+            )
+            expected_artifacts = {
+                config.output_filename: rebuilt.orders.to_csv(index=False),
+                config.mapping_filename: rebuilt.mapping.to_csv(index=False),
+                "broker_upload_checks.csv": rebuilt.checks.to_csv(
+                    index=False
+                ),
+                "broker_upload_summary.csv": rebuilt.summary.to_csv(
+                    index=False
+                ),
+                "broker_upload_schema.csv": rebuilt.schema.to_csv(
+                    index=False
+                ),
+                "broker_upload_contract_identity.csv": (
+                    rebuilt.contract_identity.to_csv(index=False)
+                ),
+                "broker_upload_action_queue.csv": action_queue.to_csv(
+                    index=False
+                ),
+                "broker_upload_config.json": (
+                    json.dumps(
+                        _config(
+                            rebuilt.summary.iloc[0],
+                            action_queue,
+                            config,
+                            orders_path,
+                        ),
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ),
+                "broker_upload_runbook.md": _runbook_markdown(
+                    rebuilt.summary.iloc[0],
+                    action_queue,
+                ),
+            }
+            rebuilt_count = len(expected_artifacts)
+            for name, expected in expected_artifacts.items():
+                artifact_path = root / name
+                if not artifact_path.is_file():
+                    consistency_errors.append(f"artifact_missing:{name}")
+                    continue
+                actual = artifact_path.read_text(encoding="utf-8")
+                if _normalized_text(actual) != _normalized_text(expected):
+                    consistency_errors.append(
+                        f"artifact_content_mismatch:{name}"
+                    )
+                    continue
+                rebuilt_match_count += 1
+        except (
+            KeyError,
+            OSError,
+            TypeError,
+            ValueError,
+            pd.errors.ParserError,
+        ) as exc:
+            consistency_errors.append(
+                _evidence_error("evidence_rebuild_failed", exc)
+            )
+
+    artifacts_consistent = bool(
+        rebuilt_count > 0
+        and rebuilt_match_count == rebuilt_count
+        and not consistency_errors
+    )
+    dependency_count = (
+        len(manifest_dependency_paths(manifest_path))
+        if manifest_path.is_file()
+        else 0
+    )
+    return OrderUploadPackEvidenceIntegrity(
+        manifest_path=manifest_path,
+        manifest_exists=manifest.exists,
+        manifest_current=manifest.passed,
+        manifest_run_type=manifest.run_type,
+        manifest_sha256=manifest_sha256,
+        manifest_error=manifest.error,
+        manifest_artifact_count=manifest.artifact_count,
+        manifest_artifact_match_count=manifest.artifact_match_count,
+        manifest_input_count=manifest.input_fingerprint_count,
+        manifest_input_match_count=manifest.input_fingerprint_match_count,
+        rebuilt_artifact_count=rebuilt_count,
+        rebuilt_artifact_match_count=rebuilt_match_count,
+        artifacts_consistent=artifacts_consistent,
+        consistency_error=";".join(consistency_errors),
+        dependency_count=dependency_count,
+        passed=bool(manifest.passed and artifacts_consistent),
     )
 
 
@@ -879,6 +1077,32 @@ def _broker_orders_path(export_path: str | Path) -> Path:
     if not path.exists():
         raise FileNotFoundError(f"broker order export not found: {path}")
     return path
+
+
+def _manifest_input_file(
+    payload: Mapping[str, Any],
+    name: str,
+) -> Path:
+    inputs = payload.get("inputs", {})
+    value = inputs.get(name, {}) if isinstance(inputs, Mapping) else {}
+    if not isinstance(value, Mapping) or value.get("kind") != "file":
+        raise ValueError(f"{name}_fingerprint_missing")
+    raw_path = _text(value.get("path"))
+    if not raw_path:
+        raise ValueError(f"{name}_path_missing")
+    path = Path(raw_path).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"{name}_file_missing")
+    return path
+
+
+def _normalized_text(value: str) -> str:
+    return value.replace("\r\n", "\n")
+
+
+def _evidence_error(prefix: str, error: Exception) -> str:
+    detail = str(error).strip().replace(";", ",")
+    return f"{prefix}:{detail}" if detail else prefix
 
 
 def _validate_config(config: OrderUploadPackConfig) -> None:

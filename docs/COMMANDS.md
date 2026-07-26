@@ -3517,6 +3517,11 @@ longer matches the resolved broker symbol. Contract identity columns are read
 as strings at each file boundary so tokens such as `001234` are not coerced
 into a different identifier. As with export,
 `--allow-symbol-only-instrument-resolution` relaxes only the token requirement.
+The upload-pack evidence verifier checks the `order_upload_pack` manifest and
+current broker-order fingerprint, then reconstructs every upload artifact from
+that bound source and the manifest config. Editing and re-manifesting the
+sidecar, vendor CSV, checks, summary, mapping, config, or runbook therefore does
+not create valid downstream identity proof.
 `broker_upload_summary.csv` also exposes `failed_check_count`,
 `failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
 `action_queue_count`, `blocked_action_count`, `next_gate`,
@@ -6551,6 +6556,22 @@ pipelines, and malformed dispatch-order inputs back to `plan-broker-dispatch`.
 Use `--fail-on-blocked-actions` to fail only when blocked dispatch actions
 exist, or `--fail-on-actions` when any broker dispatch action should stop
 automation.
+
+When `--upload-pack` points at a manifest-backed upload pack, dispatch verifies
+that the selected vendor CSV is the configured pack output, reconstructs the
+whole pack from its manifest-bound broker orders, and reconciles every sidecar
+row by row number, client order ID, upload symbol, and resolved broker symbol.
+The pack adapter must also match the enabled route adapter.
+Required or supplied resolution metadata must retain the research instrument
+ID, broker symbol, resolution method/status, readiness marker, and token when
+configured. `broker_dispatch_orders.csv` carries those fields as audit columns
+beside each dispatch row, while `order_payload_json` remains exactly
+vendor-shaped. The summary and nested
+`upload.contract_identity` config expose manifest currency, reconstruction,
+row counts, token counts, upload-file binding, and the final identity gate.
+Loose legacy upload CSV directories without pack config/manifest remain
+supported; once any real pack proof is present, missing or forged identity
+fails closed and routes back to `pack-broker-upload`.
 
 When the provider route-enable wrapper retained validated dispatch round-trip
 capture provenance, broker-dispatch carries the same

@@ -8,13 +8,18 @@ from typing import Any
 
 import pandas as pd
 
+from adapters.order_upload_pack import verify_order_upload_pack_evidence
 from reports.leadlag_lineage import (
     LEADLAG_LINEAGE_FIELDS,
     leadlag_lineage_field_matches,
     leadlag_lineage_fields,
     leadlag_lineage_ready,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    manifest_dependency_paths,
+    write_experiment_manifest,
+)
 from reports.operational_lineage import (
     empty_route_enable_lineage,
     load_route_enable_lineage,
@@ -46,6 +51,24 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+UPLOAD_CONTRACT_IDENTITY_COLUMNS = (
+    ("row_number", "contract_identity_row_number"),
+    ("broker_order_id", "broker_order_id"),
+    ("client_order_id", "client_order_id"),
+    ("leg_group_id", "leg_group_id"),
+    ("leg_role", "leg_role"),
+    ("leg_index", "leg_index"),
+    ("leg_count", "leg_count"),
+    ("research_instrument_id", "research_instrument_id"),
+    ("broker_instrument_id", "broker_instrument_id"),
+    ("broker_instrument_token", "broker_instrument_token"),
+    ("instrument_resolution_method", "instrument_resolution_method"),
+    ("instrument_resolution_status", "instrument_resolution_status"),
+    ("upload_instrument_column", "upload_instrument_column"),
+    ("upload_instrument_id", "upload_instrument_id"),
+    ("upload_identity_matches", "upload_identity_matches"),
+    ("resolution_row_ready", "resolution_row_ready"),
+)
 ROUTE_ENABLE_LINEAGE_OUTPUT_COLUMNS = tuple(
     route_enable_lineage_fields(empty_route_enable_lineage()).keys()
 )
@@ -383,6 +406,8 @@ def evaluate_broker_dispatch_plan(
     route_enable_summary: pd.DataFrame,
     route_enable_config: dict[str, Any] | None = None,
     upload_orders: pd.DataFrame,
+    upload_contract_identity: pd.DataFrame | None = None,
+    upload_contract_identity_evidence: dict[str, Any] | None = None,
     upload_file_hash: str = "",
     route_enable_lineage: dict[str, Any] | None = None,
     thresholds: BrokerDispatchThresholds | None = None,
@@ -398,12 +423,49 @@ def evaluate_broker_dispatch_plan(
         route_enable_config,
         route_enable_lineage or empty_route_enable_lineage(),
     )
-    dispatch_orders = _dispatch_orders(upload_orders, route, upload_file_hash)
-    checks = _checks(route, dispatch_orders, thresholds)
-    summary = _summary(route, dispatch_orders, checks, upload_file_hash, thresholds)
+    contract_identity = (
+        upload_contract_identity.copy().reset_index(drop=True)
+        if upload_contract_identity is not None
+        else None
+    )
+    identity_state = _upload_contract_identity_state(
+        upload_orders,
+        contract_identity,
+        upload_contract_identity_evidence,
+        route_adapter=route["adapter"],
+    )
+    dispatch_orders = _dispatch_orders(
+        upload_orders,
+        route,
+        upload_file_hash,
+        contract_identity,
+    )
+    checks = _checks(
+        route,
+        dispatch_orders,
+        thresholds,
+        identity_state,
+    )
+    summary = _summary(
+        route,
+        dispatch_orders,
+        checks,
+        upload_file_hash,
+        thresholds,
+        identity_state,
+    )
     action_queue = _action_queue(summary.iloc[0], checks)
     summary = _summary_with_actions(summary, checks, action_queue)
-    config = _config(route, dispatch_orders, summary.iloc[0], thresholds, checks, upload_file_hash, action_queue)
+    config = _config(
+        route,
+        dispatch_orders,
+        summary.iloc[0],
+        thresholds,
+        checks,
+        upload_file_hash,
+        action_queue,
+        identity_state,
+    )
     return BrokerDispatchReport(
         dispatch_orders=dispatch_orders,
         checks=checks,
@@ -445,10 +507,15 @@ def write_broker_dispatch_plan(
         )
     upload_file = _upload_orders_path(upload_dir, route_config, upload_orders_path)
     upload_bytes = upload_file.read_bytes()
+    contract_identity, identity_evidence = _load_upload_contract_identity(
+        upload_file
+    )
     report = evaluate_broker_dispatch_plan(
         route_enable_summary=_read_required(route_summary_path, "route_enable_summary"),
         route_enable_config=route_config,
         upload_orders=pd.read_csv(upload_file),
+        upload_contract_identity=contract_identity,
+        upload_contract_identity_evidence=identity_evidence,
         upload_file_hash=hashlib.sha256(upload_bytes).hexdigest(),
         route_enable_lineage=route_lineage,
         thresholds=thresholds,
@@ -484,6 +551,22 @@ def write_broker_dispatch_plan(
     }
     if route_manifest_path is not None:
         inputs["route_enable_manifest"] = route_manifest_path
+    identity_path = identity_evidence.get("identity_path")
+    if identity_path is not None and Path(identity_path).is_file():
+        inputs["upload_contract_identity"] = Path(identity_path)
+    upload_config_path = identity_evidence.get("config_path")
+    if upload_config_path is not None and Path(upload_config_path).is_file():
+        inputs["upload_config"] = Path(upload_config_path)
+    upload_manifest_path = identity_evidence.get("manifest_path")
+    if (
+        upload_manifest_path is not None
+        and Path(upload_manifest_path).is_file()
+    ):
+        manifest_path = Path(upload_manifest_path)
+        inputs["upload_manifest"] = manifest_path
+        dependencies = manifest_dependency_paths(manifest_path)
+        if dependencies:
+            inputs["upload_dependencies"] = dependencies
     inputs.update(route_enable_lineage_manifest_inputs(route_lineage))
     write_experiment_manifest(
         out,
@@ -496,6 +579,30 @@ def write_broker_dispatch_plan(
                 report.summary.iloc[0]
             ),
             **route_enable_lineage_fields(route_lineage),
+            "upload_contract_identity_active": _to_bool(
+                report.summary.iloc[0].get(
+                    "upload_contract_identity_active",
+                    False,
+                )
+            ),
+            "upload_contract_identity_gate_passed": _to_bool(
+                report.summary.iloc[0].get(
+                    "upload_contract_identity_gate_passed",
+                    False,
+                )
+            ),
+            "upload_contract_identity_sha256": _object_text(
+                report.summary.iloc[0].get(
+                    "upload_contract_identity_sha256",
+                    "",
+                )
+            ).strip(),
+            "upload_pack_manifest_sha256": _object_text(
+                report.summary.iloc[0].get(
+                    "upload_pack_manifest_sha256",
+                    "",
+                )
+            ).strip(),
             "authorizes_submission": False,
         },
     )
@@ -509,13 +616,27 @@ def write_broker_dispatch_plan(
     )
 
 
-def _dispatch_orders(upload_orders: pd.DataFrame, route: dict[str, Any], upload_file_hash: str) -> pd.DataFrame:
+def _dispatch_orders(
+    upload_orders: pd.DataFrame,
+    route: dict[str, Any],
+    upload_file_hash: str,
+    contract_identity: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     batch_id = _batch_id(route, upload_orders, upload_file_hash)
     for idx, row in upload_orders.reset_index(drop=True).iterrows():
         source_order_id = _source_order_id(row, idx)
         payload = _jsonable_row(row.to_dict())
         payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        identity_fields: dict[str, Any] = {}
+        if contract_identity is not None and idx < len(contract_identity):
+            identity_row = contract_identity.iloc[idx]
+            identity_fields = {
+                output_column: _jsonable(identity_row.get(source_column))
+                for source_column, output_column in (
+                    UPLOAD_CONTRACT_IDENTITY_COLUMNS
+                )
+            }
         rows.append(
             {
                 "dispatch_batch_id": batch_id,
@@ -534,6 +655,7 @@ def _dispatch_orders(upload_orders: pd.DataFrame, route: dict[str, Any], upload_
                 "upload_file_hash": upload_file_hash,
                 "route_enable_hash": route["route_enable_hash"],
                 "route_dispatch_roundtrip_batch_id": route["dispatch_roundtrip_batch_id"],
+                **identity_fields,
                 **_strategy_portfolio_leadlag_output_fields(route),
                 **_route_lineage_output_fields(route),
                 "authorizes_submission": False,
@@ -543,7 +665,12 @@ def _dispatch_orders(upload_orders: pd.DataFrame, route: dict[str, Any], upload_
     return pd.DataFrame(rows)
 
 
-def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: BrokerDispatchThresholds) -> pd.DataFrame:
+def _checks(
+    route: dict[str, Any],
+    dispatch_orders: pd.DataFrame,
+    thresholds: BrokerDispatchThresholds,
+    upload_identity: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     orders = int(len(dispatch_orders))
     max_orders = thresholds.max_orders or int(route["max_orders_per_session"])
     target_mode = _identity_key(thresholds.target_mode)
@@ -953,7 +1080,361 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
         checks.extend(_broker_vendor_data_readiness_checks(route))
     if _broker_vendor_market_data_batch_active(route):
         checks.extend(_broker_vendor_market_data_batch_checks(route))
+    if upload_identity and upload_identity["active"]:
+        checks.extend(_upload_contract_identity_checks(upload_identity))
     return pd.DataFrame(checks)
+
+
+def _upload_contract_identity_state(
+    upload_orders: pd.DataFrame,
+    contract_identity: pd.DataFrame | None,
+    evidence: dict[str, Any] | None,
+    *,
+    route_adapter: str = "",
+) -> dict[str, Any]:
+    state = dict(evidence or {})
+    identity_present = contract_identity is not None
+    active = bool(state.get("active", False) or identity_present)
+    identity = (
+        contract_identity
+        if contract_identity is not None
+        else pd.DataFrame()
+    )
+    provided = bool(
+        _to_bool(state.get("provided", False))
+        or _upload_resolution_metadata_provided(identity)
+    )
+    required = _to_bool(state.get("required", False))
+    require_token = _to_bool(state.get("require_token", False))
+    gate_required = bool(required or provided)
+    order_count = int(len(upload_orders))
+    identity_count = int(len(identity))
+
+    row_numbers = pd.to_numeric(
+        identity.get(
+            "row_number",
+            pd.Series(index=identity.index, dtype=float),
+        ),
+        errors="coerce",
+    )
+    row_numbers_match = bool(
+        identity_present
+        and identity_count == order_count
+        and row_numbers.notna().all()
+        and row_numbers.astype(int).tolist() == list(range(order_count))
+    )
+    client_ids_match = _upload_client_ids_match(
+        upload_orders,
+        identity,
+    )
+    upload_ids_match = _upload_identity_ids_match(
+        upload_orders,
+        identity,
+    )
+    statuses = _identity_text_column(
+        identity,
+        "instrument_resolution_status",
+    ).str.lower()
+    methods = _identity_text_column(
+        identity,
+        "instrument_resolution_method",
+    )
+    research_ids = _identity_text_column(
+        identity,
+        "research_instrument_id",
+    )
+    broker_ids = _identity_text_column(
+        identity,
+        "broker_instrument_id",
+    )
+    tokens = _identity_text_column(
+        identity,
+        "broker_instrument_token",
+    )
+    ready_flags = identity.get(
+        "resolution_row_ready",
+        pd.Series(False, index=identity.index),
+    ).map(_to_bool)
+    resolution_ready = bool(
+        identity_present
+        and identity_count == order_count
+        and order_count > 0
+        and statuses.eq("resolved").all()
+        and methods.ne("").all()
+        and research_ids.ne("").all()
+        and broker_ids.ne("").all()
+        and ready_flags.all()
+        and upload_ids_match
+        and (tokens.ne("").all() if require_token else True)
+    )
+    proof_required = _to_bool(state.get("proof_required", False))
+    pack_adapter = _identity_key(
+        _object_text(state.get("adapter", "")).strip()
+    )
+    expected_adapter = _identity_key(route_adapter)
+    adapter_matches = bool(
+        not proof_required
+        or (
+            pack_adapter
+            and expected_adapter
+            and pack_adapter == expected_adapter
+        )
+    )
+    manifest_current = _to_bool(state.get("manifest_current", False))
+    artifacts_consistent = _to_bool(
+        state.get("artifacts_consistent", False)
+    )
+    upload_file_bound = _to_bool(
+        state.get("upload_file_bound", not proof_required)
+    )
+    pack_proof_passed = bool(
+        not proof_required
+        or (
+            manifest_current
+            and artifacts_consistent
+            and upload_file_bound
+        )
+    )
+    identity_gate_passed = bool(
+        not active
+        or (
+            identity_present
+            and identity_count == order_count
+            and adapter_matches
+            and row_numbers_match
+            and client_ids_match
+            and upload_ids_match
+            and pack_proof_passed
+            and (resolution_ready if gate_required else True)
+        )
+    )
+    state.update(
+        {
+            "active": active,
+            "required": required,
+            "provided": provided,
+            "require_token": require_token,
+            "gate_required": gate_required,
+            "proof_required": proof_required,
+            "adapter": pack_adapter,
+            "route_adapter": expected_adapter,
+            "adapter_matches": adapter_matches,
+            "manifest_current": manifest_current,
+            "artifacts_consistent": artifacts_consistent,
+            "upload_file_bound": upload_file_bound,
+            "identity_present": identity_present,
+            "upload_orders": order_count,
+            "identity_orders": identity_count,
+            "row_numbers_match": row_numbers_match,
+            "client_order_ids_match": client_ids_match,
+            "upload_ids_match": upload_ids_match,
+            "research_id_orders": int(research_ids.ne("").sum()),
+            "broker_id_orders": int(broker_ids.ne("").sum()),
+            "token_orders": int(tokens.ne("").sum()),
+            "ready_orders": int(ready_flags.sum()),
+            "resolution_ready": resolution_ready,
+            "pack_proof_passed": pack_proof_passed,
+            "gate_passed": identity_gate_passed,
+        }
+    )
+    return state
+
+
+def _upload_contract_identity_checks(
+    state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    if state["proof_required"]:
+        checks.extend(
+            [
+                _check(
+                    "upload_pack_manifest_current",
+                    state["manifest_current"],
+                    "is",
+                    True,
+                    bool(state["manifest_current"]),
+                    "broker upload-pack manifest is missing, stale, or incomplete",
+                ),
+                _check(
+                    "upload_pack_artifacts_consistent",
+                    state["artifacts_consistent"],
+                    "is",
+                    True,
+                    bool(state["artifacts_consistent"]),
+                    "broker upload-pack artifacts do not reconstruct from the manifest-bound broker orders",
+                ),
+                _check(
+                    "upload_pack_upload_file_bound",
+                    state["upload_file_bound"],
+                    "is",
+                    True,
+                    bool(state["upload_file_bound"]),
+                    "dispatch upload orders are not the manifest-bound upload-pack output",
+                ),
+                _check(
+                    "upload_pack_adapter_matches_route",
+                    state["adapter"],
+                    "==",
+                    state["route_adapter"],
+                    bool(state["adapter_matches"]),
+                    "broker upload-pack adapter does not match the enabled route adapter",
+                ),
+            ]
+        )
+    checks.extend(
+        [
+            _check(
+                "upload_contract_identity_present",
+                state["identity_present"],
+                "is",
+                True,
+                bool(state["identity_present"]),
+                "broker upload contract-identity sidecar is missing",
+            ),
+            _check(
+                "upload_contract_identity_order_count",
+                state["identity_orders"],
+                "==",
+                state["upload_orders"],
+                bool(
+                    state["identity_present"]
+                    and state["identity_orders"] == state["upload_orders"]
+                ),
+                "broker upload orders and contract-identity sidecar row counts disagree",
+            ),
+            _check(
+                "upload_contract_identity_row_numbers",
+                state["row_numbers_match"],
+                "is",
+                True,
+                bool(state["row_numbers_match"]),
+                "contract-identity row numbers are missing, duplicated, or out of order",
+            ),
+            _check(
+                "upload_contract_identity_client_order_ids",
+                state["client_order_ids_match"],
+                "is",
+                True,
+                bool(state["client_order_ids_match"]),
+                "contract-identity client order IDs do not match the vendor upload rows",
+            ),
+            _check(
+                "upload_contract_identity_upload_ids",
+                state["upload_ids_match"],
+                "is",
+                True,
+                bool(state["upload_ids_match"]),
+                "contract-identity broker symbols do not match the vendor upload rows",
+            ),
+        ]
+    )
+    if state["gate_required"]:
+        checks.append(
+            _check(
+                "upload_contract_identity_resolution_ready",
+                state["ready_orders"],
+                "==",
+                state["upload_orders"],
+                bool(state["resolution_ready"]),
+                "one or more dispatch rows lost verified broker instrument resolution",
+            )
+        )
+        if state["require_token"]:
+            checks.append(
+                _check(
+                    "upload_contract_identity_tokens_complete",
+                    state["token_orders"],
+                    "==",
+                    state["upload_orders"],
+                    bool(
+                        state["identity_orders"] > 0
+                        and state["token_orders"] == state["upload_orders"]
+                    ),
+                    "one or more dispatch rows lost the broker instrument token",
+                )
+            )
+    return checks
+
+
+def _upload_resolution_metadata_provided(
+    identity: pd.DataFrame,
+) -> bool:
+    return any(
+        _identity_text_column(identity, column).ne("").any()
+        for column in (
+            "research_instrument_id",
+            "broker_instrument_token",
+            "instrument_resolution_method",
+            "instrument_resolution_status",
+        )
+    )
+
+
+def _upload_client_ids_match(
+    upload_orders: pd.DataFrame,
+    identity: pd.DataFrame,
+) -> bool:
+    if len(upload_orders) != len(identity) or identity.empty:
+        return False
+    upload_column = next(
+        (
+            column
+            for column in ("client_order_id", "client_tag")
+            if column in upload_orders.columns
+        ),
+        "",
+    )
+    identity_ids = _identity_text_column(identity, "client_order_id")
+    if not upload_column:
+        return bool(identity_ids.eq("").all())
+    upload_ids = _identity_text_column(upload_orders, upload_column)
+    return bool(identity_ids.ne("").all() and identity_ids.eq(upload_ids).all())
+
+
+def _upload_identity_ids_match(
+    upload_orders: pd.DataFrame,
+    identity: pd.DataFrame,
+) -> bool:
+    if len(upload_orders) != len(identity) or identity.empty:
+        return False
+    for idx, identity_row in identity.reset_index(drop=True).iterrows():
+        column = _object_text(
+            identity_row.get("upload_instrument_column", "")
+        ).strip()
+        expected = _object_text(
+            identity_row.get("upload_instrument_id", "")
+        ).strip()
+        broker_id = _object_text(
+            identity_row.get("broker_instrument_id", "")
+        ).strip()
+        if (
+            not column
+            or column not in upload_orders.columns
+            or idx >= len(upload_orders)
+        ):
+            return False
+        actual = _object_text(
+            upload_orders.iloc[idx].get(column, "")
+        ).strip()
+        if (
+            not actual
+            or actual != expected
+            or actual != broker_id
+            or not _to_bool(
+                identity_row.get("upload_identity_matches", False)
+            )
+        ):
+            return False
+    return True
+
+
+def _identity_text_column(
+    frame: pd.DataFrame,
+    column: str,
+) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series([""] * len(frame), index=frame.index, dtype="object")
+    return frame[column].astype("string").fillna("").str.strip()
 
 
 def _route_readiness_checks(route: dict[str, Any]) -> list[dict[str, object]]:
@@ -4039,6 +4520,7 @@ def _summary(
     checks: pd.DataFrame,
     upload_file_hash: str,
     thresholds: BrokerDispatchThresholds,
+    upload_identity: dict[str, Any],
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -4098,6 +4580,69 @@ def _summary(
                 **_route_lineage_output_fields(route),
                 "authorizes_submission": False,
                 "upload_file_hash": upload_file_hash,
+                "upload_contract_identity_active": upload_identity["active"],
+                "upload_contract_identity_required": upload_identity["required"],
+                "upload_contract_identity_provided": upload_identity["provided"],
+                "upload_contract_identity_token_required": upload_identity[
+                    "require_token"
+                ],
+                "upload_contract_identity_gate_required": upload_identity[
+                    "gate_required"
+                ],
+                "upload_contract_identity_proof_required": upload_identity[
+                    "proof_required"
+                ],
+                "upload_contract_identity_adapter": upload_identity[
+                    "adapter"
+                ],
+                "upload_contract_identity_adapter_matches_route": (
+                    upload_identity["adapter_matches"]
+                ),
+                "upload_contract_identity_manifest_current": upload_identity[
+                    "manifest_current"
+                ],
+                "upload_contract_identity_artifacts_consistent": (
+                    upload_identity["artifacts_consistent"]
+                ),
+                "upload_contract_identity_upload_file_bound": upload_identity[
+                    "upload_file_bound"
+                ],
+                "upload_contract_identity_present": upload_identity[
+                    "identity_present"
+                ],
+                "upload_contract_identity_orders": upload_identity[
+                    "identity_orders"
+                ],
+                "upload_contract_identity_ready_orders": upload_identity[
+                    "ready_orders"
+                ],
+                "upload_contract_identity_research_id_orders": upload_identity[
+                    "research_id_orders"
+                ],
+                "upload_contract_identity_broker_id_orders": upload_identity[
+                    "broker_id_orders"
+                ],
+                "upload_contract_identity_token_orders": upload_identity[
+                    "token_orders"
+                ],
+                "upload_contract_identity_upload_ids_match": upload_identity[
+                    "upload_ids_match"
+                ],
+                "upload_contract_identity_gate_passed": upload_identity[
+                    "gate_passed"
+                ],
+                "upload_contract_identity_file": _object_text(
+                    upload_identity.get("identity_path", "")
+                ).strip(),
+                "upload_contract_identity_sha256": _object_text(
+                    upload_identity.get("identity_sha256", "")
+                ).strip(),
+                "upload_pack_manifest_sha256": _object_text(
+                    upload_identity.get("manifest_sha256", "")
+                ).strip(),
+                "upload_contract_identity_consistency_error": _object_text(
+                    upload_identity.get("consistency_error", "")
+                ).strip(),
                 "dispatch_batch_id": str(dispatch_orders.iloc[0]["dispatch_batch_id"]) if not dispatch_orders.empty else "",
                 "route_readiness_required": _route_readiness_required(thresholds, route),
                 "route_readiness_provided": route["route_readiness_provided"],
@@ -4299,6 +4844,8 @@ def _component(check: str) -> str:
         return "vendor_market_data"
     if "broker_vendor_data_readiness" in check or "vendor_data_readiness" in check:
         return "broker_vendor_data_readiness"
+    if check.startswith(("upload_pack_", "upload_contract_identity_")):
+        return "upload_contract_identity"
     if "dispatch_roundtrip" in check:
         return "broker_dispatch_roundtrip"
     if check.startswith("dispatch_orders_") or check in {
@@ -4330,6 +4877,8 @@ def _next_gate(check: str) -> str:
         return "review-broker-readiness"
     if component == "resume_gate":
         return "review-resume-gate"
+    if component == "upload_contract_identity":
+        return "pack-broker-upload"
     return "plan-broker-dispatch"
 
 
@@ -4351,6 +4900,8 @@ def _action_recommendation(check: str) -> str:
         return "rebuild_broker_readiness_lineage_before_dispatch"
     if component == "resume_gate":
         return "repair_resume_gate_proof_before_dispatch"
+    if component == "upload_contract_identity":
+        return "rebuild_verified_broker_upload_pack"
     if check in {"unique_source_order_id", "unique_dispatch_order_id"}:
         return "deduplicate_dispatch_order_id_inputs"
     if check.startswith("dispatch_notional_"):
@@ -5386,6 +5937,7 @@ def _config(
     checks: pd.DataFrame,
     upload_file_hash: str,
     action_queue: pd.DataFrame,
+    upload_identity: dict[str, Any],
 ) -> dict[str, Any]:
     failed_check_records = _failed_check_records(checks)
     statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
@@ -5448,6 +6000,92 @@ def _config(
             "total_notional": float(summary["dispatch_total_notional"]),
             "file_hash": upload_file_hash,
             "output_file": route["upload_output_file"],
+            "contract_identity": {
+                "active": _to_bool(
+                    summary["upload_contract_identity_active"]
+                ),
+                "required": _to_bool(
+                    summary["upload_contract_identity_required"]
+                ),
+                "provided": _to_bool(
+                    summary["upload_contract_identity_provided"]
+                ),
+                "token_required": _to_bool(
+                    summary["upload_contract_identity_token_required"]
+                ),
+                "gate_required": _to_bool(
+                    summary["upload_contract_identity_gate_required"]
+                ),
+                "proof_required": _to_bool(
+                    summary["upload_contract_identity_proof_required"]
+                ),
+                "adapter": _object_text(
+                    summary["upload_contract_identity_adapter"]
+                ).strip(),
+                "adapter_matches_route": _to_bool(
+                    summary[
+                        "upload_contract_identity_adapter_matches_route"
+                    ]
+                ),
+                "manifest_current": _to_bool(
+                    summary["upload_contract_identity_manifest_current"]
+                ),
+                "artifacts_consistent": _to_bool(
+                    summary[
+                        "upload_contract_identity_artifacts_consistent"
+                    ]
+                ),
+                "upload_file_bound": _to_bool(
+                    summary[
+                        "upload_contract_identity_upload_file_bound"
+                    ]
+                ),
+                "sidecar_present": _to_bool(
+                    summary["upload_contract_identity_present"]
+                ),
+                "orders": int(
+                    summary["upload_contract_identity_orders"]
+                ),
+                "ready_orders": int(
+                    summary["upload_contract_identity_ready_orders"]
+                ),
+                "research_id_orders": int(
+                    summary[
+                        "upload_contract_identity_research_id_orders"
+                    ]
+                ),
+                "broker_id_orders": int(
+                    summary[
+                        "upload_contract_identity_broker_id_orders"
+                    ]
+                ),
+                "token_orders": int(
+                    summary["upload_contract_identity_token_orders"]
+                ),
+                "upload_ids_match": _to_bool(
+                    summary[
+                        "upload_contract_identity_upload_ids_match"
+                    ]
+                ),
+                "gate_passed": _to_bool(
+                    summary["upload_contract_identity_gate_passed"]
+                ),
+                "sidecar_path": _object_text(
+                    upload_identity.get("identity_path", "")
+                ).strip(),
+                "sidecar_sha256": _object_text(
+                    upload_identity.get("identity_sha256", "")
+                ).strip(),
+                "manifest_path": _object_text(
+                    upload_identity.get("manifest_path", "")
+                ).strip(),
+                "manifest_sha256": _object_text(
+                    upload_identity.get("manifest_sha256", "")
+                ).strip(),
+                "consistency_error": _object_text(
+                    upload_identity.get("consistency_error", "")
+                ).strip(),
+            },
         },
         "route_readiness": {
             "required": _to_bool(summary["route_readiness_required"]),
@@ -5668,6 +6306,12 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Adapter: {_object_text(summary_row.get('adapter')).strip()}",
         f"- Dispatch orders: {_int_value(summary_row.get('dispatch_orders'))}",
         f"- Dispatch total notional: {_object_text(summary_row.get('dispatch_total_notional')).strip()}",
+        f"- Upload contract identity active: {'yes' if _to_bool(summary_row.get('upload_contract_identity_active')) else 'no'}",
+        f"- Upload contract identity adapter matches route: {'yes' if _to_bool(summary_row.get('upload_contract_identity_adapter_matches_route')) else 'no'}",
+        f"- Upload contract identity proof current: {'yes' if _to_bool(summary_row.get('upload_contract_identity_manifest_current')) else 'no'}",
+        f"- Upload contract identity reconstructed: {'yes' if _to_bool(summary_row.get('upload_contract_identity_artifacts_consistent')) else 'no'}",
+        f"- Upload contract identity ready rows: {_int_value(summary_row.get('upload_contract_identity_ready_orders'))}/{_int_value(summary_row.get('dispatch_orders'))}",
+        f"- Upload contract identity gate passed: {'yes' if _to_bool(summary_row.get('upload_contract_identity_gate_passed')) else 'no'}",
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Route dispatch round-trip ready: {_object_text(summary_row.get('route_dispatch_roundtrip_ready')).strip()}",
         f"- Route-enable lineage current: {'yes' if _to_bool(summary_row.get('route_enable_lineage_gate_passed')) else 'no'}",
@@ -7946,6 +8590,123 @@ def _source_order_id(row: pd.Series, idx: int) -> str:
         if value:
             return value
     return f"row-{idx + 1:06d}"
+
+
+def _load_upload_contract_identity(
+    upload_file: Path,
+) -> tuple[pd.DataFrame | None, dict[str, Any]]:
+    root = upload_file.resolve().parent
+    identity_path = root / "broker_upload_contract_identity.csv"
+    config_path = root / "broker_upload_config.json"
+    manifest_path = root / "manifest.json"
+    identity_exists = identity_path.is_file()
+    config_exists = config_path.is_file()
+    manifest_exists = manifest_path.is_file()
+    proof_required = bool(config_exists or manifest_exists)
+    active = bool(identity_exists or proof_required)
+
+    identity: pd.DataFrame | None = None
+    identity_error = ""
+    if identity_exists:
+        try:
+            identity = pd.read_csv(
+                identity_path,
+                dtype=str,
+                keep_default_na=False,
+            )
+        except (OSError, ValueError, pd.errors.ParserError) as exc:
+            identity = pd.DataFrame()
+            identity_error = (
+                f"contract_identity_invalid:{str(exc).strip()}"
+            )
+
+    config: dict[str, Any] = {}
+    config_error = ""
+    if config_exists:
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("upload_config_not_object")
+            config = payload
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            config_error = f"upload_config_invalid:{str(exc).strip()}"
+    upload_config = config.get("upload", {})
+    if not isinstance(upload_config, dict):
+        upload_config = {}
+        config_error = config_error or "upload_config_invalid:upload_not_object"
+
+    configured_output = _object_text(
+        upload_config.get("output_file", "")
+    ).strip()
+    upload_file_bound = bool(
+        not proof_required
+        or (
+            configured_output
+            and upload_file.resolve()
+            == (root / configured_output).resolve()
+        )
+    )
+    integrity = (
+        verify_order_upload_pack_evidence(root)
+        if proof_required
+        else None
+    )
+    consistency_errors = [
+        value
+        for value in (
+            identity_error,
+            config_error,
+            (
+                integrity.consistency_error
+                if integrity is not None
+                else ""
+            ),
+            (
+                "upload_orders_path_not_manifest_bound"
+                if not upload_file_bound
+                else ""
+            ),
+        )
+        if value
+    ]
+    identity_sha256 = ""
+    if identity_exists:
+        try:
+            identity_sha256 = file_sha256(identity_path)
+        except OSError:
+            pass
+    return identity, {
+        "active": active,
+        "required": _to_bool(
+            upload_config.get("instrument_resolution_required", False)
+        ),
+        "provided": _to_bool(
+            upload_config.get("instrument_resolution_provided", False)
+        ),
+        "require_token": _to_bool(
+            upload_config.get("require_broker_instrument_token", False)
+        ),
+        "proof_required": proof_required,
+        "manifest_current": bool(
+            integrity is not None and integrity.manifest_current
+        ),
+        "artifacts_consistent": bool(
+            integrity is not None and integrity.artifacts_consistent
+        ),
+        "upload_file_bound": upload_file_bound,
+        "identity_path": identity_path,
+        "identity_sha256": identity_sha256,
+        "config_path": config_path,
+        "manifest_path": manifest_path,
+        "manifest_sha256": (
+            integrity.manifest_sha256 if integrity is not None else ""
+        ),
+        "manifest_error": (
+            integrity.manifest_error if integrity is not None else ""
+        ),
+        "consistency_error": ";".join(consistency_errors),
+        "adapter": _object_text(config.get("adapter", "")).strip(),
+    }
 
 
 def _upload_orders_path(upload_dir: Path, route_config: dict[str, Any], override: str | Path | None) -> Path:
