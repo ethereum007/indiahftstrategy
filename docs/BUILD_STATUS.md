@@ -81,8 +81,17 @@
   `--require-broker-instrument-resolution` makes this a hard pre-staging and
   broker-readiness gate; without that proof, the pipeline may still emit a
   research paper/shadow template but reports `broker_contract_ready=false`
-  rather than implying broker-resolvable orders. The root manifest binds the
-  resolution manifest and its instrument-master dependency.
+  rather than implying broker-resolvable orders. Resolved research IDs,
+  trading symbols, broker tokens, resolution methods/statuses, and explicit
+  multi-leg group/role/count metadata now survive staging, launch, and broker
+  export. Export independently rejects incomplete resolution identity,
+  inconsistent group cardinality, or reused roles/symbols/tokens. The upload
+  pack emits `broker_upload_contract_identity.csv` as a non-upload
+  reconciliation sidecar and rejects any mapped symbol that differs from its
+  resolved broker order. `broker_contract_ready` therefore represents the
+  complete resolution-to-upload lineage. The root manifest binds the
+  resolution manifest, its instrument-master dependency, and all downstream
+  identity artifacts.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
@@ -7715,6 +7724,27 @@ manifest, parity, promotion, order-plan, launch, CLI, catalog, comparison, and
 evidence set passes. Source compilation succeeds. Repository collection is
 healthy at `2733 tests` across `164` files. The full suite was not rerun because
 recent complete runs exceed 40 minutes.
+
+Latest broker contract-continuity proof: broker-resolved parity and box orders
+now retain their original research instrument ID, resolved trading symbol,
+broker token, resolution method/status, and explicit leg-group identity
+through shared staging, launch, and broker export. Instrument-resolution
+checks activate whenever metadata is supplied and become mandatory under the
+launch hard gate. They reject missing identity, lost required tokens,
+incomplete declared group cardinality, duplicate group roles, and reused
+symbols or tokens. Broker upload packs keep vendor-shaped order files clean
+while writing `broker_upload_contract_identity.csv` as a manifest-bound
+operator sidecar; the pack fails if its mapped upload symbol differs from the
+resolved broker symbol. Shared file-backed order readers preserve contract
+identity as strings, so numeric-looking tokens retain significant leading
+zeros across every CSV boundary. Parity launch summaries now distinguish
+export, upload, and full-lineage readiness, and `broker_contract_ready`
+requires all three layers rather than resolution alone. All outputs remain
+paper/shadow and non-authorizing. The `170`-test affected staging, launch,
+export, upload, resolver, catalog, and cross-strategy launch suite plus the
+targeted broker-readiness resolution check pass. Source compilation succeeds.
+Repository collection is healthy at `2772 tests` across `169` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes.
 
 ## Next Build Targets
 

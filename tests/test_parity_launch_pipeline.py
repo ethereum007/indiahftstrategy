@@ -109,19 +109,19 @@ def write_parity_instrument_master(path):
                 "source_instrument_id": "NIFTY_20260630_25000C",
                 "exchange": "NFO",
                 "tradingsymbol": "NIFTY26JUN25000CE",
-                "instrument_token": "250001",
+                "instrument_token": "0250001",
             },
             {
                 "source_instrument_id": "NIFTY_20260630_25000P",
                 "exchange": "NFO",
                 "tradingsymbol": "NIFTY26JUN25000PE",
-                "instrument_token": "250002",
+                "instrument_token": "0250002",
             },
             {
                 "source_instrument_id": "NIFTY_FUT",
                 "exchange": "NFO",
                 "tradingsymbol": "NIFTY26JUNFUT",
-                "instrument_token": "250003",
+                "instrument_token": "0250003",
             },
         ]
     ).to_csv(path, index=False)
@@ -230,11 +230,52 @@ def test_cli_parity_launch_requires_and_forwards_instrument_resolution(
     upload = pd.read_csv(
         out_dir / "05_upload_pack" / "broker_upload_orders.csv"
     )
+    staged = pd.read_csv(
+        out_dir / "02_staged_orders" / "staged_orders.csv",
+        dtype={"broker_instrument_token": "string"},
+    )
+    exported = pd.read_csv(
+        out_dir / "04_export" / "broker_orders.csv",
+        dtype={"broker_instrument_token": "string"},
+    )
+    identity = pd.read_csv(
+        out_dir
+        / "05_upload_pack"
+        / "broker_upload_contract_identity.csv",
+        dtype={"broker_instrument_token": "string"},
+    )
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "broker_contract_ready"])
+    assert bool(summary.loc[0, "broker_contract_export_ready"])
+    assert bool(summary.loc[0, "broker_contract_upload_ready"])
+    assert bool(summary.loc[0, "broker_contract_lineage_ready"])
     assert summary.loc[0, "broker_instrument_resolved_orders"] == 3
     assert components.loc["instrument_resolution", "status"] == "ready"
+    assert set(staged["instrument_resolution_status"]) == {"resolved"}
+    assert set(staged["leg_role"]) == {"CALL", "PUT", "FUTURE"}
+    assert set(staged["broker_instrument_token"]) == {
+        "0250001",
+        "0250002",
+        "0250003",
+    }
+    assert set(exported["broker_instrument_token"].astype(str)) == {
+        "0250001",
+        "0250002",
+        "0250003",
+    }
+    assert set(exported["research_instrument_id"]) == {
+        "NIFTY_20260630_25000C",
+        "NIFTY_20260630_25000P",
+        "NIFTY_FUT",
+    }
+    assert identity["upload_identity_matches"].astype(bool).all()
+    assert identity["resolution_row_ready"].astype(bool).all()
+    assert set(identity["broker_instrument_token"]) == {
+        "0250001",
+        "0250002",
+        "0250003",
+    }
     assert set(upload["tradingsymbol"]) == {
         "NIFTY26JUN25000CE",
         "NIFTY26JUN25000PE",

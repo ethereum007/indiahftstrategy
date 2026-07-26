@@ -55,6 +55,10 @@ ORDER_COLUMNS = [
     "source_row",
     "strategy",
     "instrument_id",
+    "research_instrument_id",
+    "broker_instrument_token",
+    "instrument_resolution_method",
+    "instrument_resolution_status",
     "side",
     "side_text",
     "qty",
@@ -74,6 +78,10 @@ ORDER_COLUMNS = [
     "market_spread_ticks",
     "forward",
     "futures_ts",
+    "leg_group_id",
+    "leg_role",
+    "leg_index",
+    "leg_count",
     "lifecycle_action",
     "lifecycle_action_id",
     "lifecycle_reason",
@@ -81,6 +89,29 @@ ORDER_COLUMNS = [
     "quote_age_ns",
     "replaces_order_id",
 ]
+
+ORDER_IDENTITY_STRING_COLUMNS = (
+    "client_order_id",
+    "launch_order_id",
+    "broker_order_id",
+    "instrument_id",
+    "research_instrument_id",
+    "broker_instrument_token",
+    "instrument_resolution_method",
+    "instrument_resolution_status",
+    "leg_group_id",
+    "leg_role",
+)
+
+
+def read_order_csv(path: str | Path) -> pd.DataFrame:
+    return pd.read_csv(
+        path,
+        dtype={
+            column: "string"
+            for column in ORDER_IDENTITY_STRING_COLUMNS
+        },
+    )
 
 
 def stage_surface_quote_orders(
@@ -137,7 +168,11 @@ def write_staged_orders(
     if not orders_file.exists():
         raise FileNotFoundError(f"orders file not found: {orders_file}")
     limits = limits or OrderStagingLimits()
-    report = stage_orders(pd.read_csv(orders_file), source=source, limits=limits)
+    report = stage_orders(
+        read_order_csv(orders_file),
+        source=source,
+        limits=limits,
+    )
     quote_risk_summary = read_quote_risk_summary(quote_risk_review_dir)
     quote_risk_check = quote_risk_review_check(
         quote_risk_summary,

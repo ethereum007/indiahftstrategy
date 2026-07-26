@@ -4905,6 +4905,14 @@ def main(argv: list[str] | None = None) -> int:
     export_orders.add_argument("--route-tag", default=None)
     export_orders.add_argument("--allow-unready-launch", action="store_true")
     export_orders.add_argument("--allow-non-limit", action="store_true")
+    export_orders.add_argument(
+        "--require-instrument-resolution",
+        action="store_true",
+    )
+    export_orders.add_argument(
+        "--allow-symbol-only-instrument-resolution",
+        action="store_true",
+    )
     export_orders.add_argument("--max-orders", type=int, default=None)
     export_orders.add_argument("--fail-on-breach", action="store_true")
 
@@ -4920,6 +4928,14 @@ def main(argv: list[str] | None = None) -> int:
     upload_pack.add_argument("--output-file", default="broker_upload_orders.csv")
     upload_pack.add_argument("--mapping-file", default="broker_upload_mapping.csv")
     upload_pack.add_argument("--allow-placeholder-schema", action="store_true")
+    upload_pack.add_argument(
+        "--require-instrument-resolution",
+        action="store_true",
+    )
+    upload_pack.add_argument(
+        "--allow-symbol-only-instrument-resolution",
+        action="store_true",
+    )
     upload_pack.add_argument("--fail-on-breach", action="store_true")
     upload_pack.add_argument("--fail-on-blocked-actions", action="store_true")
     upload_pack.add_argument("--fail-on-actions", action="store_true")
@@ -10241,6 +10257,10 @@ def main(argv: list[str] | None = None) -> int:
                 route_tag=args.route_tag,
                 require_launch_ready=not args.allow_unready_launch,
                 require_limit_orders=not args.allow_non_limit,
+                require_instrument_resolution=args.require_instrument_resolution,
+                require_broker_instrument_token=(
+                    not args.allow_symbol_only_instrument_resolution
+                ),
                 max_orders=args.max_orders,
             ),
         )
@@ -10255,6 +10275,10 @@ def main(argv: list[str] | None = None) -> int:
                 product=args.product,
                 exchange=args.exchange,
                 require_reviewed_schema=not args.allow_placeholder_schema,
+                require_instrument_resolution=args.require_instrument_resolution,
+                require_broker_instrument_token=(
+                    not args.allow_symbol_only_instrument_resolution
+                ),
                 output_filename=args.output_file,
                 mapping_filename=args.mapping_file,
             ),

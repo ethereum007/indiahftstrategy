@@ -85,6 +85,24 @@ def launch_config(ready=True):
     }
 
 
+def resolved_launch_orders():
+    orders = launch_orders()
+    orders["research_instrument_id"] = [
+        "NIFTY_20260630_1000C",
+        "NIFTY_20260630_1000P",
+    ]
+    orders["broker_instrument_token"] = ["10001", "10002"]
+    orders["instrument_resolution_method"] = [
+        "semantic_option_identity",
+        "semantic_option_identity",
+    ]
+    orders["instrument_resolution_status"] = ["resolved", "resolved"]
+    orders["leg_group_id"] = ["BOX-1", "BOX-1"]
+    orders["leg_role"] = ["LOW_CALL", "LOW_PUT"]
+    orders["leg_count"] = [2, 2]
+    return orders
+
+
 def write_launch_dir(path, *, ready=True, orders=None):
     path.mkdir(parents=True, exist_ok=True)
     (launch_orders() if orders is None else orders).to_csv(path / "launch_orders.csv", index=False)
@@ -126,6 +144,59 @@ def test_write_order_export_outputs_broker_files_and_manifest(tmp_path):
     assert (out_dir / "broker_order_summary.csv").exists()
     assert (out_dir / "broker_order_schema.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_order_export_requires_complete_broker_contract_identity():
+    report = evaluate_order_export(
+        resolved_launch_orders(),
+        launch_summary(True),
+        launch_config(True),
+        config=OrderExportConfig(
+            adapter="arrow_money",
+            require_instrument_resolution=True,
+        ),
+    )
+
+    assert report.ready
+    assert bool(report.summary.loc[0, "instrument_resolution_provided"])
+    assert bool(report.summary.loc[0, "instrument_resolution_ready"])
+    assert report.summary.loc[0, "broker_instrument_token_orders"] == 2
+    assert report.summary.loc[0, "multi_leg_groups"] == 1
+    assert report.orders["research_instrument_id"].tolist() == [
+        "NIFTY_20260630_1000C",
+        "NIFTY_20260630_1000P",
+    ]
+    assert report.orders["broker_instrument_token"].tolist() == [
+        "10001",
+        "10002",
+    ]
+    assert report.orders["leg_role"].tolist() == ["LOW_CALL", "LOW_PUT"]
+
+
+def test_order_export_blocks_lost_token_and_group_cardinality():
+    orders = resolved_launch_orders()
+    orders.loc[1, "broker_instrument_token"] = ""
+    orders.loc[1, "leg_count"] = 3
+
+    report = evaluate_order_export(
+        orders,
+        launch_summary(True),
+        launch_config(True),
+        config=OrderExportConfig(
+            adapter="arrow_money",
+            require_instrument_resolution=True,
+        ),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "broker_instrument_token_complete" in failed
+    assert "multi_leg_group_cardinality" in failed
 
 
 def test_unified_cli_export_launch_orders_fails_closed_for_unready_launch(tmp_path):

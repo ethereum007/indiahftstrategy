@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from adapters.broker import adapter_schema_status, get_adapter
+from adapters.orders import read_order_csv
 from reports.manifest import write_experiment_manifest
 
 
@@ -17,6 +18,10 @@ EXPORT_COLUMNS = [
     "client_order_id",
     "launch_order_id",
     "instrument_id",
+    "research_instrument_id",
+    "broker_instrument_token",
+    "instrument_resolution_method",
+    "instrument_resolution_status",
     "side",
     "side_text",
     "qty",
@@ -29,6 +34,10 @@ EXPORT_COLUMNS = [
     "route_tag",
     "adapter",
     "adapter_schema_status",
+    "leg_group_id",
+    "leg_role",
+    "leg_index",
+    "leg_count",
     "lifecycle_action",
     "lifecycle_action_id",
     "lifecycle_reason",
@@ -37,6 +46,19 @@ EXPORT_COLUMNS = [
     "replaces_order_id",
 ]
 
+INSTRUMENT_RESOLUTION_COLUMNS = {
+    "research_instrument_id",
+    "broker_instrument_token",
+    "instrument_resolution_method",
+    "instrument_resolution_status",
+}
+MULTI_LEG_IDENTITY_COLUMNS = {
+    "leg_group_id",
+    "leg_role",
+    "leg_index",
+    "leg_count",
+}
+
 
 @dataclass(frozen=True)
 class OrderExportConfig:
@@ -44,6 +66,8 @@ class OrderExportConfig:
     route_tag: str | None = None
     require_launch_ready: bool = True
     require_limit_orders: bool = True
+    require_instrument_resolution: bool = False
+    require_broker_instrument_token: bool = True
     max_orders: int | None = None
 
 
@@ -80,8 +104,20 @@ def evaluate_order_export(
         route_tag=config.route_tag,
     )
     checks = _checks(orders, launch_summary, launch_config, config)
-    summary = _summary(orders, launch_summary, checks, adapter.name, schema_status)
-    schema = _schema_frame(orders, adapter.name, schema_status)
+    summary = _summary(
+        orders,
+        launch_summary,
+        checks,
+        adapter.name,
+        schema_status,
+        config,
+    )
+    schema = _schema_frame(
+        orders,
+        adapter.name,
+        schema_status,
+        config,
+    )
     return OrderExportReport(orders=orders, checks=checks, summary=summary, schema=schema)
 
 
@@ -95,7 +131,10 @@ def write_order_export(
     launch_orders_path = launch / "launch_orders.csv"
     launch_summary_path = launch / "launch_summary.csv"
     launch_config_path = launch / "launch_config.json"
-    launch_orders = _read_required(launch_orders_path)
+    launch_orders = _read_required(
+        launch_orders_path,
+        preserve_order_identity=True,
+    )
     launch_summary = _read_required(launch_summary_path)
     if not launch_config_path.exists():
         raise FileNotFoundError(f"launch_config.json not found: {launch_config_path}")
@@ -227,6 +266,15 @@ def _checks(
                 "order count exceeds export cap",
             )
         )
+    resolution_provided = _instrument_resolution_provided(orders)
+    if config.require_instrument_resolution or resolution_provided:
+        checks.extend(
+            _instrument_resolution_checks(
+                orders,
+                required=config.require_instrument_resolution,
+                require_token=config.require_broker_instrument_token,
+            )
+        )
     return pd.DataFrame(checks)
 
 
@@ -236,9 +284,12 @@ def _summary(
     checks: pd.DataFrame,
     adapter: str,
     schema_status: str,
+    config: OrderExportConfig,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     total_notional = float((orders["qty"] * orders["price"]).sum()) if not orders.empty else 0.0
+    resolution_provided = _instrument_resolution_provided(orders)
+    resolution_ready = _instrument_resolution_checks_passed(checks)
     return pd.DataFrame(
         [
             {
@@ -253,13 +304,247 @@ def _summary(
                 "total_qty": int(pd.to_numeric(orders["qty"], errors="coerce").sum()) if not orders.empty else 0,
                 "total_notional": total_notional,
                 "max_order_notional": float((orders["qty"] * orders["price"]).max()) if not orders.empty else 0.0,
+                "instrument_resolution_required": bool(
+                    config.require_instrument_resolution
+                ),
+                "broker_instrument_token_required": bool(
+                    config.require_broker_instrument_token
+                ),
+                "instrument_resolution_provided": resolution_provided,
+                "instrument_resolution_ready": resolution_ready,
+                "instrument_resolution_orders": _nonblank_count(
+                    orders,
+                    "instrument_resolution_status",
+                ),
+                "broker_instrument_token_orders": _nonblank_count(
+                    orders,
+                    "broker_instrument_token",
+                ),
+                "multi_leg_groups": _multi_leg_group_count(orders),
                 "failed_checks": int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0,
             }
         ]
     )
 
 
-def _schema_frame(orders: pd.DataFrame, adapter: str, schema_status: str) -> pd.DataFrame:
+def _instrument_resolution_checks(
+    orders: pd.DataFrame,
+    *,
+    required: bool,
+    require_token: bool,
+) -> list[dict[str, Any]]:
+    order_count = int(len(orders))
+    provided = _instrument_resolution_provided(orders)
+    statuses = _text_column(orders, "instrument_resolution_status").str.lower()
+    methods = _text_column(orders, "instrument_resolution_method")
+    research_ids = _text_column(orders, "research_instrument_id")
+    broker_symbols = _text_column(orders, "instrument_id")
+    broker_tokens = _text_column(orders, "broker_instrument_token")
+    checks = [
+        _check(
+            "instrument_resolution_metadata_present",
+            provided,
+            "is",
+            True,
+            provided or not required,
+            "broker instrument resolution metadata is required but missing",
+        ),
+        _check(
+            "instrument_resolution_status_complete",
+            int(statuses.eq("resolved").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and statuses.eq("resolved").all()),
+            "one or more launch orders are not marked as broker-resolved",
+        ),
+        _check(
+            "research_instrument_id_complete",
+            int(research_ids.ne("").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and research_ids.ne("").all()),
+            "one or more resolved launch orders lost the research instrument ID",
+        ),
+        _check(
+            "instrument_resolution_method_complete",
+            int(methods.ne("").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and methods.ne("").all()),
+            "one or more resolved launch orders lost the instrument resolution method",
+        ),
+        _check(
+            "broker_instrument_id_complete",
+            int(broker_symbols.ne("").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and broker_symbols.ne("").all()),
+            "one or more resolved launch orders have a blank broker trading symbol",
+        ),
+    ]
+    if require_token:
+        checks.append(
+            _check(
+                "broker_instrument_token_complete",
+                int(broker_tokens.ne("").sum()),
+                "==",
+                order_count,
+                bool(order_count > 0 and broker_tokens.ne("").all()),
+                "one or more resolved launch orders lost the broker instrument token",
+            )
+        )
+    checks.extend(
+        _multi_leg_identity_checks(
+            orders,
+            require_token=require_token,
+        )
+    )
+    return checks
+
+
+def _multi_leg_identity_checks(
+    orders: pd.DataFrame,
+    *,
+    require_token: bool,
+) -> list[dict[str, Any]]:
+    group_ids = _text_column(orders, "leg_group_id")
+    roles = _text_column(orders, "leg_role")
+    leg_counts = pd.to_numeric(
+        orders.get("leg_count", pd.Series(index=orders.index, dtype=float)),
+        errors="coerce",
+    )
+    metadata_provided = bool(
+        group_ids.ne("").any()
+        or roles.ne("").any()
+        or leg_counts.notna().any()
+    )
+    if not metadata_provided:
+        return []
+
+    complete_rows = group_ids.ne("") & roles.ne("") & leg_counts.gt(0)
+    group_failures = 0
+    duplicate_role_groups = 0
+    duplicate_symbol_groups = 0
+    duplicate_token_groups = 0
+    for group_id in group_ids[group_ids.ne("")].drop_duplicates().tolist():
+        mask = group_ids.eq(group_id)
+        expected_values = sorted(
+            set(int(value) for value in leg_counts.loc[mask].dropna())
+        )
+        expected = expected_values[0] if len(expected_values) == 1 else 0
+        actual = int(mask.sum())
+        if expected <= 0 or actual != expected:
+            group_failures += 1
+        if int(roles.loc[mask].nunique()) != actual:
+            duplicate_role_groups += 1
+        if int(_text_column(orders.loc[mask], "instrument_id").nunique()) != actual:
+            duplicate_symbol_groups += 1
+        if require_token and int(
+            _text_column(orders.loc[mask], "broker_instrument_token").nunique()
+        ) != actual:
+            duplicate_token_groups += 1
+
+    group_count = int(group_ids[group_ids.ne("")].nunique())
+    checks = [
+        _check(
+            "multi_leg_identity_complete",
+            int(complete_rows.sum()),
+            "==",
+            len(orders),
+            bool(len(orders) > 0 and complete_rows.all()),
+            "multi-leg contract identity is missing a group, role, or declared leg count",
+        ),
+        _check(
+            "multi_leg_group_cardinality",
+            group_failures,
+            "==",
+            0,
+            group_count > 0 and group_failures == 0,
+            "one or more multi-leg groups do not match their declared leg count",
+        ),
+        _check(
+            "multi_leg_roles_unique",
+            duplicate_role_groups,
+            "==",
+            0,
+            group_count > 0 and duplicate_role_groups == 0,
+            "one or more multi-leg groups reuse a leg role",
+        ),
+        _check(
+            "multi_leg_broker_symbols_unique",
+            duplicate_symbol_groups,
+            "==",
+            0,
+            group_count > 0 and duplicate_symbol_groups == 0,
+            "one or more multi-leg groups reuse a broker trading symbol",
+        ),
+    ]
+    if require_token:
+        checks.append(
+            _check(
+                "multi_leg_broker_tokens_unique",
+                duplicate_token_groups,
+                "==",
+                0,
+                group_count > 0 and duplicate_token_groups == 0,
+                "one or more multi-leg groups reuse a broker instrument token",
+            )
+        )
+    return checks
+
+
+def _instrument_resolution_provided(orders: pd.DataFrame) -> bool:
+    return any(
+        _text_column(orders, column).ne("").any()
+        for column in (
+            "research_instrument_id",
+            "broker_instrument_token",
+            "instrument_resolution_method",
+            "instrument_resolution_status",
+        )
+    )
+
+
+def _instrument_resolution_checks_passed(checks: pd.DataFrame) -> bool:
+    if checks.empty:
+        return False
+    mask = checks["check"].astype(str).str.startswith(
+        ("instrument_resolution_", "research_instrument_", "broker_instrument_", "multi_leg_")
+    )
+    return bool(mask.any() and checks.loc[mask, "passed"].astype(bool).all())
+
+
+def _nonblank_count(frame: pd.DataFrame, column: str) -> int:
+    return int(_text_column(frame, column).ne("").sum())
+
+
+def _multi_leg_group_count(frame: pd.DataFrame) -> int:
+    values = _text_column(frame, "leg_group_id")
+    return int(values.loc[values.ne("")].nunique())
+
+
+def _text_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series([""] * len(frame), index=frame.index, dtype="object")
+    return (
+        frame[column]
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+
+
+def _schema_frame(
+    orders: pd.DataFrame,
+    adapter: str,
+    schema_status: str,
+    config: OrderExportConfig,
+) -> pd.DataFrame:
+    resolution_required = bool(
+        config.require_instrument_resolution
+        or _instrument_resolution_provided(orders)
+    )
+    multi_leg_required = _multi_leg_group_count(orders) > 0
     return pd.DataFrame(
         [
             {
@@ -267,11 +552,32 @@ def _schema_frame(orders: pd.DataFrame, adapter: str, schema_status: str) -> pd.
                 "adapter_schema_status": schema_status,
                 "column": col,
                 "dtype": str(orders[col].dtype),
-                "required": True,
+                "required": _schema_column_required(
+                    col,
+                    resolution_required=resolution_required,
+                    multi_leg_required=multi_leg_required,
+                    require_token=config.require_broker_instrument_token,
+                ),
             }
             for col in orders.columns
         ]
     )
+
+
+def _schema_column_required(
+    column: str,
+    *,
+    resolution_required: bool,
+    multi_leg_required: bool,
+    require_token: bool,
+) -> bool:
+    if column == "broker_instrument_token":
+        return bool(resolution_required and require_token)
+    if column in INSTRUMENT_RESOLUTION_COLUMNS:
+        return resolution_required
+    if column in MULTI_LEG_IDENTITY_COLUMNS:
+        return multi_leg_required
+    return True
 
 
 def _validate_config(config: OrderExportConfig) -> None:
@@ -280,10 +586,18 @@ def _validate_config(config: OrderExportConfig) -> None:
     get_adapter(config.adapter)
 
 
-def _read_required(path: Path) -> pd.DataFrame:
+def _read_required(
+    path: Path,
+    *,
+    preserve_order_identity: bool = False,
+) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"required order export input missing: {path}")
-    frame = pd.read_csv(path)
+    frame = (
+        read_order_csv(path)
+        if preserve_order_identity
+        else pd.read_csv(path)
+    )
     if frame.empty:
         raise ValueError(f"required order export input is empty: {path}")
     return frame

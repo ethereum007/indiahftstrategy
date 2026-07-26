@@ -53,6 +53,24 @@ def broker_orders():
     )
 
 
+def resolved_broker_orders():
+    orders = broker_orders()
+    orders["research_instrument_id"] = [
+        "NIFTY_20260630_22500C",
+        "NIFTY_20260630_22500P",
+    ]
+    orders["broker_instrument_token"] = ["10001", "10002"]
+    orders["instrument_resolution_method"] = [
+        "semantic_option_identity",
+        "semantic_option_identity",
+    ]
+    orders["instrument_resolution_status"] = ["resolved", "resolved"]
+    orders["leg_group_id"] = ["PARITY-1", "PARITY-1"]
+    orders["leg_role"] = ["CALL", "PUT"]
+    orders["leg_count"] = [2, 2]
+    return orders
+
+
 def write_export(path):
     path.mkdir(parents=True, exist_ok=True)
     broker_orders().to_csv(path / "broker_orders.csv", index=False)
@@ -134,6 +152,55 @@ def test_order_upload_pack_fails_closed_for_placeholder_schema_by_default():
     assert action["recommendation"] == "review_real_broker_upload_schema_or_allow_placeholder_for_dry_run"
 
 
+def test_order_upload_pack_writes_broker_contract_identity_sidecar():
+    report = build_order_upload_pack(
+        resolved_broker_orders(),
+        config=OrderUploadPackConfig(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_instrument_resolution=True,
+        ),
+    )
+
+    assert report.ready
+    assert bool(report.summary.loc[0, "instrument_resolution_ready"])
+    assert report.summary.loc[0, "upload_identity_match_orders"] == 2
+    assert report.summary.loc[0, "broker_instrument_token_orders"] == 2
+    assert report.contract_identity["upload_instrument_id"].tolist() == [
+        "NIFTY24JUN22500CE",
+        "NIFTY24JUN22500PE",
+    ]
+    assert report.contract_identity["broker_instrument_token"].tolist() == [
+        "10001",
+        "10002",
+    ]
+    assert report.contract_identity["resolution_row_ready"].all()
+
+
+def test_order_upload_pack_blocks_resolved_order_with_missing_token():
+    orders = resolved_broker_orders()
+    orders.loc[1, "broker_instrument_token"] = ""
+
+    report = build_order_upload_pack(
+        orders,
+        config=OrderUploadPackConfig(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_instrument_resolution=True,
+        ),
+    )
+
+    failed = report.checks.loc[
+        ~report.checks["passed"].astype(bool)
+    ].set_index("check")
+    assert not report.ready
+    assert "broker_instrument_token_complete" in failed.index
+    assert (
+        report.action_queue.iloc[0]["next_gate"]
+        == "resolve-broker-instruments"
+    )
+
+
 def test_order_upload_pack_surfaces_first_failed_mapping_field():
     orders = broker_orders().drop(columns=["price"])
 
@@ -184,6 +251,7 @@ def test_write_order_upload_pack_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "broker_upload_checks.csv").exists()
     assert (out_dir / "broker_upload_summary.csv").exists()
     assert (out_dir / "broker_upload_schema.csv").exists()
+    assert (out_dir / "broker_upload_contract_identity.csv").exists()
     assert (out_dir / "broker_upload_action_queue.csv").exists()
     assert (out_dir / "broker_upload_config.json").exists()
     assert (out_dir / "broker_upload_runbook.md").exists()
@@ -201,6 +269,7 @@ def test_write_order_upload_pack_outputs_files_and_manifest(tmp_path):
     assert "broker_upload_action_queue.csv" in artifact_paths
     assert "broker_upload_config.json" in artifact_paths
     assert "broker_upload_runbook.md" in artifact_paths
+    assert "broker_upload_contract_identity.csv" in artifact_paths
 
 
 def test_cli_pack_broker_upload_returns_failure_until_schema_allowed(tmp_path):

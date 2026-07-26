@@ -306,6 +306,11 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
     assert bool(
         launch.summary.iloc[0]["broker_contract_ready"]
     )
+    assert bool(
+        launch.summary.iloc[0][
+            "broker_contract_lineage_ready"
+        ]
+    )
     assert (
         launch.summary.iloc[0]["broker_instrument_resolved_orders"]
         == 4
@@ -383,6 +388,37 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
         / "05_upload_pack"
         / "broker_upload_orders.csv"
     )
+    exported_orders = pd.read_csv(
+        launch_dir / "04_export" / "broker_orders.csv"
+    )
+    upload_identity = pd.read_csv(
+        launch_dir
+        / "05_upload_pack"
+        / "broker_upload_contract_identity.csv"
+    )
+    assert set(
+        launch.staging.accepted["broker_instrument_token"].astype(str)
+    ) == {"10001", "10002", "10003", "10004"}
+    assert set(launch.staging.accepted["leg_role"]) == {
+        "LOW_CALL",
+        "LOW_PUT",
+        "HIGH_CALL",
+        "HIGH_PUT",
+    }
+    assert set(
+        exported_orders["research_instrument_id"]
+    ) == {
+        "NIFTY_20260630_1000C",
+        "NIFTY_20260630_1000P",
+        "NIFTY_20260630_1010C",
+        "NIFTY_20260630_1010P",
+    }
+    assert upload_identity[
+        "upload_identity_matches"
+    ].astype(bool).all()
+    assert upload_identity[
+        "resolution_row_ready"
+    ].astype(bool).all()
     assert set(upload_orders["tradingsymbol"]) == {
         "NIFTY26JUN1000CE",
         "NIFTY26JUN1000PE",

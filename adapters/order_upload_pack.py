@@ -13,6 +13,7 @@ from adapters.mapped_order_export import (
     MappedOrderExportConfig,
     map_broker_orders,
 )
+from adapters.orders import read_order_csv
 from reports.manifest import write_experiment_manifest
 
 
@@ -25,6 +26,8 @@ class OrderUploadPackConfig:
     product: str = "MIS"
     exchange: str = "NFO"
     require_reviewed_schema: bool = True
+    require_instrument_resolution: bool = False
+    require_broker_instrument_token: bool = True
     output_filename: str = "broker_upload_orders.csv"
     mapping_filename: str = "broker_upload_mapping.csv"
 
@@ -36,6 +39,7 @@ class OrderUploadPackReport:
     checks: pd.DataFrame
     summary: pd.DataFrame
     schema: pd.DataFrame
+    contract_identity: pd.DataFrame
     output_dir: Path | None = None
     action_queue: pd.DataFrame | None = None
 
@@ -63,8 +67,24 @@ def build_order_upload_pack(
             require_all_mapped=True,
         ),
     )
-    checks = _checks(broker_orders, mapped.summary, mapped.checks, config)
-    summary = _summary(mapped.orders, checks, config)
+    contract_identity = _contract_identity(
+        broker_orders,
+        mapped.orders,
+        config,
+    )
+    checks = _checks(
+        broker_orders,
+        mapped.summary,
+        mapped.checks,
+        contract_identity,
+        config,
+    )
+    summary = _summary(
+        mapped.orders,
+        checks,
+        contract_identity,
+        config,
+    )
     action_queue = _action_queue(summary.iloc[0], checks)
     summary = _summary_with_actions(summary, action_queue)
     return OrderUploadPackReport(
@@ -73,6 +93,7 @@ def build_order_upload_pack(
         checks=checks,
         summary=summary,
         schema=mapped.schema,
+        contract_identity=contract_identity,
         action_queue=action_queue,
     )
 
@@ -86,7 +107,10 @@ def write_order_upload_pack(
     config = config or OrderUploadPackConfig()
     _validate_config(config)
     orders_file = _broker_orders_path(export_path)
-    report = build_order_upload_pack(pd.read_csv(orders_file), config=config)
+    report = build_order_upload_pack(
+        read_order_csv(orders_file),
+        config=config,
+    )
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -95,6 +119,10 @@ def write_order_upload_pack(
     report.checks.to_csv(out / "broker_upload_checks.csv", index=False)
     report.summary.to_csv(out / "broker_upload_summary.csv", index=False)
     report.schema.to_csv(out / "broker_upload_schema.csv", index=False)
+    report.contract_identity.to_csv(
+        out / "broker_upload_contract_identity.csv",
+        index=False,
+    )
     action_queue = (
         report.action_queue
         if report.action_queue is not None
@@ -126,6 +154,7 @@ def write_order_upload_pack(
         report.checks,
         report.summary,
         report.schema,
+        report.contract_identity,
         out,
         action_queue,
     )
@@ -227,6 +256,7 @@ def _checks(
     broker_orders: pd.DataFrame,
     mapped_summary: pd.DataFrame,
     mapped_checks: pd.DataFrame,
+    contract_identity: pd.DataFrame,
     config: OrderUploadPackConfig,
 ) -> pd.DataFrame:
     schema_status = adapter_schema_status(config.adapter)
@@ -234,8 +264,7 @@ def _checks(
     mapping_failures = int((~mapped_checks["passed"].astype(bool)).sum()) if not mapped_checks.empty else 0
     reviewed_schema = schema_status != "placeholder_normalized_pending_vendor_schema"
     mapping_failure_reason = _mapping_failure_reason(mapped_summary)
-    return pd.DataFrame(
-        [
+    checks = [
             _check(
                 "broker_orders_nonempty",
                 len(broker_orders),
@@ -254,10 +283,24 @@ def _checks(
                 "adapter schema is still a placeholder; review vendor sample before live upload",
             ),
         ]
-    )
+    resolution_provided = _instrument_resolution_provided(contract_identity)
+    if config.require_instrument_resolution or resolution_provided:
+        checks.extend(
+            _instrument_resolution_checks(
+                contract_identity,
+                required=config.require_instrument_resolution,
+                require_token=config.require_broker_instrument_token,
+            )
+        )
+    return pd.DataFrame(checks)
 
 
-def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPackConfig) -> pd.DataFrame:
+def _summary(
+    orders: pd.DataFrame,
+    checks: pd.DataFrame,
+    contract_identity: pd.DataFrame,
+    config: OrderUploadPackConfig,
+) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     failed_rows = _failed_check_rows(checks)
     primary_blocker = _first_failed_check(failed_rows)
@@ -278,6 +321,31 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPack
                 "target_columns": int(len(orders.columns)),
                 "lifecycle_orders": _lifecycle_order_count(orders),
                 "replace_orders": _replace_order_count(orders),
+                "instrument_resolution_required": bool(
+                    config.require_instrument_resolution
+                ),
+                "instrument_resolution_provided": _instrument_resolution_provided(
+                    contract_identity
+                ),
+                "instrument_resolution_ready": _instrument_resolution_checks_passed(
+                    checks
+                ),
+                "instrument_resolution_orders": _nonblank_count(
+                    contract_identity,
+                    "instrument_resolution_status",
+                ),
+                "broker_instrument_token_orders": _nonblank_count(
+                    contract_identity,
+                    "broker_instrument_token",
+                ),
+                "upload_identity_match_orders": int(
+                    contract_identity["upload_identity_matches"]
+                    .map(_to_bool)
+                    .sum()
+                )
+                if not contract_identity.empty
+                else 0,
+                "contract_identity_file": "broker_upload_contract_identity.csv",
                 "failed_checks": failed,
                 "failed_check_count": failed,
                 "failed_check_names": _failed_check_names(failed_rows),
@@ -292,6 +360,211 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPack
                 "recommendation": recommendation,
             }
         ]
+    )
+
+
+def _contract_identity(
+    broker_orders: pd.DataFrame,
+    upload_orders: pd.DataFrame,
+    config: OrderUploadPackConfig,
+) -> pd.DataFrame:
+    source = broker_orders.copy().reset_index(drop=True)
+    upload = upload_orders.copy().reset_index(drop=True)
+    upload_column = {
+        "arrow_money": "tradingsymbol",
+        "irage": "symbol",
+        "normalized": "instrument_id",
+    }[config.adapter]
+    upload_ids = _text_column(upload, upload_column).reindex(
+        source.index,
+        fill_value="",
+    )
+    broker_ids = _text_column(source, "instrument_id")
+    statuses = _text_column(
+        source,
+        "instrument_resolution_status",
+    ).str.lower()
+    methods = _text_column(source, "instrument_resolution_method")
+    research_ids = _text_column(source, "research_instrument_id")
+    tokens = _text_column(source, "broker_instrument_token")
+    upload_matches = (
+        broker_ids.ne("")
+        & upload_ids.ne("")
+        & broker_ids.eq(upload_ids)
+    )
+    row_ready = (
+        statuses.eq("resolved")
+        & methods.ne("")
+        & research_ids.ne("")
+        & upload_matches
+    )
+    if config.require_broker_instrument_token:
+        row_ready &= tokens.ne("")
+    return pd.DataFrame(
+        {
+            "row_number": source.index.astype(int),
+            "broker_order_id": _text_column(
+                source,
+                "broker_order_id",
+            ),
+            "client_order_id": _text_column(
+                source,
+                "client_order_id",
+            ),
+            "leg_group_id": _text_column(source, "leg_group_id"),
+            "leg_role": _text_column(source, "leg_role"),
+            "leg_index": source.get(
+                "leg_index",
+                pd.Series(index=source.index, dtype=float),
+            ),
+            "leg_count": source.get(
+                "leg_count",
+                pd.Series(index=source.index, dtype=float),
+            ),
+            "research_instrument_id": research_ids,
+            "broker_instrument_id": broker_ids,
+            "broker_instrument_token": tokens,
+            "instrument_resolution_method": methods,
+            "instrument_resolution_status": statuses,
+            "upload_instrument_column": upload_column,
+            "upload_instrument_id": upload_ids,
+            "upload_identity_matches": upload_matches.astype(bool),
+            "resolution_row_ready": row_ready.astype(bool),
+        }
+    )
+
+
+def _instrument_resolution_checks(
+    contract_identity: pd.DataFrame,
+    *,
+    required: bool,
+    require_token: bool,
+) -> list[dict[str, Any]]:
+    order_count = int(len(contract_identity))
+    provided = _instrument_resolution_provided(contract_identity)
+    statuses = _text_column(
+        contract_identity,
+        "instrument_resolution_status",
+    ).str.lower()
+    methods = _text_column(
+        contract_identity,
+        "instrument_resolution_method",
+    )
+    research_ids = _text_column(
+        contract_identity,
+        "research_instrument_id",
+    )
+    tokens = _text_column(
+        contract_identity,
+        "broker_instrument_token",
+    )
+    upload_matches = contract_identity.get(
+        "upload_identity_matches",
+        pd.Series(False, index=contract_identity.index),
+    ).map(_to_bool)
+    checks = [
+        _check(
+            "instrument_resolution_metadata_present",
+            provided,
+            "is",
+            True,
+            provided or not required,
+            "broker instrument resolution metadata is required but missing",
+        ),
+        _check(
+            "instrument_resolution_status_complete",
+            int(statuses.eq("resolved").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and statuses.eq("resolved").all()),
+            "one or more upload orders are not marked as broker-resolved",
+        ),
+        _check(
+            "instrument_resolution_method_complete",
+            int(methods.ne("").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and methods.ne("").all()),
+            "one or more upload orders lost the instrument resolution method",
+        ),
+        _check(
+            "research_instrument_id_complete",
+            int(research_ids.ne("").sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and research_ids.ne("").all()),
+            "one or more upload orders lost the research instrument ID",
+        ),
+        _check(
+            "upload_instrument_identity_matches",
+            int(upload_matches.sum()),
+            "==",
+            order_count,
+            bool(order_count > 0 and upload_matches.all()),
+            "the broker upload symbol does not match the resolved broker order symbol",
+        ),
+    ]
+    if require_token:
+        checks.append(
+            _check(
+                "broker_instrument_token_complete",
+                int(tokens.ne("").sum()),
+                "==",
+                order_count,
+                bool(order_count > 0 and tokens.ne("").all()),
+                "one or more upload orders lost the broker instrument token",
+            )
+        )
+    return checks
+
+
+def _instrument_resolution_provided(
+    contract_identity: pd.DataFrame,
+) -> bool:
+    return any(
+        _text_column(contract_identity, column).ne("").any()
+        for column in (
+            "research_instrument_id",
+            "broker_instrument_token",
+            "instrument_resolution_method",
+            "instrument_resolution_status",
+        )
+    )
+
+
+def _instrument_resolution_checks_passed(checks: pd.DataFrame) -> bool:
+    if checks.empty:
+        return False
+    mask = checks["check"].astype(str).str.startswith(
+        (
+            "instrument_resolution_",
+            "research_instrument_",
+            "broker_instrument_",
+            "upload_instrument_",
+        )
+    )
+    return bool(
+        mask.any()
+        and checks.loc[mask, "passed"].map(_to_bool).all()
+    )
+
+
+def _nonblank_count(frame: pd.DataFrame, column: str) -> int:
+    return int(_text_column(frame, column).ne("").sum())
+
+
+def _text_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(
+            [""] * len(frame),
+            index=frame.index,
+            dtype="object",
+        )
+    return (
+        frame[column]
+        .astype("string")
+        .fillna("")
+        .str.strip()
     )
 
 
@@ -343,6 +616,7 @@ def _action_queue(summary_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 actual=_check_value(row, "value"),
                 operator=_check_value(row, "operator"),
                 expected=_check_value(row, "threshold"),
+                next_gate=_next_gate(check),
                 reason=_check_reason(row),
                 recommendation=_recommendation(check),
             )
@@ -364,10 +638,10 @@ def _action_row(
     actual: object,
     operator: str,
     expected: object,
+    next_gate: str,
     reason: str,
     recommendation: str,
 ) -> dict[str, object]:
-    next_gate = "pack-broker-upload"
     return {
         "queue_status": "blocked",
         "source": source,
@@ -404,6 +678,30 @@ def _config(
             "target_columns": _int(summary_row.get("target_columns")),
             "lifecycle_orders": _int(summary_row.get("lifecycle_orders")),
             "replace_orders": _int(summary_row.get("replace_orders")),
+            "instrument_resolution_required": bool(
+                config.require_instrument_resolution
+            ),
+            "require_broker_instrument_token": bool(
+                config.require_broker_instrument_token
+            ),
+            "instrument_resolution_provided": _to_bool(
+                summary_row.get("instrument_resolution_provided")
+            ),
+            "instrument_resolution_ready": _to_bool(
+                summary_row.get("instrument_resolution_ready")
+            ),
+            "instrument_resolution_orders": _int(
+                summary_row.get("instrument_resolution_orders")
+            ),
+            "broker_instrument_token_orders": _int(
+                summary_row.get("broker_instrument_token_orders")
+            ),
+            "upload_identity_match_orders": _int(
+                summary_row.get("upload_identity_match_orders")
+            ),
+            "contract_identity_file": _text(
+                summary_row.get("contract_identity_file")
+            ),
             "product": config.product,
             "exchange": config.exchange,
             "require_reviewed_schema": bool(config.require_reviewed_schema),
@@ -446,6 +744,12 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Target columns: {_int(summary_row.get('target_columns'))}",
         f"- Lifecycle orders: {_int(summary_row.get('lifecycle_orders'))}",
         f"- Replace orders: {_int(summary_row.get('replace_orders'))}",
+        f"- Instrument resolution required: {'yes' if _to_bool(summary_row.get('instrument_resolution_required')) else 'no'}",
+        f"- Instrument resolution provided: {'yes' if _to_bool(summary_row.get('instrument_resolution_provided')) else 'no'}",
+        f"- Instrument resolution ready: {'yes' if _to_bool(summary_row.get('instrument_resolution_ready')) else 'no'}",
+        f"- Broker token orders: {_int(summary_row.get('broker_instrument_token_orders'))}",
+        f"- Upload identity matches: {_int(summary_row.get('upload_identity_match_orders'))}/{_int(summary_row.get('orders'))}",
+        f"- Contract identity sidecar: {_code(summary_row.get('contract_identity_file'))}",
         f"- Failed checks: {_int(summary_row.get('failed_check_count'))}",
         f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
         f"- Recommendation: {_text(summary_row.get('recommendation'))}",
@@ -488,6 +792,15 @@ def _action_queue_table(action_queue: pd.DataFrame) -> str:
 
 
 def _component(check: str) -> str:
+    if check.startswith(
+        (
+            "instrument_resolution_",
+            "research_instrument_",
+            "broker_instrument_",
+            "upload_instrument_",
+        )
+    ):
+        return "instrument_resolution"
     if check == "schema_reviewed":
         return "schema_review"
     if check == "mapping_ready":
@@ -498,6 +811,8 @@ def _component(check: str) -> str:
 
 
 def _recommendation(check: str) -> str:
+    if _component(check) == "instrument_resolution":
+        return "rerun_broker_instrument_resolution_and_order_export"
     if check == "schema_reviewed":
         return "review_real_broker_upload_schema_or_allow_placeholder_for_dry_run"
     if check == "mapping_ready":
@@ -505,6 +820,12 @@ def _recommendation(check: str) -> str:
     if check == "broker_orders_nonempty":
         return "rerun_broker_order_export_with_accepted_orders"
     return "repair_broker_upload_pack"
+
+
+def _next_gate(check: str) -> str:
+    if _component(check) == "instrument_resolution":
+        return "resolve-broker-instruments"
+    return "pack-broker-upload"
 
 
 def _mapping_failure_reason(mapped_summary: pd.DataFrame) -> str:

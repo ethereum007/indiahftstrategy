@@ -122,6 +122,43 @@ def test_stage_orders_preserves_quote_lifecycle_metadata():
     assert report.accepted.loc[1, "replaces_order_id"] == "QLF-000001"
 
 
+def test_stage_orders_preserves_broker_contract_and_multi_leg_identity():
+    orders = safe_surface_quotes()
+    orders["research_instrument_id"] = [
+        "NIFTY_20260630_1000C",
+        "NIFTY_20260630_1000P",
+    ]
+    orders["broker_instrument_token"] = ["10001", "10002"]
+    orders["instrument_resolution_method"] = [
+        "semantic_option_identity",
+        "semantic_option_identity",
+    ]
+    orders["instrument_resolution_status"] = ["resolved", "resolved"]
+    orders["leg_group_id"] = ["BOX-1", "BOX-1"]
+    orders["leg_role"] = ["LOW_CALL", "LOW_PUT"]
+    orders["leg_index"] = [0, 1]
+    orders["leg_count"] = [2, 2]
+
+    report = stage_orders(orders, source="orders")
+
+    assert report.passed
+    assert report.accepted["research_instrument_id"].tolist() == [
+        "NIFTY_20260630_1000C",
+        "NIFTY_20260630_1000P",
+    ]
+    assert report.accepted["broker_instrument_token"].tolist() == [
+        "10001",
+        "10002",
+    ]
+    assert report.accepted["instrument_resolution_status"].tolist() == [
+        "resolved",
+        "resolved",
+    ]
+    assert report.accepted["leg_group_id"].tolist() == ["BOX-1", "BOX-1"]
+    assert report.accepted["leg_role"].tolist() == ["LOW_CALL", "LOW_PUT"]
+    assert report.accepted["leg_count"].tolist() == [2, 2]
+
+
 def test_stage_orders_rejects_unsafe_candidates():
     orders = safe_surface_quotes()
     bad = pd.DataFrame(

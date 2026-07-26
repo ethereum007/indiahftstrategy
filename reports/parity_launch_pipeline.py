@@ -275,6 +275,12 @@ def write_parity_launch_pipeline(
             config=OrderExportConfig(
                 adapter=config.adapter,
                 route_tag=config.route_tag,
+                require_instrument_resolution=(
+                    config.require_broker_instrument_resolution
+                ),
+                require_broker_instrument_token=(
+                    config.require_broker_instrument_token
+                ),
                 max_orders=config.max_orders,
             ),
         )
@@ -292,6 +298,12 @@ def write_parity_launch_pipeline(
                 product=config.product,
                 exchange=config.exchange,
                 require_reviewed_schema=config.require_reviewed_schema,
+                require_instrument_resolution=(
+                    config.require_broker_instrument_resolution
+                ),
+                require_broker_instrument_token=(
+                    config.require_broker_instrument_token
+                ),
             ),
         )
         components.append(_component("upload_pack", upload.ready, upload_dir, upload.summary))
@@ -346,6 +358,8 @@ def write_parity_launch_pipeline(
         config,
         order_plan=order_plan,
         instrument_resolution=instrument_resolution,
+        order_export=export,
+        upload_pack=upload,
         broker_readiness=broker_readiness,
     )
     component_frame.to_csv(out / "parity_launch_pipeline_components.csv", index=False)
@@ -472,6 +486,8 @@ def _summary(
     *,
     order_plan: ParityOrderPlanReport,
     instrument_resolution: BrokerInstrumentResolutionReport | None = None,
+    order_export: OrderExportReport | None = None,
+    upload_pack: OrderUploadPackReport | None = None,
     broker_readiness: BrokerReadinessReport | None = None,
 ) -> pd.DataFrame:
     ready = bool(components["ready"].astype(bool).all()) if not components.empty else False
@@ -503,6 +519,8 @@ def _summary(
                 ),
                 **_instrument_resolution_summary_fields(
                     instrument_resolution,
+                    order_export,
+                    upload_pack,
                     config,
                 ),
                 **_broker_readiness_summary_fields(broker_readiness),
@@ -517,6 +535,8 @@ def _summary(
 
 def _instrument_resolution_summary_fields(
     instrument_resolution: BrokerInstrumentResolutionReport | None,
+    order_export: OrderExportReport | None,
+    upload_pack: OrderUploadPackReport | None,
     config: ParityLaunchPipelineConfig,
 ) -> dict[str, object]:
     row = (
@@ -531,6 +551,15 @@ def _instrument_resolution_summary_fields(
         and instrument_resolution is not None
         and instrument_resolution.ready
     )
+    export_ready = _report_summary_bool(
+        order_export,
+        "instrument_resolution_ready",
+    )
+    upload_ready = _report_summary_bool(
+        upload_pack,
+        "instrument_resolution_ready",
+    )
+    lineage_ready = bool(ready and export_ready and upload_ready)
     return {
         "broker_instrument_resolution_required": bool(
             config.require_broker_instrument_resolution
@@ -552,8 +581,20 @@ def _instrument_resolution_summary_fields(
         "broker_instrument_leg_groups": _int(
             row.get("leg_groups", 0)
         ),
-        "broker_contract_ready": ready,
+        "broker_contract_export_ready": export_ready,
+        "broker_contract_upload_ready": upload_ready,
+        "broker_contract_lineage_ready": lineage_ready,
+        "broker_contract_ready": lineage_ready,
     }
+
+
+def _report_summary_bool(
+    report: OrderExportReport | OrderUploadPackReport | None,
+    column: str,
+) -> bool:
+    if report is None or report.summary.empty:
+        return False
+    return bool(report.summary.iloc[0].get(column, False))
 
 
 def _recommendation(

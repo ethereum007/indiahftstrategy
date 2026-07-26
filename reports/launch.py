@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from adapters.orders import read_order_csv
 from reports.manifest import write_experiment_manifest
 
 
@@ -91,7 +92,10 @@ def write_launch_bundle(
     staged = Path(staged_orders_dir)
     promotion_summary = _read_required(promotion / "promotion_summary.csv")
     staged_summary = _read_required(staged / "staged_order_summary.csv")
-    staged_orders = _read_required(staged / "staged_orders.csv")
+    staged_orders = _read_required(
+        staged / "staged_orders.csv",
+        preserve_order_identity=True,
+    )
     staged_rejections = _read_optional(staged / "staged_order_rejections.csv")
     candidate_config_path = promotion / "candidate_config.json"
     if not candidate_config_path.exists():
@@ -302,10 +306,18 @@ def _launch_config(
     }
 
 
-def _read_required(path: Path) -> pd.DataFrame:
+def _read_required(
+    path: Path,
+    *,
+    preserve_order_identity: bool = False,
+) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"required launch input missing: {path}")
-    frame = pd.read_csv(path)
+    frame = (
+        read_order_csv(path)
+        if preserve_order_identity
+        else pd.read_csv(path)
+    )
     if frame.empty:
         raise ValueError(f"required launch input is empty: {path}")
     return frame

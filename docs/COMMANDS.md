@@ -839,6 +839,10 @@ research-only relaxation.
 Every order must have exactly one match, every broker symbol must be unique
 inside its multi-leg group, and the resolved row count must equal the declared
 `leg_count`. Missing, duplicate, or partially mapped contracts fail closed.
+Resolved candidates retain the original `research_instrument_id`, replace
+`instrument_id` with the broker trading symbol, and carry
+`broker_instrument_token`, `instrument_resolution_method`, and
+`instrument_resolution_status` into downstream staging.
 
 Outputs:
 
@@ -1463,9 +1467,18 @@ When `--broker-instrument-master` is supplied, the pipeline stages
 `resolved_order_candidates.csv`, carries broker trading symbols into the
 upload pack, and manifest-binds the instrument master. The
 `--require-broker-instrument-resolution` gate requires complete unique
-contract coverage and adds the resolution proof to broker readiness. Without
-it, `broker_contract_ready` remains false even when the broker-neutral
-paper/shadow template is otherwise ready.
+contract coverage and adds the resolution proof to broker readiness. Staging,
+launch, and broker export retain the research ID, trading symbol, token,
+resolution method/status, leg group, role, and declared leg count. Export and
+upload checks then fail if any resolved row loses that identity, if a group's
+cardinality or unique role/symbol/token contract changes, or if the mapped
+upload symbol differs from the resolved symbol. The root summary exposes
+`broker_contract_export_ready`, `broker_contract_upload_ready`, and
+`broker_contract_lineage_ready`; `broker_contract_ready` now means the full
+resolution-to-upload lineage passed. Without a supplied, passing resolution
+proof, `broker_contract_ready` remains false even when the broker-neutral
+paper/shadow template is otherwise ready; the hard gate additionally makes
+proof omission block the pipeline.
 
 Outputs:
 
@@ -3429,9 +3442,16 @@ python -m hft_cli export-launch-orders `
   --out runs\exports\leadlag_shadow_arrow `
   --adapter arrow_money `
   --route-tag shadow_nse `
+  --require-instrument-resolution `
   --max-orders 100 `
   --fail-on-breach
 ```
+
+Use `--require-instrument-resolution` for broker-resolved launches. It requires
+every exported order to retain a resolved status, research ID, resolution
+method, and broker token, plus coherent multi-leg group cardinality and unique
+roles/symbols/tokens. `--allow-symbol-only-instrument-resolution` is the
+explicit research-only relaxation when the instrument master has no token.
 
 Outputs:
 
@@ -3457,6 +3477,7 @@ python -m hft_cli pack-broker-upload `
   --adapter arrow_money `
   --product MIS `
   --exchange NFO `
+  --require-instrument-resolution `
   --allow-placeholder-schema `
   --fail-on-breach `
   --fail-on-blocked-actions
@@ -3470,6 +3491,7 @@ broker_upload_mapping.csv
 broker_upload_checks.csv
 broker_upload_summary.csv
 broker_upload_schema.csv
+broker_upload_contract_identity.csv
 broker_upload_action_queue.csv
 broker_upload_config.json
 broker_upload_runbook.md
@@ -3479,6 +3501,14 @@ manifest.json
 The mapping file is emitted beside the upload-shaped orders so the final
 Arrow.money/iRage column semantics can be reviewed before any live route is
 enabled.
+`broker_upload_contract_identity.csv` is a non-upload sidecar that binds every
+mapped row back to its broker-order ID, client-order ID, research instrument,
+broker symbol/token, resolution method/status, and multi-leg role. The upload
+pack fails closed when required identity is missing or its upload symbol no
+longer matches the resolved broker symbol. Contract identity columns are read
+as strings at each file boundary so tokens such as `001234` are not coerced
+into a different identifier. As with export,
+`--allow-symbol-only-instrument-resolution` relaxes only the token requirement.
 `broker_upload_summary.csv` also exposes `failed_check_count`,
 `failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
 `action_queue_count`, `blocked_action_count`, `next_gate`,
