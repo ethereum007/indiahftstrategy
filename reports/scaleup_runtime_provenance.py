@@ -125,9 +125,30 @@ BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS = tuple(
     )
     for suffix in BROKER_READINESS_CONTRACT_IDENTITY_SUFFIXES
 )
+BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SUFFIXES = (
+    "ack_route_contract_identity_active",
+    (
+        "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_"
+        "route_enable_cutover_runtime_telemetry_broker_readiness_"
+        "roundtrip_contract_identity_sha256"
+    ),
+    "current_ack_route_contract_identity_sha256",
+    "ack_route_contract_identity_matches_current",
+)
+BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS = tuple(
+    (
+        f"roundtrip_{suffix}",
+        f"broker_readiness_roundtrip_{suffix}",
+    )
+    for suffix in BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SUFFIXES
+)
+BROKER_READINESS_IDENTITY_LINEAGE_FIELDS = (
+    *BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS,
+    *BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS,
+)
 BROKER_READINESS_LINEAGE_FIELDS = (
     *BROKER_READINESS_BASE_LINEAGE_FIELDS,
-    *BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS,
+    *BROKER_READINESS_IDENTITY_LINEAGE_FIELDS,
 )
 
 PROOF_REFRESH_REPORT_FIELDS = (
@@ -270,7 +291,7 @@ def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any
             for (
                 config_field,
                 report_field,
-            ) in BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            ) in BROKER_READINESS_IDENTITY_LINEAGE_FIELDS
         }
     )
     evidence["broker_readiness_contract_identity_matches_current"] = (
@@ -568,7 +589,7 @@ def scaleup_runtime_manifest_extra(provenance: Mapping[str, Any]) -> dict[str, A
                 report_field,
             )
             for _config_field, report_field in (
-                BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+                BROKER_READINESS_IDENTITY_LINEAGE_FIELDS
             )
         }
     )
@@ -818,7 +839,7 @@ def scaleup_runtime_fields(provenance: Mapping[str, Any]) -> dict[str, Any]:
                 )
             )
             for _config_field, report_field in (
-                BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+                BROKER_READINESS_IDENTITY_LINEAGE_FIELDS
             )
         }
     )
@@ -1177,7 +1198,7 @@ def _broker_readiness_contract_errors(
 ) -> list[str]:
     errors: list[str] = []
     lineage = _mapping(broker_readiness.get("lineage"))
-    identity_active = any(
+    contract_identity_active = any(
         _broker_readiness_contract_identity_present(value, report_field)
         for config_field, report_field in (
             BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
@@ -1190,10 +1211,31 @@ def _broker_readiness_contract_errors(
             current_fields.get(report_field),
         )
     )
+    route_identity_active = any(
+        _broker_readiness_contract_identity_present(value, report_field)
+        for config_field, report_field in (
+            BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        )
+        for value in (
+            lineage.get(config_field),
+            summary.get(report_field),
+            plan.get(report_field),
+            manifest_extra.get(report_field),
+            current_fields.get(report_field),
+        )
+    )
     lineage_fields = (
-        BROKER_READINESS_LINEAGE_FIELDS
-        if identity_active
-        else BROKER_READINESS_BASE_LINEAGE_FIELDS
+        *BROKER_READINESS_BASE_LINEAGE_FIELDS,
+        *(
+            BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            if contract_identity_active
+            else ()
+        ),
+        *(
+            BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            if route_identity_active
+            else ()
+        ),
     )
     for config_field, report_field in lineage_fields:
         if config_field not in lineage:
@@ -1520,7 +1562,7 @@ def _lineage(config: dict[str, Any]) -> dict[str, Any]:
             for (
                 config_field,
                 report_field,
-            ) in BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            ) in BROKER_READINESS_IDENTITY_LINEAGE_FIELDS
         }
     )
     return lineage_state

@@ -7957,11 +7957,30 @@ across `169` files. The full broker-readiness module was not rerun because the
 recursive route fixtures are intentionally expensive; the affected
 end-to-end, lineage, and compatibility paths were run directly.
 
+Latest broker-readiness-to-controlled-scale-up route contract-identity proof:
+controlled scale-up now reopens its manifest-bound current broker-readiness
+bundle and follows that bundle back to the current terminal round trip and
+acknowledgement chain. It retains the readiness-carried canonical digest, the
+digest independently recovered from the current recursive source, and a
+dedicated readiness-to-current identity verdict in the plan, summary, nested
+config lineage, checks, manifest metadata, and downstream runtime-provenance
+contract. Promotion requires the carried digest to be present, equal the
+recovered digest, and retain that passing verdict. A broker-readiness bundle
+with both its carried and claimed-current route digests forged remains blocked
+after its items, summary, config, runbook, and manifest are made internally
+consistent and re-manifested. Identity-inactive legacy readiness continues
+through neutral defaults. The `2` new clean/forged scale-up identity tests,
+`2` established scale-up lineage/loose-bundle cases, the full `10`-test
+runtime-provenance module, and `3` recursive broker-readiness identity tests
+pass (`17` affected tests). Source compilation succeeds. Repository collection
+is healthy at `2806 tests` across `169` files. The full suite was not rerun
+because recent complete runs exceed 40 minutes.
+
 ## Next Build Targets
 
-1. Carry the explicit broker-readiness round-trip route-contract-identity
-   digest/current-source verdict into controlled scale-up and block a
-   re-manifested readiness forgery before promotion.
+1. Carry the controlled-scale-up broker-readiness route-contract-identity
+   digest/current-source verdict into runtime telemetry and guard enforcement,
+   and block a re-manifested scale-up forgery before runtime or cutover.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

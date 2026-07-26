@@ -4860,6 +4860,11 @@ def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
 def _broker_readiness_lineage_checks(
     broker_readiness: pd.Series,
 ) -> list[dict[str, object]]:
+    from reports.operational_lineage import (
+        BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+        BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
+    )
+
     specs = (
         (
             "provided",
@@ -5003,6 +5008,93 @@ def _broker_readiness_lineage_checks(
                 ),
             )
         )
+    route_identity_fields = {
+        source_field: target_field
+        for (
+            target_field,
+            source_field,
+        ) in BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+    }
+    route_identity_active_field = route_identity_fields[
+        "broker_dispatch_roundtrip_ack_route_contract_identity_active"
+    ]
+    if _to_bool(
+        broker_readiness.get(route_identity_active_field, False)
+    ):
+        carried_field = route_identity_fields[
+            BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+        ]
+        current_field = route_identity_fields[
+            (
+                "broker_dispatch_roundtrip_current_ack_"
+                "route_contract_identity_sha256"
+            )
+        ]
+        verdict_field = route_identity_fields[
+            (
+                "broker_dispatch_roundtrip_ack_"
+                "route_contract_identity_matches_current"
+            )
+        ]
+        carried_sha256 = _text(broker_readiness.get(carried_field, ""))
+        current_sha256 = _text(broker_readiness.get(current_field, ""))
+        verdict = _to_bool(
+            broker_readiness.get(verdict_field, False)
+        )
+        checks.extend(
+            (
+                _check(
+                    (
+                        "broker_readiness_roundtrip_route_contract_identity_"
+                        "sha256_present"
+                    ),
+                    bool(carried_sha256),
+                    "is",
+                    True,
+                    bool(carried_sha256),
+                    (
+                        "broker readiness is missing the carried terminal "
+                        "route contract identity digest"
+                    ),
+                ),
+                _check(
+                    (
+                        "broker_readiness_roundtrip_route_contract_identity_"
+                        "sha256_matches_current"
+                    ),
+                    bool(
+                        carried_sha256
+                        and current_sha256
+                        and carried_sha256 == current_sha256
+                    ),
+                    "is",
+                    True,
+                    bool(
+                        carried_sha256
+                        and current_sha256
+                        and carried_sha256 == current_sha256
+                    ),
+                    (
+                        "broker readiness route contract identity does not "
+                        "match the current terminal source"
+                    ),
+                ),
+                _check(
+                    (
+                        "broker_readiness_roundtrip_route_contract_identity_"
+                        "matches_current"
+                    ),
+                    verdict,
+                    "is",
+                    True,
+                    verdict,
+                    (
+                        "broker readiness route contract identity "
+                        "current-source verdict failed"
+                    ),
+                ),
+            )
+        )
     return checks
 
 
@@ -5071,6 +5163,7 @@ def _broker_readiness_lineage_report_fields(
     }
     from reports.operational_lineage import (
         BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP,
+        BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
     )
 
     for field, _source_field in (
@@ -5079,6 +5172,13 @@ def _broker_readiness_lineage_report_fields(
         if field.endswith("_orders"):
             fields[field] = int(_number(source, field, fallback=0.0))
         elif field.endswith(("_sha256", "_error")):
+            fields[field] = _text(source.get(field, ""))
+        else:
+            fields[field] = _to_bool(source.get(field, False))
+    for field, _source_field in (
+        BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+    ):
+        if field.endswith("_sha256"):
             fields[field] = _text(source.get(field, ""))
         else:
             fields[field] = _to_bool(source.get(field, False))

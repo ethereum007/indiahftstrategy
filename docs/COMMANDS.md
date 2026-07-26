@@ -4588,6 +4588,20 @@ If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker
 gate.
+Filesystem-backed broker readiness is also reopened before controlled
+scale-up. When terminal route-contract identity is active, the plan, summary,
+nested `broker_readiness.lineage` config, checks, and manifest retain the
+broker-readiness-carried canonical digest, the digest independently recovered
+from its current round-trip and acknowledgement chain, and a dedicated
+current-source verdict. The compact audit fields are
+`broker_readiness_roundtrip_current_ack_route_contract_identity_sha256` and
+`broker_readiness_roundtrip_ack_route_contract_identity_matches_current`
+alongside the fully qualified carried digest. Scale-up requires the carried
+digest to be present, equal the recovered digest, and retain that passing
+verdict. Editing both the carried and claimed-current digest in a
+broker-readiness bundle therefore remains blocked after its artifacts and
+manifest are made internally consistent; identity-inactive legacy readiness
+keeps neutral behavior.
 If the shadow-session comparison carried broker vendor-data wrapper proof,
 scale-up retains `shadow_broker_vendor_data_readiness_*` fields and a nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config block, and fails
