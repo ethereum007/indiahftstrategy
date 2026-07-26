@@ -252,6 +252,21 @@ BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS = (
     "broker_dispatch_roundtrip_contract_identity_lineage_verified",
     "broker_dispatch_roundtrip_contract_identity_lineage_error",
 )
+BROKER_DISPATCH_ACK_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD = (
+    "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_"
+    "cutover_runtime_telemetry_broker_readiness_roundtrip_"
+    "contract_identity_sha256"
+)
+BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD = (
+    "broker_dispatch_roundtrip_"
+    f"{BROKER_DISPATCH_ACK_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD}"
+)
+BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELDS = (
+    "broker_dispatch_roundtrip_ack_route_contract_identity_active",
+    BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    "broker_dispatch_roundtrip_current_ack_route_contract_identity_sha256",
+    "broker_dispatch_roundtrip_ack_route_contract_identity_matches_current",
+)
 BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP = tuple(
     (
         field.replace(
@@ -283,6 +298,7 @@ BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
 BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS = (
     *BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS,
     *BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS,
+    *BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELDS,
     *(
         f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
         for field in BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
@@ -2273,6 +2289,9 @@ def empty_broker_dispatch_roundtrip_lineage(
         "ack_lineage_gate_passed": not required,
         "ack_matches_current": not required,
         "expected_ack_matches_current": not required,
+        "ack_route_contract_identity_active": False,
+        "current_ack_route_contract_identity_sha256": "",
+        "ack_route_contract_identity_matches_current": not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -2404,13 +2423,18 @@ def load_broker_dispatch_roundtrip_lineage(
     )
     current_ack_fields = broker_dispatch_ack_lineage_fields(current_ack)
     ack_lineage_gate_passed = bool(current_ack.get("gate_passed", False))
-    ack_matches_current = bool(
-        current_ack.get("gate_passed", False)
-        and all(
-            _same(state.get(column), current_ack_fields.get(column), column)
-            for column in ack_fields
+    current_ack_state = (
+        _roundtrip_current_broker_dispatch_ack_lineage_state(
+            lineage=state,
+            ack_fields=tuple(ack_fields),
+            current_ack=current_ack,
+            current_ack_fields=current_ack_fields,
+            source_bound=bool(
+                ack_config_path is not None and ack_config_path.is_file()
+            ),
         )
     )
+    state.update(current_ack_state)
     expected_ack_matches_current = _roundtrip_matches_expected_ack(
         manifest=manifest,
         manifest_path=manifest_path,
@@ -2484,7 +2508,6 @@ def load_broker_dispatch_roundtrip_lineage(
     state["contract_error"] = ";".join(sorted(set(errors)))
     state["non_authorizing"] = non_authorizing
     state["ack_lineage_gate_passed"] = ack_lineage_gate_passed
-    state["ack_matches_current"] = ack_matches_current
     state["expected_ack_matches_current"] = expected_ack_matches_current
     state["gate_passed"] = bool(
         state["provided"]
@@ -2492,8 +2515,9 @@ def load_broker_dispatch_roundtrip_lineage(
         and state["contract_consistent"]
         and non_authorizing
         and ack_lineage_gate_passed
-        and ack_matches_current
+        and state["ack_matches_current"]
         and expected_ack_matches_current
+        and state["ack_route_contract_identity_matches_current"]
     )
     return state
 
@@ -2540,6 +2564,25 @@ def broker_dispatch_roundtrip_lineage_fields(
         ),
         "broker_dispatch_roundtrip_expected_ack_matches_current": _bool(
             lineage.get("expected_ack_matches_current", False)
+        ),
+        "broker_dispatch_roundtrip_ack_route_contract_identity_active": _bool(
+            lineage.get("ack_route_contract_identity_active", False)
+        ),
+        "broker_dispatch_roundtrip_current_ack_route_contract_identity_sha256": (
+            _text(
+                lineage.get(
+                    "current_ack_route_contract_identity_sha256",
+                    "",
+                )
+            )
+        ),
+        "broker_dispatch_roundtrip_ack_route_contract_identity_matches_current": (
+            _bool(
+                lineage.get(
+                    "ack_route_contract_identity_matches_current",
+                    False,
+                )
+            )
         ),
         "broker_dispatch_roundtrip_lineage_gate_passed": _bool(
             lineage.get("gate_passed", False)
@@ -4907,6 +4950,105 @@ def _broker_dispatch_ack_count_contract_errors(
     ):
         errors.append("broker_dispatch_ack_config_failed_check_count_mismatch")
     return errors
+
+
+def _roundtrip_current_broker_dispatch_ack_lineage_state(
+    *,
+    lineage: Mapping[str, Any],
+    ack_fields: tuple[str, ...],
+    current_ack: Mapping[str, Any],
+    current_ack_fields: Mapping[str, Any],
+    source_bound: bool,
+) -> dict[str, Any]:
+    identity_fields = tuple(
+        column for column in ack_fields if "contract_identity" in column
+    )
+    carried_identity_active = bool(
+        any(
+            _bool(lineage.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(lineage.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    current_identity_active = bool(
+        _bool(
+            current_ack_fields.get(
+                "broker_dispatch_ack_send_route_contract_identity_active",
+                False,
+            )
+        )
+        or any(
+            _bool(current_ack_fields.get(column, False))
+            for column in identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(current_ack_fields.get(column, ""))
+            for column in identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    contract_identity_active = bool(
+        carried_identity_active or current_identity_active
+    )
+    current_identity_sha256 = _text(
+        current_ack_fields.get(
+            "broker_dispatch_ack_current_send_route_contract_identity_sha256",
+            "",
+        )
+    )
+    carried_identity_sha256 = _text(
+        lineage.get(
+            BROKER_DISPATCH_ACK_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+            "",
+        )
+    )
+    contract_identity_matches_current = bool(
+        not contract_identity_active
+        or (
+            source_bound
+            and current_ack.get("gate_passed", False)
+            and current_identity_active
+            and carried_identity_sha256
+            and current_identity_sha256
+            and carried_identity_sha256 == current_identity_sha256
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_ack_fields.get(column),
+                    column,
+                )
+                for column in identity_fields
+            )
+        )
+    )
+    ack_matches_current = bool(
+        source_bound
+        and current_ack.get("gate_passed", False)
+        and all(
+            _same(
+                lineage.get(column),
+                current_ack_fields.get(column),
+                column,
+            )
+            for column in ack_fields
+        )
+    )
+    return {
+        "ack_matches_current": ack_matches_current,
+        "ack_route_contract_identity_active": contract_identity_active,
+        "current_ack_route_contract_identity_sha256": (
+            current_identity_sha256
+        ),
+        "ack_route_contract_identity_matches_current": (
+            contract_identity_matches_current
+        ),
+    }
 
 
 def _ack_current_broker_dispatch_send_lineage_state(

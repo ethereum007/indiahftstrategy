@@ -4142,7 +4142,24 @@ bundle fails closed. The compact terminal gate and direct lead-lag identity are
 retained in `broker_readiness_items.csv`, `broker_readiness_summary.csv`,
 `broker_readiness_config.json`, the runbook, and manifest metadata; all final
 artifacts and transitive dependencies are fingerprinted again as readiness
-inputs. If the round-trip config carries shadow-broker
+inputs.
+Broker readiness also retains the active route-contract identity proof as
+`broker_dispatch_roundtrip_ack_route_contract_identity_active`,
+`broker_dispatch_roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256`,
+`broker_dispatch_roundtrip_current_ack_route_contract_identity_sha256`, and
+`broker_dispatch_roundtrip_ack_route_contract_identity_matches_current`.
+The shared round-trip lineage loader reopens the manifest-bound current
+acknowledgement chain, compares every active identity field, and requires the
+carried canonical digest to equal the independently recovered digest.
+Broker-readiness checks require the carried digest to be present, equal the
+current source, and retain a passing current-source verdict. A terminal
+round-trip bundle with an edited route digest therefore remains blocked after
+its rows, summary, config, and manifest are made internally consistent and
+re-manifested; its action routes to `review-broker-dispatch-roundtrip`.
+Identity-inactive legacy evidence continues through neutral defaults. These
+facts are copied into readiness items, summary, config, manifest metadata, and
+the operator runbook.
+If the round-trip config carries shadow-broker
 broker-vendor wrapper aggregates, broker readiness revalidates coverage and
 retains them as `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and as
