@@ -126,6 +126,7 @@ SUMMARY_FILES = [
     "market_portability_summary.csv",
     "route_readiness_summary.csv",
     "instrument_metadata_summary.csv",
+    "instrument_resolution_summary.csv",
     "vendor_market_data_batch_summary.csv",
     "vendor_market_data_pipeline_summary.csv",
     "data_readiness_summary.csv",

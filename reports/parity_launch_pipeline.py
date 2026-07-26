@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from adapters.broker_instrument_resolution import (
+    BrokerInstrumentResolutionConfig,
+    BrokerInstrumentResolutionReport,
+    write_broker_instrument_resolution,
+)
 from adapters.broker_readiness import (
     BrokerReadinessReport,
     BrokerReadinessThresholds,
@@ -60,6 +65,17 @@ class ParityLaunchPipelineConfig:
     contract_multiplier: float = 1.0
     product: str = "MIS"
     exchange: str = "NFO"
+    broker_instrument_master_path: str | Path | None = None
+    require_broker_instrument_resolution: bool = False
+    require_broker_instrument_token: bool = True
+    instrument_master_research_id_column: str | None = None
+    instrument_master_underlying_column: str | None = None
+    instrument_master_expiry_column: str | None = None
+    instrument_master_strike_column: str | None = None
+    instrument_master_option_type_column: str | None = None
+    instrument_master_exchange_column: str | None = None
+    instrument_master_broker_symbol_column: str | None = None
+    instrument_master_broker_token_column: str | None = None
     require_reviewed_schema: bool = True
     broker_schema_audit_dir: str | Path | None = None
     broker_mapping_draft_dir: str | Path | None = None
@@ -79,6 +95,7 @@ class ParityLaunchPipelineConfig:
 @dataclass(frozen=True)
 class ParityLaunchPipelineReport:
     order_plan: ParityOrderPlanReport | None
+    instrument_resolution: BrokerInstrumentResolutionReport | None
     staging: OrderStagingReport | None
     launch: LaunchBundleReport | None
     export: OrderExportReport | None
@@ -138,16 +155,76 @@ def write_parity_launch_pipeline(
     )
     components.append(_component("order_plan", order_plan.ready, order_plan_dir, order_plan.summary))
 
+    instrument_resolution = None
     staging = None
     launch = None
     export = None
     upload = None
     broker_readiness = None
+    staging_input = order_plan_dir / "parity_order_candidates.csv"
+    instrument_resolution_dir = out / "02_instrument_resolution"
+    instrument_resolution_gate_ready = True
 
     if _order_plan_ready(order_plan):
+        if config.broker_instrument_master_path is not None:
+            instrument_resolution = write_broker_instrument_resolution(
+                staging_input,
+                config.broker_instrument_master_path,
+                output_dir=instrument_resolution_dir,
+                config=BrokerInstrumentResolutionConfig(
+                    adapter=config.adapter,
+                    exchange=config.exchange,
+                    require_broker_token=config.require_broker_instrument_token,
+                    master_research_id_column=config.instrument_master_research_id_column,
+                    master_underlying_column=config.instrument_master_underlying_column,
+                    master_expiry_column=config.instrument_master_expiry_column,
+                    master_strike_column=config.instrument_master_strike_column,
+                    master_option_type_column=config.instrument_master_option_type_column,
+                    master_exchange_column=config.instrument_master_exchange_column,
+                    master_broker_symbol_column=config.instrument_master_broker_symbol_column,
+                    master_broker_token_column=config.instrument_master_broker_token_column,
+                ),
+            )
+            components.append(
+                _component(
+                    "instrument_resolution",
+                    instrument_resolution.ready,
+                    instrument_resolution_dir,
+                    instrument_resolution.summary,
+                )
+            )
+            instrument_resolution_gate_ready = instrument_resolution.ready
+            if instrument_resolution.ready:
+                staging_input = (
+                    instrument_resolution_dir
+                    / "resolved_order_candidates.csv"
+                )
+        elif config.require_broker_instrument_resolution:
+            instrument_resolution_gate_ready = False
+            components.append(
+                _missing_component(
+                    "instrument_resolution",
+                    instrument_resolution_dir,
+                    "broker_instrument_master_not_provided",
+                )
+            )
+    elif (
+        config.broker_instrument_master_path is not None
+        or config.require_broker_instrument_resolution
+    ):
+        instrument_resolution_gate_ready = False
+        components.append(
+            _skipped_component(
+                "instrument_resolution",
+                instrument_resolution_dir,
+                "order_plan_not_ready",
+            )
+        )
+
+    if _order_plan_ready(order_plan) and instrument_resolution_gate_ready:
         staging_dir = out / "02_staged_orders"
         staging = write_staged_orders(
-            order_plan_dir / "parity_order_candidates.csv",
+            staging_input,
             output_dir=staging_dir,
             source="orders",
             adapter=config.adapter,
@@ -161,7 +238,18 @@ def write_parity_launch_pipeline(
         )
         components.append(_component("staged_orders", _staging_ready(staging), staging_dir, staging.summary))
     else:
-        components.append(_skipped_component("staged_orders", out / "02_staged_orders", "order_plan_not_ready"))
+        reason = (
+            "instrument_resolution_not_ready"
+            if _order_plan_ready(order_plan)
+            else "order_plan_not_ready"
+        )
+        components.append(
+            _skipped_component(
+                "staged_orders",
+                out / "02_staged_orders",
+                reason,
+            )
+        )
 
     if staging is not None and _staging_ready(staging):
         launch_dir = out / "03_launch"
@@ -216,6 +304,11 @@ def write_parity_launch_pipeline(
             output_dir=broker_readiness_dir,
             schema_audit_dir=config.broker_schema_audit_dir,
             order_export_dir=out / "04_export",
+            instrument_resolution_dir=(
+                instrument_resolution_dir
+                if instrument_resolution is not None
+                else None
+            ),
             mapping_draft_dir=config.broker_mapping_draft_dir,
             mapped_orders_dir=config.broker_mapped_orders_dir,
             upload_pack_dir=out / "05_upload_pack",
@@ -230,6 +323,7 @@ def write_parity_launch_pipeline(
                 require_reviewed_schema=config.require_reviewed_schema,
                 require_schema_audit=config.require_broker_schema_audit,
                 require_order_export=True,
+                require_instrument_resolution=config.require_broker_instrument_resolution,
                 require_mapping_draft=config.require_broker_mapping_draft,
                 require_mapped_orders=config.require_broker_mapped_orders,
                 require_upload_pack=True,
@@ -247,10 +341,36 @@ def write_parity_launch_pipeline(
         )
 
     component_frame = pd.DataFrame(components)
-    summary = _summary(component_frame, config, order_plan=order_plan, broker_readiness=broker_readiness)
+    summary = _summary(
+        component_frame,
+        config,
+        order_plan=order_plan,
+        instrument_resolution=instrument_resolution,
+        broker_readiness=broker_readiness,
+    )
     component_frame.to_csv(out / "parity_launch_pipeline_components.csv", index=False)
     summary.to_csv(out / "parity_launch_pipeline_summary.csv", index=False)
     order_plan_manifest = order_plan_dir / "manifest.json"
+    manifest_inputs = {
+        "promotion": promotion,
+        "promotion_manifest": promotion / "manifest.json",
+        "order_plan_manifest": order_plan_manifest,
+        "order_plan_dependencies": manifest_dependency_paths(
+            order_plan_manifest
+        ),
+    }
+    if instrument_resolution is not None:
+        instrument_resolution_manifest = (
+            instrument_resolution_dir / "manifest.json"
+        )
+        manifest_inputs.update(
+            {
+                "instrument_resolution_manifest": instrument_resolution_manifest,
+                "instrument_resolution_dependencies": manifest_dependency_paths(
+                    instrument_resolution_manifest
+                ),
+            }
+        )
     write_experiment_manifest(
         out,
         run_type="parity_launch_pipeline",
@@ -259,14 +379,7 @@ def write_parity_launch_pipeline(
             "market": str(summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
             "config": asdict(config),
         },
-        inputs={
-            "promotion": promotion,
-            "promotion_manifest": promotion / "manifest.json",
-            "order_plan_manifest": order_plan_manifest,
-            "order_plan_dependencies": manifest_dependency_paths(
-                order_plan_manifest
-            ),
-        },
+        inputs=manifest_inputs,
         extra={
             "order_plan_promotion_manifest_current": bool(
                 summary.iloc[0].get(
@@ -274,10 +387,18 @@ def write_parity_launch_pipeline(
                     False,
                 )
             ),
+            "broker_instrument_resolution_required": bool(
+                config.require_broker_instrument_resolution
+            ),
+            "broker_instrument_resolution_ready": bool(
+                instrument_resolution is not None
+                and instrument_resolution.ready
+            ),
         },
     )
     return ParityLaunchPipelineReport(
         order_plan,
+        instrument_resolution,
         staging,
         launch,
         export,
@@ -328,11 +449,29 @@ def _skipped_component(name: str, artifact_dir: Path, reason: str) -> dict[str, 
     }
 
 
+def _missing_component(
+    name: str,
+    artifact_dir: Path,
+    reason: str,
+) -> dict[str, object]:
+    return {
+        "component": name,
+        "status": "not_ready",
+        "ready": False,
+        "artifact_dir": str(artifact_dir),
+        "orders": 0,
+        "failed_checks": 1,
+        "recommendation": "provide_broker_instrument_master",
+        "reason": reason,
+    }
+
+
 def _summary(
     components: pd.DataFrame,
     config: ParityLaunchPipelineConfig,
     *,
     order_plan: ParityOrderPlanReport,
+    instrument_resolution: BrokerInstrumentResolutionReport | None = None,
     broker_readiness: BrokerReadinessReport | None = None,
 ) -> pd.DataFrame:
     ready = bool(components["ready"].astype(bool).all()) if not components.empty else False
@@ -362,11 +501,73 @@ def _summary(
                 "order_plan_promotion_manifest_error": str(
                     order_row.get("promotion_manifest_error", "")
                 ),
+                **_instrument_resolution_summary_fields(
+                    instrument_resolution,
+                    config,
+                ),
                 **_broker_readiness_summary_fields(broker_readiness),
-                "recommendation": "paper_or_shadow_handoff" if ready else "keep_in_research",
+                "recommendation": _recommendation(
+                    ready,
+                    instrument_resolution,
+                ),
             }
         ]
     )
+
+
+def _instrument_resolution_summary_fields(
+    instrument_resolution: BrokerInstrumentResolutionReport | None,
+    config: ParityLaunchPipelineConfig,
+) -> dict[str, object]:
+    row = (
+        instrument_resolution.summary.iloc[0]
+        if instrument_resolution is not None
+        and not instrument_resolution.summary.empty
+        else pd.Series(dtype=object)
+    )
+    provided = instrument_resolution is not None and not row.empty
+    ready = bool(
+        provided
+        and instrument_resolution is not None
+        and instrument_resolution.ready
+    )
+    return {
+        "broker_instrument_resolution_required": bool(
+            config.require_broker_instrument_resolution
+        ),
+        "broker_instrument_resolution_provided": provided,
+        "broker_instrument_resolution_ready": ready,
+        "broker_instrument_resolution_orders": _int(
+            row.get("orders", 0)
+        ),
+        "broker_instrument_resolved_orders": _int(
+            row.get("resolved_orders", 0)
+        ),
+        "broker_instrument_unresolved_orders": _int(
+            row.get("unresolved_orders", 0)
+        ),
+        "broker_instrument_complete_leg_groups": _int(
+            row.get("complete_leg_groups", 0)
+        ),
+        "broker_instrument_leg_groups": _int(
+            row.get("leg_groups", 0)
+        ),
+        "broker_contract_ready": ready,
+    }
+
+
+def _recommendation(
+    ready: bool,
+    instrument_resolution: BrokerInstrumentResolutionReport | None,
+) -> str:
+    if not ready:
+        return "keep_in_research"
+    if (
+        instrument_resolution is not None
+        and instrument_resolution.ready
+    ):
+        return "broker_resolved_paper_or_shadow_handoff"
+    return "paper_or_shadow_handoff_instrument_resolution_unproven"
 
 
 def _broker_readiness_summary_fields(broker_readiness: BrokerReadinessReport | None) -> dict[str, object]:
@@ -450,6 +651,13 @@ def _validate_config(config: ParityLaunchPipelineConfig) -> None:
         raise ValueError("max_orders must be positive")
     if config.contract_multiplier <= 0:
         raise ValueError("contract_multiplier must be positive")
+    if (
+        config.broker_instrument_master_path is not None
+        and not str(config.broker_instrument_master_path).strip()
+    ):
+        raise ValueError(
+            "broker_instrument_master_path must not be blank"
+        )
 
 
 def _int(value: object) -> int:

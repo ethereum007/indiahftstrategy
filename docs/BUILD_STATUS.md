@@ -73,7 +73,16 @@
   staging, launch bundle creation, broker export, upload pack, and broker
   readiness review for Arrow.money/iRage-style paper or shadow handoff. Its
   summary and manifest carry the order plan's promotion-integrity result, and a
-  proven four-leg box can complete the same shadow-package path.
+  proven four-leg box can complete the same shadow-package path. An optional
+  broker instrument-master stage now resolves research IDs to trading symbols
+  and tokens by direct ID or exact underlying/expiry/strike/option-type/exchange
+  identity. It rejects missing or ambiguous contracts, duplicate symbols inside
+  a leg group, incomplete group cardinality, and missing required tokens.
+  `--require-broker-instrument-resolution` makes this a hard pre-staging and
+  broker-readiness gate; without that proof, the pipeline may still emit a
+  research paper/shadow template but reports `broker_contract_ready=false`
+  rather than implying broker-resolvable orders. The root manifest binds the
+  resolution manifest and its instrument-master dependency.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,

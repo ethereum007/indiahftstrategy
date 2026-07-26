@@ -9,6 +9,10 @@ from adapters.applied_mapped_data import (
     verify_applied_mapped_data_normalization,
     write_applied_mapped_data_normalization,
 )
+from adapters.broker_instrument_resolution import (
+    BrokerInstrumentResolutionConfig,
+    write_broker_instrument_resolution,
+)
 from adapters.broker_readiness import BrokerReadinessThresholds, write_broker_readiness_report
 from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
@@ -3888,6 +3892,54 @@ def main(argv: list[str] | None = None) -> int:
     instrument_metadata.add_argument("--min-parse-coverage", type=float, default=1.0)
     instrument_metadata.add_argument("--fail-on-unparsed", action="store_true")
 
+    instrument_resolution = sub.add_parser(
+        "resolve-broker-instruments",
+        help=(
+            "Resolve research order IDs against a broker instrument master "
+            "and require complete, unique leg-group coverage."
+        ),
+    )
+    instrument_resolution.add_argument("--orders", required=True)
+    instrument_resolution.add_argument(
+        "--instrument-master",
+        required=True,
+    )
+    instrument_resolution.add_argument("--out", required=True)
+    instrument_resolution.add_argument(
+        "--adapter",
+        default="arrow_money",
+    )
+    instrument_resolution.add_argument("--exchange", default="NFO")
+    instrument_resolution.add_argument(
+        "--allow-symbol-only",
+        action="store_true",
+        help="Do not require a broker token/security ID for each contract.",
+    )
+    instrument_resolution.add_argument(
+        "--research-id-column",
+        default=None,
+    )
+    instrument_resolution.add_argument(
+        "--underlying-column",
+        default=None,
+    )
+    instrument_resolution.add_argument("--expiry-column", default=None)
+    instrument_resolution.add_argument("--strike-column", default=None)
+    instrument_resolution.add_argument(
+        "--option-type-column",
+        default=None,
+    )
+    instrument_resolution.add_argument("--exchange-column", default=None)
+    instrument_resolution.add_argument(
+        "--broker-symbol-column",
+        default=None,
+    )
+    instrument_resolution.add_argument(
+        "--broker-token-column",
+        default=None,
+    )
+    instrument_resolution.add_argument("--fail-on-breach", action="store_true")
+
     market_profile = sub.add_parser("market-profile-report", help="Export market/session/cost assumptions.")
     market_profile.add_argument("--out", required=True)
     market_profile.add_argument("--market", action="append", dest="markets")
@@ -4382,6 +4434,50 @@ def main(argv: list[str] | None = None) -> int:
     parity_launch_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
     parity_launch_pipeline.add_argument("--product", default="MIS")
     parity_launch_pipeline.add_argument("--exchange", default="NFO")
+    parity_launch_pipeline.add_argument(
+        "--broker-instrument-master",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--require-broker-instrument-resolution",
+        action="store_true",
+    )
+    parity_launch_pipeline.add_argument(
+        "--allow-symbol-only-instrument-resolution",
+        action="store_true",
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-research-id-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-underlying-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-expiry-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-strike-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-option-type-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-exchange-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-broker-symbol-column",
+        default=None,
+    )
+    parity_launch_pipeline.add_argument(
+        "--instrument-master-broker-token-column",
+        default=None,
+    )
     parity_launch_pipeline.add_argument("--broker-schema-audit", default=None)
     parity_launch_pipeline.add_argument("--broker-mapping-draft", default=None)
     parity_launch_pipeline.add_argument("--broker-mapped-orders", default=None)
@@ -4964,6 +5060,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--adapter", default="arrow_money")
     broker_readiness.add_argument("--schema-audit", default=None)
     broker_readiness.add_argument("--order-export", default=None)
+    broker_readiness.add_argument("--instrument-resolution", default=None)
     broker_readiness.add_argument("--mapping-draft", default=None)
     broker_readiness.add_argument("--mapped-orders", default=None)
     broker_readiness.add_argument("--upload-pack", default=None)
@@ -4980,6 +5077,10 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--skip-schema-audit", action="store_true")
     broker_readiness.add_argument("--skip-order-export", action="store_true")
     broker_readiness.add_argument("--skip-upload-pack", action="store_true")
+    broker_readiness.add_argument(
+        "--require-instrument-resolution",
+        action="store_true",
+    )
     broker_readiness.add_argument("--require-mapping-draft", action="store_true")
     broker_readiness.add_argument("--require-mapped-orders", action="store_true")
     broker_readiness.add_argument("--require-halt-export", action="store_true")
@@ -9029,6 +9130,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_unparsed and not result.passed else 0
+    if args.command == "resolve-broker-instruments":
+        result = write_broker_instrument_resolution(
+            args.orders,
+            args.instrument_master,
+            output_dir=args.out,
+            config=BrokerInstrumentResolutionConfig(
+                adapter=args.adapter,
+                exchange=args.exchange,
+                require_broker_token=not args.allow_symbol_only,
+                master_research_id_column=args.research_id_column,
+                master_underlying_column=args.underlying_column,
+                master_expiry_column=args.expiry_column,
+                master_strike_column=args.strike_column,
+                master_option_type_column=args.option_type_column,
+                master_exchange_column=args.exchange_column,
+                master_broker_symbol_column=args.broker_symbol_column,
+                master_broker_token_column=args.broker_token_column,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "market-profile-report":
         result = write_market_profile_report(
             args.out,
@@ -9610,6 +9732,17 @@ def main(argv: list[str] | None = None) -> int:
                 contract_multiplier=args.contract_multiplier,
                 product=args.product,
                 exchange=args.exchange,
+                broker_instrument_master_path=args.broker_instrument_master,
+                require_broker_instrument_resolution=args.require_broker_instrument_resolution,
+                require_broker_instrument_token=not args.allow_symbol_only_instrument_resolution,
+                instrument_master_research_id_column=args.instrument_master_research_id_column,
+                instrument_master_underlying_column=args.instrument_master_underlying_column,
+                instrument_master_expiry_column=args.instrument_master_expiry_column,
+                instrument_master_strike_column=args.instrument_master_strike_column,
+                instrument_master_option_type_column=args.instrument_master_option_type_column,
+                instrument_master_exchange_column=args.instrument_master_exchange_column,
+                instrument_master_broker_symbol_column=args.instrument_master_broker_symbol_column,
+                instrument_master_broker_token_column=args.instrument_master_broker_token_column,
                 require_reviewed_schema=not args.allow_placeholder_schema,
                 broker_schema_audit_dir=args.broker_schema_audit,
                 broker_mapping_draft_dir=args.broker_mapping_draft,
@@ -10385,6 +10518,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             schema_audit_dir=args.schema_audit,
             order_export_dir=args.order_export,
+            instrument_resolution_dir=args.instrument_resolution,
             mapping_draft_dir=args.mapping_draft,
             mapped_orders_dir=args.mapped_orders,
             upload_pack_dir=args.upload_pack,
@@ -10401,6 +10535,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_reviewed_schema=not args.allow_placeholder_schema,
                 require_schema_audit=not args.skip_schema_audit,
                 require_order_export=not args.skip_order_export,
+                require_instrument_resolution=args.require_instrument_resolution,
                 require_mapping_draft=args.require_mapping_draft,
                 require_mapped_orders=args.require_mapped_orders,
                 require_upload_pack=not args.skip_upload_pack,

@@ -90,6 +90,52 @@ def _write_market_data(root):
     return chain_path, futures_path
 
 
+def _write_box_instrument_master(path, *, include_high_put=True):
+    rows = [
+        {
+            "name": "NIFTY",
+            "expiry": "2026-06-30",
+            "strike": 1000.0,
+            "instrument_type": "CE",
+            "exchange": "NFO-OPT",
+            "tradingsymbol": "NIFTY26JUN1000CE",
+            "instrument_token": "10001",
+        },
+        {
+            "name": "NIFTY",
+            "expiry": "2026-06-30",
+            "strike": 1000.0,
+            "instrument_type": "PE",
+            "exchange": "NFO-OPT",
+            "tradingsymbol": "NIFTY26JUN1000PE",
+            "instrument_token": "10002",
+        },
+        {
+            "name": "NIFTY",
+            "expiry": "2026-06-30",
+            "strike": 1010.0,
+            "instrument_type": "CE",
+            "exchange": "NFO-OPT",
+            "tradingsymbol": "NIFTY26JUN1010CE",
+            "instrument_token": "10003",
+        },
+    ]
+    if include_high_put:
+        rows.append(
+            {
+                "name": "NIFTY",
+                "expiry": "2026-06-30",
+                "strike": 1010.0,
+                "instrument_type": "PE",
+                "exchange": "NFO-OPT",
+                "tradingsymbol": "NIFTY26JUN1010PE",
+                "instrument_token": "10004",
+            }
+        )
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return path
+
+
 def _write_box_research_pipeline(root):
     chain_path, futures_path = _write_market_data(root)
     scan_dir = root / "scan"
@@ -235,6 +281,9 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
     assert integrity.passed, integrity.error
 
     launch_dir = tmp_path / "launch"
+    instrument_master = _write_box_instrument_master(
+        tmp_path / "instrument_master.csv"
+    )
     launch = write_parity_launch_pipeline(
         promotion_dir,
         output_dir=launch_dir,
@@ -243,13 +292,24 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
             mode="shadow",
             route_tag="box_shadow",
             require_reviewed_schema=False,
+            broker_instrument_master_path=instrument_master,
+            require_broker_instrument_resolution=True,
             max_order_qty=75,
             max_notional=1_000_000,
             max_orders=4,
         ),
     )
     assert launch.ready
+    assert launch.instrument_resolution is not None
+    assert launch.instrument_resolution.ready
     assert launch.summary.iloc[0]["leg_family"] == "box"
+    assert bool(
+        launch.summary.iloc[0]["broker_contract_ready"]
+    )
+    assert (
+        launch.summary.iloc[0]["broker_instrument_resolved_orders"]
+        == 4
+    )
     assert bool(
         launch.summary.iloc[0][
             "order_plan_promotion_manifest_current"
@@ -268,6 +328,14 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
     assert set(
         launch.launch.launch_orders["lifecycle_action"]
     ) == {"MULTI_LEG_TEMPLATE"}
+    assert set(
+        launch.launch.launch_orders["instrument_id"]
+    ) == {
+        "NIFTY26JUN1000CE",
+        "NIFTY26JUN1000PE",
+        "NIFTY26JUN1010CE",
+        "NIFTY26JUN1010PE",
+    }
     assert (
         launch.launch.launch_orders[
             "lifecycle_action_id"
@@ -290,6 +358,37 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
     assert "promotion_manifest" in launch_manifest["inputs"]
     assert "order_plan_manifest" in launch_manifest["inputs"]
     assert "order_plan_dependencies" in launch_manifest["inputs"]
+    assert "instrument_resolution_manifest" in launch_manifest["inputs"]
+    assert (
+        launch_manifest["extra"][
+            "broker_instrument_resolution_ready"
+        ]
+    )
+    broker_items = pd.read_csv(
+        launch_dir
+        / "06_broker_readiness"
+        / "broker_readiness_items.csv"
+    ).set_index("component")
+    assert bool(
+        broker_items.loc["instrument_resolution", "required"]
+    )
+    assert bool(
+        broker_items.loc["instrument_resolution", "provided"]
+    )
+    assert bool(
+        broker_items.loc["instrument_resolution", "ready"]
+    )
+    upload_orders = pd.read_csv(
+        launch_dir
+        / "05_upload_pack"
+        / "broker_upload_orders.csv"
+    )
+    assert set(upload_orders["tradingsymbol"]) == {
+        "NIFTY26JUN1000CE",
+        "NIFTY26JUN1000PE",
+        "NIFTY26JUN1010CE",
+        "NIFTY26JUN1010PE",
+    }
     launch_integrity = verify_experiment_manifest(
         launch_dir / "manifest.json",
         expected_run_type="parity_launch_pipeline",
@@ -300,6 +399,49 @@ def test_box_sweep_promotes_exact_worst_seed_execution(
         require_input_fingerprints=True,
     )
     assert launch_integrity.passed, launch_integrity.error
+
+    incomplete_master = _write_box_instrument_master(
+        tmp_path / "incomplete_instrument_master.csv",
+        include_high_put=False,
+    )
+    blocked_launch_dir = tmp_path / "blocked_launch"
+    blocked = write_parity_launch_pipeline(
+        promotion_dir,
+        output_dir=blocked_launch_dir,
+        config=ParityLaunchPipelineConfig(
+            adapter="arrow_money",
+            mode="shadow",
+            route_tag="box_shadow",
+            require_reviewed_schema=False,
+            broker_instrument_master_path=incomplete_master,
+            require_broker_instrument_resolution=True,
+            max_order_qty=75,
+            max_notional=1_000_000,
+            max_orders=4,
+        ),
+    )
+    blocked_components = blocked.components.set_index(
+        "component"
+    )
+    assert not blocked.ready
+    assert blocked.instrument_resolution is not None
+    assert not blocked.instrument_resolution.ready
+    assert blocked.staging is None
+    assert (
+        blocked_components.loc[
+            "instrument_resolution",
+            "status",
+        ]
+        == "not_ready"
+    )
+    assert (
+        blocked_components.loc["staged_orders", "reason"]
+        == "instrument_resolution_not_ready"
+    )
+    assert (
+        blocked_components.loc["broker_readiness", "status"]
+        == "skipped"
+    )
 
 
 def test_box_promotion_rejects_refingerprinted_incomplete_package(

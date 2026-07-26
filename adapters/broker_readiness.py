@@ -24,6 +24,7 @@ from reports.vendor_market_data import select_vendor_market_data_batch_source
 SUMMARY_FILES = {
     "schema_audit": "adapter_schema_summary.csv",
     "order_export": "broker_order_summary.csv",
+    "instrument_resolution": "instrument_resolution_summary.csv",
     "mapping_draft": "order_mapping_draft_summary.csv",
     "mapped_orders": "mapped_order_summary.csv",
     "upload_pack": "broker_upload_summary.csv",
@@ -108,6 +109,7 @@ def _broker_dispatch_roundtrip_lineage_item_fields(
 BROKER_READINESS_NEXT_GATES = {
     "schema_audit": "audit-adapter-schema",
     "order_export": "export-launch-orders",
+    "instrument_resolution": "resolve-broker-instruments",
     "mapping_draft": "draft-order-mapping",
     "mapped_orders": "map-broker-orders",
     "upload_pack": "pack-broker-upload",
@@ -419,6 +421,7 @@ class BrokerReadinessThresholds:
     require_reviewed_schema: bool = True
     require_schema_audit: bool = True
     require_order_export: bool = True
+    require_instrument_resolution: bool = False
     require_mapping_draft: bool = False
     require_mapped_orders: bool = False
     require_upload_pack: bool = True
@@ -450,6 +453,7 @@ def evaluate_broker_readiness(
     schema_audit_summary: pd.DataFrame | None = None,
     schema_review_checklist: pd.DataFrame | None = None,
     order_export_summary: pd.DataFrame | None = None,
+    instrument_resolution_summary: pd.DataFrame | None = None,
     mapping_draft_summary: pd.DataFrame | None = None,
     mapped_order_summary: pd.DataFrame | None = None,
     upload_pack_summary: pd.DataFrame | None = None,
@@ -478,6 +482,9 @@ def evaluate_broker_readiness(
     summaries = {
         "schema_audit": _optional_frame(schema_audit_summary),
         "order_export": _optional_frame(order_export_summary),
+        "instrument_resolution": _optional_frame(
+            instrument_resolution_summary
+        ),
         "mapping_draft": _optional_frame(mapping_draft_summary),
         "mapped_orders": _optional_frame(mapped_order_summary),
         "upload_pack": _optional_frame(upload_pack_summary),
@@ -506,6 +513,7 @@ def write_broker_readiness_report(
     output_dir: str | Path,
     schema_audit_dir: str | Path | None = None,
     order_export_dir: str | Path | None = None,
+    instrument_resolution_dir: str | Path | None = None,
     mapping_draft_dir: str | Path | None = None,
     mapped_orders_dir: str | Path | None = None,
     upload_pack_dir: str | Path | None = None,
@@ -567,6 +575,10 @@ def write_broker_readiness_report(
             "order_export": _manifest_summary_input(
                 order_export_dir,
                 "order_export",
+            ),
+            "instrument_resolution": _manifest_summary_input(
+                instrument_resolution_dir,
+                "instrument_resolution",
             ),
             "mapping_draft": _manifest_summary_input(
                 mapping_draft_dir,
@@ -636,6 +648,10 @@ def write_broker_readiness_report(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         schema_review_checklist=_read_optional_schema_review_checklist(schema_audit_dir),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),
+        instrument_resolution_summary=_read_optional_summary(
+            instrument_resolution_dir,
+            "instrument_resolution",
+        ),
         mapping_draft_summary=_read_optional_summary(mapping_draft_dir, "mapping_draft"),
         mapped_order_summary=_read_optional_summary(mapped_orders_dir, "mapped_orders"),
         upload_pack_summary=_read_optional_summary(upload_pack_dir, "upload_pack"),
@@ -8059,6 +8075,7 @@ def _action_component(check_name: str) -> str:
         ("schema_reviewed", "schema_audit"),
         ("schema_audit_", "schema_audit"),
         ("order_export_", "order_export"),
+        ("instrument_resolution_", "instrument_resolution"),
         ("mapping_draft_", "mapping_draft"),
         ("mapped_orders_", "mapped_orders"),
         ("upload_pack_", "upload_pack"),
@@ -8800,6 +8817,7 @@ def _component_required(component: str, thresholds: BrokerReadinessThresholds) -
         {
             "schema_audit": thresholds.require_schema_audit,
             "order_export": thresholds.require_order_export,
+            "instrument_resolution": thresholds.require_instrument_resolution,
             "mapping_draft": thresholds.require_mapping_draft,
             "mapped_orders": thresholds.require_mapped_orders,
             "upload_pack": thresholds.require_upload_pack,

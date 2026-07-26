@@ -811,6 +811,49 @@ instrument_metadata_summary.csv
 manifest.json
 ```
 
+## Broker Instrument Resolution
+
+Resolve research order IDs against an operator-supplied broker/vendor
+instrument master before a package is treated as contract-ready:
+
+```powershell
+python -m hft_cli resolve-broker-instruments `
+  --orders runs\parity_orders\parity_order_candidates.csv `
+  --instrument-master data\broker\arrow_instrument_master.csv `
+  --out runs\broker\parity_instrument_resolution `
+  --adapter arrow_money `
+  --exchange NFO `
+  --fail-on-breach
+```
+
+The resolver accepts a direct `research_instrument_id`,
+`source_instrument_id`, or `internal_instrument_id` column. Otherwise it
+exact-matches options on underlying, expiry, strike, option type, and exchange.
+Common instrument-master column names are detected automatically; explicit
+`--underlying-column`, `--expiry-column`, `--strike-column`,
+`--option-type-column`, `--exchange-column`, `--broker-symbol-column`, and
+`--broker-token-column` overrides are available. Broker token/security-ID
+coverage is required by default; `--allow-symbol-only` is an explicit
+research-only relaxation.
+
+Every order must have exactly one match, every broker symbol must be unique
+inside its multi-leg group, and the resolved row count must equal the declared
+`leg_count`. Missing, duplicate, or partially mapped contracts fail closed.
+
+Outputs:
+
+```text
+resolved_order_candidates.csv
+instrument_resolution.csv
+instrument_resolution_checks.csv
+instrument_resolution_groups.csv
+instrument_resolution_summary.csv
+instrument_resolution_action_queue.csv
+instrument_resolution_config.json
+instrument_resolution_runbook.md
+manifest.json
+```
+
 ## Parity / Box Scan
 
 ```powershell
@@ -1406,6 +1449,8 @@ python -m hft_cli pipeline-parity-launch `
   --max-order-qty 75 `
   --max-notional 2000000 `
   --max-orders 3 `
+  --broker-instrument-master data\broker\arrow_instrument_master.csv `
+  --require-broker-instrument-resolution `
   --allow-placeholder-schema `
   --fail-on-breach
 ```
@@ -1414,11 +1459,19 @@ The pipeline carries the verified promotion and order-plan manifests into its
 own lineage and exposes `order_plan_promotion_manifest_current` in the summary.
 For a promoted box candidate, use `--max-orders 4`; the launch bundle retains
 one shared `MULTI_LEG_TEMPLATE` lifecycle ID and a four-message package count.
+When `--broker-instrument-master` is supplied, the pipeline stages
+`resolved_order_candidates.csv`, carries broker trading symbols into the
+upload pack, and manifest-binds the instrument master. The
+`--require-broker-instrument-resolution` gate requires complete unique
+contract coverage and adds the resolution proof to broker readiness. Without
+it, `broker_contract_ready` remains false even when the broker-neutral
+paper/shadow template is otherwise ready.
 
 Outputs:
 
 ```text
 01_order_plan\...
+02_instrument_resolution\...  # when an instrument master is supplied
 02_staged_orders\...
 03_launch\...
 04_export\...
@@ -3925,16 +3978,18 @@ when any mapped-order action should stop the scheduler.
 
 ## Broker Integration Readiness
 
-Combine adapter schema review, broker-neutral export, mapped/upload files,
-optional halt-export, optional reconciliation, optional runtime-session,
-optional resume-gate, and optional dispatch round-trip evidence into one
-go/no-go record before Arrow.money/iRage paper or shadow routing:
+Combine adapter schema review, broker-neutral export, broker instrument
+resolution, mapped/upload files, optional halt-export, optional reconciliation,
+optional runtime-session, optional resume-gate, and optional dispatch
+round-trip evidence into one go/no-go record before Arrow.money/iRage paper or
+shadow routing:
 
 ```powershell
 python -m hft_cli review-broker-readiness `
   --adapter arrow_money `
   --schema-audit runs\schema_audit\arrow_orders `
   --order-export runs\exports\leadlag_shadow_arrow `
+  --instrument-resolution runs\broker\leadlag_instrument_resolution `
   --mapping-draft mappings\arrow_order_upload_draft `
   --mapped-orders runs\exports\leadlag_shadow_arrow_mapped `
   --upload-pack runs\uploads\leadlag_shadow_arrow `
@@ -3944,6 +3999,7 @@ python -m hft_cli review-broker-readiness `
   --out runs\broker_readiness\leadlag_shadow_arrow `
   --require-mapping-draft `
   --require-mapped-orders `
+  --require-instrument-resolution `
   --require-runtime-session `
   --require-resume-gate `
   --require-route-readiness `
@@ -3951,6 +4007,12 @@ python -m hft_cli review-broker-readiness `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
+
+`--require-instrument-resolution` requires a ready
+`instrument_resolution_summary.csv` for the same adapter. A supplied
+resolution is always checked even when optional, so partial or stale
+instrument-master coverage cannot silently accompany an otherwise ready
+broker handoff.
 
 Use `--allow-placeholder-schema` only for dry-run review while Arrow.money/iRage
 schemas are still placeholders. Without it, placeholder schemas fail closed

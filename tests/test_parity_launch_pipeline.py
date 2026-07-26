@@ -102,6 +102,32 @@ def write_runtime_session(path, *, adapter="arrow_money", ready=True, halted=Fal
     ).to_csv(path / "runtime_session_summary.csv", index=False)
 
 
+def write_parity_instrument_master(path):
+    pd.DataFrame(
+        [
+            {
+                "source_instrument_id": "NIFTY_20260630_25000C",
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY26JUN25000CE",
+                "instrument_token": "250001",
+            },
+            {
+                "source_instrument_id": "NIFTY_20260630_25000P",
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY26JUN25000PE",
+                "instrument_token": "250002",
+            },
+            {
+                "source_instrument_id": "NIFTY_FUT",
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY26JUNFUT",
+                "instrument_token": "250003",
+            },
+        ]
+    ).to_csv(path, index=False)
+    return path
+
+
 def test_write_parity_launch_pipeline_runs_full_shadow_handoff(tmp_path):
     promotion_dir = tmp_path / "promotion"
     runtime_dir = tmp_path / "runtime_session"
@@ -160,6 +186,60 @@ def test_write_parity_launch_pipeline_runs_full_shadow_handoff(tmp_path):
     assert (out_dir / "06_broker_readiness" / "broker_readiness_summary.csv").exists()
     assert (out_dir / "parity_launch_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_cli_parity_launch_requires_and_forwards_instrument_resolution(
+    tmp_path,
+):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "pipeline"
+    master_path = write_parity_instrument_master(
+        tmp_path / "instrument_master.csv"
+    )
+    write_promotion(promotion_dir)
+
+    code = main(
+        [
+            "pipeline-parity-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "2000000",
+            "--max-orders",
+            "3",
+            "--broker-instrument-master",
+            str(master_path),
+            "--require-broker-instrument-resolution",
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(
+        out_dir / "parity_launch_pipeline_summary.csv"
+    )
+    components = pd.read_csv(
+        out_dir / "parity_launch_pipeline_components.csv"
+    ).set_index("component")
+    upload = pd.read_csv(
+        out_dir / "05_upload_pack" / "broker_upload_orders.csv"
+    )
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "broker_contract_ready"])
+    assert summary.loc[0, "broker_instrument_resolved_orders"] == 3
+    assert components.loc["instrument_resolution", "status"] == "ready"
+    assert set(upload["tradingsymbol"]) == {
+        "NIFTY26JUN25000CE",
+        "NIFTY26JUN25000PE",
+        "NIFTY26JUNFUT",
+    }
 
 
 def test_parity_launch_pipeline_consumes_broker_vendor_data_proof_root(tmp_path):

@@ -163,6 +163,25 @@ def mapped_order_summary(adapter="normalized", ready=True):
     )
 
 
+def instrument_resolution_summary(adapter="normalized", ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "exchange": "NFO",
+                "orders": 4,
+                "resolved_orders": 4 if ready else 3,
+                "unresolved_orders": 0 if ready else 1,
+                "resolution_coverage": 1.0 if ready else 0.75,
+                "leg_groups": 1,
+                "complete_leg_groups": 1 if ready else 0,
+                "failed_checks": 0 if ready else 2,
+            }
+        ]
+    )
+
+
 def runtime_session_summary(adapter="normalized", ready=True, halted=False):
     return pd.DataFrame(
         [
@@ -1498,6 +1517,66 @@ def test_broker_readiness_accepts_ready_normalized_artifacts():
     assert report.ready
     assert report.summary.iloc[0]["recommendation"] == "broker_integration_ready"
     assert set(report.checks["passed"]) == {True}
+
+
+def test_broker_readiness_requires_complete_instrument_resolution():
+    missing = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_instrument_resolution=True,
+        ),
+    )
+    incomplete = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        instrument_resolution_summary=instrument_resolution_summary(
+            "normalized",
+            False,
+        ),
+        upload_pack_summary=upload_summary("normalized", True),
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_instrument_resolution=True,
+        ),
+    )
+    complete = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        instrument_resolution_summary=instrument_resolution_summary(
+            "normalized",
+            True,
+        ),
+        upload_pack_summary=upload_summary("normalized", True),
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_instrument_resolution=True,
+        ),
+    )
+
+    assert not missing.ready
+    assert "instrument_resolution_provided" in set(
+        missing.checks.loc[
+            ~missing.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not incomplete.ready
+    assert "instrument_resolution_ready" in set(
+        incomplete.checks.loc[
+            ~incomplete.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert complete.ready
+    item = complete.items.set_index("component").loc[
+        "instrument_resolution"
+    ]
+    assert bool(item["required"])
+    assert bool(item["provided"])
+    assert bool(item["ready"])
 
 
 def test_broker_readiness_accepts_required_runtime_session():

@@ -3,6 +3,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from adapters.broker_instrument_resolution import (
+    write_broker_instrument_resolution,
+)
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
@@ -621,6 +624,69 @@ def test_experiment_catalog_promotes_mapped_order_action_queue(tmp_path):
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli map-broker-orders --help"
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["check"] == "unmapped_required:exchange_token"
+
+
+def test_experiment_catalog_promotes_instrument_resolution_actions(
+    tmp_path,
+):
+    orders = tmp_path / "orders.csv"
+    master = tmp_path / "instrument_master.csv"
+    resolution_dir = tmp_path / "instrument_resolution"
+    catalog_dir = tmp_path / "catalog"
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "BOX-1",
+                "instrument_id": "NIFTY_20260630_1000C",
+                "expiry": "2026-06-30",
+                "strike": 1000.0,
+                "option_type": "C",
+                "leg_group_id": "PBOX-1",
+                "leg_count": 1,
+            }
+        ]
+    ).to_csv(orders, index=False)
+    pd.DataFrame(
+        [
+            {
+                "name": "NIFTY",
+                "expiry": "2026-06-30",
+                "strike": 1010.0,
+                "instrument_type": "CE",
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY26JUN1010CE",
+                "instrument_token": "1010",
+            }
+        ]
+    ).to_csv(master, index=False)
+    write_broker_instrument_resolution(
+        orders,
+        master,
+        output_dir=resolution_dir,
+    )
+
+    report = write_experiment_catalog(
+        [resolution_dir],
+        output_dir=catalog_dir,
+    )
+
+    queue = pd.read_csv(
+        catalog_dir / "experiment_catalog_action_queue.csv"
+    )
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 2
+    assert set(queue["action_source_file"]) == {
+        "instrument_resolution_action_queue.csv"
+    }
+    assert set(queue["run_type"]) == {
+        "broker_instrument_resolution"
+    }
+    assert set(queue["next_gate"]) == {
+        "resolve-broker-instruments"
+    }
+    assert {
+        "order_instrument_resolved:BOX-1",
+        "leg_group_fully_resolved:PBOX-1",
+    } == set(queue["check"])
 
 
 def test_experiment_catalog_promotes_broker_upload_action_queue(tmp_path):
