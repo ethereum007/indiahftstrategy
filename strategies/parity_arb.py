@@ -136,7 +136,10 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
         leg_map: ParityLegMap,
         config: ParityArbConfig | None = None,
     ):
-        self.signals = signals.sort_values("ts").reset_index(drop=True)
+        self.signals = signals.sort_values(
+            "ts",
+            kind="stable",
+        ).reset_index(drop=True)
         self.leg_map = leg_map
         self.config = config or ParityArbConfig()
         _validate_config(self.config)

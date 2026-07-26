@@ -53,7 +53,16 @@
   for downstream multi-leg order planning.
 - Parity/box candidate promotion bridge converts passed scan, edge-audit, and
   sweep evidence into launch-compatible promotion reports and candidate configs
-  while preserving selected leg prices and replay defaults.
+  while preserving selected leg prices and replay defaults. Promotion now
+  resolves only the selected worst-seed directory under the sweep root,
+  verifies its replay manifest, source/parameter continuity, and raw
+  sweep-row economics/count reconciliation, and requires the exact scanned
+  opportunity to appear once in replay signals, pass the guard at full scanned
+  quantity, fill all three legs, and retain positive realized edge. Candidate
+  and replay SHA-256 identities, signal index, guard attempts, and realized
+  outcome stay attached to downstream evidence. Four-leg boxes remain
+  research-only until the replay layer can prove the same candidate-level
+  execution lineage.
 - Parity/box order-plan bridge converts promoted candidates into grouped
   broker-neutral multi-leg paper/shadow templates for synthetic/future and box
   directions, with quantity, price, notional, and strike/expiry gates.

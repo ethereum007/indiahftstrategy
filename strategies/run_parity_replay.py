@@ -24,6 +24,16 @@ from scanners.parity_box import (
 from strategies.parity_arb import ParityArbConfig, ParityArbTakerStrategy, ParityLegMap
 
 
+PARITY_REPLAY_RUN_TYPE = "parity_replay"
+PARITY_REPLAY_REQUIRED_ARTIFACTS = (
+    "equity.csv",
+    "signals.csv",
+    "parity_execution_guard.csv",
+    "legging.csv",
+    "summary.csv",
+)
+
+
 @dataclass(frozen=True)
 class ParityReplayResult:
     result: MultiBacktestResult
@@ -195,7 +205,7 @@ def run_parity_replay(
                 "input_quarantine": input_quarantine,
                 "parity_futures_join_audit": futures_join_audit,
             },
-            manifest_run_type="parity_replay",
+            manifest_run_type=PARITY_REPLAY_RUN_TYPE,
             manifest_inputs={"chain": chain_path, "futures": futures_path},
             manifest_parameters={
                 "timestamp_unit": timestamp_unit,

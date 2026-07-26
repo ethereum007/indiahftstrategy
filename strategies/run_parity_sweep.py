@@ -155,7 +155,7 @@ def run_parity_sweep(
         rows.append(
             {
                 "run": run_name,
-                "run_dir": str(run_dir),
+                "run_dir": str(run_dir.resolve()),
                 "depth_fraction": float(depth_fraction),
                 "asof_latency_ns": int(asof_latency_ns),
                 "feed_latency_us": float(feed_latency_us),

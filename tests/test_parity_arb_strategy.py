@@ -35,6 +35,39 @@ def venue(*, order_us=0):
     )
 
 
+def test_parity_arb_taker_preserves_equal_timestamp_signal_order():
+    signals = pd.DataFrame(
+        [
+            {
+                "ts": 100,
+                "strike": 1100.0,
+                "direction": "buy_synthetic_sell_future",
+                "qty": 75,
+            },
+            {
+                "ts": 100,
+                "strike": 1000.0,
+                "direction": "sell_synthetic_buy_future",
+                "qty": 75,
+            },
+        ]
+    )
+
+    strategy = ParityArbTakerStrategy(
+        signals,
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={},
+            put_by_strike={},
+        ),
+    )
+
+    assert strategy.signals["strike"].tolist() == [
+        1100.0,
+        1000.0,
+    ]
+
+
 def test_parity_arb_taker_routes_three_ioc_legs_and_tracks_fills():
     signals = pd.DataFrame(
         [

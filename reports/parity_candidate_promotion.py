@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -25,6 +26,10 @@ from reports.parity_order_plan import PARITY_BOX_STRATEGY, BOX_DIRECTIONS, PARIT
 from scanners.run_parity_box import (
     PARITY_SCAN_REQUIRED_ARTIFACTS,
     PARITY_SCAN_RUN_TYPE,
+)
+from strategies.run_parity_replay import (
+    PARITY_REPLAY_REQUIRED_ARTIFACTS,
+    PARITY_REPLAY_RUN_TYPE,
 )
 from strategies.run_parity_sweep import (
     PARITY_SWEEP_REQUIRED_ARTIFACTS,
@@ -95,6 +100,29 @@ PARITY_PROMOTION_LINEAGE_METRICS = (
     "scan_futures_sha256",
     "sweep_chain_sha256",
     "sweep_futures_sha256",
+)
+
+PARITY_PROMOTION_REPLAY_EVIDENCE_METRICS = (
+    "selected_replay_run",
+    "selected_replay_run_dir",
+    "selected_replay_declared_run_dir",
+    "selected_replay_run_dir_bound",
+    "selected_replay_manifest_current",
+    "selected_replay_manifest_error",
+    "selected_replay_manifest_sha256",
+    "selected_replay_source_match",
+    "selected_replay_parameters_match",
+    "selected_replay_summary_match",
+    "candidate_opportunity_id",
+    "candidate_replay_signal_match_count",
+    "candidate_replay_signal_index",
+    "candidate_replay_guard_attempts",
+    "candidate_replay_guard_passed_attempts",
+    "candidate_replay_execution_count",
+    "candidate_replay_execution_complete",
+    "candidate_replay_realized_edge_evaluable",
+    "candidate_replay_realized_net_edge",
+    "candidate_replay_realized_edge_positive",
 )
 
 
@@ -260,6 +288,13 @@ def write_parity_candidate_promotion(
         sweep_integrity=sweep_integrity,
         candidate=base_report.candidate,
     )
+    replay_checks, replay_evidence, replay_inputs = (
+        _selected_replay_evidence(
+            sweep,
+            base_report.candidate,
+            sweep_manifest=sweep_manifest,
+        )
+    )
     checks = pd.concat(
         [
             _manifest_checks(
@@ -268,15 +303,22 @@ def write_parity_candidate_promotion(
                 sweep_integrity,
             ),
             lineage_checks,
+            replay_checks,
             base_report.checks,
         ],
         ignore_index=True,
     )
     candidate = base_report.candidate.copy()
-    for key, value in lineage.items():
+    for key, value in {
+        **lineage,
+        **replay_evidence,
+    }.items():
         candidate[key] = value
     summary = _summary(candidate, checks)
-    for key, value in lineage.items():
+    for key, value in {
+        **lineage,
+        **replay_evidence,
+    }.items():
         summary[key] = value
     candidate_config = _promotion_candidate_config(
         candidate,
@@ -320,6 +362,7 @@ def write_parity_candidate_promotion(
         "sweep_dependencies": manifest_dependency_paths(
             sweep_manifest_path
         ),
+        **replay_inputs,
     }
     if latency_seed_robustness_path.exists():
         manifest_inputs["latency_seed_robustness"] = (
@@ -359,6 +402,46 @@ def write_parity_candidate_promotion(
             "scan_sweep_selected_scenario_match": bool(
                 lineage[
                     "scan_sweep_selected_scenario_match"
+                ]
+            ),
+            "selected_replay_run_dir_bound": bool(
+                replay_evidence[
+                    "selected_replay_run_dir_bound"
+                ]
+            ),
+            "selected_replay_manifest_current": bool(
+                replay_evidence[
+                    "selected_replay_manifest_current"
+                ]
+            ),
+            "selected_replay_source_match": bool(
+                replay_evidence[
+                    "selected_replay_source_match"
+                ]
+            ),
+            "selected_replay_parameters_match": bool(
+                replay_evidence[
+                    "selected_replay_parameters_match"
+                ]
+            ),
+            "selected_replay_summary_match": bool(
+                replay_evidence[
+                    "selected_replay_summary_match"
+                ]
+            ),
+            "candidate_replay_signal_match_count": int(
+                replay_evidence[
+                    "candidate_replay_signal_match_count"
+                ]
+            ),
+            "candidate_replay_execution_complete": bool(
+                replay_evidence[
+                    "candidate_replay_execution_complete"
+                ]
+            ),
+            "candidate_replay_realized_edge_positive": bool(
+                replay_evidence[
+                    "candidate_replay_realized_edge_positive"
                 ]
             ),
         },
@@ -404,6 +487,803 @@ def _manifest_check(
             f"{integrity.error or 'verification_failed'}"
         ),
     )
+
+
+def _selected_replay_evidence(
+    sweep_dir: Path,
+    candidate: pd.DataFrame,
+    *,
+    sweep_manifest: Mapping[str, Any],
+) -> tuple[pd.DataFrame, dict[str, Any], dict[str, Any]]:
+    row = (
+        candidate.iloc[0]
+        if not candidate.empty
+        else pd.Series(dtype=object)
+    )
+    run_name = _clean_text(row.get("sweep_best_run"))
+    declared_run_dir = _clean_text(row.get("sweep_run_dir"))
+    replay_dir, run_dir_bound = _bound_replay_dir(
+        sweep_dir,
+        run_name=run_name,
+        declared_run_dir=declared_run_dir,
+    )
+    manifest_path = replay_dir / "manifest.json"
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=PARITY_REPLAY_RUN_TYPE,
+        required_artifacts=PARITY_REPLAY_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    manifest_current = bool(
+        run_dir_bound and integrity.passed
+    )
+    replay_manifest = _read_manifest(manifest_path)
+    source_match = _selected_replay_source_match(
+        replay_manifest,
+        sweep_manifest,
+    )
+    parameters_match = _selected_replay_parameters_match(
+        replay_manifest,
+        sweep_manifest,
+        row,
+    )
+
+    signals = (
+        _read_csv_or_empty(replay_dir / "signals.csv")
+        if run_dir_bound
+        else pd.DataFrame()
+    )
+    guard = (
+        _read_csv_or_empty(
+            replay_dir / "parity_execution_guard.csv"
+        )
+        if run_dir_bound
+        else pd.DataFrame()
+    )
+    legging = (
+        _read_csv_or_empty(replay_dir / "legging.csv")
+        if run_dir_bound
+        else pd.DataFrame()
+    )
+    replay_summary = (
+        _read_csv_or_empty(replay_dir / "summary.csv")
+        if run_dir_bound
+        else pd.DataFrame()
+    )
+    equity = (
+        _read_csv_or_empty(replay_dir / "equity.csv")
+        if run_dir_bound
+        else pd.DataFrame()
+    )
+    summary_match = _selected_replay_summary_match(
+        replay_summary,
+        equity,
+        signals,
+        legging,
+        row,
+    )
+    signal_matches, signal_index = _candidate_signal_matches(
+        signals,
+        row,
+    )
+    guard_attempts, guard_passed_attempts = (
+        _candidate_guard_evidence(
+            guard,
+            row,
+            signal_index=signal_index,
+        )
+    )
+    execution = _candidate_execution_evidence(
+        legging,
+        row,
+        signal_index=signal_index,
+    )
+    opportunity_id = _candidate_opportunity_id(row)
+    evidence = {
+        "selected_replay_run": run_name,
+        "selected_replay_run_dir": str(replay_dir),
+        "selected_replay_declared_run_dir": (
+            declared_run_dir
+        ),
+        "selected_replay_run_dir_bound": run_dir_bound,
+        "selected_replay_manifest_current": manifest_current,
+        "selected_replay_manifest_error": (
+            str(integrity.error)
+            if run_dir_bound
+            else "run_dir_unbound"
+        ),
+        "selected_replay_manifest_sha256": (
+            _file_sha256_or_empty(manifest_path)
+        ),
+        "selected_replay_source_match": source_match,
+        "selected_replay_parameters_match": parameters_match,
+        "selected_replay_summary_match": summary_match,
+        "candidate_opportunity_id": opportunity_id,
+        "candidate_replay_signal_match_count": (
+            signal_matches
+        ),
+        "candidate_replay_signal_index": signal_index,
+        "candidate_replay_guard_attempts": guard_attempts,
+        "candidate_replay_guard_passed_attempts": (
+            guard_passed_attempts
+        ),
+        **execution,
+    }
+    checks = pd.DataFrame(
+        [
+            _check(
+                "selected_replay_run_dir_bound",
+                run_dir_bound,
+                "is",
+                True,
+                run_dir_bound,
+                "selected sweep run directory is not exactly "
+                "sweep/runs/<selected-run>",
+            ),
+            _check(
+                "selected_replay_manifest_current",
+                manifest_current,
+                "is",
+                True,
+                manifest_current,
+                "selected worst-seed replay manifest failed: "
+                f"{evidence['selected_replay_manifest_error']}",
+            ),
+            _check(
+                "selected_replay_source_match",
+                source_match,
+                "is",
+                True,
+                source_match,
+                "selected replay does not fingerprint the sweep's "
+                "chain and futures inputs",
+            ),
+            _check(
+                "selected_replay_parameters_match",
+                parameters_match,
+                "is",
+                True,
+                parameters_match,
+                "selected replay manifest parameters do not match "
+                "the sweep contract and selected run",
+            ),
+            _check(
+                "selected_replay_summary_match",
+                summary_match,
+                "is",
+                True,
+                summary_match,
+                "selected sweep row does not reproduce the nested "
+                "replay's economics and event counts",
+            ),
+            _check(
+                "candidate_replay_signal_unique",
+                signal_matches,
+                "==",
+                1,
+                signal_matches == 1,
+                "selected opportunity does not have one exact "
+                "signals.csv match in the worst-seed replay",
+            ),
+            _check(
+                "candidate_replay_guard_attempted",
+                guard_attempts,
+                ">=",
+                1,
+                guard_attempts >= 1,
+                "selected opportunity has no execution-guard "
+                "attempt in the worst-seed replay",
+            ),
+            _check(
+                "candidate_replay_guard_passed",
+                guard_passed_attempts,
+                ">=",
+                1,
+                guard_passed_attempts >= 1,
+                "selected opportunity never passed the execution "
+                "guard at its full scanned quantity",
+            ),
+            _check(
+                "candidate_replay_execution_unique",
+                execution[
+                    "candidate_replay_execution_count"
+                ],
+                "==",
+                1,
+                execution[
+                    "candidate_replay_execution_count"
+                ]
+                == 1,
+                "selected opportunity does not map to exactly one "
+                "legging execution",
+            ),
+            _check(
+                "candidate_replay_execution_complete",
+                execution[
+                    "candidate_replay_execution_complete"
+                ],
+                "is",
+                True,
+                execution[
+                    "candidate_replay_execution_complete"
+                ],
+                "selected opportunity did not route and fill all "
+                "three legs in the worst-seed replay",
+            ),
+            _check(
+                "candidate_replay_realized_edge_positive",
+                execution[
+                    "candidate_replay_realized_net_edge"
+                ],
+                ">",
+                0.0,
+                execution[
+                    "candidate_replay_realized_edge_positive"
+                ],
+                "selected opportunity lacks positive realized "
+                "edge evidence in the worst-seed replay",
+            ),
+        ]
+    )
+    inputs: dict[str, Any] = {}
+    if run_dir_bound and replay_dir.exists():
+        inputs["selected_replay"] = replay_dir
+        if manifest_path.is_file():
+            inputs["selected_replay_manifest"] = manifest_path
+            inputs["selected_replay_dependencies"] = (
+                manifest_dependency_paths(manifest_path)
+            )
+        for name, path in [
+            ("selected_replay_signals", replay_dir / "signals.csv"),
+            (
+                "selected_replay_execution_guard",
+                replay_dir / "parity_execution_guard.csv",
+            ),
+            (
+                "selected_replay_legging",
+                replay_dir / "legging.csv",
+            ),
+            (
+                "selected_replay_summary",
+                replay_dir / "summary.csv",
+            ),
+            (
+                "selected_replay_equity",
+                replay_dir / "equity.csv",
+            ),
+        ]:
+            if path.is_file():
+                inputs[name] = path
+    return checks, evidence, inputs
+
+
+def _bound_replay_dir(
+    sweep_dir: Path,
+    *,
+    run_name: str,
+    declared_run_dir: str,
+) -> tuple[Path, bool]:
+    runs_root = (sweep_dir / "runs").resolve()
+    invalid_dir = (
+        runs_root / "__invalid_selected_run__"
+    ).resolve()
+    try:
+        safe_name = bool(
+            run_name
+            and run_name not in {".", ".."}
+            and Path(run_name).name == run_name
+        )
+        replay_dir = (
+            (runs_root / run_name).resolve()
+            if safe_name
+            else invalid_dir
+        )
+    except (OSError, RuntimeError, ValueError):
+        return invalid_dir, False
+    if (
+        not safe_name
+        or replay_dir.parent != runs_root
+        or not declared_run_dir
+    ):
+        return replay_dir, False
+    try:
+        declared = Path(declared_run_dir)
+        candidates = {
+            declared.resolve(),
+            (sweep_dir / declared).resolve(),
+        }
+    except (OSError, RuntimeError, ValueError):
+        return replay_dir, False
+    return replay_dir, replay_dir in candidates
+
+
+def _selected_replay_source_match(
+    replay_manifest: Mapping[str, Any],
+    sweep_manifest: Mapping[str, Any],
+) -> bool:
+    replay_chain = _manifest_input_signature(
+        replay_manifest,
+        "chain",
+    )
+    replay_futures = _manifest_input_signature(
+        replay_manifest,
+        "futures",
+    )
+    sweep_chain = _manifest_input_signature(
+        sweep_manifest,
+        "chain",
+    )
+    sweep_futures = _manifest_input_signature(
+        sweep_manifest,
+        "futures",
+    )
+    return bool(
+        replay_chain is not None
+        and replay_chain == sweep_chain
+        and replay_futures is not None
+        and replay_futures == sweep_futures
+    )
+
+
+def _selected_replay_parameters_match(
+    replay_manifest: Mapping[str, Any],
+    sweep_manifest: Mapping[str, Any],
+    candidate: pd.Series,
+) -> bool:
+    if candidate.empty:
+        return False
+    replay = _manifest_mapping(
+        replay_manifest,
+        "parameters",
+    )
+    sweep = _manifest_mapping(
+        sweep_manifest,
+        "parameters",
+    )
+    shared_parameters = [
+        "timestamp_unit",
+        "timestamp_tz",
+        "filter_session",
+        "lot_size",
+        "option_tick",
+        "future_tick",
+        "max_signal_age_ns",
+        "max_qty",
+        "max_position_lots",
+        "signal_limit",
+    ]
+    selected_parameters = [
+        ("depth_fraction", "depth_fraction"),
+        ("asof_latency_ns", "asof_latency_ns"),
+        (
+            "max_futures_quote_age_ns",
+            "max_futures_quote_age_ns",
+        ),
+        ("feed_latency_us", "feed_latency_us"),
+        ("order_latency_us", "order_latency_us"),
+        ("latency_jitter_us", "latency_jitter_us"),
+        ("latency_seed", "latency_seed"),
+        (
+            "max_leg_book_age_ns",
+            "max_leg_book_age_ns",
+        ),
+        (
+            "max_leg_book_skew_ns",
+            "max_leg_book_skew_ns",
+        ),
+    ]
+    return bool(
+        all(
+            name in replay
+            and name in sweep
+            and _values_match(
+                replay.get(name),
+                sweep.get(name),
+            )
+            for name in shared_parameters
+        )
+        and all(
+            replay_name in replay
+            and candidate_name in candidate.index
+            and _value_present(candidate.get(candidate_name))
+            and _values_match(
+                replay.get(replay_name),
+                candidate.get(candidate_name),
+            )
+            for replay_name, candidate_name in selected_parameters
+        )
+    )
+
+
+def _selected_replay_summary_match(
+    summary: pd.DataFrame,
+    equity: pd.DataFrame,
+    signals: pd.DataFrame,
+    legging: pd.DataFrame,
+    candidate: pd.Series,
+) -> bool:
+    if len(summary) != 1 or candidate.empty:
+        return False
+    row = summary.iloc[0]
+    metric_pairs = [
+        ("net_pnl", "sweep_net_pnl"),
+        ("fills", "sweep_fills"),
+    ]
+    if not all(
+        replay_name in row.index
+        and candidate_name in candidate.index
+        and _value_present(candidate.get(candidate_name))
+        and _values_match(
+            row.get(replay_name),
+            candidate.get(candidate_name),
+        )
+        for replay_name, candidate_name in metric_pairs
+    ):
+        return False
+    if (
+        "equity" not in equity.columns
+        or "sweep_max_drawdown" not in candidate.index
+        or not _value_present(
+            candidate.get("sweep_max_drawdown")
+        )
+    ):
+        return False
+    equity_values = pd.to_numeric(
+        equity["equity"],
+        errors="coerce",
+    )
+    if equity_values.isna().any():
+        return False
+    drawdown_values = pd.concat(
+        [
+            pd.Series([0.0]),
+            equity_values.reset_index(drop=True),
+        ],
+        ignore_index=True,
+    )
+    max_drawdown = float(
+        (
+            drawdown_values.cummax()
+            - drawdown_values
+        ).max()
+    )
+    if not _values_match(
+        max_drawdown,
+        candidate.get("sweep_max_drawdown"),
+    ):
+        return False
+    count_pairs = [
+        (len(signals), "sweep_signal_count"),
+        (len(legging), "sweep_execution_count"),
+    ]
+    if "partial" not in legging.columns:
+        return False
+    partial_count = int(
+        legging["partial"].map(_to_bool).sum()
+    )
+    count_pairs.append(
+        (
+            partial_count,
+            "sweep_partial_execution_count",
+        )
+    )
+    return all(
+        candidate_name in candidate.index
+        and _exact_integer(candidate.get(candidate_name))
+        == int(observed)
+        for observed, candidate_name in count_pairs
+    )
+
+
+def _candidate_signal_matches(
+    signals: pd.DataFrame,
+    candidate: pd.Series,
+) -> tuple[int, int]:
+    if (
+        signals.empty
+        or candidate.empty
+        or str(candidate.get("direction", ""))
+        not in PARITY_DIRECTIONS
+        or str(candidate.get("leg_family", "")) != "parity"
+        or "ts" not in signals.columns
+    ):
+        return 0, -1
+    ordered = signals.sort_values(
+        "ts",
+        kind="stable",
+    ).reset_index(drop=True)
+    mask = pd.Series(True, index=ordered.index)
+    for column in ("direction", "expiry", "regime"):
+        mask &= _string_match(
+            ordered,
+            column,
+            candidate.get(column),
+        )
+    for column in (
+        "ts",
+        "qty",
+        "displayed_depth",
+        "future_ts",
+        "futures_lookup_ts",
+        "future_asof_age_ns",
+        "future_decision_age_ns",
+        "persistence_ticks",
+    ):
+        mask &= _integer_match(
+            ordered,
+            column,
+            candidate.get(column),
+        )
+    for column in (
+        "strike",
+        "edge_per_unit",
+        "gross_edge",
+        "total_cost",
+        "net_edge",
+        "call_price",
+        "put_price",
+        "future_price",
+    ):
+        mask &= _number_match(
+            ordered,
+            column,
+            candidate.get(column),
+        )
+    matched = ordered.loc[mask]
+    if len(matched) != 1:
+        return int(len(matched)), -1
+    return 1, int(matched.index[0])
+
+
+def _candidate_guard_evidence(
+    guard: pd.DataFrame,
+    candidate: pd.Series,
+    *,
+    signal_index: int,
+) -> tuple[int, int]:
+    if guard.empty or signal_index < 0:
+        return 0, 0
+    mask = _integer_match(
+        guard,
+        "signal_index",
+        signal_index,
+    )
+    mask &= _string_match(
+        guard,
+        "direction",
+        candidate.get("direction"),
+    )
+    mask &= _integer_match(
+        guard,
+        "signal_ts_ns",
+        candidate.get("ts"),
+    )
+    mask &= _number_match(
+        guard,
+        "strike",
+        candidate.get("strike"),
+    )
+    mask &= _number_match(
+        guard,
+        "signal_net_edge",
+        candidate.get("net_edge"),
+    )
+    attempts = guard.loc[mask]
+    if attempts.empty:
+        return 0, 0
+    passed = attempts.get(
+        "guard_passed",
+        pd.Series(False, index=attempts.index),
+    ).map(_to_bool)
+    passed &= _integer_match(
+        attempts,
+        "edge_revalidation_qty",
+        candidate.get("qty"),
+    )
+    return int(len(attempts)), int(passed.sum())
+
+
+def _candidate_execution_evidence(
+    legging: pd.DataFrame,
+    candidate: pd.Series,
+    *,
+    signal_index: int,
+) -> dict[str, Any]:
+    empty = {
+        "candidate_replay_execution_count": 0,
+        "candidate_replay_execution_complete": False,
+        "candidate_replay_realized_edge_evaluable": False,
+        "candidate_replay_realized_net_edge": np.nan,
+        "candidate_replay_realized_edge_positive": False,
+    }
+    if legging.empty or signal_index < 0:
+        return empty
+    mask = _integer_match(
+        legging,
+        "signal_index",
+        signal_index,
+    )
+    mask &= _string_match(
+        legging,
+        "direction",
+        candidate.get("direction"),
+    )
+    mask &= _integer_match(
+        legging,
+        "signal_ts_ns",
+        candidate.get("ts"),
+    )
+    mask &= _number_match(
+        legging,
+        "strike",
+        candidate.get("strike"),
+    )
+    mask &= _integer_match(
+        legging,
+        "requested_qty",
+        candidate.get("qty"),
+    )
+    executions = legging.loc[mask]
+    if len(executions) != 1:
+        return {
+            **empty,
+            "candidate_replay_execution_count": int(
+                len(executions)
+            ),
+        }
+    execution = executions.iloc[0]
+    complete = bool(
+        _to_bool(execution.get("routing_complete", False))
+        and _to_bool(execution.get("fills_complete", False))
+    )
+    evaluable = _to_bool(
+        execution.get("realized_edge_evaluable", False)
+    )
+    realized_net_edge = _number(
+        execution.get("realized_net_edge"),
+        np.nan,
+    )
+    declared_positive = _to_bool(
+        execution.get("realized_edge_positive", False)
+    )
+    positive = bool(
+        complete
+        and evaluable
+        and np.isfinite(realized_net_edge)
+        and realized_net_edge > 0.0
+        and declared_positive
+    )
+    return {
+        "candidate_replay_execution_count": 1,
+        "candidate_replay_execution_complete": complete,
+        "candidate_replay_realized_edge_evaluable": evaluable,
+        "candidate_replay_realized_net_edge": (
+            realized_net_edge
+        ),
+        "candidate_replay_realized_edge_positive": positive,
+    }
+
+
+def _candidate_opportunity_id(candidate: pd.Series) -> str:
+    if candidate.empty:
+        return ""
+    common_fields = [
+        "scanner",
+        "direction",
+        "ts",
+        "expiry",
+        "qty",
+        "edge_per_unit",
+        "gross_edge",
+        "total_cost",
+        "net_edge",
+        "displayed_depth",
+        "persistence_ticks",
+        "regime",
+    ]
+    parity_fields = [
+        "strike",
+        "call_price",
+        "put_price",
+        "future_price",
+        "future_ts",
+        "futures_lookup_ts",
+        "future_asof_age_ns",
+        "future_decision_age_ns",
+    ]
+    box_fields = [
+        "low_strike",
+        "high_strike",
+        "low_call_price",
+        "low_put_price",
+        "high_call_price",
+        "high_put_price",
+    ]
+    fields = common_fields + (
+        box_fields
+        if str(candidate.get("leg_family", "")) == "box"
+        else parity_fields
+    )
+    payload = {
+        field: _jsonable(candidate.get(field))
+        for field in fields
+        if _value_present(candidate.get(field))
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _read_csv_or_empty(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except (OSError, ValueError, pd.errors.ParserError):
+        return pd.DataFrame()
+
+
+def _string_match(
+    frame: pd.DataFrame,
+    column: str,
+    expected: Any,
+) -> pd.Series:
+    if column not in frame.columns or not _value_present(expected):
+        return pd.Series(False, index=frame.index)
+    return (
+        frame[column]
+        .map(_clean_text)
+        .eq(_clean_text(expected))
+    )
+
+
+def _integer_match(
+    frame: pd.DataFrame,
+    column: str,
+    expected: Any,
+) -> pd.Series:
+    expected_integer = _exact_integer(expected)
+    if column not in frame.columns or expected_integer is None:
+        return pd.Series(False, index=frame.index)
+    values = pd.to_numeric(frame[column], errors="coerce")
+    return values.notna() & values.eq(expected_integer)
+
+
+def _number_match(
+    frame: pd.DataFrame,
+    column: str,
+    expected: Any,
+) -> pd.Series:
+    expected_number = _number(expected, np.nan)
+    if column not in frame.columns or not np.isfinite(
+        expected_number
+    ):
+        return pd.Series(False, index=frame.index)
+    values = pd.to_numeric(frame[column], errors="coerce")
+    return values.notna() & np.isclose(
+        values,
+        expected_number,
+        rtol=0.0,
+        atol=1e-9,
+    )
+
+
+def _value_present(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return True
+    return bool(not missing) if isinstance(missing, (bool, np.bool_)) else True
+
+
+def _clean_text(value: Any) -> str:
+    return str(value).strip() if _value_present(value) else ""
 
 
 def _parity_lineage(
@@ -1224,6 +2104,7 @@ def _candidate_record(
         "sweep_pass_rate": _jsonable(sweep.get("pass_rate")),
         "sweep_passed_scenarios": _jsonable(sweep.get("passed_scenarios")),
         "sweep_best_run": _jsonable(sweep_run.get("run", sweep.get("best_run"))),
+        "sweep_run_dir": _jsonable(sweep_run.get("run_dir")),
         "depth_fraction": _jsonable(sweep_run.get("depth_fraction")),
         "asof_latency_ns": _jsonable(sweep_run.get("asof_latency_ns")),
         "feed_latency_us": _jsonable(sweep_run.get("feed_latency_us")),
@@ -1236,6 +2117,18 @@ def _candidate_record(
         ),
         "sweep_net_pnl": _jsonable(sweep_run.get("net_pnl")),
         "sweep_fills": _jsonable(sweep_run.get("fills")),
+        "sweep_max_drawdown": _jsonable(
+            sweep_run.get("max_drawdown")
+        ),
+        "sweep_signal_count": _jsonable(
+            sweep_run.get("signal_count")
+        ),
+        "sweep_execution_count": _jsonable(
+            sweep_run.get("execution_count")
+        ),
+        "sweep_partial_execution_count": _jsonable(
+            sweep_run.get("partial_execution_count")
+        ),
         "sweep_robust_score": _jsonable(sweep_run.get("robust_score")),
     }
     for key in LATENCY_SEED_PROMOTION_METRICS:
@@ -1404,9 +2297,14 @@ def _promotion_candidate_config(
             "sweep_best_run",
             "sweep_net_pnl",
             "sweep_fills",
+            "sweep_max_drawdown",
+            "sweep_signal_count",
+            "sweep_execution_count",
+            "sweep_partial_execution_count",
             "sweep_robust_score",
             *LATENCY_SEED_PROMOTION_METRICS,
             *PARITY_PROMOTION_LINEAGE_METRICS,
+            *PARITY_PROMOTION_REPLAY_EVIDENCE_METRICS,
         ]
         if key in row.index
     }

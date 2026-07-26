@@ -1214,7 +1214,9 @@ scenario, reports pass rate and worst-seed PnL/drawdown/robust score, and only
 marks the group passed when every expected seed is present, unique,
 proof-passing, and within its latency bounds. Candidate promotion independently
 reconciles that aggregate to raw `sweep_runs.csv`, selects the strongest
-worst-seed group, and carries its conservative seed into replay defaults.
+worst-seed group, and carries its conservative seed into replay defaults. Each
+row now stores an absolute replay directory so downstream evidence can bind the
+selected run without depending on the caller's working directory.
 
 ## Parity / Box Candidate Promotion
 
@@ -1230,7 +1232,23 @@ edge audit is bound to the exact supplied scan manifest, requires the scan and
 sweep to fingerprint identical chain/futures content, and selects only a sweep
 group matching the scan's depth and as-of latency. Market, column-map,
 timestamp/session, lot-size, and tick-size assumptions must match, as must the
-selected futures quote-age ceiling:
+selected futures quote-age ceiling. The selected worst-seed replay must itself
+have a current `parity_replay` manifest, live at
+`<sweep>/runs/<selected-run>`, and contain exactly one full-field match for the
+promoted opportunity in `signals.csv`. Its chain/futures fingerprints and
+normalization, instrument, latency, freshness, risk, and signal-limit parameters
+must match the sweep contract and selected run. The selected sweep row's
+PnL, fills, drawdown, signal count, execution count, and partial count must also
+reproduce the nested replay. That signal must pass the execution guard at its
+scanned quantity, map to exactly one completely filled legging record, and
+retain positive realized edge. The opportunity SHA-256, replay manifest
+SHA-256, signal index, guard attempts, and realized result are carried into the
+promotion artifacts and manifest.
+
+The current sweep engine replays three-leg put-call parity. If a four-leg box
+is the highest-ranked scan opportunity, manifest-backed promotion therefore
+stays research-only until a box replay can provide equivalent candidate-level
+evidence:
 
 ```powershell
 python -m hft_cli promote-parity-candidate `

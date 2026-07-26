@@ -12,10 +12,64 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
-from reports.parity_edge import PARITY_EDGE_RUN_TYPE
+from reports.parity_edge import (
+    PARITY_EDGE_RUN_TYPE,
+    write_parity_edge_audit,
+)
 from reports.parity_order_plan import ParityOrderPlanConfig, build_parity_order_plan
-from scanners.run_parity_box import PARITY_SCAN_RUN_TYPE
-from strategies.run_parity_sweep import PARITY_SWEEP_RUN_TYPE
+from reports.proof import ProofThresholds
+from scanners.run_parity_box import PARITY_SCAN_RUN_TYPE, run_scan
+from strategies.run_parity_sweep import (
+    PARITY_SWEEP_RUN_TYPE,
+    run_parity_sweep,
+)
+
+
+def ns_ist(value):
+    return pd.Timestamp(value, tz="Asia/Kolkata").value
+
+
+def write_actual_parity_books(root):
+    timestamps = [
+        ns_ist("2026-06-10 09:15:00"),
+        ns_ist("2026-06-10 09:15:00.000100"),
+        ns_ist("2026-06-10 09:15:00.000200"),
+    ]
+    chain_path = root / "chain.csv"
+    futures_path = root / "futures.csv"
+    pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "expiry": "2026-06-30",
+                "strike": 1000.0,
+                "call_bid": 54.0,
+                "call_ask": 55.0,
+                "call_bid_qty": 300,
+                "call_ask_qty": (
+                    300 if index < 2 else 299
+                ),
+                "put_bid": 60.0,
+                "put_ask": 61.0,
+                "put_bid_qty": 300,
+                "put_ask_qty": 300,
+            }
+            for index, ts in enumerate(timestamps)
+        ]
+    ).to_csv(chain_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "ts": ts,
+                "bid": 1100.0,
+                "ask": 1101.0,
+                "bid_qty": 300,
+                "ask_qty": 300,
+            }
+            for ts in timestamps
+        ]
+    ).to_csv(futures_path, index=False)
+    return chain_path, futures_path
 
 
 def parity_opportunities():
@@ -182,6 +236,138 @@ def latency_seed_robustness(
     )
 
 
+def write_replay_evidence(
+    run_dir,
+    *,
+    chain_path,
+    futures_path,
+    latency_seed,
+    net_pnl,
+    max_drawdown,
+    realized_net_edge=5.0,
+):
+    run_dir.mkdir(parents=True)
+    signal = parity_opportunities()
+    signal.to_csv(run_dir / "signals.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "signal_index": 0,
+                "direction": "buy_synthetic_sell_future",
+                "strike": 25000.0,
+                "signal_ts_ns": 200,
+                "signal_net_edge": 440.0,
+                "edge_revalidation_qty": 75,
+                "guard_passed": True,
+                "guard_reason": "ready",
+            }
+        ]
+    ).to_csv(
+        run_dir / "parity_execution_guard.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "signal_index": 0,
+                "direction": "buy_synthetic_sell_future",
+                "strike": 25000.0,
+                "signal_ts_ns": 200,
+                "requested_qty": 75,
+                "routing_complete": True,
+                "fills_complete": True,
+                "partial": False,
+                "realized_edge_evaluable": True,
+                "realized_net_edge": realized_net_edge,
+                "realized_edge_positive": (
+                    realized_net_edge > 0.0
+                ),
+            }
+        ]
+    ).to_csv(run_dir / "legging.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "net_pnl": net_pnl,
+                "fills": 3,
+                "max_drawdown": max_drawdown,
+            }
+        ]
+    ).to_csv(run_dir / "summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {"ts": 0, "equity": 0.0},
+            {"ts": 1, "equity": -max_drawdown},
+        ]
+    ).to_csv(run_dir / "equity.csv", index=False)
+    write_experiment_manifest(
+        run_dir,
+        run_type="parity_replay",
+        inputs={
+            "chain": chain_path,
+            "futures": futures_path,
+        },
+        parameters={
+            "timestamp_unit": "ns",
+            "timestamp_tz": None,
+            "filter_session": True,
+            "lot_size": 75,
+            "option_tick": 0.05,
+            "future_tick": 0.05,
+            "depth_fraction": 0.25,
+            "asof_latency_ns": 0,
+            "max_futures_quote_age_ns": 100_000,
+            "feed_latency_us": 0.0,
+            "order_latency_us": 0.0,
+            "latency_jitter_us": 15.0,
+            "latency_seed": latency_seed,
+            "max_signal_age_ns": 1_000_000,
+            "max_leg_book_age_ns": 200_000,
+            "max_leg_book_skew_ns": 50_000,
+            "max_qty": None,
+            "max_position_lots": 20,
+            "signal_limit": None,
+        },
+    )
+
+
+def refresh_manifest(
+    run_dir,
+    *,
+    parameter_updates=None,
+    input_updates=None,
+):
+    path = run_dir / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+
+    def restore_input(value):
+        if isinstance(value, dict):
+            if "path" in value:
+                return value["path"]
+            return {
+                key: restore_input(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [restore_input(item) for item in value]
+        return value
+
+    inputs = {
+        key: restore_input(value)
+        for key, value in manifest["inputs"].items()
+    }
+    inputs.update(input_updates or {})
+    parameters = dict(manifest["parameters"])
+    parameters.update(parameter_updates or {})
+    write_experiment_manifest(
+        run_dir,
+        run_type=manifest["run_type"],
+        inputs=inputs,
+        parameters=parameters,
+        extra=manifest["extra"],
+    )
+
+
 def write_inputs(
     root,
     *,
@@ -291,6 +477,17 @@ def write_inputs(
             "max_drawdown": 2.0,
         }
     )
+    for run in (first, second):
+        run_dir = sweep_dir / "runs" / str(run["run"])
+        run["run_dir"] = str(run_dir.resolve())
+        write_replay_evidence(
+            run_dir,
+            chain_path=chain_path,
+            futures_path=sweep_futures_path,
+            latency_seed=int(run["latency_seed"]),
+            net_pnl=float(run["net_pnl"]),
+            max_drawdown=float(run["max_drawdown"]),
+        )
     runs = pd.DataFrame([first, second])
     robustness = latency_seed_robustness(
         group_passed=bool(passed_scenarios),
@@ -335,6 +532,12 @@ def write_inputs(
             "option_tick": sweep_option_tick,
             "future_tick": 0.05,
             "max_futures_quote_age_ns": 100_000,
+            "max_signal_age_ns": 1_000_000,
+            "max_leg_book_age_ns": 200_000,
+            "max_leg_book_skew_ns": 50_000,
+            "max_qty": None,
+            "max_position_lots": 20,
+            "signal_limit": None,
             "depth_fraction_values": [0.25],
             "asof_latency_ns_values": [0],
         },
@@ -508,6 +711,62 @@ def test_parity_candidate_promotion_can_promote_best_box_opportunity():
     assert config["parameters"]["high_put_price"] == 135.0
 
 
+def test_parity_candidate_promotion_binds_real_worst_seed_replay(
+    tmp_path,
+):
+    chain_path, futures_path = write_actual_parity_books(
+        tmp_path
+    )
+    scan_dir = tmp_path / "scan"
+    edge_dir = tmp_path / "edge"
+    sweep_dir = tmp_path / "sweep"
+    run_scan(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=scan_dir,
+        depth_fraction=0.25,
+    )
+    edge = write_parity_edge_audit(
+        scan_dir,
+        output_dir=edge_dir,
+    )
+    sweep = run_parity_sweep(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=sweep_dir,
+        depth_fraction_values=[0.25],
+        asof_latency_ns_values=[0],
+        feed_latency_us_values=[0.0],
+        order_latency_us_values=[0.0],
+        latency_jitter_us_values=[0.0],
+        latency_seed_values=[17],
+        proof_thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+
+    report = write_parity_candidate_promotion(
+        scan_dir,
+        edge_audit_dir=edge_dir,
+        sweep_dir=sweep_dir,
+        output_dir=tmp_path / "promotion",
+    )
+
+    assert edge.passed
+    assert sweep.proof.passed
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["selected_replay_manifest_current"])
+    assert bool(summary["selected_replay_source_match"])
+    assert bool(summary["selected_replay_parameters_match"])
+    assert bool(summary["selected_replay_summary_match"])
+    assert int(summary["candidate_replay_signal_match_count"]) == 1
+    assert int(summary["candidate_replay_guard_passed_attempts"]) == 1
+    assert bool(summary["candidate_replay_execution_complete"])
+    assert bool(summary["candidate_replay_realized_edge_positive"])
+
+
 def test_write_parity_candidate_promotion_outputs_launch_compatible_files(tmp_path):
     scan_dir, edge_dir, sweep_dir = write_inputs(
         tmp_path,
@@ -536,6 +795,27 @@ def test_write_parity_candidate_promotion_outputs_launch_compatible_files(tmp_pa
     assert config["metrics"]["scan_sweep_source_match"]
     assert config["metrics"]["scan_sweep_static_parameters_match"]
     assert config["metrics"]["scan_sweep_selected_scenario_match"]
+    assert config["metrics"]["selected_replay_run"] == (
+        "latency_group__seed_22"
+    )
+    assert config["metrics"]["selected_replay_run_dir_bound"]
+    assert config["metrics"]["selected_replay_manifest_current"]
+    assert config["metrics"]["selected_replay_source_match"]
+    assert config["metrics"]["selected_replay_parameters_match"]
+    assert config["metrics"]["selected_replay_summary_match"]
+    assert len(config["metrics"]["candidate_opportunity_id"]) == 64
+    assert config["metrics"][
+        "candidate_replay_signal_match_count"
+    ] == 1
+    assert config["metrics"]["candidate_replay_signal_index"] == 0
+    assert config["metrics"][
+        "candidate_replay_guard_passed_attempts"
+    ] == 1
+    assert config["metrics"]["candidate_replay_execution_count"] == 1
+    assert config["metrics"]["candidate_replay_execution_complete"]
+    assert config["metrics"][
+        "candidate_replay_realized_edge_positive"
+    ]
     assert set(
         report.checks["check"]
     ).issuperset(
@@ -547,6 +827,17 @@ def test_write_parity_candidate_promotion_outputs_launch_compatible_files(tmp_pa
             "scan_sweep_source_match",
             "scan_sweep_static_parameters_match",
             "scan_sweep_selected_scenario_match",
+            "selected_replay_run_dir_bound",
+            "selected_replay_manifest_current",
+            "selected_replay_source_match",
+            "selected_replay_parameters_match",
+            "selected_replay_summary_match",
+            "candidate_replay_signal_unique",
+            "candidate_replay_guard_attempted",
+            "candidate_replay_guard_passed",
+            "candidate_replay_execution_unique",
+            "candidate_replay_execution_complete",
+            "candidate_replay_realized_edge_positive",
         }
     )
     assert manifest["run_type"] == "promotion_report"
@@ -556,6 +847,12 @@ def test_write_parity_candidate_promotion_outputs_launch_compatible_files(tmp_pa
     assert "scan_manifest" in manifest["inputs"]
     assert "edge_manifest" in manifest["inputs"]
     assert "sweep_manifest" in manifest["inputs"]
+    assert "selected_replay_manifest" in manifest["inputs"]
+    assert "selected_replay_signals" in manifest["inputs"]
+    assert "selected_replay_execution_guard" in manifest["inputs"]
+    assert "selected_replay_legging" in manifest["inputs"]
+    assert "selected_replay_summary" in manifest["inputs"]
+    assert "selected_replay_equity" in manifest["inputs"]
     integrity = verify_experiment_manifest(
         out_dir / "manifest.json",
         expected_run_type="promotion_report",
@@ -642,6 +939,259 @@ def test_parity_candidate_promotion_rejects_sweep_artifact_drift(
     assert report.summary.loc[0, "sweep_manifest_error"] == (
         "artifact_drift"
     )
+
+
+def test_parity_candidate_promotion_rejects_unbound_replay_evidence(
+    tmp_path,
+):
+    scan_dir, edge_dir, sweep_dir = write_inputs(tmp_path)
+    runs_path = sweep_dir / "sweep_runs.csv"
+    runs = pd.read_csv(runs_path)
+    selected = runs["run"].eq("latency_group__seed_22")
+    runs.loc[selected, "run_dir"] = str(
+        (
+            sweep_dir
+            / "runs"
+            / "latency_group__seed_11"
+        ).resolve()
+    )
+    runs.to_csv(runs_path, index=False)
+    refresh_manifest(sweep_dir)
+
+    report = write_parity_candidate_promotion(
+        scan_dir,
+        edge_audit_dir=edge_dir,
+        sweep_dir=sweep_dir,
+        output_dir=tmp_path / "promotion",
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "selected_replay_run_dir_bound" in failed
+    assert not bool(
+        report.summary.loc[
+            0,
+            "selected_replay_run_dir_bound",
+        ]
+    )
+
+
+def test_parity_candidate_promotion_rejects_candidate_evidence_mismatch(
+    tmp_path,
+):
+    cases = [
+        (
+            "signal",
+            "signals.csv",
+            {"qty": 74},
+            False,
+            "candidate_replay_signal_unique",
+        ),
+        (
+            "duplicate_signal",
+            "signals.csv",
+            {},
+            True,
+            "candidate_replay_signal_unique",
+        ),
+        (
+            "guard",
+            "parity_execution_guard.csv",
+            {"guard_passed": False},
+            False,
+            "candidate_replay_guard_passed",
+        ),
+        (
+            "guard_qty",
+            "parity_execution_guard.csv",
+            {"edge_revalidation_qty": 50},
+            False,
+            "candidate_replay_guard_passed",
+        ),
+        (
+            "fills",
+            "legging.csv",
+            {"fills_complete": False},
+            False,
+            "candidate_replay_execution_complete",
+        ),
+        (
+            "realized_edge",
+            "legging.csv",
+            {
+                "realized_net_edge": -1.0,
+                "realized_edge_positive": False,
+            },
+            False,
+            "candidate_replay_realized_edge_positive",
+        ),
+        (
+            "summary",
+            "summary.csv",
+            {"net_pnl": 999.0},
+            False,
+            "selected_replay_summary_match",
+        ),
+        (
+            "equity",
+            "equity.csv",
+            {"equity": -999.0},
+            False,
+            "selected_replay_summary_match",
+        ),
+    ]
+    for (
+        name,
+        artifact,
+        updates,
+        duplicate,
+        failed_check,
+    ) in cases:
+        root = tmp_path / name
+        scan_dir, edge_dir, sweep_dir = write_inputs(root)
+        replay_dir = (
+            sweep_dir
+            / "runs"
+            / "latency_group__seed_22"
+        )
+        artifact_path = replay_dir / artifact
+        frame = pd.read_csv(artifact_path)
+        for column, value in updates.items():
+            frame.loc[0, column] = value
+        if duplicate:
+            frame = pd.concat(
+                [frame, frame.iloc[[0]]],
+                ignore_index=True,
+            )
+        frame.to_csv(artifact_path, index=False)
+        refresh_manifest(replay_dir)
+        refresh_manifest(sweep_dir)
+
+        report = write_parity_candidate_promotion(
+            scan_dir,
+            edge_audit_dir=edge_dir,
+            sweep_dir=sweep_dir,
+            output_dir=root / "promotion",
+        )
+
+        failed = set(
+            report.checks.loc[
+                ~report.checks["passed"].astype(bool),
+                "check",
+            ]
+        )
+        assert not report.ready
+        assert bool(
+            report.summary.loc[
+                0,
+                "selected_replay_manifest_current",
+            ]
+        )
+        assert failed_check in failed
+
+
+def test_parity_candidate_promotion_rejects_replay_lineage_mismatch(
+    tmp_path,
+):
+    cases = [
+        (
+            "source",
+            {},
+            {"futures": "other_futures.csv"},
+            "selected_replay_source_match",
+        ),
+        (
+            "parameters",
+            {"latency_seed": 999},
+            {},
+            "selected_replay_parameters_match",
+        ),
+    ]
+    for name, parameter_updates, input_names, failed_check in cases:
+        root = tmp_path / name
+        scan_dir, edge_dir, sweep_dir = write_inputs(root)
+        replay_dir = (
+            sweep_dir
+            / "runs"
+            / "latency_group__seed_22"
+        )
+        input_updates = {}
+        if input_names:
+            other_futures = root / "source" / input_names[
+                "futures"
+            ]
+            pd.DataFrame(
+                [{"ts": 1, "value": 999.0}]
+            ).to_csv(other_futures, index=False)
+            input_updates["futures"] = other_futures
+        refresh_manifest(
+            replay_dir,
+            parameter_updates=parameter_updates,
+            input_updates=input_updates,
+        )
+        refresh_manifest(sweep_dir)
+
+        report = write_parity_candidate_promotion(
+            scan_dir,
+            edge_audit_dir=edge_dir,
+            sweep_dir=sweep_dir,
+            output_dir=root / "promotion",
+        )
+
+        failed = set(
+            report.checks.loc[
+                ~report.checks["passed"].astype(bool),
+                "check",
+            ]
+        )
+        assert not report.ready
+        assert bool(
+            report.summary.loc[
+                0,
+                "selected_replay_manifest_current",
+            ]
+        )
+        assert failed_check in failed
+
+
+def test_parity_candidate_promotion_rejects_replay_artifact_drift(
+    tmp_path,
+):
+    scan_dir, edge_dir, sweep_dir = write_inputs(tmp_path)
+    replay_dir = (
+        sweep_dir
+        / "runs"
+        / "latency_group__seed_22"
+    )
+    summary_path = replay_dir / "summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "net_pnl"] = 999.0
+    summary.to_csv(summary_path, index=False)
+
+    report = write_parity_candidate_promotion(
+        scan_dir,
+        edge_audit_dir=edge_dir,
+        sweep_dir=sweep_dir,
+        output_dir=tmp_path / "promotion",
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "selected_replay_manifest_current" in failed
+    assert report.summary.loc[
+        0,
+        "selected_replay_manifest_error",
+    ] == "artifact_drift"
 
 
 def test_parity_candidate_promotion_rejects_edge_from_another_scan(
