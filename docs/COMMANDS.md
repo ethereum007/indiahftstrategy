@@ -1208,6 +1208,42 @@ evidence. The `box_replay` manifest fingerprints the normalized chain input
 and every replay parameter. This is research evidence only; it does not
 authorize broker routing.
 
+## Box Sweep
+
+Stress executable four-leg box evidence across depth, fair-box assumptions,
+latency, jitter, and deterministic latency seeds:
+
+```powershell
+python -m hft_cli sweep-box `
+  --chain data\chain.csv `
+  --out runs\box_sweep_2026_06_10 `
+  --depth-fraction 0.10 0.25 0.50 `
+  --fair-value-adjustment -0.25 0 0.25 `
+  --feed-latency-us 0 50 `
+  --order-latency-us 100 250 500 `
+  --latency-jitter-us 0 25 50 `
+  --latency-seeds 101 202 303 404 505 `
+  --signal-limit 100 `
+  --max-leg-book-age-ns 1000000 `
+  --max-leg-book-skew-ns 250000 `
+  --fail-on-breach
+```
+
+Each scenario is a manifest-backed `box_replay`. The unified proof report
+independently reconciles signal and guard identity, all four decision-time
+touches and cost legs, source-book causality, package preflight, raw fills,
+order activation, IOC arrival evidence, and realized net edge. Generic
+`legging.csv` evidence from a box run is kept separate from three-leg parity
+proof.
+
+The sweep writes the same top-level artifact layout as `sweep-parity`.
+`latency_seed_robustness.csv` passes an economic scenario only when every
+declared seed is present, proof-passing, and within the manifest latency
+bounds. Ranking uses realized four-leg net edge; the default accounting-PnL
+floor is deliberately permissive because open option-leg marks and terminal
+inventory accounting are not substitutes for package fill-edge evidence. Set
+`--min-net-pnl` when an additional portfolio-accounting floor is desired.
+
 ## Parity Sweep
 
 Run replay robustness scenarios across executable depth, as-of latency, and

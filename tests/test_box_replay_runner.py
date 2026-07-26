@@ -6,6 +6,10 @@ import pandas as pd
 
 from hft_cli import main
 from reports.manifest import verify_experiment_manifest
+from reports.proof import (
+    ProofThresholds,
+    evaluate_replay_dir,
+)
 from strategies.run_box_replay import (
     BOX_REPLAY_REQUIRED_ARTIFACTS,
     BOX_REPLAY_RUN_TYPE,
@@ -231,6 +235,97 @@ def test_run_box_replay_handles_no_executable_boxes(
     summary = replay.summary.iloc[0]
     assert int(summary["box_execution_guard_attempts"]) == 0
     assert int(summary["box_execution_count"]) == 0
+
+
+def test_box_replay_proof_binds_four_leg_raw_evidence(
+    tmp_path,
+):
+    chain_path = tmp_path / "chain.csv"
+    out_dir = tmp_path / "box_replay"
+    planted_box_chain().to_csv(chain_path, index=False)
+    run_box_replay(
+        chain_path=chain_path,
+        output_dir=out_dir,
+        depth_fraction=0.25,
+        order_latency_us=50.0,
+        signal_limit=1,
+    )
+
+    proof = evaluate_replay_dir(
+        out_dir,
+        thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+
+    assert proof.passed
+    metrics = proof.metrics.iloc[0]
+    assert bool(metrics["box_execution_guard_enabled"])
+    assert not bool(
+        metrics["parity_execution_guard_enabled"]
+    )
+    assert int(metrics["box_execution_complete_count"]) == 1
+    assert (
+        int(
+            metrics[
+                "box_execution_fill_evidence_evaluable_legs"
+            ]
+        )
+        == 4
+    )
+    assert (
+        int(
+            metrics[
+                "box_execution_guard_execution_lineage_violations"
+            ]
+        )
+        == 0
+    )
+    assert (
+        float(
+            metrics[
+                "box_execution_min_realized_net_edge"
+            ]
+        )
+        > 0.0
+    )
+
+
+def test_box_replay_proof_rejects_tampered_realized_edge(
+    tmp_path,
+):
+    chain_path = tmp_path / "chain.csv"
+    out_dir = tmp_path / "box_replay"
+    planted_box_chain().to_csv(chain_path, index=False)
+    run_box_replay(
+        chain_path=chain_path,
+        output_dir=out_dir,
+        depth_fraction=0.25,
+        signal_limit=1,
+    )
+    legging_path = out_dir / "legging.csv"
+    legging = pd.read_csv(legging_path)
+    legging.loc[0, "realized_net_edge"] += 1.0
+    legging.to_csv(legging_path, index=False)
+
+    proof = evaluate_replay_dir(
+        out_dir,
+        thresholds=ProofThresholds(
+            min_net_pnl=-1_000_000.0,
+            min_fills=1,
+        ),
+    )
+
+    assert not proof.passed
+    failed = proof.checks.loc[
+        ~proof.checks["passed"].astype(bool),
+        "check",
+    ].tolist()
+    assert (
+        "box_execution_realized_edge_consistency_violations"
+        in failed
+    )
 
 
 def test_unified_cli_replay_box_forwards_execution_guards(

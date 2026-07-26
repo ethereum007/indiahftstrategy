@@ -403,6 +403,7 @@ from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_box_replay import run_box_replay
+from strategies.run_box_sweep import run_box_sweep
 from strategies.run_imbalance_replay import run_imbalance_replay
 from strategies.run_imbalance_sweep import run_imbalance_sweep
 from strategies.run_leadlag_replay import run_leadlag_replay
@@ -4213,6 +4214,83 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--max-otr", type=float, default=None)
     parity_sweep.add_argument("--min-spread-net", type=float, default=None)
     parity_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    box_sweep = sub.add_parser(
+        "sweep-box",
+        help="Run four-leg box replay robustness sweep.",
+    )
+    box_sweep.add_argument("--chain", required=True)
+    box_sweep.add_argument("--out", required=True)
+    box_sweep.add_argument(
+        "--no-filter-session",
+        action="store_true",
+    )
+    box_sweep.add_argument(
+        "--depth-fraction",
+        nargs="+",
+        required=True,
+        type=float,
+    )
+    box_sweep.add_argument(
+        "--fair-value-adjustment",
+        nargs="+",
+        default=[0.0],
+        type=float,
+    )
+    box_sweep.add_argument(
+        "--feed-latency-us",
+        nargs="+",
+        default=[0.0],
+        type=float,
+    )
+    box_sweep.add_argument(
+        "--order-latency-us",
+        nargs="+",
+        default=[0.0],
+        type=float,
+    )
+    box_sweep.add_argument(
+        "--latency-jitter-us",
+        nargs="+",
+        default=[0.0],
+        type=float,
+    )
+    box_sweep.add_argument("--latency-seed", type=int, default=17)
+    box_sweep.add_argument(
+        "--latency-seeds",
+        nargs="+",
+        type=int,
+    )
+    box_sweep.add_argument("--signal-limit", type=int, default=None)
+    box_sweep.add_argument(
+        "--max-signal-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    box_sweep.add_argument(
+        "--max-leg-book-age-ns",
+        type=int,
+        default=1_000_000,
+    )
+    box_sweep.add_argument(
+        "--max-leg-book-skew-ns",
+        type=int,
+        default=1_000_000,
+    )
+    box_sweep.add_argument("--max-qty", type=int, default=None)
+    box_sweep.add_argument(
+        "--min-net-pnl",
+        type=float,
+        default=-1_000_000_000_000.0,
+    )
+    box_sweep.add_argument("--min-fills", type=int, default=1)
+    box_sweep.add_argument(
+        "--max-drawdown",
+        type=float,
+        default=None,
+    )
+    box_sweep.add_argument("--max-otr", type=float, default=None)
+    box_sweep.add_argument("--fail-on-breach", action="store_true")
 
     parity_promotion = sub.add_parser(
         "promote-parity-candidate",
@@ -9407,6 +9485,39 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "sweep-box":
+        result = run_box_sweep(
+            chain_path=args.chain,
+            output_dir=args.out,
+            depth_fraction_values=args.depth_fraction,
+            fair_value_adjustment_values=(
+                args.fair_value_adjustment
+            ),
+            feed_latency_us_values=args.feed_latency_us,
+            order_latency_us_values=args.order_latency_us,
+            latency_jitter_us_values=args.latency_jitter_us,
+            latency_seed=args.latency_seed,
+            latency_seed_values=args.latency_seeds,
+            filter_session=not args.no_filter_session,
+            signal_limit=args.signal_limit,
+            max_signal_age_ns=args.max_signal_age_ns,
+            max_leg_book_age_ns=args.max_leg_book_age_ns,
+            max_leg_book_skew_ns=args.max_leg_book_skew_ns,
+            max_qty=args.max_qty,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return (
+            2
+            if args.fail_on_breach
+            and not result.proof.passed
+            else 0
+        )
     if args.command == "promote-parity-candidate":
         result = write_parity_candidate_promotion(
             args.scan,

@@ -10,6 +10,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from reports.box_execution_proof import (
+    box_execution_checks,
+    box_execution_metrics,
+)
 from reports.manifest import (
     MANIFEST_NAME,
     manifest_dependency_paths,
@@ -570,6 +574,11 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
     ioc_arrival_audit = _read_optional(ioc_arrival_audit_path)
     strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
     market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
+    box_metrics = box_execution_metrics(
+        run_dir,
+        row,
+        manifest,
+    )
 
     net_pnl = _float(row, "net_pnl")
     fills = _int(row, "fills")
@@ -670,7 +679,6 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         parity_execution_guard_declared
         or parity_execution_run_detected
         or parity_execution_guard_path.exists()
-        or parity_legging_path.exists()
     )
     parity_execution_ioc_batch_preflight_declared = _bool(
         row.get(
@@ -1970,6 +1978,7 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
         "spread_net": spread_net,
         "markout_mean": markout_mean,
         "markout_win_rate": markout_win_rate,
+        **box_metrics,
     }
 
 
@@ -5150,6 +5159,7 @@ def _run_checks(metrics: dict[str, float | int | str | bool], thresholds: ProofT
                 ),
             }
         )
+    rows.extend(box_execution_checks(metrics))
     if bool(metrics["terminal_liquidation_depth_constrained_enabled"]):
         complete = bool(metrics["terminal_liquidation_complete"])
         rows.append(
