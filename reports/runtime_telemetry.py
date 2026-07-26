@@ -15,6 +15,7 @@ from reports.leadlag_lineage import (
 )
 from reports.manifest import write_experiment_manifest
 from reports.scaleup_runtime_provenance import (
+    BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS,
     empty_scaleup_runtime_provenance,
     load_scaleup_runtime_provenance,
     scaleup_runtime_fields,
@@ -42,79 +43,9 @@ GUARD_COLUMNS = [
     "worst_adverse_slippage",
 ]
 
-SCALEUP_PROVENANCE_COLUMNS = [
-    "scaleup_manifest_required",
-    "scaleup_manifest_provided",
-    "scaleup_manifest_current",
-    "scaleup_manifest_run_type",
-    "scaleup_manifest_path",
-    "scaleup_manifest_sha256",
-    "scaleup_manifest_error",
-    "scaleup_contract_consistent",
-    "scaleup_contract_error",
-    "scaleup_non_authorizing",
-    "scaleup_source_ready",
-    "scaleup_provenance_gate_passed",
-    "scaleup_dependency_count",
-    "scaleup_proof_refresh_active",
-    "scaleup_proof_refresh_required",
-    "scaleup_proof_refresh_requested",
-    "scaleup_proof_refresh_provided",
-    "scaleup_proof_refresh_reported_ready",
-    "scaleup_proof_refresh_ready",
-    "scaleup_proof_refresh_verified",
-    "scaleup_proof_refresh_manifest_required",
-    "scaleup_proof_refresh_manifest_current",
-    "scaleup_proof_refresh_manifest_sha256",
-    "scaleup_proof_refresh_semantic_verification_required",
-    "scaleup_proof_refresh_semantically_verified",
-    "scaleup_proof_refresh_verification_inputs_current",
-    "scaleup_proof_refresh_verification_artifacts_consistent",
-    "scaleup_proof_refresh_verification_non_authorizing",
-    "scaleup_proof_refresh_verification_error",
-    "scaleup_proof_refresh_read_error",
-    "scaleup_proof_refresh_reason",
-    "scaleup_proof_refresh_source_manifest_current",
-    "scaleup_proof_refresh_source_manifest_sha256",
-    "scaleup_proof_refresh_source_semantically_verified",
-    "scaleup_proof_refresh_source_provenance_gate_passed",
-    "scaleup_proof_refresh_matches_current",
-    "scaleup_strategy_portfolio_required",
-    "scaleup_strategy_portfolio_provided",
-    "scaleup_strategy_portfolio_manifest_required",
-    "scaleup_strategy_portfolio_manifest_current",
-    "scaleup_strategy_portfolio_manifest_sha256",
-    "scaleup_strategy_portfolio_provenance_gate_passed",
-    "scaleup_scorecard_manifest_required",
-    "scaleup_scorecard_manifest_current",
-    "scaleup_scorecard_manifest_sha256",
-    "scaleup_scorecard_provenance_gate_passed",
-    "scaleup_research_family_bound",
-    "scaleup_research_family_provenance_current",
-    "scaleup_research_family_id",
-    "scaleup_research_family_registration_id",
-    "scaleup_research_family_manifest_sha256",
-    "scaleup_broker_readiness_required",
-    "scaleup_broker_readiness_provided",
-    "scaleup_broker_readiness_lineage_required",
-    "scaleup_broker_readiness_lineage_provided",
-    "scaleup_broker_readiness_manifest_current",
-    "scaleup_broker_readiness_manifest_run_type",
-    "scaleup_broker_readiness_manifest_path",
-    "scaleup_broker_readiness_manifest_sha256",
-    "scaleup_broker_readiness_manifest_error",
-    "scaleup_broker_readiness_lineage_contract_consistent",
-    "scaleup_broker_readiness_lineage_contract_error",
-    "scaleup_broker_readiness_roundtrip_lineage_required",
-    "scaleup_broker_readiness_roundtrip_lineage_gate_passed",
-    "scaleup_broker_readiness_roundtrip_matches_current",
-    "scaleup_broker_readiness_lineage_gate_passed",
-    "scaleup_broker_readiness_lineage_dependency_count",
-    "scaleup_broker_readiness_source_manifest_current",
-    "scaleup_broker_readiness_source_manifest_sha256",
-    "scaleup_broker_readiness_source_provenance_gate_passed",
-    "scaleup_broker_readiness_matches_current",
-]
+SCALEUP_PROVENANCE_COLUMNS = list(
+    scaleup_runtime_fields(empty_scaleup_runtime_provenance()).keys()
+)
 
 
 @dataclass(frozen=True)
@@ -686,6 +617,15 @@ def _checks(row: pd.Series) -> pd.DataFrame:
             or _to_bool(
                 row.get("scaleup_broker_readiness_lineage_provided", False)
             )
+            or _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_roundtrip_"
+                        "contract_identity_active"
+                    ),
+                    False,
+                )
+            )
         )
         if broker_readiness_active:
             for name, reason in (
@@ -712,6 +652,84 @@ def _checks(row: pd.Series) -> pd.DataFrame:
             ):
                 passed = _to_bool(row.get(name, False))
                 checks.append(_check(name, passed, "is", True, passed, reason))
+            contract_identity_active = _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_roundtrip_"
+                        "contract_identity_active"
+                    ),
+                    False,
+                )
+            )
+            if contract_identity_active:
+                for suffix, reason in (
+                    BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS
+                ):
+                    name = (
+                        "scaleup_broker_readiness_roundtrip_"
+                        f"contract_identity_{suffix}"
+                    )
+                    passed = _to_bool(row.get(name, False))
+                    checks.append(
+                        _check(name, passed, "is", True, passed, reason)
+                    )
+                identity_sha = str(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_roundtrip_"
+                            "contract_identity_sha256"
+                        ),
+                        "",
+                    )
+                ).strip()
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "scaleup_broker_readiness_roundtrip_"
+                                "contract_identity_sha256_present"
+                            ),
+                            identity_sha,
+                            "present",
+                            True,
+                            bool(identity_sha),
+                            (
+                                "terminal round-trip contract identity "
+                                "digest is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "scaleup_broker_readiness_roundtrip_"
+                                "contract_identity_matches_current"
+                            ),
+                            _to_bool(
+                                row.get(
+                                    (
+                                        "scaleup_broker_readiness_roundtrip_"
+                                        "contract_identity_matches_current"
+                                    ),
+                                    False,
+                                )
+                            ),
+                            "is",
+                            True,
+                            _to_bool(
+                                row.get(
+                                    (
+                                        "scaleup_broker_readiness_roundtrip_"
+                                        "contract_identity_matches_current"
+                                    ),
+                                    False,
+                                )
+                            ),
+                            (
+                                "terminal round-trip contract identity "
+                                "differs from current broker readiness"
+                            ),
+                        ),
+                    ]
+                )
     for column in GUARD_COLUMNS:
         value = row[column]
         present = not pd.isna(value) and (not isinstance(value, str) or bool(value.strip()))

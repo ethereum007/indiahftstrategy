@@ -76,6 +76,48 @@ BROKER_READINESS_CONTRACT_IDENTITY_SUFFIXES = (
     "lineage_verified",
     "lineage_error",
 )
+BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS = (
+    (
+        "required",
+        "terminal round-trip contract identity is not required",
+    ),
+    (
+        "send_gate_passed",
+        "terminal round-trip send identity gate failed",
+    ),
+    (
+        "ack_gate_passed",
+        "terminal round-trip acknowledgement identity gate failed",
+    ),
+    (
+        "request_columns_present",
+        "sent requests are missing contract identity columns",
+    ),
+    (
+        "ack_columns_present",
+        "acknowledgements are missing contract identity columns",
+    ),
+    (
+        "stage_digests_match",
+        "terminal round-trip identity digests disagree across stages",
+    ),
+    (
+        "acknowledgements_match_requests",
+        "acknowledgement identities do not match sent requests",
+    ),
+    (
+        "roundtrip_matches_requests",
+        "terminal round-trip identities do not match sent requests",
+    ),
+    (
+        "gate_passed",
+        "terminal round-trip contract identity gate failed",
+    ),
+    (
+        "lineage_verified",
+        "terminal round-trip contract identity lineage is not current",
+    ),
+)
 BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS = tuple(
     (
         f"roundtrip_contract_identity_{suffix}",
@@ -231,6 +273,9 @@ def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any
             ) in BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
         }
     )
+    evidence["broker_readiness_contract_identity_matches_current"] = (
+        not required
+    )
     return evidence
 
 
@@ -357,6 +402,23 @@ def load_scaleup_runtime_provenance(
         for error in errors
         if error.startswith("scaleup_broker_readiness_")
     ]
+    broker_contract_identity_active = any(
+        _broker_readiness_contract_identity_present(value, report_field)
+        for _config_field, report_field in (
+            BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        )
+        for value in (
+            evidence.get(report_field),
+            current_broker_readiness_fields.get(report_field),
+        )
+    )
+    broker_contract_identity_errors = [
+        error
+        for error in broker_readiness_errors
+        if error.startswith(
+            "scaleup_broker_readiness_roundtrip_contract_identity_"
+        )
+    ]
     evidence.update(
         {
             "broker_readiness_source_manifest_current": _bool(
@@ -385,6 +447,31 @@ def load_scaleup_runtime_provenance(
                     and _bool(
                         current_broker_readiness_fields.get(
                             "broker_readiness_lineage_gate_passed",
+                            False,
+                        )
+                    )
+                )
+            ),
+            "broker_readiness_contract_identity_matches_current": bool(
+                not broker_contract_identity_active
+                or (
+                    broker_readiness_config_path is not None
+                    and not broker_contract_identity_errors
+                    and _bool(
+                        current_broker_readiness_fields.get(
+                            (
+                                "broker_readiness_roundtrip_"
+                                "contract_identity_active"
+                            ),
+                            False,
+                        )
+                    )
+                    and _bool(
+                        current_broker_readiness_fields.get(
+                            (
+                                "broker_readiness_roundtrip_"
+                                "contract_identity_lineage_verified"
+                            ),
                             False,
                         )
                     )
@@ -421,7 +508,7 @@ def scaleup_runtime_manifest_inputs(provenance: Mapping[str, Any]) -> dict[str, 
 
 
 def scaleup_runtime_manifest_extra(provenance: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    fields = {
         "scaleup_manifest_current": _bool(provenance.get("manifest_current", False)),
         "scaleup_manifest_sha256": _text(provenance.get("manifest_sha256", "")),
         "scaleup_contract_consistent": _bool(provenance.get("contract_consistent", False)),
@@ -474,10 +561,30 @@ def scaleup_runtime_manifest_extra(provenance: Mapping[str, Any]) -> dict[str, A
         ),
         "authorizes_submission": False,
     }
+    fields.update(
+        {
+            report_field: _broker_readiness_contract_identity_normalize(
+                provenance.get(report_field),
+                report_field,
+            )
+            for _config_field, report_field in (
+                BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            )
+        }
+    )
+    fields[
+        "broker_readiness_roundtrip_contract_identity_matches_current"
+    ] = _bool(
+        provenance.get(
+            "broker_readiness_contract_identity_matches_current",
+            False,
+        )
+    )
+    return fields
 
 
 def scaleup_runtime_fields(provenance: Mapping[str, Any]) -> dict[str, Any]:
-    return {
+    fields = {
         "scaleup_manifest_required": _bool(provenance.get("manifest_required", False)),
         "scaleup_manifest_provided": _bool(provenance.get("manifest_provided", False)),
         "scaleup_manifest_current": _bool(provenance.get("manifest_current", False)),
@@ -702,6 +809,28 @@ def scaleup_runtime_fields(provenance: Mapping[str, Any]) -> dict[str, Any]:
             provenance.get("broker_readiness_matches_current", False)
         ),
     }
+    fields.update(
+        {
+            f"scaleup_{report_field}": (
+                _broker_readiness_contract_identity_normalize(
+                    provenance.get(report_field),
+                    report_field,
+                )
+            )
+            for _config_field, report_field in (
+                BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            )
+        }
+    )
+    fields[
+        "scaleup_broker_readiness_roundtrip_contract_identity_matches_current"
+    ] = _bool(
+        provenance.get(
+            "broker_readiness_contract_identity_matches_current",
+            False,
+        )
+    )
+    return fields
 
 
 def _scaleup_contract_errors(
@@ -1402,7 +1531,16 @@ def _broker_readiness_contract_identity_value(
     config_field: str,
     report_field: str,
 ) -> Any:
-    value = lineage.get(config_field)
+    return _broker_readiness_contract_identity_normalize(
+        lineage.get(config_field),
+        report_field,
+    )
+
+
+def _broker_readiness_contract_identity_normalize(
+    value: Any,
+    report_field: str,
+) -> Any:
     if report_field.endswith("_orders"):
         return _integer(value)
     if report_field.endswith(("_sha256", "_error")):
@@ -1433,6 +1571,20 @@ def _broker_readiness_active(
         or _bool(broker_readiness.get("provided", False))
         or _bool(lineage.get("lineage_required", False))
         or _bool(lineage.get("lineage_provided", False))
+        or _bool(
+            lineage.get(
+                "roundtrip_contract_identity_active",
+                False,
+            )
+        )
+        or bool(
+            _text(
+                lineage.get(
+                    "roundtrip_contract_identity_sha256",
+                    "",
+                )
+            )
+        )
         or any(
             _manifest_input_is_fingerprint(inputs.get(name))
             for name in (

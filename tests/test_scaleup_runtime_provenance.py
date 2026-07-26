@@ -675,6 +675,9 @@ def test_scaleup_runtime_rejects_remanifested_contract_identity_tamper(
     assert reopened["broker_readiness_source_manifest_current"]
     assert not reopened["broker_readiness_source_provenance_gate_passed"]
     assert not reopened["broker_readiness_matches_current"]
+    assert not reopened[
+        "broker_readiness_contract_identity_matches_current"
+    ]
     assert not reopened["contract_consistent"]
     assert not reopened["provenance_gate_passed"]
     assert (
@@ -687,3 +690,179 @@ def test_scaleup_runtime_rejects_remanifested_contract_identity_tamper(
         "roundtrip_contract_identity_lineage_error_source_mismatch"
         in reopened["contract_error"]
     )
+
+
+def test_runtime_telemetry_and_guard_retain_contract_identity(tmp_path):
+    broker_lineage = _write_broker_readiness_bundle(
+        tmp_path / "broker_readiness",
+        contract_identity=True,
+    )
+    scaleup_dir = _write_scaleup_bundle(
+        tmp_path / "scaleup",
+        broker_lineage,
+    )
+    provenance = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "telemetry",
+        snapshot_ts_ns=1_000,
+    )
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "guard",
+    )
+
+    identity_sha256 = provenance[
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ]
+    telemetry_row = telemetry.summary.iloc[0]
+    guard_row = guard.summary.iloc[0]
+    telemetry_checks = telemetry.checks.set_index("check")
+    guard_checks = guard.checks.set_index("check")
+    telemetry_manifest = json.loads(
+        (telemetry.output_dir / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    guard_manifest = json.loads(
+        (guard.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+
+    assert provenance[
+        "broker_readiness_contract_identity_matches_current"
+    ]
+    assert telemetry.ready
+    assert telemetry_row[
+        "scaleup_broker_readiness_roundtrip_contract_identity_sha256"
+    ] == identity_sha256
+    assert bool(
+        telemetry_row[
+            "scaleup_broker_readiness_roundtrip_"
+            "contract_identity_lineage_verified"
+        ]
+    )
+    assert bool(
+        telemetry_row[
+            "scaleup_broker_readiness_roundtrip_"
+            "contract_identity_matches_current"
+        ]
+    )
+    assert telemetry_checks.loc[
+        telemetry_checks.index.str.startswith(
+            "scaleup_broker_readiness_roundtrip_contract_identity_"
+        ),
+        "passed",
+    ].astype(bool).all()
+    assert telemetry_manifest["extra"][
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ] == identity_sha256
+    assert telemetry_manifest["extra"][
+        "broker_readiness_roundtrip_contract_identity_matches_current"
+    ]
+
+    assert not guard.halted
+    assert guard_row[
+        "scaleup_broker_readiness_roundtrip_contract_identity_sha256"
+    ] == identity_sha256
+    assert guard_row[
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    ] == identity_sha256
+    assert bool(
+        guard_row[
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_lineage_verified"
+        ]
+    )
+    assert bool(
+        guard_row[
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_matches_current"
+        ]
+    )
+    assert bool(
+        guard_checks.loc[
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_matches_current",
+            "passed",
+        ]
+    )
+    assert guard_manifest["extra"][
+        "broker_readiness_roundtrip_contract_identity_sha256"
+    ] == identity_sha256
+    assert guard_manifest["extra"][
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_matches_current"
+    ]
+
+
+def test_runtime_guard_rejects_remanifested_contract_identity_forgery(
+    tmp_path,
+):
+    broker_lineage = _write_broker_readiness_bundle(
+        tmp_path / "broker_readiness",
+        contract_identity=True,
+    )
+    scaleup_dir = _write_scaleup_bundle(
+        tmp_path / "scaleup",
+        broker_lineage,
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "telemetry",
+        snapshot_ts_ns=1_000,
+    )
+    telemetry_path = telemetry.output_dir / "runtime_telemetry.csv"
+    forged_sha256 = "f" * 64
+    telemetry_frame = pd.read_csv(telemetry_path)
+    telemetry_frame.loc[
+        0,
+        "scaleup_broker_readiness_roundtrip_contract_identity_sha256",
+    ] = forged_sha256
+    telemetry_frame.to_csv(telemetry_path, index=False)
+    reseal_experiment_manifest(telemetry.output_dir)
+    assert verify_experiment_manifest(
+        telemetry.output_dir / "manifest.json",
+        expected_run_type="runtime_telemetry_snapshot",
+        require_input_fingerprints=True,
+    ).passed
+
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "guard",
+    )
+
+    summary = guard.summary.iloc[0]
+    failed = set(
+        guard.checks.loc[
+            ~guard.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert guard.halted
+    assert summary[
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_sha256"
+    ] == forged_sha256
+    assert not bool(
+        summary[
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_matches_current"
+        ]
+    )
+    assert not bool(
+        summary["runtime_telemetry_broker_readiness_matches_current"]
+    )
+    assert not bool(summary["runtime_telemetry_lineage_matches_current"])
+    assert {
+        (
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_matches_current"
+        ),
+        "runtime_telemetry_broker_readiness_matches_current",
+        "runtime_telemetry_lineage_matches_current",
+    } <= failed

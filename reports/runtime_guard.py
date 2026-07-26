@@ -16,6 +16,8 @@ from reports.leadlag_lineage import (
 )
 from reports.manifest import write_experiment_manifest
 from reports.scaleup_runtime_provenance import (
+    BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS,
+    BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS,
     empty_scaleup_runtime_provenance,
     load_scaleup_runtime_provenance,
     scaleup_runtime_fields,
@@ -62,6 +64,16 @@ RUNTIME_LINEAGE_COLUMNS = (
     "runtime_telemetry_research_family_matches_current",
     "runtime_telemetry_broker_readiness_manifest_sha256",
     "runtime_telemetry_broker_readiness_lineage_gate_passed",
+    "runtime_telemetry_broker_readiness_roundtrip_contract_identity_active",
+    "runtime_telemetry_broker_readiness_roundtrip_contract_identity_sha256",
+    (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_lineage_verified"
+    ),
+    (
+        "runtime_telemetry_broker_readiness_roundtrip_"
+        "contract_identity_matches_current"
+    ),
     "runtime_telemetry_broker_readiness_matches_current",
     "runtime_telemetry_lineage_matches_current",
 )
@@ -187,6 +199,18 @@ def write_runtime_guard_report(
             **scaleup_runtime_manifest_extra(scaleup_provenance),
             "runtime_telemetry_lineage_matches_current": bool(
                 report.summary.iloc[0]["runtime_telemetry_lineage_matches_current"]
+            ),
+            (
+                "runtime_telemetry_broker_readiness_roundtrip_"
+                "contract_identity_matches_current"
+            ): bool(
+                report.summary.iloc[0].get(
+                    (
+                        "runtime_telemetry_broker_readiness_roundtrip_"
+                        "contract_identity_matches_current"
+                    ),
+                    False,
+                )
             ),
             "strategy_portfolio_leadlag_edge_lineage_matches_scaleup": bool(
                 report.summary.iloc[0].get(
@@ -834,6 +858,24 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
             or _to_bool(
                 row.get("scaleup_broker_readiness_lineage_provided", False)
             )
+            or _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_roundtrip_"
+                        "contract_identity_active"
+                    ),
+                    False,
+                )
+            )
+            or _to_bool(
+                row.get(
+                    (
+                        "runtime_telemetry_broker_readiness_roundtrip_"
+                        "contract_identity_active"
+                    ),
+                    False,
+                )
+            )
         )
         lineage_required = _to_bool(
             row.get("scaleup_strategy_portfolio_required", False)
@@ -909,6 +951,111 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
             ):
                 passed = _to_bool(row.get(name, False))
                 checks.append(_check(name, passed, "is", True, passed, reason))
+            contract_identity_active = bool(
+                _to_bool(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_roundtrip_"
+                            "contract_identity_active"
+                        ),
+                        False,
+                    )
+                )
+                or _to_bool(
+                    row.get(
+                        (
+                            "runtime_telemetry_broker_readiness_roundtrip_"
+                            "contract_identity_active"
+                        ),
+                        False,
+                    )
+                )
+            )
+            if contract_identity_active:
+                for suffix, reason in (
+                    BROKER_READINESS_CONTRACT_IDENTITY_GATE_CHECKS
+                ):
+                    name = (
+                        "scaleup_broker_readiness_roundtrip_"
+                        f"contract_identity_{suffix}"
+                    )
+                    passed = _to_bool(row.get(name, False))
+                    checks.append(
+                        _check(name, passed, "is", True, passed, reason)
+                    )
+                identity_sha = _clean(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_roundtrip_"
+                            "contract_identity_sha256"
+                        ),
+                        "",
+                    )
+                )
+                scaleup_identity_matches = _to_bool(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_roundtrip_"
+                            "contract_identity_matches_current"
+                        ),
+                        False,
+                    )
+                )
+                telemetry_identity_matches = _to_bool(
+                    row.get(
+                        (
+                            "runtime_telemetry_broker_readiness_roundtrip_"
+                            "contract_identity_matches_current"
+                        ),
+                        False,
+                    )
+                )
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "scaleup_broker_readiness_roundtrip_"
+                                "contract_identity_sha256_present"
+                            ),
+                            identity_sha,
+                            "present",
+                            True,
+                            bool(identity_sha),
+                            (
+                                "terminal round-trip contract identity "
+                                "digest is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "scaleup_broker_readiness_roundtrip_"
+                                "contract_identity_matches_current"
+                            ),
+                            scaleup_identity_matches,
+                            "is",
+                            True,
+                            scaleup_identity_matches,
+                            (
+                                "scale-up contract identity differs from "
+                                "current broker readiness"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "runtime_telemetry_broker_readiness_roundtrip_"
+                                "contract_identity_matches_current"
+                            ),
+                            telemetry_identity_matches,
+                            "is",
+                            True,
+                            telemetry_identity_matches,
+                            (
+                                "runtime telemetry contract identity differs "
+                                "from current scale-up"
+                            ),
+                        ),
+                    ]
+                )
     scaleup_portfolio_active = bool(row["scaleup_strategy_portfolio_required"]) or bool(
         row["scaleup_strategy_portfolio_provided"]
     )
@@ -2230,6 +2377,100 @@ def _runtime_lineage_fields(
         "scaleup_broker_readiness_matches_current",
         fallback=False,
     )
+    current_contract_identity_active = _to_bool(
+        provenance.get(
+            "broker_readiness_roundtrip_contract_identity_active",
+            False,
+        )
+    )
+    telemetry_contract_identity_active = _bool_value(
+        latest,
+        (
+            "scaleup_broker_readiness_roundtrip_"
+            "contract_identity_active"
+        ),
+        fallback=False,
+    )
+    broker_readiness_active = bool(
+        broker_readiness_active or telemetry_contract_identity_active
+    )
+    current_contract_identity_sha = _clean(
+        provenance.get(
+            "broker_readiness_roundtrip_contract_identity_sha256",
+            "",
+        )
+    )
+    telemetry_contract_identity_sha = _clean(
+        _value(
+            latest,
+            (
+                "scaleup_broker_readiness_roundtrip_"
+                "contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    current_contract_identity_verified = _to_bool(
+        provenance.get(
+            (
+                "broker_readiness_roundtrip_"
+                "contract_identity_lineage_verified"
+            ),
+            False,
+        )
+    )
+    telemetry_contract_identity_verified = _bool_value(
+        latest,
+        (
+            "scaleup_broker_readiness_roundtrip_"
+            "contract_identity_lineage_verified"
+        ),
+        fallback=False,
+    )
+    current_contract_identity_source_match = _to_bool(
+        provenance.get(
+            "broker_readiness_contract_identity_matches_current",
+            False,
+        )
+    )
+    telemetry_contract_identity_source_match = _bool_value(
+        latest,
+        (
+            "scaleup_broker_readiness_roundtrip_"
+            "contract_identity_matches_current"
+        ),
+        fallback=False,
+    )
+    contract_identity_fields_match = all(
+        _broker_contract_identity_value_matches(
+            _value(latest, f"scaleup_{report_field}", None),
+            provenance.get(report_field),
+            report_field,
+        )
+        for _config_field, report_field in (
+            BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        )
+    )
+    contract_identity_matches = bool(
+        contract_identity_fields_match
+        and (
+            (
+                not current_contract_identity_active
+                and not telemetry_contract_identity_active
+            )
+            or (
+                current_contract_identity_active
+                and telemetry_contract_identity_active
+                and current_contract_identity_sha
+                and telemetry_contract_identity_sha
+                == current_contract_identity_sha
+                and current_contract_identity_verified
+                and telemetry_contract_identity_verified
+                and current_contract_identity_source_match
+                and telemetry_contract_identity_source_match
+            )
+        )
+    )
     broker_readiness_matches = bool(
         not broker_readiness_active
         or (
@@ -2238,6 +2479,7 @@ def _runtime_lineage_fields(
             == current_broker_readiness_sha
             and telemetry_broker_readiness_gate
             and telemetry_broker_readiness_source_match
+            and contract_identity_matches
         )
     )
     telemetry_gate = _bool_value(
@@ -2251,6 +2493,7 @@ def _runtime_lineage_fields(
         and portfolio_matches
         and scorecard_matches
         and family_matches
+        and contract_identity_matches
         and broker_readiness_matches
     )
     return {
@@ -2283,6 +2526,22 @@ def _runtime_lineage_fields(
         "runtime_telemetry_broker_readiness_lineage_gate_passed": (
             telemetry_broker_readiness_gate
         ),
+        (
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_active"
+        ): telemetry_contract_identity_active,
+        (
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_sha256"
+        ): telemetry_contract_identity_sha,
+        (
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_lineage_verified"
+        ): telemetry_contract_identity_verified,
+        (
+            "runtime_telemetry_broker_readiness_roundtrip_"
+            "contract_identity_matches_current"
+        ): contract_identity_matches,
         "runtime_telemetry_broker_readiness_matches_current": (
             broker_readiness_matches
         ),
@@ -2474,6 +2733,18 @@ def _clean(value: object) -> str:
     except (TypeError, ValueError):
         pass
     return str(value).strip()
+
+
+def _broker_contract_identity_value_matches(
+    left: object,
+    right: object,
+    report_field: str,
+) -> bool:
+    if report_field.endswith("_orders"):
+        return _int_value(left) == _int_value(right)
+    if report_field.endswith(("_sha256", "_error")):
+        return _clean(left) == _clean(right)
+    return _to_bool(left) == _to_bool(right)
 
 
 def _check(

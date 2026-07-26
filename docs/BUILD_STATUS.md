@@ -116,6 +116,15 @@
   re-sealing every affected manifest after a terminal token mutation still
   blocks the scale-up proof while legacy identity-inactive bundles continue
   through the existing lineage path.
+- Runtime telemetry and the runtime guard now retain and independently compare
+  that full scale-up contract-identity proof. Telemetry carries all typed
+  identity fields plus an explicit current-source verdict into its rows,
+  summary, checks, and manifest. The guard reopens scale-up provenance,
+  normalizes and compares every count, boolean, digest, and error field, and
+  emits a dedicated telemetry-to-scale-up identity verdict into downstream
+  runtime lineage. Changing the telemetry-carried digest and re-sealing its
+  manifest therefore still halts the guard with an identity-specific failure;
+  identity-inactive legacy evidence remains accepted through default values.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
