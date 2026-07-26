@@ -19,6 +19,7 @@ from reports.manifest import (
     write_experiment_manifest,
 )
 from reports.operational_lineage import (
+    BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS,
     BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     broker_dispatch_roundtrip_lineage_fields,
     broker_dispatch_roundtrip_lineage_manifest_inputs,
@@ -61,6 +62,7 @@ BROKER_DISPATCH_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
 )
 BROKER_DISPATCH_ROUNDTRIP_LINEAGE_RETAINED_FIELDS = (
     *BROKER_DISPATCH_ROUNDTRIP_LINEAGE_BASE_FIELDS,
+    *BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS,
     *(
         f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
         for field in (
@@ -3968,7 +3970,7 @@ def _broker_dispatch_roundtrip_lineage_checks(row: Any) -> list[dict[str, Any]]:
             "terminal broker dispatch round-trip recursive lineage gate failed",
         ),
     )
-    return [
+    checks = [
         _check(
             f"dispatch_roundtrip_lineage_{name}",
             value,
@@ -3979,6 +3981,78 @@ def _broker_dispatch_roundtrip_lineage_checks(row: Any) -> list[dict[str, Any]]:
         )
         for name, value, reason in specs
     ]
+    if bool(
+        getattr(
+            row,
+            "broker_dispatch_roundtrip_contract_identity_active",
+            False,
+        )
+    ):
+        identity_specs = (
+            (
+                "send_gate_passed",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_send_gate_passed
+                ),
+                "terminal broker dispatch round-trip send packet did not retain verified contract identity",
+            ),
+            (
+                "ack_gate_passed",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_ack_gate_passed
+                ),
+                "terminal broker acknowledgement did not retain verified contract identity",
+            ),
+            (
+                "stage_digests_match",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_stage_digests_match
+                ),
+                "terminal broker contract identity digests differ across send, acknowledgement, and round-trip stages",
+            ),
+            (
+                "acknowledgements_match_requests",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_acknowledgements_match_requests
+                ),
+                "terminal broker acknowledgements do not match requested contract identities",
+            ),
+            (
+                "roundtrip_matches_requests",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_roundtrip_matches_requests
+                ),
+                "terminal broker round-trip output does not match requested contract identities",
+            ),
+            (
+                "gate_passed",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_gate_passed
+                ),
+                "terminal broker dispatch round-trip contract identity gate failed",
+            ),
+            (
+                "lineage_verified",
+                bool(
+                    row.broker_dispatch_roundtrip_contract_identity_lineage_verified
+                ),
+                "broker-readiness could not independently verify terminal broker contract identity artifacts",
+            ),
+        )
+        checks.extend(
+            [
+                _check(
+                    f"dispatch_roundtrip_contract_identity_{name}",
+                    value,
+                    "is",
+                    True,
+                    value,
+                    reason,
+                )
+                for name, value, reason in identity_specs
+            ]
+        )
+    return checks
 
 
 def _resume_broker_route_readiness_active(row: Any) -> bool:
@@ -8266,6 +8340,10 @@ def _runbook_markdown(summary: pd.DataFrame, items: pd.DataFrame, action_queue: 
         f"- Terminal round-trip manifest current: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_manifest_current'))}",
         f"- Terminal round-trip contract consistent: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_lineage_contract_consistent'))}",
         f"- Terminal round-trip source binding passed: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_lineage_gate_passed'))}",
+        f"- Terminal round-trip contract identity active: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_contract_identity_active'))}",
+        f"- Terminal round-trip contract identity independently verified: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_contract_identity_lineage_verified'))}",
+        f"- Terminal round-trip contract identity digest: `{_item_text(row, 'broker_dispatch_roundtrip_contract_identity_sha256')}`",
+        f"- Terminal round-trip contract identity verification error: {_item_text(row, 'broker_dispatch_roundtrip_contract_identity_lineage_error')}",
         f"- Terminal round-trip manifest error: {_item_text(row, 'broker_dispatch_roundtrip_manifest_error')}",
         f"- Terminal round-trip contract error: {_item_text(row, 'broker_dispatch_roundtrip_lineage_contract_error')}",
         "",

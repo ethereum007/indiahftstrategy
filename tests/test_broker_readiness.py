@@ -29,6 +29,7 @@ from tests.broker_vendor_data_helpers import write_broker_vendor_data_proof
 from tests.test_broker_dispatch_send import (
     _refresh_manifest as refresh_dispatch_manifest,
     _write_verified_ack_chain,
+    _write_verified_contract_identity_ack_chain,
 )
 
 
@@ -1517,6 +1518,7 @@ def write_broker_readiness_input_dirs(
     *,
     verified_roundtrip=False,
     canonical_leadlag=False,
+    contract_identity=False,
 ):
     schema_dir = root / "schema"
     export_dir = root / "export"
@@ -1528,11 +1530,21 @@ def write_broker_readiness_input_dirs(
     order_export_summary(adapter, True).to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary(adapter, True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
     if verified_roundtrip:
-        dispatch, send, ack = _write_verified_ack_chain(
-            root,
-            adapter=adapter,
-            canonical_leadlag=canonical_leadlag,
-        )
+        if contract_identity:
+            if adapter != "arrow_money":
+                raise ValueError(
+                    "contract identity readiness fixture requires arrow_money"
+                )
+            dispatch, send, ack, ack_report = (
+                _write_verified_contract_identity_ack_chain(root)
+            )
+            assert ack_report.passed
+        else:
+            dispatch, send, ack = _write_verified_ack_chain(
+                root,
+                adapter=adapter,
+                canonical_leadlag=canonical_leadlag,
+            )
         roundtrip_report = write_broker_dispatch_roundtrip(
             dispatch_dir=dispatch,
             send_dir=send,
@@ -6108,6 +6120,277 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert lineage["roundtrip_lineage_gate_passed"]
     assert lineage["roundtrip_matches_current"]
     assert lineage["gate_passed"]
+
+
+def test_broker_readiness_carries_verified_roundtrip_contract_identity(
+    tmp_path,
+):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = (
+        write_broker_readiness_input_dirs(
+            tmp_path,
+            "arrow_money",
+            verified_roundtrip=True,
+            contract_identity=True,
+        )
+    )
+    roundtrip_summary = pd.read_csv(
+        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv"
+    ).iloc[0]
+    out_dir = tmp_path / "readiness"
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    identity_sha256 = roundtrip_summary[
+        "roundtrip_contract_identity_sha256"
+    ]
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_active"
+        ]
+    )
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_required"
+        ]
+    )
+    assert int(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_request_orders"
+        ]
+    ) == 2
+    assert int(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_ack_orders"
+        ]
+    ) == 2
+    assert int(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_roundtrip_orders"
+        ]
+    ) == 2
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_stage_digests_match"
+        ]
+    )
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_acknowledgements_match_requests"
+        ]
+    )
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_roundtrip_matches_requests"
+        ]
+    )
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_gate_passed"
+        ]
+    )
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_lineage_verified"
+        ]
+    )
+    assert (
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_sha256"
+        ]
+        == identity_sha256
+    )
+    assert (
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_lineage_error"
+        ]
+        == ""
+    )
+    identity_checks = report.checks.set_index("check")
+    assert bool(
+        identity_checks.loc[
+            "dispatch_roundtrip_contract_identity_lineage_verified",
+            "passed",
+        ]
+    )
+    dispatch_item = report.items.set_index("component").loc[
+        "dispatch_roundtrip"
+    ]
+    assert (
+        dispatch_item[
+            "broker_dispatch_roundtrip_contract_identity_sha256"
+        ]
+        == identity_sha256
+    )
+    lineage_config = report.config["dispatch_roundtrip"]["lineage"]
+    assert lineage_config["contract_identity_lineage_verified"]
+    assert (
+        lineage_config["contract_identity_sha256"]
+        == identity_sha256
+    )
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][
+        "broker_dispatch_roundtrip_contract_identity_lineage_verified"
+    ]
+    assert (
+        manifest["extra"][
+            "broker_dispatch_roundtrip_contract_identity_sha256"
+        ]
+        == identity_sha256
+    )
+    runbook = (
+        out_dir / "broker_readiness_runbook.md"
+    ).read_text(encoding="utf-8")
+    assert (
+        "- Terminal round-trip contract identity independently verified: yes"
+        in runbook
+    )
+    assert identity_sha256 in runbook
+    lineage = load_broker_readiness_lineage(
+        out_dir / "broker_readiness_config.json"
+    )
+    assert lineage["contract_consistent"], lineage["contract_error"]
+    assert lineage["roundtrip_matches_current"]
+    assert lineage["gate_passed"]
+
+    orders_path = (
+        roundtrip_dir / "broker_dispatch_roundtrip_orders.csv"
+    )
+    orders = pd.read_csv(
+        orders_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    orders.loc[0, "broker_instrument_token"] = "LATE-FORGERY"
+    orders.to_csv(orders_path, index=False)
+    refresh_dispatch_manifest(roundtrip_dir / "manifest.json")
+    refresh_dispatch_manifest(out_dir / "manifest.json")
+
+    reopened = load_broker_readiness_lineage(
+        out_dir / "broker_readiness_config.json"
+    )
+    assert reopened["manifest_current"]
+    assert not reopened["contract_consistent"]
+    assert not reopened["roundtrip_lineage_gate_passed"]
+    assert not reopened["roundtrip_matches_current"]
+    assert not reopened["gate_passed"]
+    assert (
+        "contract_identity_lineage_verified_mismatch"
+        in reopened["contract_error"]
+    )
+
+
+def test_broker_readiness_blocks_remanifested_contract_identity_tamper(
+    tmp_path,
+):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = (
+        write_broker_readiness_input_dirs(
+            tmp_path,
+            "arrow_money",
+            verified_roundtrip=True,
+            contract_identity=True,
+        )
+    )
+    orders_path = (
+        roundtrip_dir / "broker_dispatch_roundtrip_orders.csv"
+    )
+    orders = pd.read_csv(
+        orders_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    orders.loc[0, "broker_instrument_token"] = "FORGED-TOKEN"
+    orders.to_csv(orders_path, index=False)
+    refresh_dispatch_manifest(roundtrip_dir / "manifest.json")
+    out_dir = tmp_path / "readiness"
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    summary = report.summary.iloc[0]
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_active"
+        ]
+    )
+    assert bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_gate_passed"
+        ]
+    )
+    assert not bool(
+        summary[
+            "broker_dispatch_roundtrip_contract_identity_lineage_verified"
+        ]
+    )
+    identity_error = summary[
+        "broker_dispatch_roundtrip_contract_identity_lineage_error"
+    ]
+    assert (
+        "broker_dispatch_roundtrip_contract_identity_digest_mismatch"
+        in identity_error
+    )
+    assert (
+        "broker_dispatch_roundtrip_contract_identity_source_mismatch"
+        in identity_error
+    )
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert {
+        "dispatch_roundtrip_lineage_contract_consistent",
+        "dispatch_roundtrip_lineage_gate_passed",
+        "dispatch_roundtrip_contract_identity_lineage_verified",
+    } <= failed
+    action = report.action_queue.loc[
+        report.action_queue["check"].eq(
+            "dispatch_roundtrip_contract_identity_lineage_verified"
+        )
+    ].iloc[0]
+    assert action["component"] == "dispatch_roundtrip"
+    assert action["next_gate"] == (
+        "review-broker-dispatch-roundtrip"
+    )
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert not manifest["extra"][
+        "broker_dispatch_roundtrip_contract_identity_lineage_verified"
+    ]
+    assert (
+        manifest["extra"][
+            "broker_dispatch_roundtrip_contract_identity_lineage_error"
+        ]
+        == identity_error
+    )
 
 
 def test_broker_readiness_blocks_remanifested_terminal_roundtrip_tamper(

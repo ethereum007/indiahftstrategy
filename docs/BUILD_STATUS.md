@@ -100,6 +100,13 @@
   separate. Final round-trip evidence carries the same canonical identity
   digest, and both acknowledgement and round-trip lineage loaders independently
   reopen their source CSVs to reject re-manifested identity drift.
+- Broker readiness now retains that terminal contract-identity proof instead
+  of collapsing it into a generic round-trip result. Readiness artifacts,
+  manifest metadata, config, checks, and runbook carry the canonical SHA-256,
+  per-stage order counts and comparisons, source gate results, and a separate
+  recursively verified lineage verdict. A re-manifested terminal identity
+  mutation therefore remains blocked at readiness with a targeted repair
+  action, while inactive legacy round-trips remain compatible.
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,

@@ -159,6 +159,69 @@ BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS = (
     *BROKER_DISPATCH_ACK_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     "leadlag_ack_contract_consistent",
 )
+BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_SOURCE_FIELDS = (
+    ("contract_identity_active", "roundtrip_contract_identity_active"),
+    ("contract_identity_required", "roundtrip_contract_identity_required"),
+    (
+        "contract_identity_send_gate_passed",
+        "roundtrip_contract_identity_send_gate_passed",
+    ),
+    (
+        "contract_identity_ack_gate_passed",
+        "roundtrip_contract_identity_ack_gate_passed",
+    ),
+    (
+        "contract_identity_request_columns_present",
+        "roundtrip_contract_identity_request_columns_present",
+    ),
+    (
+        "contract_identity_ack_columns_present",
+        "roundtrip_contract_identity_ack_columns_present",
+    ),
+    (
+        "contract_identity_request_orders",
+        "roundtrip_contract_identity_request_orders",
+    ),
+    (
+        "contract_identity_ack_orders",
+        "roundtrip_contract_identity_ack_orders",
+    ),
+    (
+        "contract_identity_roundtrip_orders",
+        "roundtrip_contract_identity_roundtrip_orders",
+    ),
+    (
+        "contract_identity_stage_digests_match",
+        "roundtrip_contract_identity_stage_digests_match",
+    ),
+    (
+        "contract_identity_acknowledgements_match_requests",
+        "roundtrip_contract_identity_acknowledgements_match_requests",
+    ),
+    (
+        "contract_identity_roundtrip_matches_requests",
+        "roundtrip_contract_identity_roundtrip_matches_requests",
+    ),
+    ("contract_identity_sha256", "roundtrip_contract_identity_sha256"),
+    (
+        "contract_identity_consistency_error",
+        "roundtrip_contract_identity_consistency_error",
+    ),
+    (
+        "contract_identity_gate_passed",
+        "roundtrip_contract_identity_gate_passed",
+    ),
+)
+BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS = (
+    *(
+        f"broker_dispatch_roundtrip_{field}"
+        for field, _source_field in (
+            BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_SOURCE_FIELDS
+        )
+    ),
+    "broker_dispatch_roundtrip_contract_identity_lineage_verified",
+    "broker_dispatch_roundtrip_contract_identity_lineage_error",
+)
 BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
     "broker_dispatch_roundtrip_lineage_required",
     "broker_dispatch_roundtrip_lineage_provided",
@@ -178,6 +241,7 @@ BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
 )
 BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS = (
     *BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS,
+    *BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS,
     *(
         f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
         for field in BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
@@ -1891,6 +1955,18 @@ def empty_broker_dispatch_roundtrip_lineage(
             )
         }
     )
+    state.update(
+        {
+            field: _field_default(
+                f"broker_dispatch_roundtrip_{field}"
+            )
+            for field, _source_field in (
+                BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_SOURCE_FIELDS
+            )
+        }
+    )
+    state["contract_identity_lineage_verified"] = False
+    state["contract_identity_lineage_error"] = ""
     return state
 
 
@@ -1935,6 +2011,17 @@ def load_broker_dispatch_roundtrip_lineage(
         }
     )
     state.update(_broker_dispatch_roundtrip_strategy_portfolio_state(row))
+    state.update(
+        {
+            field: _normalize(
+                row.get(source_field),
+                f"broker_dispatch_roundtrip_{field}",
+            )
+            for field, source_field in (
+                BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_SOURCE_FIELDS
+            )
+        }
+    )
 
     if manifest_path.is_file():
         integrity = verify_experiment_manifest(
@@ -1992,6 +2079,17 @@ def load_broker_dispatch_roundtrip_lineage(
             expected_broker_dispatch_ack_config_path
         ),
     )
+    extra = _mapping(manifest.get("extra"))
+    contract_identity_errors = (
+        _broker_dispatch_roundtrip_contract_identity_errors(
+            row=row,
+            orders=orders,
+            config=config,
+            extra=extra,
+            manifest=manifest,
+            manifest_path=manifest_path,
+        )
+    )
     errors = _broker_dispatch_roundtrip_contract_errors(
         summary=summary,
         orders=orders,
@@ -2003,8 +2101,30 @@ def load_broker_dispatch_roundtrip_lineage(
         ack_fields=tuple(ack_fields),
         current_ack=current_ack,
         leadlag_active=leadlag_active,
+        contract_identity_errors=contract_identity_errors,
     )
-    extra = _mapping(manifest.get("extra"))
+    contract_identity_active = bool(
+        state["contract_identity_active"]
+        or _bool(
+            _mapping(config.get("contract_identity")).get("active")
+        )
+        or _bool(extra.get("roundtrip_contract_identity_active"))
+        or all(
+            column in orders.columns
+            for column in BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_COLUMNS
+        )
+    )
+    state["contract_identity_active"] = contract_identity_active
+    state["contract_identity_lineage_verified"] = bool(
+        contract_identity_active
+        and (
+            not contract_identity_errors
+            and state["contract_identity_gate_passed"]
+        )
+    )
+    state["contract_identity_lineage_error"] = ";".join(
+        sorted(set(contract_identity_errors))
+    )
     orders_non_authorizing = bool(
         not orders.empty
         and "authorizes_submission" in orders.columns
@@ -2112,6 +2232,37 @@ def broker_dispatch_roundtrip_lineage_fields(
             for field in (
                 BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
             )
+        }
+    )
+    fields.update(
+        {
+            f"broker_dispatch_roundtrip_{field}": _normalize(
+                lineage.get(field),
+                f"broker_dispatch_roundtrip_{field}",
+            )
+            for field, _source_field in (
+                BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_SOURCE_FIELDS
+            )
+        }
+    )
+    fields.update(
+        {
+            "broker_dispatch_roundtrip_contract_identity_lineage_verified": (
+                _bool(
+                    lineage.get(
+                        "contract_identity_lineage_verified",
+                        False,
+                    )
+                )
+            ),
+            "broker_dispatch_roundtrip_contract_identity_lineage_error": (
+                _text(
+                    lineage.get(
+                        "contract_identity_lineage_error",
+                        "",
+                    )
+                )
+            ),
         }
     )
     return fields
@@ -2444,7 +2595,31 @@ def _broker_readiness_contract_errors(
     config_lineage = _mapping(
         _mapping(config.get("dispatch_roundtrip")).get("lineage")
     )
+    contract_identity_active = any(
+        _bool(value)
+        for value in (
+            current_roundtrip_fields.get(
+                "broker_dispatch_roundtrip_contract_identity_active"
+            ),
+            row.get(
+                "broker_dispatch_roundtrip_contract_identity_active"
+            ),
+            dispatch_item.get(
+                "broker_dispatch_roundtrip_contract_identity_active"
+            ),
+            config_lineage.get("contract_identity_active"),
+            extra.get(
+                "broker_dispatch_roundtrip_contract_identity_active"
+            ),
+        )
+    )
     for field in BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS:
+        if (
+            field
+            in BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS
+            and not contract_identity_active
+        ):
+            continue
         config_field = field.removeprefix("broker_dispatch_roundtrip_")
         sources = {
             "summary": (field in row.index, row.get(field)),
@@ -2515,6 +2690,7 @@ def _broker_dispatch_roundtrip_contract_errors(
     ack_fields: tuple[str, ...],
     current_ack: Mapping[str, Any],
     leadlag_active: bool,
+    contract_identity_errors: list[str] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if summary.empty:
@@ -2574,7 +2750,9 @@ def _broker_dispatch_roundtrip_contract_errors(
         )
     )
     errors.extend(
-        _broker_dispatch_roundtrip_contract_identity_errors(
+        contract_identity_errors
+        if contract_identity_errors is not None
+        else _broker_dispatch_roundtrip_contract_identity_errors(
             row=row,
             orders=orders,
             config=config,
