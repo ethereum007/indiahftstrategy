@@ -7588,6 +7588,31 @@ internally consistent and re-manifested. Remediation routes to
 `review-broker-readiness`, final artifacts remain non-authorizing, and the
 separate terminal route contract identity stays inactive.
 
+For an active broker-readiness route-enable route contract identity, final
+round-trip review now reopens the ack-manifest-bound send source and
+independently recovers the current dedicated digest through dispatch,
+route-enable, cutover, runtime-session, scale-up, and recursive
+broker-readiness lineage. The acknowledgement-carried digest, independently
+recovered current digest, and verdict surface as
+`broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256`,
+`broker_dispatch_ack_current_send_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_ack_send_route_enable_route_enable_route_contract_identity_matches_current`
+in every final order plus summary, config, manifest, and runbook. Dedicated
+round-trip checks require the carried digest to be present, equal the current
+digest, and retain a passing current-source verdict. Reloadable round-trip
+lineage preserves the proof separately as
+`broker_dispatch_roundtrip_ack_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_roundtrip_current_ack_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_roundtrip_ack_route_enable_route_enable_route_contract_identity_matches_current`.
+An acknowledgement bundle with every copied dedicated digest forged remains
+manifest-valid and internally contract-consistent after its rows, summary,
+config, and manifest are resealed, but final review stays blocked against the
+unchanged send source. Remediation routes to `review-broker-readiness`, final
+artifacts remain non-authorizing, and identity-inactive legacy bundles retain
+neutral defaults.
+
 When broker readiness consumes that terminal round-trip bundle, it independently
 reopens the manifest-bound current acknowledgement source before accepting the
 dedicated broker-readiness route identity. The carried digest, current

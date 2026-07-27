@@ -546,6 +546,32 @@ BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
         "route_contract_identity_matches_current"
     ),
 )
+BROKER_DISPATCH_ACK_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD = (
+    "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_"
+    "cutover_runtime_telemetry_broker_readiness_route_enable_"
+    "route_contract_identity_sha256"
+)
+BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD = (
+    "broker_dispatch_roundtrip_"
+    f"{BROKER_DISPATCH_ACK_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD}"
+)
+BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
+    (
+        "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+        "route_contract_identity_active"
+    ),
+    (
+        BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ),
+    (
+        "broker_dispatch_roundtrip_current_ack_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    ),
+    (
+        "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+        "route_contract_identity_matches_current"
+    ),
+)
 BROKER_READINESS_ROUNDTRIP_CONTRACT_IDENTITY_FIELD_MAP = tuple(
     (
         field.replace(
@@ -3772,6 +3798,18 @@ def empty_broker_dispatch_roundtrip_lineage(
         "ack_route_enable_route_contract_identity_matches_current": (
             not required
         ),
+        (
+            "ack_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): False,
+        (
+            "current_ack_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): "",
+        (
+            "ack_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -4001,6 +4039,12 @@ def load_broker_dispatch_roundtrip_lineage(
         and state[
             "ack_route_enable_route_contract_identity_matches_current"
         ]
+        and state[
+            (
+                "ack_route_enable_route_enable_"
+                "route_contract_identity_matches_current"
+            )
+        ]
     )
     return state
 
@@ -4091,6 +4135,42 @@ def broker_dispatch_roundtrip_lineage_fields(
         ): _bool(
             lineage.get(
                 "ack_route_enable_route_contract_identity_matches_current",
+                False,
+            )
+        ),
+        (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): _bool(
+            lineage.get(
+                (
+                    "ack_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        ),
+        (
+            "broker_dispatch_roundtrip_current_ack_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            lineage.get(
+                (
+                    "current_ack_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): _bool(
+            lineage.get(
+                (
+                    "ack_route_enable_route_enable_"
+                    "route_contract_identity_matches_current"
+                ),
                 False,
             )
         ),
@@ -6702,6 +6782,13 @@ def _roundtrip_current_broker_dispatch_ack_lineage_state(
         for column in BROKER_DISPATCH_ACK_ROUTE_CONTRACT_IDENTITY_FIELDS
         if column in ack_fields
     )
+    route_enable_route_identity_fields = tuple(
+        column
+        for column in (
+            BROKER_DISPATCH_ACK_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+        )
+        if column in ack_fields
+    )
     carried_identity_active = bool(
         any(
             _bool(lineage.get(column, False))
@@ -6852,6 +6939,91 @@ def _roundtrip_current_broker_dispatch_ack_lineage_state(
             )
         )
     )
+    carried_route_enable_route_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "broker_dispatch_ack_send_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or any(
+            _bool(lineage.get(column, False))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(lineage.get(column, ""))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    current_route_enable_route_identity_active = bool(
+        _bool(
+            current_ack_fields.get(
+                (
+                    "broker_dispatch_ack_send_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or any(
+            _bool(current_ack_fields.get(column, False))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(current_ack_fields.get(column, ""))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    ack_route_enable_route_enable_route_contract_identity_active = bool(
+        carried_route_enable_route_identity_active
+        or current_route_enable_route_identity_active
+    )
+    current_ack_route_enable_route_enable_identity_sha256 = _text(
+        current_ack_fields.get(
+            (
+                "broker_dispatch_ack_current_send_route_enable_"
+                "route_enable_route_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    carried_ack_route_enable_route_enable_identity_sha256 = _text(
+        lineage.get(
+            (
+                BROKER_DISPATCH_ACK_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+            ),
+            "",
+        )
+    )
+    ack_route_enable_route_enable_identity_matches_current = bool(
+        not ack_route_enable_route_enable_route_contract_identity_active
+        or (
+            source_bound
+            and current_ack.get("gate_passed", False)
+            and current_route_enable_route_identity_active
+            and carried_ack_route_enable_route_enable_identity_sha256
+            and current_ack_route_enable_route_enable_identity_sha256
+            and (
+                carried_ack_route_enable_route_enable_identity_sha256
+                == current_ack_route_enable_route_enable_identity_sha256
+            )
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_ack_fields.get(column),
+                    column,
+                )
+                for column in route_enable_route_identity_fields
+            )
+        )
+    )
     ack_matches_current = bool(
         source_bound
         and current_ack.get("gate_passed", False)
@@ -6882,6 +7054,18 @@ def _roundtrip_current_broker_dispatch_ack_lineage_state(
         "ack_route_enable_route_contract_identity_matches_current": (
             ack_route_enable_route_contract_identity_matches_current
         ),
+        (
+            "ack_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): ack_route_enable_route_enable_route_contract_identity_active,
+        (
+            "current_ack_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): current_ack_route_enable_route_enable_identity_sha256,
+        (
+            "ack_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): ack_route_enable_route_enable_identity_matches_current,
     }
 
 

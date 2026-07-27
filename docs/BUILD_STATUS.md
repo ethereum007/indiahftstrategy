@@ -8291,12 +8291,37 @@ succeeds. Repository collection is healthy at `2836 tests` across `169` files.
 The full suite was not rerun because recent complete runs exceed 40 minutes and
 the dedicated real-chain pair alone takes about 22 minutes.
 
+Latest broker-ack-to-final-round-trip dedicated route-enable route
+contract-identity proof: final review now reopens the manifest-bound
+acknowledgement bundle and independently recovers the current dedicated digest
+through its send, dispatch, route-enable, cutover, runtime-session, scale-up,
+and recursive broker-readiness sources. Dedicated checks require the
+acknowledgement-carried digest to be present, equal the recovered digest, and
+retain a passing current-source verdict before final review can pass. Every
+final order plus the summary, nested acknowledgement lineage, manifest
+metadata, and runbook retains the active flag, carried digest, current digest,
+and verdict. Reloadable broker round-trip lineage publishes a separate active
+flag, current acknowledgement digest, and source-match verdict and includes
+that verdict in its gate. An acknowledgement bundle with every visible
+dedicated digest forged remains manifest-valid and internally
+contract-consistent after its rows, summary, config, and manifest are resealed,
+but final review remains blocked against the unchanged send source and
+remediation returns to broker-readiness review. Final artifacts remain
+non-authorizing, and inactive dedicated fields retain neutral compatibility
+behavior. The two new clean/forged end-to-end tests pass in `1444.14s`; the
+established two-test broker route-identity final-review pair passes in
+`510.29s`, and `11` lightweight broker round-trip baseline scenarios pass.
+Source compilation succeeds. Repository collection is healthy at `2838 tests`
+across `169` files. The full suite was not rerun because recent complete runs
+exceed 40 minutes and the dedicated real-chain pair alone takes about 24
+minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated broker-ack send route-enable route-enable
-   route-contract digest and current-source verdict through final broker
-   round-trip lineage, and block a re-manifested acknowledgement packet before
-   final round-trip review can pass.
+1. Carry the dedicated final broker round-trip route-enable route-enable
+   route-contract digest and current-source verdict into broker-readiness
+   next-cycle lineage, and block a re-manifested round-trip bundle before
+   readiness can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
