@@ -36,6 +36,7 @@ from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
     broker_dispatch_roundtrip_lineage_fields,
     broker_dispatch_roundtrip_lineage_manifest_inputs,
+    broker_dispatch_send_lineage_fields,
     cutover_lineage_fields,
     empty_broker_dispatch_lineage,
     empty_runtime_session_lineage,
@@ -49,6 +50,7 @@ from reports.operational_lineage import (
 )
 from reports.scaleup_runtime_provenance import (
     BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     scaleup_runtime_fields,
     scaleup_runtime_manifest_inputs,
 )
@@ -1858,6 +1860,7 @@ def write_route_identity_dispatch(
     *,
     contract_identity=True,
     route_contract_identity=False,
+    route_enable_route_contract_identity=False,
 ):
     from reports.broker_dispatch import write_broker_dispatch_plan
     from tests.test_broker_dispatch import (
@@ -1869,6 +1872,9 @@ def write_route_identity_dispatch(
             tmp_path,
             contract_identity=contract_identity,
             route_contract_identity=route_contract_identity,
+            route_enable_route_contract_identity=(
+                route_enable_route_contract_identity
+            ),
         )
     )
     dispatch = tmp_path / "dispatch"
@@ -1890,6 +1896,17 @@ def route_enable_route_identity_dispatch(tmp_path_factory):
         root,
         contract_identity=False,
         route_contract_identity=True,
+    )
+    return root, dispatch, broker_fields
+
+
+@pytest.fixture(scope="module")
+def route_enable_route_enable_identity_dispatch(tmp_path_factory):
+    root = tmp_path_factory.mktemp("seri")
+    dispatch, broker_fields = write_route_identity_dispatch(
+        root,
+        contract_identity=False,
+        route_enable_route_contract_identity=True,
     )
     return root, dispatch, broker_fields
 
@@ -1953,6 +1970,49 @@ def _forge_dispatch_route_enable_route_contract_identity(
             "route_contract_identity_sha256"
         ),
         "route_enable_current_cutover_route_contract_identity_sha256",
+    )
+    summary = pd.read_csv(
+        dispatch / "broker_dispatch_summary.csv",
+        dtype=str,
+        keep_default_na=False,
+    )
+    current_sha256 = str(summary.loc[0, digest_fields[0]])
+    assert current_sha256 and current_sha256 != forged_sha256
+    for field in digest_fields:
+        assert field in summary.columns
+        _rewrite_dispatch_lineage_field(
+            dispatch,
+            field,
+            forged_sha256,
+        )
+    return current_sha256
+
+
+def _forge_dispatch_route_enable_route_enable_contract_identity(
+    dispatch,
+    forged_sha256,
+):
+    digest_fields = (
+        (
+            "route_enable_cutover_runtime_telemetry_broker_readiness_"
+            "route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "route_enable_cutover_runtime_telemetry_current_broker_readiness_"
+            "route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "route_enable_cutover_runtime_lineage_current_broker_readiness_"
+            "route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "route_enable_cutover_current_runtime_route_enable_"
+            "route_contract_identity_sha256"
+        ),
+        (
+            "route_enable_current_cutover_route_enable_"
+            "route_contract_identity_sha256"
+        ),
     )
     summary = pd.read_csv(
         dispatch / "broker_dispatch_summary.csv",
@@ -6731,6 +6791,284 @@ def test_broker_dispatch_send_blocks_remanifested_dispatch_broker_route_forgery(
     assert not lineage["broker_dispatch_matches_current"]
     assert not lineage[
         "dispatch_route_enable_route_contract_identity_matches_current"
+    ]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_send_verifies_dispatch_route_enable_identity(
+    tmp_path,
+    route_enable_route_enable_identity_dispatch,
+):
+    _, dispatch, broker_fields = route_enable_route_enable_identity_dispatch
+    out_dir = tmp_path / "dispatch_send"
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=out_dir,
+    )
+
+    identity_sha256 = broker_fields[
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    active_field = (
+        "broker_dispatch_route_enable_route_enable_"
+        "route_contract_identity_active"
+    )
+    carried_field = (
+        "broker_dispatch_route_enable_cutover_runtime_telemetry_"
+        "broker_readiness_route_enable_route_contract_identity_sha256"
+    )
+    current_field = (
+        "broker_dispatch_current_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    )
+    match_field = (
+        "broker_dispatch_route_enable_route_enable_"
+        "route_contract_identity_matches_current"
+    )
+    identity_checks = report.checks.loc[
+        report.checks["check"].isin(
+            {
+                f"{carried_field}_present",
+                f"{carried_field}_matches_current",
+                match_field,
+            }
+        )
+    ]
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert (
+        summary["recommendation"]
+        == "ready_for_non_submitting_broker_sender_review"
+    )
+    assert len(identity_checks) == 3
+    assert identity_checks["passed"].astype(bool).all()
+    assert not bool(
+        summary[
+            "broker_dispatch_route_enable_route_contract_identity_active"
+        ]
+    )
+    assert bool(summary[active_field])
+    assert summary[carried_field] == identity_sha256
+    assert summary[current_field] == identity_sha256
+    assert bool(summary[match_field])
+
+    requests = pd.read_csv(
+        out_dir / "broker_dispatch_send_requests.csv"
+    )
+    assert requests[carried_field].eq(identity_sha256).all()
+    assert requests[current_field].eq(identity_sha256).all()
+    assert requests[match_field].astype(bool).all()
+    request_payload = json.loads(
+        requests.loc[0, "request_payload_json"]
+    )
+    assert request_payload[carried_field] == identity_sha256
+    assert request_payload[current_field] == identity_sha256
+    assert request_payload[match_field]
+
+    config = json.loads(
+        (out_dir / "broker_dispatch_send_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert (
+        config["broker_dispatch_lineage"][carried_field]
+        == identity_sha256
+    )
+    assert (
+        config["broker_dispatch_lineage"][current_field]
+        == identity_sha256
+    )
+    assert config["broker_dispatch_lineage"][match_field]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][carried_field] == identity_sha256
+    assert manifest["extra"][current_field] == identity_sha256
+    assert manifest["extra"][match_field]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="broker_dispatch_send_packet",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_broker_dispatch_send_lineage(
+        out_dir / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+    assert lineage["gate_passed"]
+    assert not lineage[
+        "dispatch_route_enable_route_contract_identity_active"
+    ]
+    assert lineage[
+        (
+            "dispatch_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert (
+        lineage[
+            (
+                "current_dispatch_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            )
+        ]
+        == identity_sha256
+    )
+    assert lineage[
+        (
+            "dispatch_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    fields = broker_dispatch_send_lineage_fields(lineage)
+    assert fields[
+        (
+            "broker_dispatch_send_dispatch_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert (
+        fields[
+            (
+                "broker_dispatch_send_current_dispatch_route_enable_"
+                "route_enable_route_contract_identity_sha256"
+            )
+        ]
+        == identity_sha256
+    )
+    assert fields[
+        (
+            "broker_dispatch_send_dispatch_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    runbook = (out_dir / "broker_dispatch_send_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "Current route-enable broker route-enable route contract identity: "
+        f"`{identity_sha256}`"
+    ) in runbook
+    assert (
+        "Dispatch broker route-enable route contract identity "
+        "matches current: yes"
+    ) in runbook
+
+
+def test_broker_dispatch_send_blocks_remanifested_dispatch_dedicated_identity(
+    tmp_path,
+    route_enable_route_enable_identity_dispatch,
+):
+    source_root, _, broker_fields = (
+        route_enable_route_enable_identity_dispatch
+    )
+    root = tmp_path / "f"
+    shutil.copytree(source_root, root)
+    dispatch = root / "dispatch"
+    forged_sha256 = "b" * 64
+    current_sha256 = (
+        _forge_dispatch_route_enable_route_enable_contract_identity(
+            dispatch,
+            forged_sha256,
+        )
+    )
+    assert current_sha256 == broker_fields[
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    assert verify_experiment_manifest(
+        dispatch / "manifest.json",
+        expected_run_type="broker_dispatch_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    out_dir = tmp_path / "s"
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=out_dir,
+    )
+
+    carried_field = (
+        "broker_dispatch_route_enable_cutover_runtime_telemetry_"
+        "broker_readiness_route_enable_route_contract_identity_sha256"
+    )
+    current_field = (
+        "broker_dispatch_current_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    )
+    match_field = (
+        "broker_dispatch_route_enable_route_enable_"
+        "route_contract_identity_matches_current"
+    )
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert (
+        report.summary.iloc[0]["recommendation"]
+        == "keep_broker_sender_disabled"
+    )
+    assert "broker_dispatch_manifest_current" not in failed
+    assert "broker_dispatch_lineage_contract_consistent" not in failed
+    assert f"{carried_field}_present" not in failed
+    assert {
+        "broker_dispatch_route_enable_matches_current",
+        f"{carried_field}_matches_current",
+        match_field,
+        "broker_dispatch_lineage_gate_passed",
+    } <= failed
+
+    summary = report.summary.iloc[0]
+    assert summary[carried_field] == forged_sha256
+    assert summary[current_field] == current_sha256
+    assert not bool(summary[match_field])
+    assert not report.requests["submission_enabled"].astype(bool).any()
+    assert not report.requests["authorizes_submission"].astype(bool).any()
+    action = report.action_queue.loc[
+        report.action_queue["check"] == match_field
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="broker_dispatch_send_packet",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_broker_dispatch_send_lineage(
+        out_dir / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"], lineage["contract_error"]
+    assert lineage[
+        (
+            "dispatch_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert (
+        lineage[
+            (
+                "current_dispatch_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            )
+        ]
+        == current_sha256
+    )
+    assert not lineage["broker_dispatch_matches_current"]
+    assert not lineage[
+        (
+            "dispatch_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
     ]
     assert not lineage["gate_passed"]
 

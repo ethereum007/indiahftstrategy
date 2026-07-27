@@ -8244,12 +8244,35 @@ across `169` files. The full suite was not rerun because recent complete runs
 exceed 40 minutes and the dedicated real-chain pair alone takes about 25
 minutes.
 
+Latest broker-dispatch-to-send dedicated route-enable route contract-identity
+proof: send preparation now reopens the manifest-bound broker-dispatch packet
+and independently recovers the current dedicated digest through its
+route-enable, cutover, runtime-session, scale-up, and recursive
+broker-readiness sources. Dedicated checks require the dispatch-carried digest
+to be present, equal the recovered digest, and retain a passing current-source
+verdict before a dry-run send packet can become ready. Every request and hashed
+request envelope plus the summary, nested dispatch lineage, manifest metadata,
+and runbook retains the active flag, carried digest, current digest, and
+verdict. Reloadable broker-send lineage publishes a separate active flag,
+current dispatch digest, and source-match verdict and includes that verdict in
+its gate. A dispatch packet with every visible dedicated digest forged remains
+manifest-valid and internally contract-consistent after its orders, summary,
+config, and manifest are resealed, but send preparation remains disabled
+against the unchanged route-enable source and remediation returns to
+broker-readiness review. Inactive dedicated fields retain neutral
+compatibility behavior. The two new clean/forged end-to-end tests pass in
+`1301.5s`; the established two-test broker route-identity pair passes in
+`440.91s`, and `11` lightweight broker-send baseline scenarios pass. Source
+compilation succeeds. Repository collection is healthy at `2834 tests` across
+`169` files. The full suite was not rerun because recent complete runs exceed
+40 minutes and the dedicated real-chain pair alone takes about 22 minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated broker-dispatch route-enable route-enable
-   route-contract digest and current-source verdict through broker-send
-   lineage, and block a re-manifested dispatch bundle before send preparation
-   can arm.
+1. Carry the dedicated broker-send dispatch route-enable route-enable
+   route-contract digest and current-source verdict through broker-ack lineage,
+   and block a re-manifested send packet before acknowledgement reconciliation
+   can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

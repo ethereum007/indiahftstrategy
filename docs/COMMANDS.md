@@ -7058,6 +7058,31 @@ internally consistent and re-manifested. Remediation routes to broker-readiness
 review while submission and authorization remain disabled. This dedicated
 proof does not activate the separate terminal route contract identity.
 
+For an active broker-readiness route-enable route contract identity, send
+preparation now reopens the dispatch-manifest-bound route-enable source and
+independently recovers the current dedicated digest through cutover,
+runtime-session, scale-up, and recursive broker-readiness lineage. The
+dispatch-carried digest, independently recovered current digest, and verdict
+surface as
+`broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256`,
+`broker_dispatch_current_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_route_enable_route_enable_route_contract_identity_matches_current`
+in every request, hashed request envelope, summary, config, runbook, and
+manifest. Dedicated sender checks require the carried digest to be present,
+equal the current digest, and retain a passing current-source verdict.
+Reloadable send lineage preserves the proof separately as
+`broker_dispatch_send_dispatch_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_send_current_dispatch_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_send_dispatch_route_enable_route_enable_route_contract_identity_matches_current`.
+A dispatch bundle with every copied dedicated digest forged remains
+manifest-valid and internally contract-consistent after its orders, summary,
+config, and manifest are resealed, but send preparation stays blocked against
+the unchanged route-enable source. Remediation routes to broker-readiness
+review while submission and authorization remain disabled. Identity-inactive
+legacy packets retain neutral defaults.
+
 The sender carries route dispatch round-trip proof into the sender request
 envelope and expected acknowledgement rows, then fails closed if the dispatch
 plan is not ready and armed, target mode does not match, route-readiness proof
