@@ -6306,6 +6306,24 @@ after its authorization, summary, config, and manifest are made internally
 consistent and re-manifested. Identity-inactive legacy cutovers retain neutral
 defaults.
 
+For an active broker-readiness route-enable route contract identity, route
+enable also reconciles the dedicated cutover-carried digest with the current
+digest recovered through the manifest-bound runtime, scale-up, and readiness
+sources. Authorization requires the carried digest to be present and equal to
+the recovered digest while the cutover current-source verdict remains true.
+The packet summary, nested `cutover_lineage` config, manifest metadata, and
+runbook retain the dedicated active flag, carried digest, current digest, and
+verdict. Reloadable route-enable lineage separately emits
+`route_enable_cutover_route_enable_route_contract_identity_active`,
+`route_enable_current_cutover_route_enable_route_contract_identity_sha256`,
+and
+`route_enable_cutover_route_enable_route_contract_identity_matches_current`.
+A cutover whose dedicated digest is consistently forged across authorization,
+summary, config, and manifest remains blocked after re-manifesting, and its
+repair action returns to broker-readiness review. This proof remains separate
+from both the older route and terminal contract identities; inactive dedicated
+fields retain neutral compatibility behavior.
+
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
 proof/resume context, dispatch round-trip proof, and any cutover-carried vendor

@@ -8200,11 +8200,32 @@ compilation succeeds. Repository collection is healthy at `2828 tests` across
 `169` files. The full suite was not rerun because recent complete runs exceed
 40 minutes and the dedicated real-chain pair alone takes about 26 minutes.
 
+Latest cutover-to-route-enable dedicated route-enable route contract-identity
+proof: route enable now reopens the manifest-bound cutover and independently
+recovers the current dedicated digest through its runtime-session, scale-up,
+and recursive broker-readiness sources. Dedicated authorization checks require
+the cutover-carried digest to be present, equal the recovered digest, and
+retain a passing current-source verdict. The packet summary, nested cutover
+lineage, manifest metadata, and runbook retain the active flag, carried digest,
+current digest, and verdict, while reloadable route-enable lineage publishes a
+separate active flag, current cutover digest, and source-match verdict and
+includes that verdict in its gate. A cutover with every visible dedicated
+digest forged remains manifest-valid and internally contract-consistent after
+its authorization, summary, config, and manifest are resealed, but route
+authorization blocks it against the unchanged broker-readiness source and
+routes remediation to broker-readiness review. Inactive dedicated fields
+retain neutral compatibility behavior. The two new clean/forged end-to-end
+tests pass in `2352.59s`; the established two-test route-identity pair passes
+in `583.43s`, and four baseline route-enable scenarios pass. Source compilation
+succeeds. Repository collection is healthy at `2830 tests` across `169` files.
+The full suite was not rerun because recent complete runs exceed 40 minutes and
+the dedicated real-chain pair alone takes about 39 minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated cutover runtime route-enable route-contract digest and
-   current-source verdict through route-enable lineage, and block a
-   re-manifested cutover bundle before route authorization can pass.
+1. Carry the dedicated route-enable cutover route-enable route-contract digest
+   and current-source verdict through broker-dispatch lineage, and block a
+   re-manifested route-enable bundle before dispatch planning can arm.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
