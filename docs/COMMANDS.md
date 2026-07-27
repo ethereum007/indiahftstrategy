@@ -7170,6 +7170,29 @@ digest remains blocked after request rehashing and re-manifesting; the repair
 action routes to `review-broker-readiness`, and acknowledgement outputs remain
 non-authorizing. Identity-inactive legacy send packets retain neutral defaults.
 
+For an active broker-readiness route contract identity, acknowledgement
+reconciliation also reopens the send-manifest-bound dispatch source and follows
+its dedicated route proof back to the current route-enable and recursive
+cutover source. The send-carried digest, independently recovered current
+digest, and verdict surface as
+`broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_contract_identity_sha256`,
+`broker_dispatch_send_current_dispatch_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_send_dispatch_route_enable_route_contract_identity_matches_current`
+in every acknowledgement row plus summary, config, manifest, and runbook.
+Dedicated acknowledgement checks require the carried digest to be present,
+equal the current digest, and retain a passing current-source verdict.
+Reloadable acknowledgement lineage preserves the proof as
+`broker_dispatch_ack_send_route_enable_route_contract_identity_active`,
+`broker_dispatch_ack_current_send_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_ack_send_route_enable_route_contract_identity_matches_current`.
+A send packet with every copied broker-readiness route digest forged remains
+blocked after its requests, payload hashes, IDs, summary, config, and manifest
+are made internally consistent and re-manifested. Remediation routes to
+`review-broker-readiness`, acknowledgement output remains non-authorizing, and
+the separate terminal route contract identity stays inactive.
+
 When the provider broker-dispatch-send wrapper retained validated dispatch
 round-trip capture provenance, acknowledgement reconciliation carries the same
 `dispatch_roundtrip_capture_bundle_*`,

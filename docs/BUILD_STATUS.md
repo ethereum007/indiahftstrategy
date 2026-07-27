@@ -8068,12 +8068,32 @@ succeeds. Repository collection is healthy at `2816 tests` across `169` files.
 The full suite was not rerun because recent complete runs exceed 40 minutes;
 all affected identity boundaries were exercised directly.
 
+Latest send-to-ack broker-readiness route contract-identity proof:
+acknowledgement reconciliation now requires the send-carried dedicated route
+digest to be present, equal the digest independently recovered from the
+current dispatch, route-enable, and recursive cutover source, and retain a
+passing current-source verdict. Every acknowledgement row plus summary,
+config, manifest metadata, and runbook preserves the active flag, carried
+digest, current digest, and verdict. Reloadable acknowledgement lineage
+publishes a separate active flag, current send route-enable digest, and
+send-route-enable-to-current verdict without activating or conflating the
+older terminal broker contract identity. A send packet with every copied
+dedicated route digest forged remains blocked after its requests, payload
+hashes, IDs, summary, config, and manifest are made internally consistent and
+re-manifested; remediation routes to broker-readiness review and
+acknowledgement output remains non-authorizing. Route-identity-inactive legacy
+packets continue through neutral defaults. The two new clean/forged
+acknowledgement tests and three established terminal ack/round-trip identity
+regressions pass. Source compilation succeeds. Repository collection is
+healthy at `2818 tests` across `169` files. The full suite was not rerun
+because recent complete runs exceed 40 minutes; all affected identity
+boundaries were exercised directly.
+
 ## Next Build Targets
 
-1. Carry the dedicated send-packet broker-dispatch route-enable route-contract
-   digest and current-source verdict into explicit acknowledgement checks, and
-   block a re-manifested send-packet forgery before acknowledgement
-   reconciliation.
+1. Carry the dedicated acknowledgement send route-enable route-contract digest
+   and current-source verdict into explicit round-trip checks, and block a
+   re-manifested acknowledgement forgery before final broker round-trip review.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

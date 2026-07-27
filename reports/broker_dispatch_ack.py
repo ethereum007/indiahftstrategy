@@ -2936,6 +2936,34 @@ def _checks(
                 "",
             )
         ).strip()
+        route_enable_route_identity_active = _to_bool(
+            dispatch_summary.get(
+                (
+                    "broker_dispatch_send_dispatch_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        route_enable_route_identity_sha256 = _object_text(
+            dispatch_summary.get(
+                (
+                    "broker_dispatch_send_broker_dispatch_route_enable_"
+                    "cutover_runtime_telemetry_broker_readiness_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
+        current_route_enable_route_identity_sha256 = _object_text(
+            dispatch_summary.get(
+                (
+                    "broker_dispatch_send_current_dispatch_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
         send_lineage_checks = [
             _check(
                 "broker_dispatch_send_lineage_provided",
@@ -3122,6 +3150,79 @@ def _checks(
                     ),
                 ]
                 if route_identity_active
+                else []
+            ),
+            *(
+                [
+                    _check(
+                        (
+                            "broker_dispatch_send_broker_dispatch_route_enable_"
+                            "cutover_runtime_telemetry_broker_readiness_"
+                            "route_contract_identity_sha256_present"
+                        ),
+                        route_enable_route_identity_sha256,
+                        "present",
+                        True,
+                        bool(route_enable_route_identity_sha256),
+                        (
+                            "send packet broker route contract identity "
+                            "digest is missing"
+                        ),
+                    ),
+                    _check(
+                        (
+                            "broker_dispatch_send_broker_dispatch_route_enable_"
+                            "cutover_runtime_telemetry_broker_readiness_"
+                            "route_contract_identity_sha256_matches_current"
+                        ),
+                        route_enable_route_identity_sha256,
+                        "==",
+                        current_route_enable_route_identity_sha256,
+                        bool(
+                            route_enable_route_identity_sha256
+                            and current_route_enable_route_identity_sha256
+                            and route_enable_route_identity_sha256
+                            == current_route_enable_route_identity_sha256
+                        ),
+                        (
+                            "send packet broker route contract identity "
+                            "digest differs from the current dispatch source"
+                        ),
+                    ),
+                    _check(
+                        (
+                            "broker_dispatch_send_dispatch_route_enable_"
+                            "route_contract_identity_matches_current"
+                        ),
+                        _to_bool(
+                            dispatch_summary.get(
+                                (
+                                    "broker_dispatch_send_dispatch_"
+                                    "route_enable_route_contract_identity_"
+                                    "matches_current"
+                                ),
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            dispatch_summary.get(
+                                (
+                                    "broker_dispatch_send_dispatch_"
+                                    "route_enable_route_contract_identity_"
+                                    "matches_current"
+                                ),
+                                False,
+                            )
+                        ),
+                        (
+                            "send packet broker route contract identity no "
+                            "longer matches the current dispatch source"
+                        ),
+                    ),
+                ]
+                if route_enable_route_identity_active
                 else []
             ),
             *(
@@ -7392,6 +7493,10 @@ def _component(check: str) -> str:
                     "broker_dispatch_send_dispatch_route_"
                     "contract_identity_"
                 )
+                or check.startswith(
+                    "broker_dispatch_send_dispatch_route_enable_"
+                    "route_contract_identity_"
+                )
             )
         )
         or check
@@ -7477,6 +7582,10 @@ def _action_recommendation(check: str) -> str:
         )
         or check.startswith(
             "broker_dispatch_send_dispatch_route_contract_identity_"
+        )
+        or check.startswith(
+            "broker_dispatch_send_dispatch_route_enable_"
+            "route_contract_identity_"
         )
     ):
         return "rebuild_broker_readiness_lineage_before_ack_reconciliation"
@@ -8813,6 +8922,22 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         (
             "- Send route contract identity matches current: "
             f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_dispatch_route_contract_identity_matches_current')) else 'no'}"
+        ),
+        (
+            "- Send broker route contract identity active: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_dispatch_route_enable_route_contract_identity_active')) else 'no'}"
+        ),
+        (
+            "- Send carried broker route contract identity: "
+            f"{_code(summary_row.get('broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Current dispatch broker route contract identity: "
+            f"{_code(summary_row.get('broker_dispatch_send_current_dispatch_route_enable_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Send broker route contract identity matches current: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_dispatch_route_enable_route_contract_identity_matches_current')) else 'no'}"
         ),
         "- Broker acknowledgement contract identity active: "
         f"{'yes' if _to_bool(summary_row.get('ack_contract_identity_active')) else 'no'}",
