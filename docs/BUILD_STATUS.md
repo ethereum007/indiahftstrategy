@@ -8316,12 +8316,36 @@ across `169` files. The full suite was not rerun because recent complete runs
 exceed 40 minutes and the dedicated real-chain pair alone takes about 24
 minutes.
 
+Latest final-round-trip-to-broker-readiness dedicated route-enable route
+contract-identity proof: readiness now reopens the manifest-bound terminal
+round-trip bundle and independently recovers the current acknowledgement
+digest before accepting the dedicated final-review identity. Three dedicated
+checks require the carried digest to be present, equal the recovered digest,
+and retain a passing current-source verdict. The dispatch-round-trip component
+item, readiness summary, nested config lineage, manifest metadata, and runbook
+all retain the active flag, carried digest, current digest, and verdict.
+Reloadable broker-readiness lineage includes that verdict in its gate and
+exports a separate active proof under `broker_readiness_roundtrip_*` for the
+next scale-up cycle. A terminal round-trip bundle with only its dedicated
+carried digest altered remains manifest-valid and internally
+contract-consistent after its orders, summary, config, and manifest are
+resealed, but readiness remains blocked against the unchanged acknowledgement
+source and remediation returns to broker-dispatch round-trip review. Older
+dedicated broker-route identities retain their established behavior and
+inactive new fields remain sparse downstream. The two new clean/forged
+end-to-end tests pass in `1622.69s`; the established two-test broker-route
+readiness pair passes in `574.43s`, and `12` lightweight readiness and lineage
+scenarios pass. Source compilation succeeds. Repository collection is healthy
+at `2840 tests` across `169` files. The full suite was not rerun because recent
+complete runs exceed 40 minutes and the new real-chain pair alone takes about
+27 minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated final broker round-trip route-enable route-enable
-   route-contract digest and current-source verdict into broker-readiness
-   next-cycle lineage, and block a re-manifested round-trip bundle before
-   readiness can pass.
+1. Carry the newly exported broker-readiness round-trip route-enable
+   route-enable route-contract digest and current-source verdict into scale-up
+   next-cycle lineage, and block a re-manifested readiness bundle before
+   scale-up can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

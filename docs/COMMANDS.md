@@ -7633,6 +7633,27 @@ remediation returns to `review-broker-dispatch-roundtrip`. Inactive dedicated
 identity fields remain sparse at the readiness-to-scale-up boundary so existing
 terminal route-identity packets preserve their established downstream contract.
 
+For an active broker-readiness route-enable route contract identity, broker
+readiness now also reopens the manifest-bound terminal round-trip source before
+accepting the dedicated final-review identity. The round-trip-carried digest,
+current acknowledgement digest, and source-match verdict remain explicit as
+`broker_dispatch_roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256`,
+`broker_dispatch_roundtrip_current_ack_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_roundtrip_ack_route_enable_route_enable_route_contract_identity_matches_current`.
+Three dedicated readiness checks require the digest to be present, equal the
+independently reopened round-trip source digest, and retain a passing verdict.
+The fields are sealed into the dispatch-round-trip component item, readiness
+summary, nested config lineage, manifest metadata, and runbook. Reloadable
+readiness lineage exports the active proof separately under the
+`broker_readiness_roundtrip_*` namespace for the next scale-up cycle. A
+terminal round-trip bundle with its dedicated carried digest altered remains
+manifest-valid and internally contract-consistent after its orders, summary,
+config, and manifest are resealed, but readiness stays blocked against the
+unchanged acknowledgement source. Remediation returns to
+`review-broker-dispatch-roundtrip`, while inactive dedicated fields remain
+sparse for compatibility.
+
 For the exact `leadlag` portfolio profile, or whenever
 `leadlag_edge_lineage_required` is set, final review also owns a direct
 `leadlag_ack_contract_consistent` decision. It independently compares the
