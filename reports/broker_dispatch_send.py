@@ -3361,6 +3361,33 @@ def _checks(
                 "",
             )
         ).strip()
+        route_enable_route_identity_active = _to_bool(
+            dispatch_summary.get(
+                (
+                    "broker_dispatch_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        route_enable_route_identity_sha256 = _object_text(
+            dispatch_summary.get(
+                (
+                    "broker_dispatch_route_enable_cutover_runtime_telemetry_"
+                    "broker_readiness_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
+        current_route_enable_route_identity_sha256 = _object_text(
+            dispatch_summary.get(
+                (
+                    "broker_dispatch_current_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
         checks = pd.concat(
             [
                 checks,
@@ -3513,6 +3540,83 @@ def _checks(
                                 ),
                             ]
                             if route_identity_active
+                            else []
+                        ),
+                        *(
+                            [
+                                _check(
+                                    (
+                                        "broker_dispatch_route_enable_cutover_"
+                                        "runtime_telemetry_broker_readiness_"
+                                        "route_contract_identity_"
+                                        "sha256_present"
+                                    ),
+                                    route_enable_route_identity_sha256,
+                                    "present",
+                                    True,
+                                    bool(route_enable_route_identity_sha256),
+                                    (
+                                        "broker-dispatch broker route contract "
+                                        "identity digest is missing"
+                                    ),
+                                ),
+                                _check(
+                                    (
+                                        "broker_dispatch_route_enable_cutover_"
+                                        "runtime_telemetry_broker_readiness_"
+                                        "route_contract_identity_"
+                                        "sha256_matches_current"
+                                    ),
+                                    route_enable_route_identity_sha256,
+                                    "==",
+                                    current_route_enable_route_identity_sha256,
+                                    bool(
+                                        route_enable_route_identity_sha256
+                                        and current_route_enable_route_identity_sha256
+                                        and route_enable_route_identity_sha256
+                                        == current_route_enable_route_identity_sha256
+                                    ),
+                                    (
+                                        "broker-dispatch broker route contract "
+                                        "identity digest differs from the "
+                                        "current route-enable source"
+                                    ),
+                                ),
+                                _check(
+                                    (
+                                        "broker_dispatch_route_enable_route_"
+                                        "contract_identity_matches_current"
+                                    ),
+                                    _to_bool(
+                                        dispatch_summary.get(
+                                            (
+                                                "broker_dispatch_route_enable_"
+                                                "route_contract_identity_"
+                                                "matches_current"
+                                            ),
+                                            False,
+                                        )
+                                    ),
+                                    "is",
+                                    True,
+                                    _to_bool(
+                                        dispatch_summary.get(
+                                            (
+                                                "broker_dispatch_route_enable_"
+                                                "route_contract_identity_"
+                                                "matches_current"
+                                            ),
+                                            False,
+                                        )
+                                    ),
+                                    (
+                                        "broker-dispatch broker route contract "
+                                        "identity no longer matches the "
+                                        "current route-enable source"
+                                    ),
+                                ),
+                            ]
+                            if route_enable_route_identity_active
                             else []
                         ),
                         *(
@@ -7951,6 +8055,9 @@ def _component(check: str) -> str:
                 or check.startswith(
                     "broker_dispatch_route_contract_identity_"
                 )
+                or check.startswith(
+                    "broker_dispatch_route_enable_route_contract_identity_"
+                )
             )
         )
         or check
@@ -9517,6 +9624,22 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         (
             "- Dispatch route contract identity matches current: "
             f"{'yes' if _to_bool(summary_row.get('broker_dispatch_route_contract_identity_matches_current')) else 'no'}"
+        ),
+        (
+            "- Dispatch broker route contract identity active: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_route_enable_route_contract_identity_active')) else 'no'}"
+        ),
+        (
+            "- Dispatch carried broker route contract identity: "
+            f"{_code(summary_row.get('broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Current route-enable broker route contract identity: "
+            f"{_code(summary_row.get('broker_dispatch_current_route_enable_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Dispatch broker route contract identity matches current: "
+            f"{'yes' if _to_bool(summary_row.get('broker_dispatch_route_enable_route_contract_identity_matches_current')) else 'no'}"
         ),
         (
             "- Broker-readiness source matches scale-up: "

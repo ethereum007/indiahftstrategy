@@ -8048,11 +8048,32 @@ compilation succeeds. Repository collection is healthy at `2814 tests` across
 `169` files. The full suite was not rerun because recent complete runs exceed
 40 minutes; all affected identity boundaries were exercised directly.
 
+Latest broker-dispatch-to-send route contract-identity proof: send preparation
+now requires the dispatch-carried dedicated broker-readiness route digest to
+be present, equal the digest independently recovered from the current
+route-enable and recursive cutover source, and retain a passing current-source
+verdict. Every dry-run request and hashed request envelope plus summary,
+config, manifest metadata, and runbook preserves the active flag, carried
+digest, current digest, and verdict. Reloadable send lineage publishes a
+separate active flag, current dispatch route-enable digest, and
+dispatch-route-enable-to-current verdict without activating or conflating the
+older terminal broker contract identity. A broker-dispatch bundle with every
+copied dedicated route digest forged remains blocked after its orders,
+summary, config, and manifest are made internally consistent and
+re-manifested; remediation routes to broker-readiness review and send remains
+non-authorizing. Route-identity-inactive legacy packets continue through
+neutral defaults. The two new clean/forged send tests and the four established
+send/ack/round-trip terminal-identity regressions pass. Source compilation
+succeeds. Repository collection is healthy at `2816 tests` across `169` files.
+The full suite was not rerun because recent complete runs exceed 40 minutes;
+all affected identity boundaries were exercised directly.
+
 ## Next Build Targets
 
-1. Carry the dedicated broker-dispatch route-enable route-contract digest and
-   current-source verdict into explicit send-packet checks, and block a
-   re-manifested broker-dispatch forgery before send preparation.
+1. Carry the dedicated send-packet broker-dispatch route-enable route-contract
+   digest and current-source verdict into explicit acknowledgement checks, and
+   block a re-manifested send-packet forgery before acknowledgement
+   reconciliation.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
