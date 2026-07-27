@@ -5205,6 +5205,17 @@ digest and detailed identity fields with the scale-up copy. Telemetry carries
 `scaleup_broker_readiness_route_contract_identity_matches_current`; a missing
 digest, current-source drift, or internally resealed scale-up forgery blocks
 telemetry readiness. Identity-inactive legacy bundles retain neutral defaults.
+For an active dedicated broker-readiness round-trip route-enable
+route-contract identity, telemetry separately carries
+`scaleup_broker_readiness_route_enable_route_contract_identity_active`,
+the carried and current-source digests, and
+`scaleup_broker_readiness_route_enable_route_contract_identity_matches_current`.
+It requires the carried digest to be present, equal the current digest
+recovered through the manifest-bound broker-readiness source, and retain the
+passing scale-up verdict. Rewriting both visible dedicated digests in
+scale-up artifacts and resealing their manifest therefore leaves the scale-up
+manifest current but blocks telemetry readiness. This additive proof does not
+activate the older terminal route-contract identity.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
@@ -5262,6 +5273,16 @@ the detailed route lineage against telemetry, and emits
 `runtime_telemetry_broker_readiness_route_contract_identity_matches_current`.
 Any mismatch halts before runtime limits can authorize continuation, even when
 the forged scale-up artifacts and manifest are internally consistent.
+For an active dedicated route-enable route-contract identity, the guard also
+compares every detailed scale-up-carried identity field with the current
+scale-up provenance, requires both carried/current digest pairs to agree, and
+requires both current-source verdicts. The reconciled digest and verdict are
+retained under
+`runtime_telemetry_broker_readiness_route_enable_route_contract_identity_*`
+fields in guard metrics, summary, config, checks, and manifest metadata. A
+telemetry snapshot built from an internally re-manifested scale-up forgery
+therefore halts with an explicit runtime-telemetry identity mismatch before
+ordinary risk limits are considered.
 If broker resume-gate evidence was required or supplied at scale-up, the guard
 also requires runtime telemetry to carry a ready resume authorization and ready
 resume proof-refresh identity matching the scale-up strategy and market.

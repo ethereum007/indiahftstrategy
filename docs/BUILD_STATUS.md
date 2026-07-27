@@ -8154,12 +8154,35 @@ collection is healthy at `2824 tests` across `169` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes; all `18` affected
 identity, provenance, and compatibility tests were exercised directly.
 
+Latest controlled-scale-up-to-runtime dedicated route contract-identity proof:
+runtime telemetry now requires the scale-up-carried broker-readiness
+route-enable digest to be present, equal the current digest independently
+recovered through the manifest-bound broker source, and retain a passing
+current-source verdict. The telemetry row, summary, checks, and manifest retain
+the dedicated active flag, carried digest, current digest, verdict, and
+detailed identity fields without activating the older terminal route identity.
+The runtime guard independently compares the telemetry copy with freshly
+loaded scale-up provenance and emits a separate telemetry-to-current active
+flag, carried digest, current digest, and verdict in metrics, summary, config,
+checks, and manifest metadata. A scale-up bundle with both visible dedicated
+digests forged remains manifest-valid after its plan, summary, nested config,
+and manifest are resealed, but telemetry blocks readiness and the runtime guard
+halts against the unchanged broker-readiness source. Inactive dedicated fields
+retain neutral compatibility behavior. The two new clean/forged end-to-end
+tests pass in `1754.4s`; the complete `14`-test scale-up
+runtime-provenance module, including the established route and terminal
+contract-identity regressions, and all `57` runtime telemetry/guard module
+tests pass. All `13` runtime-session compatibility tests also pass, for `84`
+directly exercised tests. Source compilation succeeds. Repository collection
+is healthy at `2826 tests` across `169` files. The full suite was not rerun
+because recent complete runs exceed 40 minutes and the new real-chain pair
+alone takes about 29 minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated controlled-scale-up broker-readiness route-enable
-   route-contract digest and current-source verdict into runtime telemetry and
-   guard checks, and block a re-manifested scale-up forgery before runtime can
-   pass.
+1. Carry the dedicated runtime telemetry/guard route-enable route-contract
+   digest and current-source verdict through runtime-session lineage and
+   cutover, and block a re-manifested runtime bundle before promotion can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
