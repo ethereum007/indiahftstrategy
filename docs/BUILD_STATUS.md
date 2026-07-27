@@ -8132,11 +8132,34 @@ pass. Source compilation succeeds. Repository collection is healthy at
 complete runs exceed 40 minutes; all affected recursive identity and
 compatibility paths were exercised directly.
 
+Latest broker-readiness-to-controlled-scale-up dedicated route
+contract-identity proof: controlled scale-up now requires the
+broker-readiness-carried dedicated route-enable digest to be present, equal
+the digest independently recovered from the current manifest-bound terminal
+round-trip source, and retain a passing readiness current-source verdict. The
+plan, summary, nested broker-readiness lineage config, checks, and manifest
+retain the active flag, carried digest, current digest, and verdict.
+Reloadable scale-up provenance repeats the comparison and exports a separate
+aggregate active flag, carried digest, current digest, and match result without
+activating or conflating the older terminal route identity. A
+broker-readiness bundle with both visible dedicated route digests forged
+remains blocked after its component item, summary, nested config, runbook, and
+manifest are made internally consistent and re-manifested; the untouched
+round-trip source continues to anchor the original identity. Inactive
+dedicated fields remain sparse for established compatibility paths. The two
+new clean/forged scale-up tests, two established scale-up terminal-identity
+regressions, all twelve scale-up runtime-provenance tests, and two loose/sealed
+broker-readiness lineage tests pass. Source compilation succeeds. Repository
+collection is healthy at `2824 tests` across `169` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes; all `18` affected
+identity, provenance, and compatibility tests were exercised directly.
+
 ## Next Build Targets
 
-1. Carry the dedicated broker-readiness round-trip route-enable route-contract
-   digest and current-source verdict through controlled scale-up, and block a
-   re-manifested readiness forgery before promotion can pass.
+1. Carry the dedicated controlled-scale-up broker-readiness route-enable
+   route-contract digest and current-source verdict into runtime telemetry and
+   guard checks, and block a re-manifested scale-up forgery before runtime can
+   pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

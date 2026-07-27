@@ -4602,6 +4602,23 @@ verdict. Editing both the carried and claimed-current digest in a
 broker-readiness bundle therefore remains blocked after its artifacts and
 manifest are made internally consistent; identity-inactive legacy readiness
 keeps neutral behavior.
+Controlled scale-up also recognizes the dedicated broker-readiness
+round-trip route-enable route-contract identity without activating the older
+terminal route identity. For an active dedicated proof, scale-up reopens the
+manifest-bound broker-readiness bundle and its current terminal round-trip
+source, requires the carried digest to be present, requires it to match the
+independently recovered current digest, and requires the readiness
+current-source verdict to remain true. The plan, summary, nested
+`broker_readiness.lineage` config, checks, and manifest retain the active flag,
+carried digest, current digest, and verdict under
+`broker_readiness_roundtrip_*` fields. Reloadable scale-up provenance repeats
+the comparison and exposes separate
+`broker_readiness_route_enable_route_contract_identity_*` aggregate fields.
+Rewriting both visible digests in broker-readiness artifacts and resealing
+their manifest therefore cannot authorize promotion while the untouched
+round-trip source still carries the original identity. Dedicated-identity-
+inactive readiness keeps these additive fields sparse and follows the
+established compatibility path.
 If the shadow-session comparison carried broker vendor-data wrapper proof,
 scale-up retains `shadow_broker_vendor_data_readiness_*` fields and a nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config block, and fails
