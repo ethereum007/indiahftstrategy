@@ -8178,11 +8178,33 @@ is healthy at `2826 tests` across `169` files. The full suite was not rerun
 because recent complete runs exceed 40 minutes and the new real-chain pair
 alone takes about 29 minutes.
 
+Latest runtime-session-to-cutover dedicated route-enable route
+contract-identity proof: runtime-session lineage now reopens the current
+manifest-bound broker-readiness bundle and independently reconciles its
+dedicated route-enable digest with the scale-up carried and claimed-current
+digests plus the runtime-telemetry carried and claimed-current digests. The
+session exports a separate active flag, current digest, and source-match
+verdict without activating or conflating the older terminal or route
+identities. Cutover requires every dedicated scale-up, telemetry, and
+runtime-lineage claim to converge before authorization can pass, retains those
+facts in authorization, summary, nested config, manifest metadata, and runbook,
+and publishes a cutover-specific active flag, current runtime digest, and
+runtime-to-current verdict for the next route-enable boundary. A runtime
+session with every visible dedicated digest forged remains blocked after its
+summary, nested config, and manifest are internally consistent and
+re-manifested; remediation routes to broker-readiness review. The two new
+clean/forged end-to-end tests pass in `1543.43s`, the established two-test
+runtime route-identity cutover pair passes in `423.69s`, all `13`
+runtime-session tests pass, and four baseline cutover scenarios pass. Source
+compilation succeeds. Repository collection is healthy at `2828 tests` across
+`169` files. The full suite was not rerun because recent complete runs exceed
+40 minutes and the dedicated real-chain pair alone takes about 26 minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated runtime telemetry/guard route-enable route-contract
-   digest and current-source verdict through runtime-session lineage and
-   cutover, and block a re-manifested runtime bundle before promotion can pass.
+1. Carry the dedicated cutover runtime route-enable route-contract digest and
+   current-source verdict through route-enable lineage, and block a
+   re-manifested cutover bundle before route authorization can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

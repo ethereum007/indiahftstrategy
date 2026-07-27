@@ -5400,6 +5400,17 @@ session gate retains the active flag, current digest, and dedicated
 `runtime_lineage_broker_readiness_route_contract_identity_matches_current`
 verdict so downstream cutover cannot rely only on an earlier in-memory guard
 decision.
+For an active dedicated broker-readiness route-enable route identity, the same
+reopen runs independently of the older terminal and route contracts. Runtime
+session requires the scale-up carried and claimed-current digests plus the
+telemetry carried and claimed-current digests to equal the digest recovered
+from the current recursive readiness source. It retains
+`runtime_lineage_broker_readiness_route_enable_route_contract_identity_active`,
+`runtime_lineage_current_broker_readiness_route_enable_route_contract_identity_sha256`,
+and
+`runtime_lineage_broker_readiness_route_enable_route_contract_identity_matches_current`
+for cutover. Re-manifesting a copied runtime digest therefore cannot turn a
+source mismatch into a passing session lineage verdict.
 For canonical `leadlag`, every session step also retains the complete
 `strategy_portfolio_leadlag_*` measured-edge contract and the guard's
 `leadlag_edge_lineage_matches_scaleup` decision. The session summary, runbook,
@@ -5783,6 +5794,17 @@ Downstream cutover lineage derives
 `cutover_current_runtime_route_contract_identity_sha256`, and
 `cutover_runtime_route_contract_identity_matches_current` before route enable
 can consume the bundle.
+The dedicated broker-readiness route-enable route identity follows a separate
+cutover contract. Cutover requires its scale-up, runtime-telemetry, and
+runtime-lineage active flags, carried/current digests, and current-source
+verdicts to converge against the recursively reopened readiness bundle. The
+authorization, summary, nested config, manifest, and runbook retain those
+facts, and cutover lineage publishes
+`cutover_runtime_route_enable_route_contract_identity_active`,
+`cutover_current_runtime_route_enable_route_contract_identity_sha256`, and
+`cutover_runtime_route_enable_route_contract_identity_matches_current`.
+A runtime bundle whose dedicated digests are changed and then re-manifested
+remains blocked and routes remediation to broker-readiness review.
 
 `cutover_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so schedulers can route the first
