@@ -8089,11 +8089,33 @@ healthy at `2818 tests` across `169` files. The full suite was not rerun
 because recent complete runs exceed 40 minutes; all affected identity
 boundaries were exercised directly.
 
+Latest acknowledgement-to-roundtrip broker-readiness route contract-identity
+proof: final broker round-trip review now requires the
+acknowledgement-carried dedicated route digest to be present, equal the digest
+independently recovered from the current send, dispatch, route-enable, and
+recursive cutover source, and retain a passing current-source verdict. Every
+final order plus summary, config, manifest metadata, and runbook preserves the
+active flag, carried digest, current digest, and verdict. Reloadable round-trip
+lineage publishes a separate active flag, current acknowledgement route-enable
+digest, and acknowledgement-route-enable-to-current verdict without activating
+or conflating the older terminal broker contract identity. An acknowledgement
+bundle with all seven copied dedicated route digests forged remains blocked
+after its rows, summary, config, and manifest are made internally consistent
+and re-manifested; remediation routes to broker-readiness review and final
+evidence remains non-authorizing. Route-identity-inactive legacy packets
+continue through neutral defaults. The two new clean/forged round-trip tests,
+two established terminal round-trip identity regressions, and one downstream
+broker-readiness compatibility test pass. Source compilation succeeds.
+Repository collection is healthy at `2820 tests` across `169` files. The full
+suite was not rerun because recent complete runs exceed 40 minutes; all
+affected identity boundaries were exercised directly.
+
 ## Next Build Targets
 
-1. Carry the dedicated acknowledgement send route-enable route-contract digest
-   and current-source verdict into explicit round-trip checks, and block a
-   re-manifested acknowledgement forgery before final broker round-trip review.
+1. Carry the dedicated final round-trip acknowledgement route-enable
+   route-contract digest and current-source verdict into explicit
+   broker-readiness checks, and block a re-manifested round-trip forgery before
+   readiness can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
