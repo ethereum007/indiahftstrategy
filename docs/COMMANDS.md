@@ -4619,6 +4619,25 @@ their manifest therefore cannot authorize promotion while the untouched
 round-trip source still carries the original identity. Dedicated-identity-
 inactive readiness keeps these additive fields sparse and follows the
 established compatibility path.
+Controlled scale-up now also consumes the separately exported
+broker-readiness round-trip route-enable route-enable route-contract
+identity. For an active proof, scale-up reopens the manifest-bound readiness
+bundle and its current terminal round-trip source before accepting
+`broker_readiness_roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256`.
+The independently recovered digest and source verdict remain explicit as
+`broker_readiness_roundtrip_current_ack_route_enable_route_enable_route_contract_identity_sha256`
+and
+`broker_readiness_roundtrip_ack_route_enable_route_enable_route_contract_identity_matches_current`.
+Three dedicated checks require the carried digest to be present, equal the
+current source digest, and retain a passing verdict. The plan, summary, nested
+`broker_readiness.lineage` config, and manifest seal all four identity fields,
+while reloadable scale-up provenance publishes separate
+`broker_readiness_route_enable_route_enable_route_contract_identity_*`
+aggregate fields and includes their verdict in its gate. Altering both visible
+digests in readiness artifacts and resealing the readiness manifest therefore
+still blocks scale-up against the unchanged round-trip source. Earlier route
+identity families remain independent, and inactive new fields remain sparse
+in the scale-up report contract.
 If the shadow-session comparison carried broker vendor-data wrapper proof,
 scale-up retains `shadow_broker_vendor_data_readiness_*` fields and a nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config block, and fails

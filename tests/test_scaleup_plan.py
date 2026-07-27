@@ -15,8 +15,10 @@ from reports.manifest import (
 from reports.operational_lineage import (
     BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
     BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
+    BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
 )
 from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import (
@@ -1907,6 +1909,7 @@ def write_verified_broker_readiness_bundle(
     contract_identity=False,
     route_contract_identity=False,
     route_enable_route_contract_identity=False,
+    route_enable_route_enable_route_contract_identity=False,
 ):
     from adapters.broker_readiness import (
         BrokerReadinessThresholds,
@@ -1922,6 +1925,9 @@ def write_verified_broker_readiness_bundle(
         route_contract_identity=route_contract_identity,
         route_enable_route_contract_identity=(
             route_enable_route_contract_identity
+        ),
+        route_enable_route_enable_route_contract_identity=(
+            route_enable_route_enable_route_contract_identity
         ),
     )
     report = write_broker_readiness_report(
@@ -1959,6 +1965,18 @@ def verified_route_enable_identity_broker_readiness_bundle(
         root / "s",
         root / "b",
         route_enable_route_contract_identity=True,
+    )
+
+
+@pytest.fixture(scope="module")
+def verified_route_enable_route_enable_identity_broker_readiness_bundle(
+    tmp_path_factory,
+):
+    root = tmp_path_factory.mktemp("su_bri")
+    return write_verified_broker_readiness_bundle(
+        root / "s",
+        root / "b",
+        route_enable_route_enable_route_contract_identity=True,
     )
 
 
@@ -2023,6 +2041,65 @@ def forge_broker_readiness_route_enable_identity(
         (
             "broker_dispatch_roundtrip_current_ack_route_enable_"
             "route_contract_identity_sha256"
+        ),
+    )
+    original_sha256 = ""
+    for filename in (
+        "broker_readiness_summary.csv",
+        "broker_readiness_items.csv",
+    ):
+        path = root / filename
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+        original_sha256 = original_sha256 or str(
+            frame.loc[0, fields[0]]
+        )
+        for field in fields:
+            frame[field] = forged_sha256
+        frame.to_csv(path, index=False)
+
+    config_path = root / "broker_readiness_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    lineage = config["dispatch_roundtrip"]["lineage"]
+    for field in fields:
+        lineage[field.removeprefix("broker_dispatch_roundtrip_")] = (
+            forged_sha256
+        )
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    runbook_path = root / "broker_readiness_runbook.md"
+    runbook_path.write_text(
+        runbook_path.read_text(encoding="utf-8").replace(
+            original_sha256,
+            forged_sha256,
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for field in fields:
+        manifest["extra"][field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(root)
+    return original_sha256
+
+
+def forge_broker_readiness_route_enable_route_enable_identity(
+    root,
+    forged_sha256,
+):
+    fields = (
+        (
+            BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+        ),
+        (
+            "broker_dispatch_roundtrip_current_ack_route_enable_"
+            "route_enable_route_contract_identity_sha256"
         ),
     )
     original_sha256 = ""
@@ -7327,6 +7404,297 @@ def test_write_scaleup_plan_blocks_remanifested_broker_readiness_broker_route_fo
     assert not provenance[
         (
             "broker_readiness_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    assert not provenance["provenance_gate_passed"]
+
+
+def test_write_scaleup_plan_retains_verified_broker_readiness_route_enable_route_identity(
+    tmp_path,
+    verified_route_enable_route_enable_identity_broker_readiness_bundle,
+):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    broker = (
+        verified_route_enable_route_enable_identity_broker_readiness_bundle
+    )
+    readiness_summary = pd.read_csv(
+        broker / "broker_readiness_summary.csv",
+        dtype=str,
+        keep_default_na=False,
+    ).iloc[0]
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        broker_readiness_dir=broker,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_broker_readiness=True),
+    )
+
+    route_fields = {
+        source_field: target_field
+        for (
+            target_field,
+            source_field,
+        ) in (
+            BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+        )
+    }
+    active_field = route_fields[
+        (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    carried_field = route_fields[
+        (
+            BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+        )
+    ]
+    current_field = route_fields[
+        (
+            "broker_dispatch_roundtrip_current_ack_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ]
+    verdict_field = route_fields[
+        (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    expected_sha256 = readiness_summary[
+        BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    summary = report.summary.iloc[0]
+    plan = report.plan.iloc[0]
+    lineage = report.config["broker_readiness"]["lineage"]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    checks = report.checks.set_index("check")
+
+    assert not bool(
+        summary.get(
+            (
+                "broker_readiness_roundtrip_ack_route_enable_"
+                "route_contract_identity_active"
+            ),
+            False,
+        )
+    )
+    assert bool(summary[active_field])
+    assert summary[carried_field] == expected_sha256
+    assert summary[current_field] == expected_sha256
+    assert bool(summary[verdict_field])
+    assert plan[carried_field] == expected_sha256
+    assert plan[current_field] == expected_sha256
+    assert bool(plan[verdict_field])
+    assert (
+        lineage[carried_field.removeprefix("broker_readiness_")]
+        == expected_sha256
+    )
+    assert (
+        lineage[current_field.removeprefix("broker_readiness_")]
+        == expected_sha256
+    )
+    assert lineage[
+        verdict_field.removeprefix("broker_readiness_")
+    ]
+    assert checks.loc[
+        checks.index.str.startswith(
+            "broker_readiness_roundtrip_route_enable_route_enable_"
+            "route_contract_identity_"
+        ),
+        "passed",
+    ].astype(bool).all()
+    assert checks.loc[
+        checks.index.str.startswith("broker_readiness_lineage_"),
+        "passed",
+    ].astype(bool).all()
+    assert manifest["extra"][carried_field] == expected_sha256
+    assert manifest["extra"][current_field] == expected_sha256
+    assert manifest["extra"][verdict_field]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    provenance = load_scaleup_runtime_provenance(
+        out_dir / "scaleup_config.json"
+    )
+    assert provenance["contract_consistent"], provenance["contract_error"]
+    assert provenance["broker_readiness_matches_current"]
+    assert provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == expected_sha256
+    assert provenance[
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == expected_sha256
+    assert provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    assert provenance["provenance_gate_passed"] == report.ready
+
+
+def test_write_scaleup_plan_blocks_remanifested_broker_readiness_route_enable_route_forgery(
+    tmp_path,
+    verified_route_enable_route_enable_identity_broker_readiness_bundle,
+):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    broker = tmp_path / "forged_broker_readiness"
+    shutil.copytree(
+        verified_route_enable_route_enable_identity_broker_readiness_bundle,
+        broker,
+    )
+    forged_sha256 = "e" * 64
+    current_sha256 = (
+        forge_broker_readiness_route_enable_route_enable_identity(
+            broker,
+            forged_sha256,
+        )
+    )
+    assert verify_experiment_manifest(
+        broker / "manifest.json",
+        expected_run_type="broker_readiness",
+        require_input_fingerprints=True,
+    ).passed
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        broker_readiness_dir=broker,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_broker_readiness=True),
+    )
+
+    route_fields = {
+        source_field: target_field
+        for (
+            target_field,
+            source_field,
+        ) in (
+            BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+        )
+    }
+    carried_field = route_fields[
+        (
+            BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+        )
+    ]
+    current_field = route_fields[
+        (
+            "broker_dispatch_roundtrip_current_ack_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ]
+    verdict_field = route_fields[
+        (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    summary = report.summary.iloc[0]
+    lineage = report.config["broker_readiness"]["lineage"]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+
+    assert not report.ready
+    assert bool(summary["broker_readiness_manifest_current"])
+    assert not bool(
+        summary["broker_readiness_lineage_contract_consistent"]
+    )
+    assert summary[carried_field] == forged_sha256
+    assert summary[current_field] == current_sha256
+    assert not bool(summary[verdict_field])
+    assert {
+        "broker_readiness_lineage_contract_consistent",
+        "broker_readiness_lineage_roundtrip_matches_current",
+        "broker_readiness_lineage_gate_passed",
+        (
+            "broker_readiness_roundtrip_route_enable_route_enable_"
+            "route_contract_identity_sha256_matches_current"
+        ),
+        (
+            "broker_readiness_roundtrip_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ),
+    } <= failed
+    assert "broker_readiness_lineage_manifest_current" not in failed
+    assert (
+        lineage[carried_field.removeprefix("broker_readiness_")]
+        == forged_sha256
+    )
+    assert (
+        lineage[current_field.removeprefix("broker_readiness_")]
+        == current_sha256
+    )
+    assert not lineage[
+        verdict_field.removeprefix("broker_readiness_")
+    ]
+    assert manifest["extra"][carried_field] == forged_sha256
+    assert manifest["extra"][current_field] == current_sha256
+    assert not manifest["extra"][verdict_field]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    provenance = load_scaleup_runtime_provenance(
+        out_dir / "scaleup_config.json"
+    )
+    assert provenance["manifest_current"]
+    assert not provenance["contract_consistent"]
+    assert provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == forged_sha256
+    assert provenance[
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
             "route_contract_identity_matches_current"
         )
     ]

@@ -8340,12 +8340,36 @@ at `2840 tests` across `169` files. The full suite was not rerun because recent
 complete runs exceed 40 minutes and the new real-chain pair alone takes about
 27 minutes.
 
+Latest broker-readiness-to-scale-up dedicated route-enable route
+contract-identity proof: controlled scale-up now reopens the manifest-bound
+broker-readiness bundle and independently recovers the current dedicated
+digest from its terminal round-trip source before retaining the new
+route-enable route-enable identity. Three dedicated checks require the carried
+digest to be present, equal the recovered digest, and retain a passing
+current-source verdict. The plan, summary, nested broker-readiness config
+lineage, and manifest metadata preserve the active flag, carried digest,
+current digest, and verdict as a fourth identity family, while reloadable
+scale-up provenance repeats the comparison and includes the verdict in its
+gate. A broker-readiness bundle with both visible dedicated digests altered
+remains manifest-valid after its items, summary, config, runbook, and manifest
+are resealed, but scale-up still blocks against the unchanged round-trip
+source. Earlier route identity families retain their established behavior and
+inactive new fields remain sparse in scale-up reports. The forged end-to-end
+regression passed during a `2077.66s` shared-chain run; after correcting a
+test-only sparse legacy-field assumption, the exact clean regression passed
+against the preserved signed fixture in `293.30s`. The established two-test
+broker-route scale-up pair passes in `779.96s`, and `12` lightweight scale-up
+and provenance scenarios pass. Source compilation succeeds. Repository
+collection is healthy at `2842 tests` across `169` files. The full suite was
+not rerun because recent complete runs exceed 40 minutes and rebuilding the
+new recursive fixture alone takes about 28 minutes.
+
 ## Next Build Targets
 
-1. Carry the newly exported broker-readiness round-trip route-enable
-   route-enable route-contract digest and current-source verdict into scale-up
-   next-cycle lineage, and block a re-manifested readiness bundle before
-   scale-up can pass.
+1. Carry the newly verified scale-up broker-readiness route-enable
+   route-enable route-contract digest and current-source verdict through
+   runtime telemetry and runtime guard, and block a re-manifested scale-up
+   bundle before monitoring can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

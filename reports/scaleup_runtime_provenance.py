@@ -222,10 +222,71 @@ BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS = {
         BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
     )
 }
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD = (
+    "broker_readiness_roundtrip_ack_route_enable_route_enable_"
+    "route_contract_identity_active"
+)
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD = (
+    "broker_readiness_roundtrip_broker_dispatch_ack_broker_dispatch_send_"
+    "broker_dispatch_route_enable_cutover_runtime_telemetry_"
+    "broker_readiness_route_enable_route_contract_identity_sha256"
+)
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD = (
+    "broker_readiness_roundtrip_current_ack_route_enable_route_enable_"
+    "route_contract_identity_sha256"
+)
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SOURCE_VERDICT_FIELD = (
+    "broker_readiness_roundtrip_ack_route_enable_route_enable_"
+    "route_contract_identity_matches_current"
+)
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS = (
+    (
+        "roundtrip_ack_route_enable_route_enable_route_contract_identity_active",
+        (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD
+        ),
+    ),
+    (
+        "roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_"
+        "route_enable_cutover_runtime_telemetry_broker_readiness_"
+        "route_enable_route_contract_identity_sha256",
+        (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+        ),
+    ),
+    (
+        "roundtrip_current_ack_route_enable_route_enable_"
+        "route_contract_identity_sha256",
+        (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD
+        ),
+    ),
+    (
+        "roundtrip_ack_route_enable_route_enable_"
+        "route_contract_identity_matches_current",
+        (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SOURCE_VERDICT_FIELD
+        ),
+    ),
+)
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVATION_FIELDS = (
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    (
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD
+    ),
+)
+BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS = {
+    report_field: config_field
+    for config_field, report_field in (
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
+    )
+}
 BROKER_READINESS_IDENTITY_LINEAGE_FIELDS = (
     *BROKER_READINESS_CONTRACT_IDENTITY_LINEAGE_FIELDS,
     *BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS,
     *BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS,
+    *BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS,
 )
 BROKER_READINESS_LINEAGE_FIELDS = (
     *BROKER_READINESS_BASE_LINEAGE_FIELDS,
@@ -404,6 +465,26 @@ def empty_scaleup_runtime_provenance(*, required: bool = False) -> dict[str, Any
             ): "",
             (
                 "broker_readiness_route_enable_"
+                "route_contract_identity_matches_current"
+            ): not required,
+        }
+    )
+    evidence.update(
+        {
+            (
+                "broker_readiness_route_enable_route_enable_"
+                "route_contract_identity_active"
+            ): False,
+            (
+                "broker_readiness_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            ): "",
+            (
+                "broker_readiness_current_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            ): "",
+            (
+                "broker_readiness_route_enable_route_enable_"
                 "route_contract_identity_matches_current"
             ): not required,
         }
@@ -714,6 +795,94 @@ def load_scaleup_runtime_provenance(
             )
         )
     )
+    broker_route_enable_route_enable_identity_active = any(
+        _broker_readiness_contract_identity_present(value, report_field)
+        for report_field in (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVATION_FIELDS
+        )
+        for value in (
+            evidence.get(report_field),
+            current_broker_readiness_fields.get(report_field),
+        )
+    )
+    broker_route_enable_route_enable_identity_sha256 = _text(
+        evidence.get(
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+            "",
+        )
+    )
+    current_broker_route_enable_route_enable_identity_sha256 = _text(
+        current_broker_readiness_fields.get(
+            (
+                BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD
+            ),
+            "",
+        )
+        or current_broker_readiness_fields.get(
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+            "",
+        )
+    )
+    broker_route_enable_route_enable_identity_fields_match = all(
+        _same(
+            evidence.get(report_field),
+            current_broker_readiness_fields.get(report_field),
+        )
+        for _config_field, report_field in (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
+        )
+    )
+    broker_route_enable_route_enable_identity_matches_current = bool(
+        not broker_route_enable_route_enable_identity_active
+        or (
+            broker_readiness_config_path is not None
+            and _bool(
+                evidence.get(
+                    (
+                        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                current_broker_readiness_fields.get(
+                    (
+                        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVE_FIELD
+                    ),
+                    False,
+                )
+            )
+            and broker_route_enable_route_enable_identity_sha256
+            and current_broker_route_enable_route_enable_identity_sha256
+            and (
+                broker_route_enable_route_enable_identity_sha256
+                == current_broker_route_enable_route_enable_identity_sha256
+            )
+            and broker_route_enable_route_enable_identity_fields_match
+            and _bool(
+                evidence.get(
+                    (
+                        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SOURCE_VERDICT_FIELD
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                current_broker_readiness_fields.get(
+                    (
+                        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SOURCE_VERDICT_FIELD
+                    ),
+                    False,
+                )
+            )
+            and _bool(
+                current_broker_readiness_fields.get(
+                    "broker_readiness_lineage_gate_passed",
+                    False,
+                )
+            )
+        )
+    )
     evidence.update(
         {
             "broker_readiness_source_manifest_current": _bool(
@@ -800,6 +969,22 @@ def load_scaleup_runtime_provenance(
                 "broker_readiness_route_enable_"
                 "route_contract_identity_matches_current"
             ): broker_route_enable_identity_matches_current,
+            (
+                "broker_readiness_route_enable_route_enable_"
+                "route_contract_identity_active"
+            ): broker_route_enable_route_enable_identity_active,
+            (
+                "broker_readiness_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            ): broker_route_enable_route_enable_identity_sha256,
+            (
+                "broker_readiness_current_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            ): current_broker_route_enable_route_enable_identity_sha256,
+            (
+                "broker_readiness_route_enable_route_enable_"
+                "route_contract_identity_matches_current"
+            ): broker_route_enable_route_enable_identity_matches_current,
         }
     )
     evidence["contract_consistent"] = not errors
@@ -818,6 +1003,12 @@ def load_scaleup_runtime_provenance(
         and evidence[
             (
                 "broker_readiness_route_enable_"
+                "route_contract_identity_matches_current"
+            )
+        ]
+        and evidence[
+            (
+                "broker_readiness_route_enable_route_enable_"
                 "route_contract_identity_matches_current"
             )
         ]
@@ -952,6 +1143,54 @@ def scaleup_runtime_manifest_extra(provenance: Mapping[str, Any]) -> dict[str, A
             provenance.get(
                 (
                     "broker_readiness_route_enable_"
+                    "route_contract_identity_matches_current"
+                ),
+                False,
+            )
+        ),
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): _bool(
+            provenance.get(
+                (
+                    "broker_readiness_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        ),
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            provenance.get(
+                (
+                    "broker_readiness_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            provenance.get(
+                (
+                    "broker_readiness_current_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): _bool(
+            provenance.get(
+                (
+                    "broker_readiness_route_enable_route_enable_"
                     "route_contract_identity_matches_current"
                 ),
                 False,
@@ -1279,6 +1518,54 @@ def scaleup_runtime_fields(provenance: Mapping[str, Any]) -> dict[str, Any]:
             provenance.get(
                 (
                     "broker_readiness_route_enable_"
+                    "route_contract_identity_matches_current"
+                ),
+                False,
+            )
+        ),
+        (
+            "scaleup_broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): _bool(
+            provenance.get(
+                (
+                    "broker_readiness_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        ),
+        (
+            "scaleup_broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            provenance.get(
+                (
+                    "broker_readiness_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "scaleup_broker_readiness_current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            provenance.get(
+                (
+                    "broker_readiness_current_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "scaleup_broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): _bool(
+            provenance.get(
+                (
+                    "broker_readiness_route_enable_route_enable_"
                     "route_contract_identity_matches_current"
                 ),
                 False,
@@ -1702,6 +1989,25 @@ def _broker_readiness_contract_errors(
             current_fields.get(report_field),
         )
     )
+    route_enable_route_enable_identity_active = any(
+        _broker_readiness_contract_identity_present(value, report_field)
+        for report_field in (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_ACTIVATION_FIELDS
+        )
+        for value in (
+            lineage.get(
+                (
+                    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS[
+                        report_field
+                    ]
+                )
+            ),
+            summary.get(report_field),
+            plan.get(report_field),
+            manifest_extra.get(report_field),
+            current_fields.get(report_field),
+        )
+    )
     lineage_fields = (
         *BROKER_READINESS_BASE_LINEAGE_FIELDS,
         *(
@@ -1717,6 +2023,11 @@ def _broker_readiness_contract_errors(
         *(
             BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
             if route_enable_identity_active
+            else ()
+        ),
+        *(
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_LINEAGE_FIELDS
+            if route_enable_route_enable_identity_active
             else ()
         ),
     )
