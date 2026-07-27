@@ -8364,12 +8364,32 @@ collection is healthy at `2842 tests` across `169` files. The full suite was
 not rerun because recent complete runs exceed 40 minutes and rebuilding the
 new recursive fixture alone takes about 28 minutes.
 
+Latest scale-up-to-runtime dedicated route-enable route-enable
+route-contract identity proof: runtime telemetry now treats the newest terminal
+broker-readiness identity as a separate fourth family and adds three checks
+requiring its carried digest to be present, equal the independently recovered
+current digest, and retain a passing current-source verdict. Runtime guard
+independently compares every detailed identity field carried by telemetry with
+the current scale-up provenance, requires both carried/current digest pairs and
+both source verdicts to agree, and retains the reconciled active flag, carried
+digest, current digest, and verdict in metrics, summary, config, checks, and
+manifest metadata. A scale-up bundle with both visible dedicated digests
+rewritten remains manifest-valid after its summary, plan, config, and manifest
+are resealed, but telemetry is not ready and guard halts against the unchanged
+broker-readiness source. Earlier route identity families retain their
+established behavior, and inactive new fields remain neutral. The new
+clean/forged end-to-end pair passes in `2177.58s`; the established dedicated
+route-enable clean/forged compatibility pair passes in `840.25s`, and all `57`
+focused runtime telemetry and guard baselines pass in `21.6s`. Source
+compilation and diff checks succeed. Repository collection is healthy at
+`2844 tests` across `169` files. The full suite was not rerun because the two
+real-chain pairs alone take about 50 minutes.
+
 ## Next Build Targets
 
-1. Carry the newly verified scale-up broker-readiness route-enable
-   route-enable route-contract digest and current-source verdict through
-   runtime telemetry and runtime guard, and block a re-manifested scale-up
-   bundle before monitoring can pass.
+1. Carry the newly verified runtime-guard route-enable route-enable
+   route-contract digest and current-source verdict through the runtime-session
+   monitor, and block a re-manifested guard packet before cutover can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
