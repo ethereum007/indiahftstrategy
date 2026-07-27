@@ -8011,11 +8011,28 @@ Identity-inactive legacy sessions continue through neutral defaults. The full
 Source compilation succeeds. Repository collection is healthy at `2810 tests`
 across `169` files.
 
+Latest cutover-to-route-enable route contract-identity proof: route enable now
+requires the cutover-carried runtime route digest to be present, equal the
+digest independently recovered from the current recursive broker-readiness
+source, and retain a passing current-source verdict. The packet, summary,
+nested cutover-lineage config, manifest metadata, and runbook preserve the
+active flag, carried digest, current digest, and match result. Route-enable
+lineage publishes a separate active flag, current cutover route digest, and
+cutover-route-to-current verdict, avoiding any conflation with the terminal
+broker contract identity before dispatch planning. A cutover with every copied
+route digest forged is blocked after its authorization, summary, nested config,
+and manifest are made internally consistent and re-manifested; remediation
+routes to broker-readiness review. Identity-inactive legacy cutovers continue
+through neutral defaults. The two new clean/forged route tests, one legacy
+broker-lineage case, one established terminal-identity forgery regression, and
+one downstream broker-dispatch identity case pass. Source compilation
+succeeds. Repository collection is healthy at `2812 tests` across `169` files.
+
 ## Next Build Targets
 
-1. Carry the cutover runtime-route contract-identity digest/current-source
-   verdict into explicit route-enable checks, and block a re-manifested cutover
-   forgery before broker dispatch.
+1. Carry the route-enable cutover-route contract-identity digest/current-source
+   verdict into explicit broker-dispatch checks, and block a re-manifested
+   route-enable forgery before dispatch planning.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

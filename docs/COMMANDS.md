@@ -6230,6 +6230,22 @@ checks to their next CLI gate before broker dispatch planning can proceed. Use
 exist, or `--fail-on-actions` when any route-enable action should stop
 automation.
 
+For an active broker-readiness route contract identity, route enable reopens
+the manifest-bound cutover, runtime-session, scale-up, and recursive readiness
+sources. Dedicated checks require the cutover-carried runtime route digest to
+be present, equal the independently recovered current digest, and retain a
+passing current-source verdict. The active flag, carried digest, current
+digest, and verdict survive in the packet, summary, nested `cutover_lineage`
+config, manifest metadata, and runbook. Route-enable lineage separately emits
+`route_enable_cutover_route_contract_identity_active`,
+`route_enable_current_cutover_route_contract_identity_sha256`, and
+`route_enable_cutover_route_contract_identity_matches_current`, keeping this
+proof distinct from the terminal broker contract identity before dispatch
+planning. A cutover with every copied route digest forged remains blocked
+after its authorization, summary, config, and manifest are made internally
+consistent and re-manifested. Identity-inactive legacy cutovers retain neutral
+defaults.
+
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
 proof/resume context, dispatch round-trip proof, and any cutover-carried vendor
