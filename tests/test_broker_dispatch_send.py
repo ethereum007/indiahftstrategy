@@ -2417,8 +2417,17 @@ def _write_verified_ack_chain(
     return dispatch, send, ack
 
 
-def _write_route_identity_ack_chain(tmp_path):
-    dispatch, broker_fields = write_route_identity_dispatch(tmp_path)
+def _write_route_identity_ack_chain(
+    tmp_path,
+    *,
+    contract_identity=True,
+    route_contract_identity=False,
+):
+    dispatch, broker_fields = write_route_identity_dispatch(
+        tmp_path,
+        contract_identity=contract_identity,
+        route_contract_identity=route_contract_identity,
+    )
     send = tmp_path / "route_identity_send"
     send_report = write_broker_dispatch_send_packet(
         dispatch_dir=dispatch,

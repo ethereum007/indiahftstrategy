@@ -7436,6 +7436,26 @@ internally consistent and re-manifested. Remediation routes to
 `review-broker-readiness`, final artifacts remain non-authorizing, and the
 separate terminal route contract identity stays inactive.
 
+When broker readiness consumes that terminal round-trip bundle, it independently
+reopens the manifest-bound current acknowledgement source before accepting the
+dedicated broker-readiness route identity. The carried digest, current
+acknowledgement digest, and current-source verdict remain explicit as
+`broker_dispatch_roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_contract_identity_sha256`,
+`broker_dispatch_roundtrip_current_ack_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_roundtrip_ack_route_enable_route_contract_identity_matches_current`.
+Three dedicated readiness checks require the digest to be present, equal the
+independently recovered source digest, and retain a passing verdict. The fields
+are sealed into the dispatch-round-trip component item, readiness summary,
+nested config lineage, manifest metadata, and runbook, while reloadable
+readiness lineage exports the active proof under the
+`broker_readiness_roundtrip_*` namespace. A terminal bundle with all eight
+copied broker-route digests forged still fails readiness after its orders,
+summary, config, and manifest are made internally consistent and re-manifested;
+remediation returns to `review-broker-dispatch-roundtrip`. Inactive dedicated
+identity fields remain sparse at the readiness-to-scale-up boundary so existing
+terminal route-identity packets preserve their established downstream contract.
+
 For the exact `leadlag` portfolio profile, or whenever
 `leadlag_edge_lineage_required` is set, final review also owns a direct
 `leadlag_ack_contract_consistent` decision. It independently compares the

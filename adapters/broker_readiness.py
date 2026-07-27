@@ -22,6 +22,8 @@ from reports.operational_lineage import (
     BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS,
     BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELDS,
     BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS,
+    BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS,
     broker_dispatch_roundtrip_lineage_fields,
     broker_dispatch_roundtrip_lineage_manifest_inputs,
@@ -66,6 +68,7 @@ BROKER_DISPATCH_ROUNDTRIP_LINEAGE_RETAINED_FIELDS = (
     *BROKER_DISPATCH_ROUNDTRIP_LINEAGE_BASE_FIELDS,
     *BROKER_DISPATCH_ROUNDTRIP_CONTRACT_IDENTITY_FIELDS,
     *BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELDS,
+    *BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS,
     *(
         f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
         for field in (
@@ -4127,6 +4130,97 @@ def _broker_dispatch_roundtrip_lineage_checks(row: Any) -> list[dict[str, Any]]:
                     (
                         "terminal round-trip route contract identity no "
                         "longer matches the current acknowledgement source"
+                    ),
+                ),
+            ]
+        )
+    if bool(
+        getattr(
+            row,
+            (
+                "broker_dispatch_roundtrip_ack_route_enable_"
+                "route_contract_identity_active"
+            ),
+            False,
+        )
+    ):
+        route_enable_identity_sha256 = _object_text(
+            getattr(
+                row,
+                (
+                    BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+                ),
+                "",
+            )
+        ).strip()
+        current_route_enable_identity_sha256 = _object_text(
+            getattr(
+                row,
+                (
+                    "broker_dispatch_roundtrip_current_ack_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ).strip()
+        route_enable_identity_matches_current = bool(
+            getattr(
+                row,
+                (
+                    "broker_dispatch_roundtrip_ack_route_enable_"
+                    "route_contract_identity_matches_current"
+                ),
+                False,
+            )
+        )
+        checks.extend(
+            [
+                _check(
+                    (
+                        "dispatch_roundtrip_broker_route_contract_"
+                        "identity_sha256_present"
+                    ),
+                    route_enable_identity_sha256,
+                    "present",
+                    True,
+                    bool(route_enable_identity_sha256),
+                    (
+                        "terminal round-trip broker route contract identity "
+                        "digest is missing"
+                    ),
+                ),
+                _check(
+                    (
+                        "dispatch_roundtrip_broker_route_contract_"
+                        "identity_sha256_matches_current"
+                    ),
+                    route_enable_identity_sha256,
+                    "==",
+                    current_route_enable_identity_sha256,
+                    bool(
+                        route_enable_identity_sha256
+                        and current_route_enable_identity_sha256
+                        and route_enable_identity_sha256
+                        == current_route_enable_identity_sha256
+                    ),
+                    (
+                        "terminal round-trip broker route contract identity "
+                        "digest differs from the current acknowledgement "
+                        "source"
+                    ),
+                ),
+                _check(
+                    (
+                        "dispatch_roundtrip_broker_route_contract_"
+                        "identity_matches_current"
+                    ),
+                    route_enable_identity_matches_current,
+                    "is",
+                    True,
+                    route_enable_identity_matches_current,
+                    (
+                        "terminal round-trip broker route contract identity "
+                        "no longer matches the current acknowledgement source"
                     ),
                 ),
             ]
@@ -8427,6 +8521,10 @@ def _runbook_markdown(summary: pd.DataFrame, items: pd.DataFrame, action_queue: 
         f"- Terminal round-trip carried route contract identity: `{_item_text(row, BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD)}`",
         f"- Current acknowledgement route contract identity: `{_item_text(row, 'broker_dispatch_roundtrip_current_ack_route_contract_identity_sha256')}`",
         f"- Terminal round-trip route contract identity matches current: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_ack_route_contract_identity_matches_current'))}",
+        f"- Terminal round-trip broker route contract identity active: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_ack_route_enable_route_contract_identity_active'))}",
+        f"- Terminal round-trip carried broker route contract identity: `{_item_text(row, BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD)}`",
+        f"- Current acknowledgement broker route contract identity: `{_item_text(row, 'broker_dispatch_roundtrip_current_ack_route_enable_route_contract_identity_sha256')}`",
+        f"- Terminal round-trip broker route contract identity matches current: {_yes_no(_item_bool(row, 'broker_dispatch_roundtrip_ack_route_enable_route_contract_identity_matches_current'))}",
         f"- Terminal round-trip manifest error: {_item_text(row, 'broker_dispatch_roundtrip_manifest_error')}",
         f"- Terminal round-trip contract error: {_item_text(row, 'broker_dispatch_roundtrip_lineage_contract_error')}",
         "",

@@ -8110,12 +8110,33 @@ Repository collection is healthy at `2820 tests` across `169` files. The full
 suite was not rerun because recent complete runs exceed 40 minutes; all
 affected identity boundaries were exercised directly.
 
+Latest roundtrip-to-broker-readiness dedicated route contract-identity proof:
+broker readiness now requires the terminal round-trip-carried broker-route
+digest to be present, equal the digest independently recovered from the current
+acknowledgement, send, dispatch, route-enable, and recursive cutover source, and
+retain a passing current-source verdict. The dispatch-round-trip component item,
+readiness summary, nested config lineage, manifest metadata, and runbook retain
+the active flag, carried digest, current digest, and verdict. Reloadable
+readiness lineage independently recomputes the result and exports the active
+proof under dedicated `broker_readiness_roundtrip_*` fields without activating
+the older terminal route identity. A terminal round-trip bundle with all eight
+copied dedicated route digests forged remains blocked after its orders,
+summary, config, and manifest are made internally consistent and re-manifested;
+remediation routes to final broker dispatch round-trip review. Inactive
+dedicated fields remain sparse at the controlled-scale-up handoff so legacy and
+ordinary terminal route-identity chains retain their established downstream
+contract. The two new clean/forged readiness tests, two established terminal
+readiness identity regressions, and all five broker-readiness lineage tests
+pass. Source compilation succeeds. Repository collection is healthy at
+`2822 tests` across `169` files. The full suite was not rerun because recent
+complete runs exceed 40 minutes; all affected recursive identity and
+compatibility paths were exercised directly.
+
 ## Next Build Targets
 
-1. Carry the dedicated final round-trip acknowledgement route-enable
-   route-contract digest and current-source verdict into explicit
-   broker-readiness checks, and block a re-manifested round-trip forgery before
-   readiness can pass.
+1. Carry the dedicated broker-readiness round-trip route-enable route-contract
+   digest and current-source verdict through controlled scale-up, and block a
+   re-manifested readiness forgery before promotion can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
