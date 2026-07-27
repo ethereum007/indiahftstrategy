@@ -7320,6 +7320,31 @@ are made internally consistent and re-manifested. Remediation routes to
 `review-broker-readiness`, acknowledgement output remains non-authorizing, and
 the separate terminal route contract identity stays inactive.
 
+For an active broker-readiness route-enable route contract identity,
+acknowledgement reconciliation now reopens the send-manifest-bound dispatch
+source and independently recovers the current dedicated digest through its
+route-enable, cutover, runtime-session, scale-up, and recursive
+broker-readiness lineage. The send-carried digest, independently recovered
+current digest, and verdict surface as
+`broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256`,
+`broker_dispatch_send_current_dispatch_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_send_dispatch_route_enable_route_enable_route_contract_identity_matches_current`
+in every acknowledgement row plus summary, config, manifest, and runbook.
+Dedicated acknowledgement checks require the carried digest to be present,
+equal the current digest, and retain a passing current-source verdict.
+Reloadable acknowledgement lineage preserves the proof separately as
+`broker_dispatch_ack_send_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_ack_current_send_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_ack_send_route_enable_route_enable_route_contract_identity_matches_current`.
+A send packet with every copied dedicated digest forged remains manifest-valid
+and internally contract-consistent after its requests, payload hashes, IDs,
+summary, config, and manifest are resealed, but acknowledgement reconciliation
+stays blocked against the unchanged dispatch source. Remediation routes to
+`review-broker-readiness`, acknowledgement output remains non-authorizing, and
+identity-inactive legacy packets retain neutral defaults.
+
 When the provider broker-dispatch-send wrapper retained validated dispatch
 round-trip capture provenance, acknowledgement reconciliation carries the same
 `dispatch_roundtrip_capture_bundle_*`,

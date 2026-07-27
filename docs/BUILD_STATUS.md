@@ -8267,12 +8267,36 @@ compilation succeeds. Repository collection is healthy at `2834 tests` across
 `169` files. The full suite was not rerun because recent complete runs exceed
 40 minutes and the dedicated real-chain pair alone takes about 22 minutes.
 
+Latest broker-send-to-ack dedicated route-enable route contract-identity
+proof: acknowledgement reconciliation now reopens the manifest-bound
+broker-send packet and independently recovers the current dedicated digest
+through its dispatch, route-enable, cutover, runtime-session, scale-up, and
+recursive broker-readiness sources. Dedicated checks require the send-carried
+digest to be present, equal the recovered digest, and retain a passing
+current-source verdict before acknowledgement reconciliation can pass. Every
+acknowledgement row plus the summary, nested send lineage, manifest metadata,
+and runbook retains the active flag, carried digest, current digest, and
+verdict. Reloadable broker-ack lineage publishes a separate active flag,
+current send digest, and source-match verdict and includes that verdict in its
+gate. A send packet with every visible dedicated digest forged remains
+manifest-valid and internally contract-consistent after its requests, payload
+hashes, IDs, summary, config, and manifest are resealed, but acknowledgement
+reconciliation remains blocked against the unchanged dispatch source and
+remediation returns to broker-readiness review. Acknowledgement outputs remain
+non-authorizing, and inactive dedicated fields retain neutral compatibility
+behavior. The two new clean/forged end-to-end tests pass in `1335.83s`; the
+established two-test broker route-identity ack pair passes in `462.79s`, and
+`11` lightweight broker-ack baseline scenarios pass. Source compilation
+succeeds. Repository collection is healthy at `2836 tests` across `169` files.
+The full suite was not rerun because recent complete runs exceed 40 minutes and
+the dedicated real-chain pair alone takes about 22 minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated broker-send dispatch route-enable route-enable
-   route-contract digest and current-source verdict through broker-ack lineage,
-   and block a re-manifested send packet before acknowledgement reconciliation
-   can pass.
+1. Carry the dedicated broker-ack send route-enable route-enable
+   route-contract digest and current-source verdict through final broker
+   round-trip lineage, and block a re-manifested acknowledgement packet before
+   final round-trip review can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
