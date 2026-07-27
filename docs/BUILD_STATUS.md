@@ -8221,11 +8221,35 @@ succeeds. Repository collection is healthy at `2830 tests` across `169` files.
 The full suite was not rerun because recent complete runs exceed 40 minutes and
 the dedicated real-chain pair alone takes about 39 minutes.
 
+Latest route-enable-to-broker-dispatch dedicated route-enable route
+contract-identity proof: dispatch planning now reopens the manifest-bound
+route-enable packet and independently recovers the current dedicated digest
+through its cutover, runtime-session, scale-up, and recursive broker-readiness
+sources. Dedicated checks require the route-enable-carried digest to be
+present, equal the recovered digest, and retain a passing current-source
+verdict before dry-run dispatch can arm. Every dispatch order plus summary,
+nested route-enable lineage, manifest metadata, and runbook retains the active
+flag, carried digest, current digest, and verdict. Reloadable broker-dispatch
+lineage publishes a separate active flag, current route-enable digest, and
+source-match verdict and includes that verdict in its gate. A route-enable
+packet with every visible dedicated digest forged remains manifest-valid and
+internally contract-consistent after its summary, packet, config, and manifest
+are resealed, but dispatch remains disabled against the unchanged cutover
+source and remediation returns to broker-readiness review. Inactive dedicated
+fields retain neutral compatibility behavior. The two new clean/forged
+end-to-end tests pass in `1528.52s`; the established two-test route-identity
+pair passes in `479.96s`, and eight baseline broker-dispatch scenarios pass.
+Source compilation succeeds. Repository collection is healthy at `2832 tests`
+across `169` files. The full suite was not rerun because recent complete runs
+exceed 40 minutes and the dedicated real-chain pair alone takes about 25
+minutes.
+
 ## Next Build Targets
 
-1. Carry the dedicated route-enable cutover route-enable route-contract digest
-   and current-source verdict through broker-dispatch lineage, and block a
-   re-manifested route-enable bundle before dispatch planning can arm.
+1. Carry the dedicated broker-dispatch route-enable route-enable
+   route-contract digest and current-source verdict through broker-send
+   lineage, and block a re-manifested dispatch bundle before send preparation
+   can arm.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

@@ -168,6 +168,24 @@ ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
         for column in CUTOVER_ROUTE_CONTRACT_IDENTITY_FIELDS
     ),
 )
+ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
+    (
+        "route_enable_cutover_route_enable_"
+        "route_contract_identity_active"
+    ),
+    (
+        "route_enable_current_cutover_route_enable_"
+        "route_contract_identity_sha256"
+    ),
+    (
+        "route_enable_cutover_route_enable_"
+        "route_contract_identity_matches_current"
+    ),
+    *(
+        f"route_enable_{column}"
+        for column in CUTOVER_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+    ),
+)
 BROKER_DISPATCH_CONTRACT_IDENTITY_FIELDS = (
     "broker_dispatch_route_contract_identity_active",
     "broker_dispatch_current_route_contract_identity_sha256",
@@ -184,6 +202,24 @@ BROKER_DISPATCH_ROUTE_CONTRACT_IDENTITY_FIELDS = (
     *(
         f"broker_dispatch_{column}"
         for column in ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+    ),
+)
+BROKER_DISPATCH_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
+    (
+        "broker_dispatch_route_enable_route_enable_"
+        "route_contract_identity_active"
+    ),
+    (
+        "broker_dispatch_current_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    ),
+    (
+        "broker_dispatch_route_enable_route_enable_"
+        "route_contract_identity_matches_current"
+    ),
+    *(
+        f"broker_dispatch_{column}"
+        for column in ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
     ),
 )
 BROKER_DISPATCH_SEND_CONTRACT_IDENTITY_FIELDS = (
@@ -2684,6 +2720,15 @@ def empty_broker_dispatch_lineage(*, required: bool = False) -> dict[str, Any]:
         "route_enable_route_contract_identity_active": False,
         "current_route_enable_route_contract_identity_sha256": "",
         "route_enable_route_contract_identity_matches_current": not required,
+        "route_enable_route_enable_route_contract_identity_active": False,
+        (
+            "current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): "",
+        (
+            "route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): not required,
         "gate_passed": not required,
         "dependency_count": 0,
         "dependency_paths": [],
@@ -2801,6 +2846,12 @@ def load_broker_dispatch_lineage(
         and state["route_enable_matches_current"]
         and state["route_contract_identity_matches_current"]
         and state["route_enable_route_contract_identity_matches_current"]
+        and state[
+            (
+                "route_enable_route_enable_"
+                "route_contract_identity_matches_current"
+            )
+        ]
     )
     return state
 
@@ -2859,6 +2910,39 @@ def broker_dispatch_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]
         ): _bool(
             lineage.get(
                 "route_enable_route_contract_identity_matches_current",
+                False,
+            )
+        ),
+        (
+            "broker_dispatch_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): _bool(
+            lineage.get(
+                "route_enable_route_enable_route_contract_identity_active",
+                False,
+            )
+        ),
+        (
+            "broker_dispatch_current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            lineage.get(
+                (
+                    "current_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "broker_dispatch_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): _bool(
+            lineage.get(
+                (
+                    "route_enable_route_enable_"
+                    "route_contract_identity_matches_current"
+                ),
                 False,
             )
         ),
@@ -7174,6 +7258,11 @@ def _dispatch_current_route_enable_lineage_state(
         for column in ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
         if column in route_fields
     )
+    route_enable_route_identity_fields = tuple(
+        column
+        for column in ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+        if column in route_fields
+    )
     carried_identity_active = bool(
         any(
             _bool(lineage.get(column, False))
@@ -7337,6 +7426,92 @@ def _dispatch_current_route_enable_lineage_state(
             )
         )
     )
+    carried_route_enable_route_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "route_enable_cutover_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or any(
+            _bool(lineage.get(column, False))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(lineage.get(column, ""))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    current_route_enable_route_identity_active = bool(
+        _bool(
+            current_fields.get(
+                (
+                    "route_enable_cutover_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or any(
+            _bool(current_fields.get(column, False))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_active")
+        )
+        or any(
+            _text(current_fields.get(column, ""))
+            for column in route_enable_route_identity_fields
+            if column.endswith("_sha256")
+        )
+    )
+    route_enable_route_enable_route_contract_identity_active = bool(
+        carried_route_enable_route_identity_active
+        or current_route_enable_route_identity_active
+    )
+    current_route_enable_route_enable_route_identity_sha256 = _text(
+        current_fields.get(
+            (
+                "route_enable_current_cutover_route_enable_"
+                "route_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    carried_route_enable_route_enable_route_identity_sha256 = _text(
+        lineage.get(
+            (
+                "route_enable_cutover_runtime_telemetry_broker_readiness_"
+                "route_enable_route_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    route_enable_route_enable_route_contract_identity_matches_current = bool(
+        not route_enable_route_enable_route_contract_identity_active
+        or (
+            source_bound
+            and current.get("gate_passed", False)
+            and current_route_enable_route_identity_active
+            and carried_route_enable_route_enable_route_identity_sha256
+            and current_route_enable_route_enable_route_identity_sha256
+            and (
+                carried_route_enable_route_enable_route_identity_sha256
+                == current_route_enable_route_enable_route_identity_sha256
+            )
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_fields.get(column),
+                    column,
+                )
+                for column in route_enable_route_identity_fields
+            )
+        )
+    )
     route_enable_matches_current = bool(
         source_bound
         and current.get("gate_passed", False)
@@ -7363,6 +7538,17 @@ def _dispatch_current_route_enable_lineage_state(
         "route_enable_route_contract_identity_matches_current": (
             route_enable_route_contract_identity_matches_current
         ),
+        "route_enable_route_enable_route_contract_identity_active": (
+            route_enable_route_enable_route_contract_identity_active
+        ),
+        (
+            "current_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): current_route_enable_route_enable_route_identity_sha256,
+        (
+            "route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): route_enable_route_enable_route_contract_identity_matches_current,
     }
 
 

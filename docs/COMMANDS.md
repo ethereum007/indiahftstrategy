@@ -6817,6 +6817,30 @@ dispatch output remains non-authorizing. This route proof is kept distinct
 from the terminal broker contract identity, while route-identity-inactive
 legacy packets retain neutral defaults.
 
+For an active broker route-enable route contract identity, dispatch planning
+also follows the manifest-bound route-enable packet through its current
+cutover, runtime-session, scale-up, and recursive broker-readiness sources.
+The carried digest, independently recovered current digest, and verdict
+surface as
+`route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256`,
+`route_enable_current_cutover_route_enable_route_contract_identity_sha256`,
+and
+`route_enable_cutover_route_enable_route_contract_identity_matches_current`
+in every dispatch order plus summary, nested config, manifest metadata, and
+runbook. Reloadable broker-dispatch lineage publishes the compact
+`broker_dispatch_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_current_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_route_enable_route_enable_route_contract_identity_matches_current`
+handoff. Dedicated checks require the carried digest to be present, equal the
+current digest, and retain a passing verdict before dry-run dispatch can arm.
+A route-enable bundle whose dedicated digest is consistently forged remains
+disabled after its packet, summary, config, and manifest are re-manifested;
+remediation returns to `review-broker-readiness`, and dispatch output remains
+non-authorizing. This proof stays separate from both the older route and
+terminal contract identities; inactive dedicated fields retain neutral
+compatibility behavior.
+
 When route-enable retained strategy portfolio allocation, dispatch
 planning carries the `strategy_portfolio_*` fields into summary/config,
 including concentration counts, top concentration names, and maximum allocation
