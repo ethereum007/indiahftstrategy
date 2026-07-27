@@ -5450,6 +5450,19 @@ and
 `runtime_lineage_broker_readiness_route_enable_route_contract_identity_matches_current`
 for cutover. Re-manifesting a copied runtime digest therefore cannot turn a
 source mismatch into a passing session lineage verdict.
+For the newest route-enable route-enable route-contract identity, runtime
+session performs the same reopen as a fourth independent family. It requires
+the scale-up carried and claimed-current digests plus the runtime-guard carried
+and claimed-current digests to converge on the digest recovered from the
+manifest-bound broker-readiness source, while all three current-source verdicts
+remain true. The session lineage retains
+`runtime_lineage_broker_readiness_route_enable_route_enable_route_contract_identity_active`,
+`runtime_lineage_current_broker_readiness_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`runtime_lineage_broker_readiness_route_enable_route_enable_route_contract_identity_matches_current`.
+Changing every visible copy in the runtime-session summary, config, and
+manifest and then resealing the packet therefore leaves manifest integrity
+intact but fails the operational lineage gate before cutover.
 For canonical `leadlag`, every session step also retains the complete
 `strategy_portfolio_leadlag_*` measured-edge contract and the guard's
 `leadlag_edge_lineage_matches_scaleup` decision. The session summary, runbook,
@@ -5844,6 +5857,18 @@ facts, and cutover lineage publishes
 `cutover_runtime_route_enable_route_contract_identity_matches_current`.
 A runtime bundle whose dedicated digests are changed and then re-manifested
 remains blocked and routes remediation to broker-readiness review.
+The terminal route-enable route-enable identity follows its own fourth-family
+cutover contract. Cutover checks the scale-up carried/current pair, the
+runtime-guard carried/current pair, and the runtime-session source digest and
+verdict against the recursively reopened broker-readiness bundle. These fields
+are retained in authorization, summary, nested config, manifest metadata, and
+the runbook. Reloadable cutover lineage derives
+`cutover_runtime_route_enable_route_enable_route_contract_identity_active`,
+`cutover_current_runtime_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`cutover_runtime_route_enable_route_enable_route_contract_identity_matches_current`.
+A structurally consistent, freshly re-manifested runtime packet with forged
+terminal digests remains blocked and queues `review-broker-readiness`.
 
 `cutover_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so schedulers can route the first

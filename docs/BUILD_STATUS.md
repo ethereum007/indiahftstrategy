@@ -8385,11 +8385,38 @@ compilation and diff checks succeed. Repository collection is healthy at
 `2844 tests` across `169` files. The full suite was not rerun because the two
 real-chain pairs alone take about 50 minutes.
 
+Latest runtime-session-to-cutover dedicated route-enable route-enable
+route-contract identity proof: runtime-session operational lineage now reopens
+the manifest-bound broker-readiness source and independently recovers the
+current terminal identity digest before accepting the runtime guard's carried
+claim. It compares the scale-up carried/current pair, the runtime-guard
+carried/current pair, the broker-readiness source verdict, the scale-up
+verdict, and the runtime verdict as a separate fourth identity family. Cutover
+adds `13` dedicated checks across those claims and retains the active flag,
+carried digest, independently recovered current digest, and verdict in
+authorization, summary, nested config lineage, manifest metadata, and the
+runbook. Reloadable cutover lineage reopens the current runtime session,
+compares all seven detailed terminal identity fields, includes the resulting
+verdict in its gate, and exports a separate `cutover_runtime_*` proof for the
+route-enable cycle. A copied runtime-session packet with all six visible
+terminal digests rewritten remains manifest-valid and internally
+contract-consistent after its summary, config, and manifest are resealed, but
+runtime-session lineage and cutover both block against the unchanged
+broker-readiness source and remediation returns to broker-readiness review.
+Earlier identity families retain their established behavior and inactive new
+fields remain neutral. The new clean/forged end-to-end pair passes in
+`3053.17s`; the established two-test route-enable route-contract compatibility
+pair passes in `1135.92s`, all `13` runtime-session tests pass in `52.1s`, and
+`10` lightweight cutover baselines pass in `6.41s`. Source compilation and
+diff checks succeed. Repository collection is healthy at `2846 tests` across
+`169` files. The full suite was not rerun because the two real-chain pairs
+alone take about 70 minutes.
+
 ## Next Build Targets
 
-1. Carry the newly verified runtime-guard route-enable route-enable
-   route-contract digest and current-source verdict through the runtime-session
-   monitor, and block a re-manifested guard packet before cutover can pass.
+1. Carry the newly verified cutover route-enable route-enable route-contract
+   digest and current-source verdict through route-enable, and block a
+   re-manifested cutover packet before dispatch can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

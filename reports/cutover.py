@@ -732,6 +732,12 @@ def _checks(
             runtime,
         )
     )
+    checks.extend(
+        _broker_readiness_route_enable_route_enable_route_contract_identity_checks(
+            scaleup_provenance,
+            runtime,
+        )
+    )
     if _runtime_strategy_portfolio_active(runtime):
         checks.extend(
             [
@@ -5048,6 +5054,273 @@ def _broker_readiness_route_enable_route_contract_identity_checks(
     ]
 
 
+def _broker_readiness_route_enable_route_enable_route_contract_identity_checks(
+    provenance: dict[str, Any],
+    runtime: dict[str, Any],
+) -> list[dict[str, object]]:
+    scaleup = scaleup_runtime_fields(provenance)
+    scaleup_prefix = (
+        "scaleup_broker_readiness_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    runtime_prefix = (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    runtime_current_field = (
+        "runtime_telemetry_current_broker_readiness_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    )
+    lineage_prefix = (
+        "runtime_lineage_broker_readiness_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    lineage_current_field = (
+        "runtime_lineage_current_broker_readiness_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    )
+    scaleup_current_field = (
+        "scaleup_broker_readiness_current_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    )
+    active = bool(
+        _to_bool(scaleup.get(f"{scaleup_prefix}active", False))
+        or _to_bool(runtime.get(f"{runtime_prefix}active", False))
+        or _to_bool(runtime.get(f"{lineage_prefix}active", False))
+        or _object_text(
+            scaleup.get(f"{scaleup_prefix}sha256", "")
+        ).strip()
+        or _object_text(scaleup.get(scaleup_current_field, "")).strip()
+        or _object_text(runtime.get(f"{runtime_prefix}sha256", "")).strip()
+        or _object_text(runtime.get(runtime_current_field, "")).strip()
+        or _object_text(runtime.get(lineage_current_field, "")).strip()
+    )
+    if not active:
+        return []
+
+    scaleup_sha256 = _object_text(
+        scaleup.get(f"{scaleup_prefix}sha256", "")
+    ).strip()
+    scaleup_current_sha256 = _object_text(
+        scaleup.get(scaleup_current_field, "")
+    ).strip()
+    runtime_sha256 = _object_text(
+        runtime.get(f"{runtime_prefix}sha256", "")
+    ).strip()
+    runtime_current_sha256 = _object_text(
+        runtime.get(runtime_current_field, "")
+    ).strip()
+    lineage_current_sha256 = _object_text(
+        runtime.get(lineage_current_field, "")
+    ).strip()
+    return [
+        _check(
+            f"{scaleup_prefix}active",
+            _to_bool(scaleup.get(f"{scaleup_prefix}active", False)),
+            "is",
+            True,
+            _to_bool(scaleup.get(f"{scaleup_prefix}active", False)),
+            (
+                "scale-up did not retain the active broker route-enable "
+                "route-enable route contract identity"
+            ),
+        ),
+        _check(
+            f"{scaleup_prefix}sha256_present",
+            scaleup_sha256,
+            "present",
+            True,
+            bool(scaleup_sha256),
+            (
+                "scale-up broker route-enable route-enable route contract "
+                "identity digest is missing"
+            ),
+        ),
+        _check(
+            f"{scaleup_prefix}sha256_matches_current",
+            scaleup_sha256,
+            "==",
+            lineage_current_sha256,
+            bool(
+                scaleup_sha256
+                and lineage_current_sha256
+                and scaleup_sha256 == lineage_current_sha256
+            ),
+            (
+                "scale-up broker route-enable route-enable route contract "
+                "identity digest differs from the current recursive "
+                "broker-readiness source"
+            ),
+        ),
+        _check(
+            (
+                "scaleup_broker_readiness_current_route_enable_route_enable_"
+                "route_contract_identity_sha256_matches_current"
+            ),
+            scaleup_current_sha256,
+            "==",
+            lineage_current_sha256,
+            bool(
+                scaleup_current_sha256
+                and lineage_current_sha256
+                and scaleup_current_sha256 == lineage_current_sha256
+            ),
+            (
+                "scale-up claimed-current broker route-enable route-enable "
+                "route contract identity differs from the current recursive "
+                "broker-readiness source"
+            ),
+        ),
+        _check(
+            f"{scaleup_prefix}matches_current",
+            _to_bool(
+                scaleup.get(
+                    f"{scaleup_prefix}matches_current",
+                    False,
+                )
+            ),
+            "is",
+            True,
+            _to_bool(
+                scaleup.get(
+                    f"{scaleup_prefix}matches_current",
+                    False,
+                )
+            ),
+            (
+                "scale-up broker route-enable route-enable route contract "
+                "identity current-source verdict failed"
+            ),
+        ),
+        _check(
+            f"{runtime_prefix}active",
+            _to_bool(runtime.get(f"{runtime_prefix}active", False)),
+            "is",
+            True,
+            _to_bool(runtime.get(f"{runtime_prefix}active", False)),
+            (
+                "runtime session did not retain the active broker "
+                "route-enable route-enable route identity"
+            ),
+        ),
+        _check(
+            f"{runtime_prefix}sha256_present",
+            runtime_sha256,
+            "present",
+            True,
+            bool(runtime_sha256),
+            (
+                "runtime broker route-enable route-enable route contract "
+                "identity digest is missing"
+            ),
+        ),
+        _check(
+            f"{runtime_prefix}sha256_matches_current",
+            runtime_sha256,
+            "==",
+            lineage_current_sha256,
+            bool(
+                runtime_sha256
+                and lineage_current_sha256
+                and runtime_sha256 == lineage_current_sha256
+            ),
+            (
+                "runtime broker route-enable route-enable route contract "
+                "identity digest differs from the current recursive "
+                "broker-readiness source"
+            ),
+        ),
+        _check(
+            (
+                "runtime_telemetry_current_broker_readiness_"
+                "route_enable_route_enable_"
+                "route_contract_identity_sha256_matches_current"
+            ),
+            runtime_current_sha256,
+            "==",
+            lineage_current_sha256,
+            bool(
+                runtime_current_sha256
+                and lineage_current_sha256
+                and runtime_current_sha256 == lineage_current_sha256
+            ),
+            (
+                "runtime telemetry claimed-current broker route-enable "
+                "route-enable route identity differs from the current "
+                "recursive broker-readiness source"
+            ),
+        ),
+        _check(
+            f"{runtime_prefix}matches_current",
+            _to_bool(
+                runtime.get(
+                    f"{runtime_prefix}matches_current",
+                    False,
+                )
+            ),
+            "is",
+            True,
+            _to_bool(
+                runtime.get(
+                    f"{runtime_prefix}matches_current",
+                    False,
+                )
+            ),
+            (
+                "runtime broker route-enable route-enable route identity no "
+                "longer matches current scale-up"
+            ),
+        ),
+        _check(
+            f"{lineage_prefix}active",
+            _to_bool(runtime.get(f"{lineage_prefix}active", False)),
+            "is",
+            True,
+            _to_bool(runtime.get(f"{lineage_prefix}active", False)),
+            (
+                "runtime lineage did not retain the active broker "
+                "route-enable route-enable route identity"
+            ),
+        ),
+        _check(
+            (
+                "runtime_lineage_current_broker_readiness_"
+                "route_enable_route_enable_"
+                "route_contract_identity_sha256_present"
+            ),
+            lineage_current_sha256,
+            "present",
+            True,
+            bool(lineage_current_sha256),
+            (
+                "runtime lineage did not recover the current broker "
+                "route-enable route-enable route contract identity digest"
+            ),
+        ),
+        _check(
+            f"{lineage_prefix}matches_current",
+            _to_bool(
+                runtime.get(
+                    f"{lineage_prefix}matches_current",
+                    False,
+                )
+            ),
+            "is",
+            True,
+            _to_bool(
+                runtime.get(
+                    f"{lineage_prefix}matches_current",
+                    False,
+                )
+            ),
+            (
+                "runtime route-enable route-enable route contract identity no "
+                "longer matches the current recursive broker-readiness source"
+            ),
+        ),
+    ]
+
+
 def _authorization(
     scaleup: dict[str, Any],
     broker: dict[str, Any],
@@ -6294,6 +6567,11 @@ def _component(check: str) -> str:
             "broker_readiness_route_enable_route_contract_identity"
             in check
         )
+        or (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity"
+            in check
+        )
     ):
         return "broker_readiness"
     if check.startswith("runtime_lineage_broker_readiness_"):
@@ -7347,6 +7625,10 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Broker route-enable route contract identity digest: {_code(summary_row.get('runtime_telemetry_broker_readiness_route_enable_route_contract_identity_sha256'))}",
         f"- Current broker route-enable route contract identity digest: {_code(summary_row.get('runtime_lineage_current_broker_readiness_route_enable_route_contract_identity_sha256'))}",
         f"- Broker route-enable route contract identity matches current: {'yes' if _to_bool(summary_row.get('runtime_lineage_broker_readiness_route_enable_route_contract_identity_matches_current')) else 'no'}",
+        f"- Broker route-enable route-enable route contract identity active: {'yes' if _to_bool(summary_row.get('runtime_lineage_broker_readiness_route_enable_route_enable_route_contract_identity_active')) else 'no'}",
+        f"- Broker route-enable route-enable route contract identity digest: {_code(summary_row.get('runtime_telemetry_broker_readiness_route_enable_route_enable_route_contract_identity_sha256'))}",
+        f"- Current broker route-enable route-enable route contract identity digest: {_code(summary_row.get('runtime_lineage_current_broker_readiness_route_enable_route_enable_route_contract_identity_sha256'))}",
+        f"- Broker route-enable route-enable route contract identity matches current: {'yes' if _to_bool(summary_row.get('runtime_lineage_broker_readiness_route_enable_route_enable_route_contract_identity_matches_current')) else 'no'}",
         f"- Research family: {_object_text(summary_row.get('runtime_scaleup_research_family_id')).strip()}",
         f"- Lead-lag lineage required: {'yes' if _to_bool(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_required')) else 'no'}",
         f"- Lead-lag lineage matches scale-up: {'yes' if _to_bool(summary_row.get('runtime_strategy_portfolio_leadlag_edge_lineage_matches_scaleup')) else 'no'}",
