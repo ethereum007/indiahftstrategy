@@ -6388,6 +6388,24 @@ repair action returns to broker-readiness review. This proof remains separate
 from both the older route and terminal contract identities; inactive dedicated
 fields retain neutral compatibility behavior.
 
+For the newest broker-readiness route-enable route-enable route-contract
+identity, route enable performs the same cutover reopen as a fourth independent
+family. Three dedicated checks require the cutover-carried digest to be
+present, equal the current digest recovered through the manifest-bound runtime,
+scale-up, and readiness sources, and retain a passing cutover current-source
+verdict. The packet, summary, nested `cutover_lineage` config, manifest
+metadata, and runbook preserve the active flag, carried digest, current digest,
+and verdict. Reloadable route-enable lineage exports
+`route_enable_cutover_route_enable_route_enable_route_contract_identity_active`,
+`route_enable_current_cutover_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`route_enable_cutover_route_enable_route_enable_route_contract_identity_matches_current`
+for dispatch planning. Rewriting the terminal digests throughout cutover
+authorization, summary, config, and manifest and then re-manifesting the packet
+therefore leaves an internally consistent cutover that route enable still
+blocks and routes to broker-readiness review. Identity-inactive cutovers keep
+neutral compatibility behavior.
+
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
 proof/resume context, dispatch round-trip proof, and any cutover-carried vendor

@@ -1,6 +1,9 @@
 import hashlib
 import json
+import os
 import shutil
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -15,6 +18,7 @@ from reports.operational_lineage import (
     load_broker_readiness_lineage,
     load_route_enable_lineage,
     load_runtime_session_lineage,
+    route_enable_lineage_fields,
     runtime_session_lineage_fields,
 )
 from reports.route_enable import (
@@ -26,6 +30,7 @@ from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_CO
 from reports.scaleup_runtime_provenance import (
     BROKER_READINESS_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     load_scaleup_runtime_provenance,
     scaleup_runtime_fields,
     scaleup_runtime_manifest_inputs,
@@ -2171,6 +2176,68 @@ def route_enable_route_contract_identity_route_enable_inputs(
     return cutover, upload, export, broker_fields
 
 
+@pytest.fixture(scope="module")
+def route_enable_route_enable_route_contract_identity_route_enable_inputs(
+    tmp_path_factory,
+):
+    from reports.cutover import write_cutover_gate_report
+    from tests.test_cutover_gate import (
+        write_contract_identity_cutover_inputs,
+    )
+
+    if os.name == "nt":
+        short_root = Path(Path.cwd().anchor) / ".hft_test_tmp"
+        short_root.mkdir(exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix="rei_", dir=short_root))
+    else:
+        root = tmp_path_factory.mktemp("route_enable_terminal_identity")
+    try:
+        (
+            scaleup,
+            broker,
+            runtime,
+            review_path,
+            broker_fields,
+        ) = write_contract_identity_cutover_inputs(
+            root,
+            contract_identity=False,
+            route_enable_route_enable_route_contract_identity=True,
+        )
+        cutover = root / "c"
+        cutover_report = write_cutover_gate_report(
+            scaleup_dir=scaleup,
+            broker_readiness_dir=broker,
+            runtime_session_dir=runtime,
+            operator_review_path=review_path,
+            output_dir=cutover,
+        )
+        assert cutover_report.ready
+
+        upload = root / "u"
+        export = root / "e"
+        upload.mkdir()
+        export.mkdir()
+        upload_summary(orders=2).to_csv(
+            upload / "broker_upload_summary.csv",
+            index=False,
+        )
+        order_export_summary(
+            orders=2,
+            total_notional=1_000.0,
+        ).to_csv(
+            export / "broker_order_summary.csv",
+            index=False,
+        )
+        yield cutover, upload, export, broker_fields
+    finally:
+        if os.name == "nt":
+            shutil.rmtree(root, ignore_errors=True)
+            try:
+                short_root.rmdir()
+            except OSError:
+                pass
+
+
 def forge_cutover_route_contract_identity(cutover, forged_sha256):
     from tests.data_readiness_helpers import reseal_experiment_manifest
 
@@ -2250,6 +2317,70 @@ def forge_cutover_route_enable_route_contract_identity(
         (
             "runtime_lineage_current_broker_readiness_route_enable_"
             "route_contract_identity_sha256"
+        ),
+    )
+    summary_path = cutover / "cutover_summary.csv"
+    summary = pd.read_csv(
+        summary_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    current_sha256 = str(summary.loc[0, fields[-1]])
+    assert current_sha256 and current_sha256 != forged_sha256
+    for name in ("cutover_authorization.csv", "cutover_summary.csv"):
+        path = cutover / name
+        frame = pd.read_csv(
+            path,
+            dtype=str,
+            keep_default_na=False,
+        )
+        for field in fields:
+            assert field in frame.columns
+            frame.loc[0, field] = forged_sha256
+        frame.to_csv(path, index=False)
+
+    config_path = cutover / "cutover_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    runtime_lineage = config["runtime_lineage"]
+    for field in fields:
+        assert field in runtime_lineage
+        runtime_lineage[field] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = cutover / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for field in fields:
+        assert field in manifest["extra"]
+        manifest["extra"][field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(cutover)
+    return current_sha256
+
+
+def forge_cutover_route_enable_route_enable_route_contract_identity(
+    cutover,
+    forged_sha256,
+):
+    from tests.data_readiness_helpers import reseal_experiment_manifest
+
+    fields = (
+        (
+            "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ),
+        (
+            "runtime_telemetry_current_broker_readiness_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "runtime_lineage_current_broker_readiness_"
+            "route_enable_route_enable_route_contract_identity_sha256"
         ),
     )
     summary_path = cutover / "cutover_summary.csv"
@@ -6836,6 +6967,264 @@ def test_route_enable_blocks_remanifested_cutover_route_enable_forgery(
         )
     ]
     assert not lineage["gate_passed"]
+
+
+def test_route_enable_verifies_cutover_broker_route_enable_route_enable_identity(
+    tmp_path,
+    route_enable_route_enable_route_contract_identity_route_enable_inputs,
+):
+    (
+        cutover,
+        upload,
+        export,
+        broker_fields,
+    ) = route_enable_route_enable_route_contract_identity_route_enable_inputs
+    out_dir = tmp_path / "route_enable"
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=out_dir,
+        thresholds=RouteEnableThresholds(
+            require_order_export_ready=True,
+        ),
+    )
+
+    identity_sha256 = broker_fields[
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    identity_checks = report.checks.loc[
+        report.checks["check"].astype(str).str.contains(
+            "route_enable_route_enable_route_contract_identity"
+        )
+    ]
+    runtime_field = (
+        "cutover_runtime_telemetry_broker_readiness_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    )
+    current_field = (
+        "cutover_current_runtime_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    )
+    verdict_field = (
+        "cutover_runtime_route_enable_route_enable_"
+        "route_contract_identity_matches_current"
+    )
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert not identity_checks.empty
+    assert identity_checks["passed"].astype(bool).all()
+    assert not summary[
+        "cutover_runtime_route_enable_route_contract_identity_active"
+    ]
+    assert summary[runtime_field] == identity_sha256
+    assert summary[current_field] == identity_sha256
+    assert summary[verdict_field]
+    assert report.config["cutover_lineage"][verdict_field]
+
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][
+        (
+            "cutover_runtime_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert manifest["extra"][verdict_field]
+    runbook = (out_dir / "route_enable_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        (
+            "Broker route-enable route-enable route contract identity digest: "
+            f"`{identity_sha256}`"
+        )
+        in runbook
+    )
+    assert (
+        "Broker route-enable route-enable route contract identity matches "
+        "current: yes"
+        in runbook
+    )
+
+    lineage = load_route_enable_lineage(
+        out_dir / "route_enable_config.json"
+    )
+    assert lineage["gate_passed"]
+    assert lineage[
+        (
+            "cutover_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert (
+        lineage[
+            (
+                "current_cutover_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            )
+        ]
+        == identity_sha256
+    )
+    assert lineage[
+        (
+            "cutover_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    downstream = route_enable_lineage_fields(lineage)
+    assert downstream[
+        (
+            "route_enable_cutover_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert downstream[
+        (
+            "route_enable_current_cutover_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == identity_sha256
+    assert downstream[
+        (
+            "route_enable_cutover_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+
+
+def test_route_enable_blocks_remanifested_cutover_route_enable_route_enable_forgery(
+    tmp_path,
+    route_enable_route_enable_route_contract_identity_route_enable_inputs,
+):
+    (
+        cutover_source,
+        upload,
+        export,
+        broker_fields,
+    ) = route_enable_route_enable_route_contract_identity_route_enable_inputs
+    cutover = tmp_path / "forged_cutover"
+    shutil.copytree(cutover_source, cutover)
+    forged_sha256 = "c" * 64
+    current_sha256 = (
+        forge_cutover_route_enable_route_enable_route_contract_identity(
+            cutover,
+            forged_sha256,
+        )
+    )
+    manifest_path = cutover / "manifest.json"
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    out_dir = tmp_path / "route_enable"
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=out_dir,
+        thresholds=RouteEnableThresholds(
+            require_order_export_ready=True,
+        ),
+    )
+
+    assert current_sha256 == broker_fields[
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert "cutover_lineage_contract_consistent" not in failed
+    assert (
+        "cutover_runtime_telemetry_broker_readiness_"
+        "route_enable_route_enable_"
+        "route_contract_identity_sha256_present"
+    ) not in failed
+    assert {
+        (
+            "cutover_runtime_telemetry_broker_readiness_"
+            "route_enable_route_enable_"
+            "route_contract_identity_sha256_matches_current"
+        ),
+        (
+            "cutover_runtime_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ),
+        "cutover_runtime_lineage_matches_current",
+        "cutover_lineage_gate_passed",
+    } <= failed
+
+    runtime_field = (
+        "cutover_runtime_telemetry_broker_readiness_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    )
+    current_field = (
+        "cutover_current_runtime_route_enable_route_enable_"
+        "route_contract_identity_sha256"
+    )
+    verdict_field = (
+        "cutover_runtime_route_enable_route_enable_"
+        "route_contract_identity_matches_current"
+    )
+    summary = report.summary.iloc[0]
+    assert summary[runtime_field] == forged_sha256
+    assert summary[current_field] == current_sha256
+    assert not summary[verdict_field]
+    action = report.action_queue.loc[
+        report.action_queue["check"] == verdict_field
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_route_enable_lineage(
+        out_dir / "route_enable_config.json"
+    )
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage[
+        (
+            "cutover_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert (
+        lineage[
+            (
+                "current_cutover_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            )
+        ]
+        == current_sha256
+    )
+    assert not lineage["cutover_matches_current"]
+    assert not lineage[
+        (
+            "cutover_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
+    assert not lineage["gate_passed"]
+    downstream = route_enable_lineage_fields(lineage)
+    assert not downstream[
+        (
+            "route_enable_cutover_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        )
+    ]
 
 
 def test_route_enable_blocks_remanifested_cutover_contract_identity_forgery(
