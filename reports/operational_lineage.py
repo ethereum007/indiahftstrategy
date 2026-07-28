@@ -784,6 +784,21 @@ BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIE
         )
     )
 )
+BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP = (
+    tuple(
+        (
+            field.replace(
+                "broker_dispatch_roundtrip_",
+                "broker_readiness_roundtrip_",
+                1,
+            ),
+            field,
+        )
+        for field in (
+            BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+        )
+    )
+)
 BROKER_READINESS_ROUNDTRIP_LINEAGE_BASE_FIELDS = (
     "broker_dispatch_roundtrip_lineage_required",
     "broker_dispatch_roundtrip_lineage_provided",
@@ -807,6 +822,7 @@ BROKER_READINESS_ROUNDTRIP_LINEAGE_FIELDS = (
     *BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELDS,
     *BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS,
     *BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS,
+    *BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS,
     *(
         f"broker_dispatch_roundtrip_strategy_portfolio_{field}"
         for field in BROKER_DISPATCH_ROUNDTRIP_STRATEGY_PORTFOLIO_LEADLAG_FIELDS
@@ -5602,6 +5618,112 @@ def load_broker_readiness_lineage(
     state[route_enable_route_identity_verdict_field] = (
         route_enable_route_identity_matches_current
     )
+    route_enable_route_enable_route_identity_active_field = (
+        "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+        "route_enable_route_contract_identity_active"
+    )
+    current_route_enable_route_enable_route_identity_field = (
+        "broker_dispatch_roundtrip_current_ack_route_enable_route_enable_"
+        "route_enable_route_contract_identity_sha256"
+    )
+    route_enable_route_enable_route_identity_verdict_field = (
+        "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+        "route_enable_route_contract_identity_matches_current"
+    )
+    carried_route_enable_route_enable_route_identity_sha256 = _text(
+        state.get(
+            (
+                BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+            ),
+            "",
+        )
+    )
+    current_route_enable_route_enable_route_identity_sha256 = _text(
+        current_roundtrip_fields.get(
+            current_route_enable_route_enable_route_identity_field,
+            "",
+        )
+    )
+    route_enable_route_enable_route_identity_active = bool(
+        _bool(
+            state.get(
+                route_enable_route_enable_route_identity_active_field,
+                False,
+            )
+        )
+        or _bool(
+            current_roundtrip_fields.get(
+                route_enable_route_enable_route_identity_active_field,
+                False,
+            )
+        )
+        or carried_route_enable_route_enable_route_identity_sha256
+        or _text(
+            state.get(
+                current_route_enable_route_enable_route_identity_field,
+                "",
+            )
+        )
+        or _text(
+            current_roundtrip_fields.get(
+                (
+                    BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+                ),
+                "",
+            )
+        )
+        or current_route_enable_route_enable_route_identity_sha256
+    )
+    route_enable_route_enable_route_identity_fields_match = all(
+        _same(
+            state.get(field),
+            current_roundtrip_fields.get(field),
+            field,
+        )
+        for field in (
+            BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+        )
+    )
+    route_enable_route_enable_route_identity_matches_current = bool(
+        not route_enable_route_enable_route_identity_active
+        or (
+            current_roundtrip.get("gate_passed", False)
+            and _bool(
+                state.get(
+                    route_enable_route_enable_route_identity_active_field,
+                    False,
+                )
+            )
+            and _bool(
+                current_roundtrip_fields.get(
+                    route_enable_route_enable_route_identity_active_field,
+                    False,
+                )
+            )
+            and carried_route_enable_route_enable_route_identity_sha256
+            and current_route_enable_route_enable_route_identity_sha256
+            and (
+                carried_route_enable_route_enable_route_identity_sha256
+                == current_route_enable_route_enable_route_identity_sha256
+            )
+            and route_enable_route_enable_route_identity_fields_match
+            and _bool(
+                state.get(
+                    route_enable_route_enable_route_identity_verdict_field,
+                    False,
+                )
+            )
+        )
+    )
+    state[route_enable_route_enable_route_identity_active_field] = (
+        route_enable_route_enable_route_identity_active
+    )
+    state[current_route_enable_route_enable_route_identity_field] = (
+        current_route_enable_route_enable_route_identity_sha256
+    )
+    state[route_enable_route_enable_route_identity_verdict_field] = (
+        route_enable_route_enable_route_identity_matches_current
+    )
     roundtrip_lineage_gate_passed = bool(
         not roundtrip_required or current_roundtrip.get("gate_passed", False)
     )
@@ -5626,6 +5748,7 @@ def load_broker_readiness_lineage(
         and route_identity_matches_current
         and route_enable_identity_matches_current
         and route_enable_route_identity_matches_current
+        and route_enable_route_enable_route_identity_matches_current
     )
     return state
 
@@ -5782,6 +5905,48 @@ def broker_readiness_lineage_fields(
                     source_field,
                 ) in (
                     BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+                )
+            }
+        )
+    route_enable_route_enable_route_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+                    "route_enable_route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _text(
+            lineage.get(
+                BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "broker_dispatch_roundtrip_current_ack_route_enable_"
+                    "route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+    )
+    if route_enable_route_enable_route_identity_active:
+        fields.update(
+            {
+                target_field: _normalize(
+                    lineage.get(source_field),
+                    target_field,
+                )
+                for (
+                    target_field,
+                    source_field,
+                ) in (
+                    BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
                 )
             }
         )

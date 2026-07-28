@@ -2915,6 +2915,7 @@ def _write_route_identity_ack_chain(
     contract_identity=True,
     route_contract_identity=False,
     route_enable_route_contract_identity=False,
+    route_enable_route_enable_route_contract_identity=False,
 ):
     dispatch, broker_fields = write_route_identity_dispatch(
         tmp_path,
@@ -2922,6 +2923,9 @@ def _write_route_identity_ack_chain(
         route_contract_identity=route_contract_identity,
         route_enable_route_contract_identity=(
             route_enable_route_contract_identity
+        ),
+        route_enable_route_enable_route_contract_identity=(
+            route_enable_route_enable_route_contract_identity
         ),
     )
     send = tmp_path / "route_identity_send"

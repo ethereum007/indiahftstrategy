@@ -8551,12 +8551,38 @@ succeed. Repository collection is healthy at `2856 tests` across `169` files.
 The full suite was not rerun because the two real-chain pairs alone take about
 133 minutes when sharing the same drive.
 
+Latest final-round-trip-to-broker-readiness dedicated route-enable
+route-enable route-contract identity proof: broker readiness now reopens the
+manifest-bound terminal round-trip bundle plus its current acknowledgement,
+send, dispatch, route-enable, cutover, runtime-session, scale-up, and recursive
+broker-readiness sources before accepting the round-trip-carried terminal
+digest. Three dedicated checks require that digest to be present, equal the
+independently recovered current digest, and retain a passing round-trip
+current-source verdict before readiness can pass. The dispatch-round-trip
+component item plus the readiness summary, nested lineage config, manifest
+metadata, and runbook preserves the active flag, carried digest, current
+digest, and verdict. Reloadable broker-readiness lineage compares the complete
+four-field terminal handoff, includes the source verdict in its gate, and
+exports the proof separately under `broker_readiness_roundtrip_*` for
+controlled scale-up. A copied round-trip bundle with the dedicated carried
+digest rewritten remains manifest-valid and internally contract-consistent
+after its orders, summary, config, and manifest are resealed, but readiness
+still blocks against the unchanged acknowledgement source and remediation
+returns to final broker round-trip review. Earlier identity families retain
+their established behavior, and inactive new fields remain sparse. The new
+clean/forged end-to-end pair passes in `7588.69s`; the established two-test
+route-enable identity compatibility pair passes in `2387.93s`, and all five
+broker-readiness lineage scenarios pass in `17.4s`. Source compilation and
+diff checks succeed. Repository collection is healthy at `2858 tests` across
+`169` files. The full suite was not rerun because the two real-chain pairs
+alone take about 166 minutes when sharing the same drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified final broker round-trip route-enable route-enable
-   route-enable route-contract digest and current-source verdict into
-   broker-readiness next-cycle lineage, and block a re-manifested round-trip
-   bundle before readiness can pass.
+1. Carry the newly verified broker-readiness round-trip route-enable
+   route-enable route-enable route-contract digest and current-source verdict
+   into controlled scale-up provenance, and block a re-manifested
+   broker-readiness bundle before scale-up can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

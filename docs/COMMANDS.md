@@ -7827,6 +7827,28 @@ unchanged acknowledgement source. Remediation returns to
 `review-broker-dispatch-roundtrip`, while inactive dedicated fields remain
 sparse for compatibility.
 
+For an active broker-readiness route-enable route-enable route-contract
+identity, broker readiness performs the same terminal round-trip reopen as a
+fourth independent family. The active flag, round-trip-carried digest, current
+acknowledgement digest, and source-match verdict remain explicit as
+`broker_dispatch_roundtrip_ack_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_enable_route_contract_identity_sha256`,
+`broker_dispatch_roundtrip_current_ack_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_roundtrip_ack_route_enable_route_enable_route_enable_route_contract_identity_matches_current`.
+Three dedicated readiness checks require the carried digest to be present,
+equal the independently reopened current source, and retain a passing verdict.
+The four fields are sealed into the dispatch-round-trip component item,
+readiness summary, nested config lineage, manifest metadata, and runbook.
+Reloadable readiness lineage exports the active proof separately under the
+`broker_readiness_roundtrip_*` namespace for controlled scale-up. Altering the
+dedicated carried digest throughout a terminal round-trip bundle leaves that
+bundle manifest-valid and internally consistent after its orders, summary,
+config, and manifest are resealed, but readiness still blocks against the
+unchanged acknowledgement source. Remediation returns to
+`review-broker-dispatch-roundtrip`, while inactive fields remain sparse for
+compatibility.
+
 For the exact `leadlag` portfolio profile, or whenever
 `leadlag_edge_lineage_required` is set, final review also owns a direct
 `leadlag_ack_contract_consistent` decision. It independently compares the
