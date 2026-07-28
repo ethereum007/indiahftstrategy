@@ -7186,6 +7186,29 @@ the unchanged route-enable source. Remediation routes to broker-readiness
 review while submission and authorization remain disabled. Identity-inactive
 legacy packets retain neutral defaults.
 
+For the newest broker-readiness route-enable route-enable route-contract
+identity, send preparation performs the same dispatch reopen as a fourth
+independent family. Three dedicated checks require the dispatch-carried digest
+to be present, equal the current digest recovered through the manifest-bound
+route-enable, cutover, runtime-session, scale-up, and recursive
+broker-readiness sources, and retain a passing dispatch current-source verdict.
+Every request and hashed request envelope plus the summary, nested
+`broker_dispatch_lineage` config, manifest metadata, and runbook preserves the
+active flag, carried digest, current digest, and verdict. Reloadable send
+lineage compares all `16` detailed broker-dispatch identity fields and exports
+the compact
+`broker_dispatch_send_dispatch_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_send_current_dispatch_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_send_dispatch_route_enable_route_enable_route_enable_route_contract_identity_matches_current`
+proof within a `19`-field handoff for acknowledgement reconciliation.
+Rewriting every visible terminal digest throughout a dispatch bundle and then
+resealing its orders, summary, config, and manifest therefore leaves a
+manifest-valid, internally consistent packet that send preparation still
+disables and routes to `review-broker-readiness`. Submission and authorization
+remain disabled, while identity-inactive dispatch packets retain neutral
+compatibility behavior.
+
 The sender carries route dispatch round-trip proof into the sender request
 envelope and expected acknowledgement rows, then fails closed if the dispatch
 plan is not ready and armed, target mode does not match, route-readiness proof
