@@ -8523,12 +8523,40 @@ compilation and diff checks succeed. Repository collection is healthy at
 `2854 tests` across `169` files. The full suite was not rerun because the two
 real-chain pairs alone take about 204 minutes when sharing the same drive.
 
+Latest acknowledgement-to-final-round-trip dedicated route-enable
+route-enable route-contract identity proof: final broker review now reopens
+the manifest-bound acknowledgement bundle plus its current send, dispatch,
+route-enable, cutover, runtime-session, scale-up, and recursive
+broker-readiness sources before accepting the acknowledgement-carried terminal
+digest. Three dedicated checks require that digest to be present, equal the
+independently recovered current digest, and retain a passing acknowledgement
+current-source verdict before final review can pass. Every final order plus the
+summary, nested acknowledgement config lineage, manifest metadata, and runbook
+preserves the active flag, carried digest, current digest, and verdict.
+Reloadable broker round-trip lineage compares all `22` detailed
+acknowledgement identity fields, includes the resulting verdict in its gate,
+and exports a separate `4`-field proof for broker readiness. A copied
+acknowledgement bundle with all seven visible terminal digests rewritten
+remains manifest-valid and internally contract-consistent after its rows,
+summary, config, and manifest are resealed, but final review still blocks
+against the unchanged send source and remediation returns to broker-readiness
+review. Final artifacts remain non-authorizing, earlier identity families
+retain their established behavior, and inactive new fields remain neutral. The
+new clean/forged end-to-end pair passes in `6174.23s`; the established
+two-test route-enable identity compatibility pair passes in `1800.02s`, and
+all `108` broker round-trip report scenarios pass in `236.2s`. The legacy
+compatibility forgery now uses the short Windows copy root so its recursive
+source tree remains below `MAX_PATH`. Source compilation and diff checks
+succeed. Repository collection is healthy at `2856 tests` across `169` files.
+The full suite was not rerun because the two real-chain pairs alone take about
+133 minutes when sharing the same drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified broker-dispatch acknowledgement route-enable
-   route-enable route-enable route-contract digest and current-source verdict
-   through final broker round-trip review, and block a re-manifested
-   acknowledgement bundle before round-trip can pass.
+1. Carry the newly verified final broker round-trip route-enable route-enable
+   route-enable route-contract digest and current-source verdict into
+   broker-readiness next-cycle lineage, and block a re-manifested round-trip
+   bundle before readiness can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
