@@ -8495,12 +8495,40 @@ checks succeed. Repository collection is healthy at `2852 tests` across `169`
 files. The full suite was not rerun because the two real-chain pairs alone take
 about 133 minutes when sharing the same drive.
 
+Latest send-to-acknowledgement dedicated route-enable route-enable
+route-contract identity proof: acknowledgement reconciliation now reopens the
+manifest-bound send packet plus its current dispatch, route-enable, cutover,
+runtime-session, scale-up, and recursive broker-readiness sources before
+accepting the send-carried terminal digest. Three dedicated checks require
+that digest to be present, equal the independently recovered current digest,
+and retain a passing send current-source verdict before acknowledgement can
+pass. Every acknowledgement row plus the summary, nested send config lineage,
+manifest metadata, and runbook preserves the active flag, carried digest,
+current digest, and verdict. Reloadable acknowledgement lineage compares all
+`19` detailed broker-send identity fields, includes the resulting verdict in
+its gate, and exports a separate `22`-field proof for final broker round-trip
+review. A copied send packet with all six visible terminal digests rewritten
+remains manifest-valid and internally contract-consistent after its requests,
+payload hashes, request IDs, expected acknowledgements, summary, config, and
+manifest are resealed, but acknowledgement still blocks against the unchanged
+dispatch source and remediation returns to broker-readiness review.
+Acknowledgement artifacts remain non-authorizing, earlier identity families
+retain their established behavior, and inactive new fields remain neutral. The
+new clean/forged end-to-end pair passes in `9212.87s`; the established
+two-test route-enable identity compatibility pair passes in `3020.12s`, and
+three lightweight acknowledgement baselines pass in `53.66s`. The Windows
+recursive fixture and both forged-copy paths use short temporary roots so
+signed source trees and re-manifested copies remain below `MAX_PATH`. Source
+compilation and diff checks succeed. Repository collection is healthy at
+`2854 tests` across `169` files. The full suite was not rerun because the two
+real-chain pairs alone take about 204 minutes when sharing the same drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified broker-send route-enable route-enable route-enable
-   route-contract digest and current-source verdict through acknowledgement
-   reconciliation, and block a re-manifested send packet before
-   acknowledgement can pass.
+1. Carry the newly verified broker-dispatch acknowledgement route-enable
+   route-enable route-enable route-contract digest and current-source verdict
+   through final broker round-trip review, and block a re-manifested
+   acknowledgement bundle before round-trip can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

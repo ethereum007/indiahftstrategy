@@ -7471,6 +7471,29 @@ stays blocked against the unchanged dispatch source. Remediation routes to
 `review-broker-readiness`, acknowledgement output remains non-authorizing, and
 identity-inactive legacy packets retain neutral defaults.
 
+For the newest broker-readiness route-enable route-enable route-contract
+identity, acknowledgement reconciliation performs the same send and dispatch
+reopen as a fourth independent family. Three dedicated checks require the
+send-carried digest to be present, equal the current digest recovered through
+the manifest-bound dispatch, route-enable, cutover, runtime-session, scale-up,
+and recursive broker-readiness sources, and retain a passing send
+current-source verdict. Every acknowledgement row plus the summary, nested
+`broker_dispatch_send_lineage` config, manifest metadata, and runbook
+preserves the active flag, carried digest, current digest, and verdict.
+Reloadable acknowledgement lineage compares all `19` detailed broker-send
+identity fields and exports the compact
+`broker_dispatch_ack_send_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`broker_dispatch_ack_current_send_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_dispatch_ack_send_route_enable_route_enable_route_enable_route_contract_identity_matches_current`
+proof within a `22`-field handoff for round-trip review. Rewriting every
+visible terminal digest throughout a send packet and then resealing its
+requests, payload hashes, request IDs, expected acknowledgements, summary,
+config, and manifest therefore leaves a manifest-valid, internally consistent
+packet that acknowledgement reconciliation still blocks and routes to
+`review-broker-readiness`. Acknowledgement output remains non-authorizing,
+while identity-inactive send packets retain neutral compatibility behavior.
+
 When the provider broker-dispatch-send wrapper retained validated dispatch
 round-trip capture provenance, acknowledgement reconciliation carries the same
 `dispatch_roundtrip_capture_bundle_*`,
