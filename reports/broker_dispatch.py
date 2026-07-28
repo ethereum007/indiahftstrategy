@@ -1082,6 +1082,110 @@ def _checks(
                         ),
                     ]
                 )
+            if route[
+                (
+                    "route_enable_cutover_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                )
+            ]:
+                cutover_route_enable_route_enable_identity_sha256 = _object_text(
+                    route[
+                        (
+                            "route_enable_cutover_runtime_telemetry_"
+                            "broker_readiness_route_enable_route_enable_"
+                            "route_contract_identity_sha256"
+                        )
+                    ]
+                ).strip()
+                current_cutover_route_enable_route_enable_identity_sha256 = (
+                    _object_text(
+                        route[
+                            (
+                                "route_enable_current_cutover_"
+                                "route_enable_route_enable_"
+                                "route_contract_identity_sha256"
+                            )
+                        ]
+                    ).strip()
+                )
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "route_enable_cutover_runtime_telemetry_"
+                                "broker_readiness_route_enable_route_enable_"
+                                "route_contract_identity_sha256_present"
+                            ),
+                            cutover_route_enable_route_enable_identity_sha256,
+                            "present",
+                            True,
+                            bool(
+                                cutover_route_enable_route_enable_identity_sha256
+                            ),
+                            (
+                                "route-enable broker route-enable route-enable "
+                                "route contract identity digest is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "route_enable_cutover_runtime_telemetry_"
+                                "broker_readiness_route_enable_route_enable_"
+                                "route_contract_identity_sha256_matches_current"
+                            ),
+                            cutover_route_enable_route_enable_identity_sha256,
+                            "==",
+                            (
+                                current_cutover_route_enable_route_enable_identity_sha256
+                            ),
+                            bool(
+                                cutover_route_enable_route_enable_identity_sha256
+                                and (
+                                    current_cutover_route_enable_route_enable_identity_sha256
+                                )
+                                and (
+                                    cutover_route_enable_route_enable_identity_sha256
+                                    == current_cutover_route_enable_route_enable_identity_sha256
+                                )
+                            ),
+                            (
+                                "route-enable broker route-enable route-enable "
+                                "route contract identity differs from the "
+                                "current cutover source"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "route_enable_cutover_route_enable_"
+                                "route_enable_route_contract_identity_"
+                                "matches_current"
+                            ),
+                            route[
+                                (
+                                    "route_enable_cutover_route_enable_"
+                                    "route_enable_route_contract_identity_"
+                                    "matches_current"
+                                )
+                            ],
+                            "is",
+                            True,
+                            bool(
+                                route[
+                                    (
+                                        "route_enable_cutover_route_enable_"
+                                        "route_enable_route_contract_identity_"
+                                        "matches_current"
+                                    )
+                                ]
+                            ),
+                            (
+                                "route-enable broker route-enable route-enable "
+                                "route contract identity no longer matches the "
+                                "current cutover source"
+                            ),
+                        ),
+                    ]
+                )
         checks.append(
             _check(
                 "route_enable_lineage_gate_passed",
@@ -6626,6 +6730,22 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         (
             "- Route-enable broker route-enable route contract identity matches current: "
             f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_route_enable_route_contract_identity_matches_current')) else 'no'}"
+        ),
+        (
+            "- Route-enable broker route-enable route-enable route contract identity active: "
+            f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_route_enable_route_enable_route_contract_identity_active')) else 'no'}"
+        ),
+        (
+            "- Route-enable carried broker route-enable route-enable route contract identity: "
+            f"{_code(summary_row.get('route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_enable_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Current cutover broker route-enable route-enable route contract identity: "
+            f"{_code(summary_row.get('route_enable_current_cutover_route_enable_route_enable_route_contract_identity_sha256'))}"
+        ),
+        (
+            "- Route-enable broker route-enable route-enable route contract identity matches current: "
+            f"{'yes' if _to_bool(summary_row.get('route_enable_cutover_route_enable_route_enable_route_contract_identity_matches_current')) else 'no'}"
         ),
         (
             "- Broker-readiness source matches scale-up: "
