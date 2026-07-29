@@ -8627,12 +8627,34 @@ and diff checks also succeed. Repository collection is healthy at `2862 tests`
 across `169` files. The full suite was not rerun because the two real-chain
 pairs alone take about 139 minutes when sharing the same drive.
 
+Latest runtime-guard-to-runtime-session terminal route-enable route-enable
+route-enable route-contract identity proof: reloadable runtime-session lineage
+now treats the newest broker-readiness identity as a fifth independent family.
+It requires the scale-up carried/current pair and runtime-telemetry
+carried/current pair to converge on the digest recovered again from the current
+manifest-bound broker-readiness source, while the readiness, scale-up, and
+runtime verdicts all remain true. The session gate now includes that result and
+publishes a dedicated active flag, current digest, and current-source verdict
+for downstream cutover. The session runbook also exposes the active state,
+carried digest, current digest, and verdict alongside the already signed
+summary, nested config, and manifest metadata. A copied session whose six
+digest declarations and runbook are rewritten remains manifest-valid and
+internally contract-consistent after resealing, but the operational loader
+still rejects it against the unchanged broker-readiness source. The clean
+production-chain case passed during a `5985.2s` shared run, and the corrected
+re-manifested forgery case passes independently in `4952.9s`. All `13`
+runtime-session tests and four broker/cutover lineage compatibility cases pass.
+Source compilation and diff checks succeed. Repository collection is healthy
+at `2864 tests` across `169` files. The full suite was not rerun because each
+terminal real-chain session fixture takes roughly 83-100 minutes on the shared
+drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified runtime-guard broker-readiness route-enable
+1. Carry the newly verified runtime-session broker-readiness route-enable
    route-enable route-enable route-contract digest and current-source verdict
-   into runtime-session provenance, and block a re-manifested telemetry or
-   guard bundle before the session can continue.
+   into cutover lineage, and block a re-manifested session bundle before
+   cutover can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

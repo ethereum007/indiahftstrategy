@@ -17,6 +17,7 @@ from reports.operational_lineage import (
     broker_readiness_lineage_manifest_inputs,
     load_broker_readiness_lineage,
     load_runtime_session_lineage,
+    runtime_session_lineage_fields,
 )
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_session import write_runtime_session_monitor
@@ -157,6 +158,23 @@ def route_enable_route_enable_route_enable_identity_runtime_bundle(
                 short_root.rmdir()
             except OSError:
                 pass
+
+
+@pytest.fixture(scope="module")
+def route_enable_route_enable_route_enable_identity_runtime_session_bundle(
+    route_enable_route_enable_route_enable_identity_runtime_bundle,
+):
+    scaleup_dir = (
+        route_enable_route_enable_route_enable_identity_runtime_bundle
+    )
+    session = write_runtime_session_monitor(
+        scaleup_dir=scaleup_dir,
+        output_dir=scaleup_dir.parent / "r",
+        snapshot_ts_ns=1_000,
+        plan_halt_response=False,
+    )
+    assert session.ready
+    return scaleup_dir, session.output_dir
 
 
 def _write_scaleup_bundle(root, broker_lineage):
@@ -408,6 +426,85 @@ def _forge_scaleup_route_enable_route_enable_route_enable_identity(
     )
     reseal_experiment_manifest(root)
     return original_sha256
+
+
+def _forge_runtime_session_route_enable_route_enable_route_enable_identity(
+    root,
+    forged_sha256,
+):
+    fields = (
+        (
+            "scaleup_broker_readiness_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "scaleup_broker_readiness_current_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "scaleup_"
+            f"{BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD}"
+        ),
+        (
+            "scaleup_"
+            f"{BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD}"
+        ),
+        (
+            "runtime_telemetry_broker_readiness_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        ),
+        (
+            "runtime_telemetry_current_broker_readiness_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        ),
+    )
+    summary_path = root / "runtime_session_summary.csv"
+    summary = pd.read_csv(
+        summary_path,
+        dtype=str,
+        keep_default_na=False,
+    )
+    current_field = fields[-1]
+    current_sha256 = str(summary.loc[0, current_field])
+    for field in fields:
+        assert field in summary.columns
+        summary.loc[0, field] = forged_sha256
+    summary.to_csv(summary_path, index=False)
+
+    config_path = root / "runtime_session_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for field in fields:
+        section = (
+            "scaleup_provenance"
+            if field.startswith("scaleup_")
+            else "runtime_telemetry_lineage"
+        )
+        assert field in config[section]
+        config[section][field] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for field in fields:
+        assert field in manifest["extra"]
+        manifest["extra"][field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    runbook_path = root / "runtime_session_runbook.md"
+    runbook = runbook_path.read_text(encoding="utf-8")
+    assert current_sha256 in runbook
+    runbook_path.write_text(
+        runbook.replace(current_sha256, forged_sha256),
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(root)
+    return current_sha256
 
 
 def _write_optional_broker_scaleup_bundle(root, broker_input):
@@ -2254,3 +2351,147 @@ def test_runtime_blocks_remanifested_scaleup_route_enable_route_enable_route_ena
         expected_run_type="runtime_guard",
         require_input_fingerprints=True,
     ).passed
+
+
+def test_runtime_session_retains_current_route_enable_route_enable_route_enable_identity(
+    route_enable_route_enable_route_enable_identity_runtime_session_bundle,
+):
+    scaleup_dir, session_dir = (
+        route_enable_route_enable_route_enable_identity_runtime_session_bundle
+    )
+    lineage = load_runtime_session_lineage(
+        session_dir / "runtime_session_summary.csv",
+        scaleup_dir / "scaleup_config.json",
+    )
+    public_fields = runtime_session_lineage_fields(lineage)
+    provenance = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+    summary = pd.read_csv(session_dir / "runtime_session_summary.csv").iloc[0]
+    config = json.loads(
+        (session_dir / "runtime_session_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads(
+        (session_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    runbook = (session_dir / "runtime_session_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    identity_prefix = (
+        "broker_readiness_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    runtime_prefix = f"runtime_telemetry_{identity_prefix}"
+    route_sha256 = provenance[f"{identity_prefix}sha256"]
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["non_authorizing"]
+    assert lineage["scaleup_matches_current"]
+    assert not lineage[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert lineage[f"{identity_prefix}active"]
+    assert lineage[
+        (
+            "current_broker_readiness_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == route_sha256
+    assert lineage[f"{identity_prefix}matches_current"]
+    assert lineage["broker_readiness_matches_current"]
+    assert lineage["gate_passed"]
+
+    public_prefix = f"runtime_lineage_{identity_prefix}"
+    assert public_fields[f"{public_prefix}active"]
+    assert public_fields[
+        (
+            "runtime_lineage_current_broker_readiness_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        )
+    ] == route_sha256
+    assert public_fields[f"{public_prefix}matches_current"]
+    assert public_fields["runtime_lineage_gate_passed"]
+
+    assert summary[f"{runtime_prefix}sha256"] == route_sha256
+    assert bool(summary[f"{runtime_prefix}matches_current"])
+    assert (
+        config["runtime_telemetry_lineage"][f"{runtime_prefix}sha256"]
+        == route_sha256
+    )
+    assert manifest["extra"][f"{runtime_prefix}sha256"] == route_sha256
+    assert manifest["extra"][f"{runtime_prefix}matches_current"]
+    assert (
+        "Broker route-enable route-enable route-enable identity "
+        "matches current: yes"
+    ) in runbook
+    assert route_sha256 in runbook
+    assert verify_experiment_manifest(
+        session_dir / "manifest.json",
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
+
+
+def test_runtime_session_blocks_remanifested_route_enable_route_enable_route_enable_identity_forgery(
+    route_enable_route_enable_route_enable_identity_runtime_session_bundle,
+):
+    scaleup_dir, session_dir = (
+        route_enable_route_enable_route_enable_identity_runtime_session_bundle
+    )
+    forged_dir = scaleup_dir.parent / "rf"
+    shutil.copytree(session_dir, forged_dir)
+    forged_sha256 = "a" * 64
+    current_sha256 = (
+        _forge_runtime_session_route_enable_route_enable_route_enable_identity(
+            forged_dir,
+            forged_sha256,
+        )
+    )
+    assert verify_experiment_manifest(
+        forged_dir / "manifest.json",
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_runtime_session_lineage(
+        forged_dir / "runtime_session_summary.csv",
+        scaleup_dir / "scaleup_config.json",
+    )
+    public_fields = runtime_session_lineage_fields(lineage)
+    identity_prefix = (
+        "broker_readiness_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    public_prefix = f"runtime_lineage_{identity_prefix}"
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["non_authorizing"]
+    assert lineage["scaleup_matches_current"]
+    assert lineage[f"{identity_prefix}active"]
+    assert lineage[
+        (
+            "current_broker_readiness_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert current_sha256 != forged_sha256
+    assert not lineage[f"{identity_prefix}matches_current"]
+    assert not lineage["broker_readiness_matches_current"]
+    assert not lineage["gate_passed"]
+
+    assert public_fields[f"{public_prefix}active"]
+    assert public_fields[
+        (
+            "runtime_lineage_current_broker_readiness_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not public_fields[f"{public_prefix}matches_current"]
+    assert not public_fields["runtime_lineage_gate_passed"]

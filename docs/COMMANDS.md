@@ -5499,6 +5499,20 @@ and
 Changing every visible copy in the runtime-session summary, config, and
 manifest and then resealing the packet therefore leaves manifest integrity
 intact but fails the operational lineage gate before cutover.
+For the terminal route-enable route-enable route-enable route-contract
+identity, runtime session adds a fifth independent reopen. The session summary,
+nested scale-up and runtime-telemetry config sections, manifest metadata, and
+runbook retain the active flag plus both carried/current digests and the
+current-source verdict. Reloadable session lineage then recovers the digest
+again from the recursively verified broker-readiness source and publishes
+`runtime_lineage_broker_readiness_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`runtime_lineage_current_broker_readiness_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`runtime_lineage_broker_readiness_route_enable_route_enable_route_enable_route_contract_identity_matches_current`.
+Changing every session-level digest declaration and the runbook before
+resealing the copied packet can therefore preserve manifest integrity and
+internal contract consistency, but it cannot make the session gate pass
+against an unchanged broker-readiness source.
 For canonical `leadlag`, every session step also retains the complete
 `strategy_portfolio_leadlag_*` measured-edge contract and the guard's
 `leadlag_edge_lineage_matches_scaleup` decision. The session summary, runbook,
