@@ -8579,8 +8579,8 @@ alone take about 166 minutes when sharing the same drive.
 
 Latest broker-readiness-to-controlled-scale-up terminal route-enable
 route-enable route-enable route-contract identity proof: controlled scale-up
-now reopens
-the manifest-bound broker-readiness bundle and its current terminal round-trip
+now reopens the manifest-bound broker-readiness bundle and its current terminal
+round-trip
 source before accepting the newest carried digest. Three dedicated checks
 require that digest to be present, equal the independently recovered current
 digest, and retain a passing readiness current-source verdict. The plan,
@@ -8603,12 +8603,36 @@ collection is healthy at `2860 tests` across `169` files. The full suite was
 not rerun because the two real-chain pairs alone take about 136 minutes when
 sharing the same drive.
 
+Latest controlled-scale-up-to-runtime terminal route-enable route-enable
+route-enable route-contract identity proof: runtime telemetry now treats the
+newest broker-readiness identity as a fifth independent family and adds three
+checks requiring its scale-up-carried digest to be present, equal the
+independently recovered current digest, and retain a passing current-source
+verdict. Runtime guard compares all four detailed identity fields carried by
+telemetry with current scale-up provenance, requires both carried/current
+digest pairs plus both source verdicts to agree, and includes the fifth-family
+result in both broker-readiness and overall lineage gates. Telemetry rows,
+summaries, checks, and manifest metadata plus guard metrics, summaries, config,
+checks, and manifest metadata preserve the active flag, carried digest, current
+digest, and reconciled verdict. A copied scale-up bundle with both visible
+terminal digests rewritten remains manifest-valid after its plan, summary,
+config, and manifest are resealed, but telemetry still blocks and guard still
+halts against the unchanged manifest-bound broker-readiness source. Earlier
+families retain their established behavior, and inactive fifth-family fields
+remain neutral. The new clean/forged real-chain pair passes in `6026s`; the
+established fourth-family compatibility pair passes in `2329.8s`, all `57`
+focused runtime telemetry/guard tests pass, and two optional broker-readiness
+provenance baselines pass. Synthetic clean/tamper probes, source compilation,
+and diff checks also succeed. Repository collection is healthy at `2862 tests`
+across `169` files. The full suite was not rerun because the two real-chain
+pairs alone take about 139 minutes when sharing the same drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified controlled-scale-up broker-readiness route-enable
+1. Carry the newly verified runtime-guard broker-readiness route-enable
    route-enable route-enable route-contract digest and current-source verdict
-   into runtime telemetry and guard provenance, and block a re-manifested
-   scale-up bundle before runtime can pass.
+   into runtime-session provenance, and block a re-manifested telemetry or
+   guard bundle before the session can continue.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

@@ -5343,6 +5343,21 @@ through guard metrics, summary, config, and manifest metadata. A telemetry
 snapshot built from a freshly resealed scale-up forgery halts on the dedicated
 scale-up and runtime-telemetry checks even when ordinary exposure and PnL
 limits remain inside bounds.
+For the terminal route-enable route-enable route-enable route-contract family,
+runtime telemetry adds three dedicated checks requiring the scale-up-carried
+digest to be present, equal the independently recovered current digest, and
+retain a passing current-source verdict. Runtime guard treats this as a fifth
+independent identity family, compares all four detailed telemetry fields with
+the current scale-up provenance, and emits
+`runtime_telemetry_broker_readiness_route_enable_route_enable_route_enable_route_contract_identity_*`.
+The active flag, carried digest, current digest, and verdict persist through
+telemetry rows, summaries, checks, and manifests plus guard metrics, summaries,
+config, checks, and manifest metadata. Rewriting both visible terminal digests
+in a copied scale-up bundle and resealing its plan, summary, config, and
+manifest therefore still blocks telemetry and halts the guard against the
+unchanged manifest-bound broker-readiness source. Earlier identity families
+remain independent, and inactive fifth-family fields retain neutral
+compatibility behavior.
 If broker resume-gate evidence was required or supplied at scale-up, the guard
 also requires runtime telemetry to carry a ready resume authorization and ready
 resume proof-refresh identity matching the scale-up strategy and market.

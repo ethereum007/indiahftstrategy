@@ -32,6 +32,9 @@ from reports.scaleup_runtime_provenance import (
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS,
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     load_scaleup_runtime_provenance,
 )
 from tests.data_readiness_helpers import reseal_experiment_manifest
@@ -44,6 +47,7 @@ def _write_broker_readiness_bundle(
     route_contract_identity=False,
     route_enable_route_contract_identity=False,
     route_enable_route_enable_route_contract_identity=False,
+    route_enable_route_enable_route_enable_route_contract_identity=False,
 ):
     from adapters.broker_readiness import (
         BrokerReadinessThresholds,
@@ -62,6 +66,9 @@ def _write_broker_readiness_bundle(
         ),
         route_enable_route_enable_route_contract_identity=(
             route_enable_route_enable_route_contract_identity
+        ),
+        route_enable_route_enable_route_enable_route_contract_identity=(
+            route_enable_route_enable_route_enable_route_contract_identity
         ),
     )
     report = write_broker_readiness_report(
@@ -116,6 +123,31 @@ def route_enable_route_enable_identity_runtime_bundle(tmp_path_factory):
         broker_lineage = _write_broker_readiness_bundle(
             root / "b",
             route_enable_route_enable_route_contract_identity=True,
+        )
+        yield _write_scaleup_bundle(root / "s", broker_lineage)
+    finally:
+        if os.name == "nt":
+            shutil.rmtree(root, ignore_errors=True)
+            try:
+                short_root.rmdir()
+            except OSError:
+                pass
+
+
+@pytest.fixture(scope="module")
+def route_enable_route_enable_route_enable_identity_runtime_bundle(
+    tmp_path_factory,
+):
+    if os.name == "nt":
+        short_root = Path(Path.cwd().anchor) / ".hft_test_tmp"
+        short_root.mkdir(exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix="rt3_", dir=short_root))
+    else:
+        root = tmp_path_factory.mktemp("rt_bri3")
+    try:
+        broker_lineage = _write_broker_readiness_bundle(
+            root / "b",
+            route_enable_route_enable_route_enable_route_contract_identity=True,
         )
         yield _write_scaleup_bundle(root / "s", broker_lineage)
     finally:
@@ -311,6 +343,53 @@ def _forge_scaleup_route_enable_route_enable_identity(root, forged_sha256):
     for field in fields:
         lineage[
             BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS[
+                field
+            ]
+        ] = forged_sha256
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for field in fields:
+        manifest["extra"][field] = forged_sha256
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    reseal_experiment_manifest(root)
+    return original_sha256
+
+
+def _forge_scaleup_route_enable_route_enable_route_enable_identity(
+    root,
+    forged_sha256,
+):
+    fields = (
+        (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+        ),
+        (
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD
+        ),
+    )
+    original_sha256 = ""
+    for filename in ("scaleup_summary.csv", "scaleup_plan.csv"):
+        path = root / filename
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+        original_sha256 = original_sha256 or str(frame.loc[0, fields[0]])
+        for field in fields:
+            frame[field] = forged_sha256
+        frame.to_csv(path, index=False)
+
+    config_path = root / "scaleup_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    lineage = config["broker_readiness"]["lineage"]
+    for field in fields:
+        lineage[
+            BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CONFIG_FIELDS[
                 field
             ]
         ] = forged_sha256
@@ -1888,6 +1967,283 @@ def test_runtime_blocks_remanifested_scaleup_route_enable_route_enable_identity_
         f"{runtime_prefix}matches_current"
     ]
     assert not guard_manifest["extra"][f"{runtime_prefix}matches_current"]
+    assert verify_experiment_manifest(
+        telemetry.output_dir / "manifest.json",
+        expected_run_type="runtime_telemetry_snapshot",
+        require_input_fingerprints=True,
+    ).passed
+    assert verify_experiment_manifest(
+        guard.output_dir / "manifest.json",
+        expected_run_type="runtime_guard",
+        require_input_fingerprints=True,
+    ).passed
+
+
+def test_runtime_retains_current_scaleup_route_enable_route_enable_route_enable_contract_identity(
+    tmp_path,
+    route_enable_route_enable_route_enable_identity_runtime_bundle,
+):
+    scaleup_dir = (
+        route_enable_route_enable_route_enable_identity_runtime_bundle
+    )
+    provenance = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "t",
+        snapshot_ts_ns=1_000,
+    )
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "g",
+    )
+
+    identity_prefix = (
+        "broker_readiness_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    scaleup_prefix = f"scaleup_{identity_prefix}"
+    runtime_prefix = f"runtime_telemetry_{identity_prefix}"
+    route_sha256 = provenance[f"{identity_prefix}sha256"]
+    current_sha256 = provenance[
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ]
+    telemetry_row = telemetry.summary.iloc[0]
+    guard_row = guard.summary.iloc[0]
+    telemetry_checks = telemetry.checks.set_index("check")
+    guard_checks = guard.checks.set_index("check")
+    telemetry_manifest = json.loads(
+        (telemetry.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    guard_manifest = json.loads(
+        (guard.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    guard_config = json.loads(
+        (guard.output_dir / "runtime_guard_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert provenance["provenance_gate_passed"]
+    assert not provenance[
+        (
+            "broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert provenance[f"{identity_prefix}active"]
+    assert len(route_sha256) == 64
+    assert route_sha256 == current_sha256
+    assert provenance[f"{identity_prefix}matches_current"]
+
+    assert telemetry.ready
+    assert not bool(
+        telemetry_row[
+            (
+                "scaleup_broker_readiness_route_enable_route_enable_"
+                "route_contract_identity_active"
+            )
+        ]
+    )
+    assert bool(telemetry_row[f"{scaleup_prefix}active"])
+    assert telemetry_row[f"{scaleup_prefix}sha256"] == route_sha256
+    assert telemetry_row[
+        (
+            "scaleup_broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert bool(telemetry_row[f"{scaleup_prefix}matches_current"])
+    assert telemetry_checks.loc[
+        telemetry_checks.index.str.startswith(scaleup_prefix),
+        "passed",
+    ].astype(bool).all()
+    assert (
+        telemetry_manifest["extra"][f"{identity_prefix}sha256"]
+        == route_sha256
+    )
+    assert telemetry_manifest["extra"][
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert telemetry_manifest["extra"][
+        f"{identity_prefix}matches_current"
+    ]
+
+    assert not guard.halted
+    assert guard_row[f"{scaleup_prefix}sha256"] == route_sha256
+    assert guard_row[f"{runtime_prefix}sha256"] == route_sha256
+    assert guard_row[
+        (
+            "runtime_telemetry_current_broker_readiness_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert bool(guard_row[f"{runtime_prefix}matches_current"])
+    assert bool(
+        guard_checks.loc[
+            f"{runtime_prefix}matches_current",
+            "passed",
+        ]
+    )
+    assert guard_config["runtime_telemetry_lineage"][
+        f"{runtime_prefix}sha256"
+    ] == route_sha256
+    assert guard_manifest["extra"][
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert guard_manifest["extra"][f"{runtime_prefix}matches_current"]
+    assert verify_experiment_manifest(
+        telemetry.output_dir / "manifest.json",
+        expected_run_type="runtime_telemetry_snapshot",
+        require_input_fingerprints=True,
+    ).passed
+    assert verify_experiment_manifest(
+        guard.output_dir / "manifest.json",
+        expected_run_type="runtime_guard",
+        require_input_fingerprints=True,
+    ).passed
+
+
+def test_runtime_blocks_remanifested_scaleup_route_enable_route_enable_route_enable_identity_forgery(
+    tmp_path,
+    route_enable_route_enable_route_enable_identity_runtime_bundle,
+):
+    scaleup_dir = tmp_path / "s"
+    shutil.copytree(
+        route_enable_route_enable_route_enable_identity_runtime_bundle,
+        scaleup_dir,
+    )
+    forged_sha256 = "f" * 64
+    current_sha256 = (
+        _forge_scaleup_route_enable_route_enable_route_enable_identity(
+            scaleup_dir,
+            forged_sha256,
+        )
+    )
+    assert verify_experiment_manifest(
+        scaleup_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+
+    provenance = load_scaleup_runtime_provenance(
+        scaleup_dir / "scaleup_config.json"
+    )
+    telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup_dir,
+        output_dir=tmp_path / "t",
+        snapshot_ts_ns=1_000,
+    )
+    guard = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry.output_dir,
+        output_dir=tmp_path / "g",
+    )
+
+    identity_prefix = (
+        "broker_readiness_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    scaleup_prefix = f"scaleup_{identity_prefix}"
+    runtime_prefix = f"runtime_telemetry_{identity_prefix}"
+    telemetry_row = telemetry.summary.iloc[0]
+    guard_row = guard.summary.iloc[0]
+    telemetry_failed = set(
+        telemetry.checks.loc[
+            ~telemetry.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    guard_failed = set(
+        guard.checks.loc[
+            ~guard.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    telemetry_manifest = json.loads(
+        (telemetry.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    guard_manifest = json.loads(
+        (guard.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    guard_config = json.loads(
+        (guard.output_dir / "runtime_guard_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert provenance["manifest_current"]
+    assert provenance[f"{identity_prefix}sha256"] == forged_sha256
+    assert provenance[
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not provenance[f"{identity_prefix}matches_current"]
+    assert not provenance["contract_consistent"]
+    assert not provenance["provenance_gate_passed"]
+
+    assert not telemetry.ready
+    assert telemetry_row[f"{scaleup_prefix}sha256"] == forged_sha256
+    assert telemetry_row[
+        (
+            "scaleup_broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not bool(telemetry_row[f"{scaleup_prefix}matches_current"])
+    assert {
+        f"{scaleup_prefix}sha256_matches_current",
+        f"{scaleup_prefix}matches_current",
+    } <= telemetry_failed
+    assert (
+        telemetry_manifest["extra"][f"{identity_prefix}sha256"]
+        == forged_sha256
+    )
+    assert telemetry_manifest["extra"][
+        (
+            "broker_readiness_current_route_enable_route_enable_"
+            "route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not telemetry_manifest["extra"][
+        f"{identity_prefix}matches_current"
+    ]
+
+    assert guard.halted
+    assert guard_row[f"{scaleup_prefix}sha256"] == forged_sha256
+    assert guard_row[
+        (
+            "runtime_telemetry_current_broker_readiness_route_enable_"
+            "route_enable_route_enable_route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not bool(guard_row[f"{runtime_prefix}matches_current"])
+    assert {
+        f"{scaleup_prefix}sha256_matches_current",
+        f"{scaleup_prefix}matches_current",
+        f"{runtime_prefix}matches_current",
+        "runtime_telemetry_broker_readiness_matches_current",
+        "runtime_telemetry_lineage_matches_current",
+    } <= guard_failed
+    assert not guard_config["runtime_telemetry_lineage"][
+        f"{runtime_prefix}matches_current"
+    ]
+    assert not guard_manifest["extra"][
+        f"{runtime_prefix}matches_current"
+    ]
     assert verify_experiment_manifest(
         telemetry.output_dir / "manifest.json",
         expected_run_type="runtime_telemetry_snapshot",

@@ -653,6 +653,15 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                     False,
                 )
             )
+            or _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_route_enable_route_enable_"
+                        "route_enable_route_contract_identity_active"
+                    ),
+                    False,
+                )
+            )
         )
         if broker_readiness_active:
             for name, reason in (
@@ -1047,6 +1056,112 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                                 "scale-up broker-readiness route-enable "
                                 "route-enable route contract identity "
                                 "current-source verdict failed"
+                            ),
+                        ),
+                    ]
+                )
+            route_enable_route_enable_route_enable_identity_active = _to_bool(
+                row.get(
+                    (
+                        "scaleup_broker_readiness_route_enable_route_enable_"
+                        "route_enable_route_contract_identity_active"
+                    ),
+                    False,
+                )
+            )
+            if route_enable_route_enable_route_enable_identity_active:
+                route_enable_route_enable_route_enable_identity_sha = str(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_route_enable_"
+                            "route_enable_route_enable_"
+                            "route_contract_identity_sha256"
+                        ),
+                        "",
+                    )
+                ).strip()
+                current_route_enable_route_enable_route_enable_identity_sha = str(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_current_route_enable_"
+                            "route_enable_route_enable_"
+                            "route_contract_identity_sha256"
+                        ),
+                        "",
+                    )
+                ).strip()
+                route_enable_route_enable_route_enable_identity_matches = _to_bool(
+                    row.get(
+                        (
+                            "scaleup_broker_readiness_route_enable_"
+                            "route_enable_route_enable_"
+                            "route_contract_identity_matches_current"
+                        ),
+                        False,
+                    )
+                )
+                route_enable_route_enable_route_enable_sha_matches = bool(
+                    route_enable_route_enable_route_enable_identity_sha
+                    and current_route_enable_route_enable_route_enable_identity_sha
+                    and (
+                        route_enable_route_enable_route_enable_identity_sha
+                        == current_route_enable_route_enable_route_enable_identity_sha
+                    )
+                )
+                checks.extend(
+                    [
+                        _check(
+                            (
+                                "scaleup_broker_readiness_route_enable_"
+                                "route_enable_route_enable_"
+                                "route_contract_identity_sha256_present"
+                            ),
+                            route_enable_route_enable_route_enable_identity_sha,
+                            "present",
+                            True,
+                            bool(
+                                route_enable_route_enable_route_enable_identity_sha
+                            ),
+                            (
+                                "scale-up broker-readiness route-enable "
+                                "route-enable route-enable route contract "
+                                "identity digest is missing"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "scaleup_broker_readiness_route_enable_"
+                                "route_enable_route_enable_"
+                                "route_contract_identity_sha256_matches_current"
+                            ),
+                            route_enable_route_enable_route_enable_sha_matches,
+                            "is",
+                            True,
+                            route_enable_route_enable_route_enable_sha_matches,
+                            (
+                                "scale-up broker-readiness route-enable "
+                                "route-enable route-enable route contract "
+                                "identity differs from the current source"
+                            ),
+                        ),
+                        _check(
+                            (
+                                "scaleup_broker_readiness_route_enable_"
+                                "route_enable_route_enable_"
+                                "route_contract_identity_matches_current"
+                            ),
+                            (
+                                route_enable_route_enable_route_enable_identity_matches
+                            ),
+                            "is",
+                            True,
+                            (
+                                route_enable_route_enable_route_enable_identity_matches
+                            ),
+                            (
+                                "scale-up broker-readiness route-enable "
+                                "route-enable route-enable route contract "
+                                "identity current-source verdict failed"
                             ),
                         ),
                     ]
