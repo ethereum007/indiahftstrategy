@@ -4864,9 +4864,11 @@ def _broker_readiness_lineage_checks(
         BROKER_DISPATCH_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
         BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
         BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+        BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
         BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
         BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
         BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
+        BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
     )
 
     specs = (
@@ -5299,6 +5301,110 @@ def _broker_readiness_lineage_checks(
                 ),
             )
         )
+    scaleup_route_identity_fields = {
+        source_field: target_field
+        for (
+            target_field,
+            source_field,
+        ) in (
+            BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+        )
+    }
+    scaleup_route_identity_active_field = scaleup_route_identity_fields[
+        (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_enable_route_contract_identity_active"
+        )
+    ]
+    if _to_bool(
+        broker_readiness.get(
+            scaleup_route_identity_active_field,
+            False,
+        )
+    ):
+        carried_field = scaleup_route_identity_fields[
+            (
+                BROKER_DISPATCH_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+            )
+        ]
+        current_field = scaleup_route_identity_fields[
+            (
+                "broker_dispatch_roundtrip_current_ack_route_enable_"
+                "route_enable_route_enable_route_contract_identity_sha256"
+            )
+        ]
+        verdict_field = scaleup_route_identity_fields[
+            (
+                "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+                "route_enable_route_contract_identity_matches_current"
+            )
+        ]
+        carried_sha256 = _text(
+            broker_readiness.get(carried_field, "")
+        )
+        current_sha256 = _text(
+            broker_readiness.get(current_field, "")
+        )
+        verdict = _to_bool(
+            broker_readiness.get(verdict_field, False)
+        )
+        checks.extend(
+            (
+                _check(
+                    (
+                        "broker_readiness_roundtrip_route_enable_route_enable_"
+                        "route_enable_route_contract_identity_sha256_present"
+                    ),
+                    bool(carried_sha256),
+                    "is",
+                    True,
+                    bool(carried_sha256),
+                    (
+                        "broker readiness is missing the carried terminal "
+                        "route-enable route-enable route contract identity "
+                        "digest"
+                    ),
+                ),
+                _check(
+                    (
+                        "broker_readiness_roundtrip_route_enable_route_enable_"
+                        "route_enable_route_contract_identity_"
+                        "sha256_matches_current"
+                    ),
+                    bool(
+                        carried_sha256
+                        and current_sha256
+                        and carried_sha256 == current_sha256
+                    ),
+                    "is",
+                    True,
+                    bool(
+                        carried_sha256
+                        and current_sha256
+                        and carried_sha256 == current_sha256
+                    ),
+                    (
+                        "broker readiness route-enable route-enable route "
+                        "contract identity does not match the current "
+                        "terminal source"
+                    ),
+                ),
+                _check(
+                    (
+                        "broker_readiness_roundtrip_route_enable_route_enable_"
+                        "route_enable_route_contract_identity_matches_current"
+                    ),
+                    verdict,
+                    "is",
+                    True,
+                    verdict,
+                    (
+                        "broker readiness route-enable route-enable route "
+                        "contract identity current-source verdict failed"
+                    ),
+                ),
+            )
+        )
     return checks
 
 
@@ -5370,6 +5476,7 @@ def _broker_readiness_lineage_report_fields(
         BROKER_READINESS_ROUNDTRIP_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
         BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
         BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
+        BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP,
     )
 
     for field, _source_field in (
@@ -5424,6 +5531,26 @@ def _broker_readiness_lineage_report_fields(
         source.get(readiness_route_identity_active_field, False)
     ):
         for field, _source_field in readiness_route_identity_fields:
+            if field.endswith("_sha256"):
+                fields[field] = _text(source.get(field, ""))
+            else:
+                fields[field] = _to_bool(source.get(field, False))
+    scaleup_route_identity_fields = tuple(
+        BROKER_READINESS_ROUNDTRIP_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELD_MAP
+    )
+    scaleup_route_identity_active_field = next(
+        target_field
+        for target_field, source_field in scaleup_route_identity_fields
+        if source_field
+        == (
+            "broker_dispatch_roundtrip_ack_route_enable_route_enable_"
+            "route_enable_route_contract_identity_active"
+        )
+    )
+    if _to_bool(
+        source.get(scaleup_route_identity_active_field, False)
+    ):
+        for field, _source_field in scaleup_route_identity_fields:
             if field.endswith("_sha256"):
                 fields[field] = _text(source.get(field, ""))
             else:

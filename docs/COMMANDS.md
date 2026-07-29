@@ -4638,6 +4638,27 @@ digests in readiness artifacts and resealing the readiness manifest therefore
 still blocks scale-up against the unchanged round-trip source. Earlier route
 identity families remain independent, and inactive new fields remain sparse
 in the scale-up report contract.
+The newest broker-readiness round-trip route-enable route-enable route-enable
+route-contract identity is a fifth independent family. Controlled scale-up
+reopens the current manifest-bound broker-readiness and terminal round-trip
+sources before accepting
+`broker_readiness_roundtrip_broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_telemetry_broker_readiness_route_enable_route_enable_route_contract_identity_sha256`.
+The active flag, independently recovered digest, and current-source verdict
+remain explicit as
+`broker_readiness_roundtrip_ack_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`broker_readiness_roundtrip_current_ack_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`broker_readiness_roundtrip_ack_route_enable_route_enable_route_enable_route_contract_identity_matches_current`.
+Three dedicated checks require the carried digest to be present, equal the
+recovered digest, and retain the passing verdict. The plan, summary, nested
+`broker_readiness.lineage` config, and manifest seal all four fields.
+Reloadable scale-up provenance repeats the source comparison, publishes
+`broker_readiness_route_enable_route_enable_route_enable_route_contract_identity_*`
+aggregates, and includes the verdict in its gate. Rewriting both visible
+digests throughout a broker-readiness bundle and resealing its items, summary,
+config, runbook, and manifest therefore still blocks controlled scale-up
+against the unchanged terminal round-trip source. Earlier families remain
+independent, and inactive fields stay sparse.
 If the shadow-session comparison carried broker vendor-data wrapper proof,
 scale-up retains `shadow_broker_vendor_data_readiness_*` fields and a nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config block, and fails

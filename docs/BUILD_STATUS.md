@@ -8577,12 +8577,38 @@ diff checks succeed. Repository collection is healthy at `2858 tests` across
 `169` files. The full suite was not rerun because the two real-chain pairs
 alone take about 166 minutes when sharing the same drive.
 
+Latest broker-readiness-to-controlled-scale-up terminal route-enable
+route-enable route-enable route-contract identity proof: controlled scale-up
+now reopens
+the manifest-bound broker-readiness bundle and its current terminal round-trip
+source before accepting the newest carried digest. Three dedicated checks
+require that digest to be present, equal the independently recovered current
+digest, and retain a passing readiness current-source verdict. The plan,
+summary, nested `broker_readiness.lineage` config, checks, and manifest metadata
+preserve the active flag, carried digest, current digest, and verdict as a
+fifth identity family. Reloadable scale-up runtime provenance compares all
+four detailed fields with the current broker-readiness source, includes the
+resulting verdict in its gate, and exports separate
+`scaleup_broker_readiness_route_enable_route_enable_route_enable_route_contract_identity_*`
+fields for runtime telemetry. A copied broker-readiness bundle with both
+visible terminal digests rewritten remains manifest-valid after its items,
+summary, config, runbook, and manifest are resealed, but scale-up still blocks
+against the unchanged terminal round-trip source. Earlier identity families
+retain their established behavior, and inactive new fields remain sparse. The
+new clean/forged end-to-end pair passes in `6200.5s`; the established two-test
+route-enable compatibility pair passes in `1986.7s`, two optional-evidence
+runtime-provenance cases pass, and four lightweight scale-up broker-readiness
+baselines pass. Source compilation and diff checks succeed. Repository
+collection is healthy at `2860 tests` across `169` files. The full suite was
+not rerun because the two real-chain pairs alone take about 136 minutes when
+sharing the same drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified broker-readiness round-trip route-enable
+1. Carry the newly verified controlled-scale-up broker-readiness route-enable
    route-enable route-enable route-contract digest and current-source verdict
-   into controlled scale-up provenance, and block a re-manifested
-   broker-readiness bundle before scale-up can pass.
+   into runtime telemetry and guard provenance, and block a re-manifested
+   scale-up bundle before runtime can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
