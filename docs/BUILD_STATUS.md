@@ -8649,12 +8649,37 @@ at `2864 tests` across `169` files. The full suite was not rerun because each
 terminal real-chain session fixture takes roughly 83-100 minutes on the shared
 drive.
 
+Latest runtime-session-to-cutover terminal route-enable route-enable
+route-enable route-contract identity proof: cutover now treats the newest
+broker-readiness identity as a fifth independent family. It emits `13`
+dedicated checks requiring the scale-up carried/current pair,
+runtime-telemetry carried/current pair, and runtime-session lineage active
+state, recovered current digest, and current-source verdict to converge on the
+digest reopened from the manifest-bound broker-readiness source.
+Authorization, summary, nested config, manifest metadata, and the runbook
+preserve that proof. Reloadable cutover lineage compares all seven session
+identity fields with the current runtime session, includes the resulting
+verdict in the cutover gate, and exports a dedicated active flag, current
+digest, and current-source verdict for route enablement. A copied session
+whose visible fifth-family digests and runbook are rewritten remains
+manifest-valid and internally contract-consistent after resealing, but both
+the cutover report and reloadable lineage still reject it against the
+unchanged broker-readiness source and route remediation to broker-readiness
+review. Earlier identity families retain their established behavior, and
+inactive fifth-family fields remain neutral. The clean/forged production-chain
+pair passes during a shared approximately four-hour run; six lightweight
+cutover and operational-lineage compatibility cases also pass. Source
+compilation, diff checks, and collection succeed. Repository collection is
+healthy at `2866 tests` across `169` files. The full suite was not rerun
+because the production-chain pair alone takes roughly four hours on the shared
+drive.
+
 ## Next Build Targets
 
-1. Carry the newly verified runtime-session broker-readiness route-enable
-   route-enable route-enable route-contract digest and current-source verdict
-   into cutover lineage, and block a re-manifested session bundle before
-   cutover can pass.
+1. Carry the newly verified cutover broker-readiness route-enable route-enable
+   route-enable route-contract digest and current-source verdict into
+   route-enable lineage, and block a re-manifested cutover bundle before route
+   enablement can pass.
 2. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.

@@ -15,6 +15,7 @@ from reports.manifest import file_sha256, verify_experiment_manifest, write_expe
 from reports.operational_lineage import (
     broker_readiness_lineage_fields,
     broker_readiness_lineage_manifest_inputs,
+    cutover_lineage_fields,
     load_broker_readiness_lineage,
     load_cutover_lineage,
     load_runtime_session_lineage,
@@ -28,6 +29,7 @@ from reports.scaleup_runtime_provenance import (
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_CURRENT_SHA256_FIELD,
     BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
+    BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD,
 )
 
 
@@ -2012,6 +2014,7 @@ def write_contract_identity_cutover_inputs(
     route_contract_identity=False,
     route_enable_route_contract_identity=False,
     route_enable_route_enable_route_contract_identity=False,
+    route_enable_route_enable_route_enable_route_contract_identity=False,
 ):
     from tests.data_readiness_helpers import reseal_experiment_manifest
     from tests.test_scaleup_runtime_provenance import (
@@ -2029,6 +2032,9 @@ def write_contract_identity_cutover_inputs(
         ),
         route_enable_route_enable_route_contract_identity=(
             route_enable_route_enable_route_contract_identity
+        ),
+        route_enable_route_enable_route_enable_route_contract_identity=(
+            route_enable_route_enable_route_enable_route_contract_identity
         ),
     )
     scaleup = _write_scaleup_bundle(
@@ -2195,6 +2201,31 @@ def route_enable_route_enable_route_contract_identity_cutover_inputs(
             root,
             contract_identity=False,
             route_enable_route_enable_route_contract_identity=True,
+        )
+    finally:
+        if os.name == "nt":
+            shutil.rmtree(root, ignore_errors=True)
+            try:
+                short_root.rmdir()
+            except OSError:
+                pass
+
+
+@pytest.fixture(scope="module")
+def route_enable_route_enable_route_enable_route_contract_identity_cutover_inputs(
+    tmp_path_factory,
+):
+    if os.name == "nt":
+        short_root = Path(Path.cwd().anchor) / ".hft_test_tmp"
+        short_root.mkdir(exist_ok=True)
+        root = Path(tempfile.mkdtemp(prefix="ct3_", dir=short_root))
+    else:
+        root = tmp_path_factory.mktemp("cutover_terminal_identity_fifth")
+    try:
+        yield write_contract_identity_cutover_inputs(
+            root,
+            contract_identity=False,
+            route_enable_route_enable_route_enable_route_contract_identity=True,
         )
     finally:
         if os.name == "nt":
@@ -2434,6 +2465,20 @@ def _forge_runtime_route_enable_route_enable_route_contract_identity(
     )
     reseal_experiment_manifest(runtime)
     return current_sha256
+
+
+def _forge_runtime_route_enable_route_enable_route_enable_route_contract_identity(
+    runtime,
+    forged_sha256,
+):
+    from tests.test_scaleup_runtime_provenance import (
+        _forge_runtime_session_route_enable_route_enable_route_enable_identity,
+    )
+
+    return _forge_runtime_session_route_enable_route_enable_route_enable_identity(
+        runtime,
+        forged_sha256,
+    )
 
 
 def test_cutover_gate_authorizes_clean_live_dryrun():
@@ -7547,6 +7592,277 @@ def test_cutover_blocks_remanifested_runtime_route_enable_route_enable_forgery(
         )
     ]
     assert not lineage["gate_passed"]
+
+
+def test_cutover_verifies_runtime_broker_route_enable_route_enable_route_enable_identity(
+    tmp_path,
+    route_enable_route_enable_route_enable_route_contract_identity_cutover_inputs,
+):
+    (
+        scaleup,
+        broker,
+        runtime,
+        review_path,
+        broker_fields,
+    ) = (
+        route_enable_route_enable_route_enable_route_contract_identity_cutover_inputs
+    )
+    identity_sha256 = broker_fields[
+        BROKER_READINESS_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_SHA256_FIELD
+    ]
+    runtime_field = (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_sha256"
+    )
+    runtime_current_field = (
+        "runtime_telemetry_current_broker_readiness_route_enable_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    )
+    runtime_verdict_field = (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_matches_current"
+    )
+    lineage_active_field = (
+        "runtime_lineage_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_active"
+    )
+    lineage_current_field = (
+        "runtime_lineage_current_broker_readiness_route_enable_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    )
+    lineage_verdict_field = (
+        "runtime_lineage_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_matches_current"
+    )
+    runtime_summary = pd.read_csv(
+        runtime / "runtime_session_summary.csv"
+    ).iloc[0]
+    assert runtime_summary[runtime_field] == identity_sha256
+    assert runtime_summary[runtime_current_field] == identity_sha256
+    assert bool(runtime_summary[runtime_verdict_field])
+    session_lineage = load_runtime_session_lineage(
+        runtime / "runtime_session_summary.csv",
+        scaleup / "scaleup_config.json",
+        expected_broker_readiness_config_path=(
+            broker / "broker_readiness_config.json"
+        ),
+    )
+    assert session_lineage["gate_passed"]
+
+    out_dir = tmp_path / "cutover"
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=out_dir,
+    )
+
+    summary = report.summary.iloc[0]
+    identity_checks = report.checks.loc[
+        report.checks["check"].astype(str).str.contains(
+            (
+                "route_enable_route_enable_route_enable_"
+                "route_contract_identity"
+            )
+        )
+    ]
+    assert report.ready
+    assert len(identity_checks) == 13
+    assert identity_checks["passed"].astype(bool).all()
+    assert not summary[
+        (
+            "runtime_lineage_broker_readiness_route_enable_route_enable_"
+            "route_contract_identity_active"
+        )
+    ]
+    assert summary[runtime_field] == identity_sha256
+    assert summary[runtime_current_field] == identity_sha256
+    assert summary[lineage_active_field]
+    assert summary[lineage_current_field] == identity_sha256
+    assert summary[lineage_verdict_field]
+    assert report.config["runtime_lineage"][lineage_verdict_field]
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["extra"][runtime_field] == identity_sha256
+    assert manifest["extra"][lineage_verdict_field]
+    runbook = (out_dir / "cutover_runbook.md").read_text(encoding="utf-8")
+    assert (
+        (
+            "Broker route-enable route-enable route-enable route contract "
+            f"identity digest: `{identity_sha256}`"
+        )
+        in runbook
+    )
+    assert (
+        "Broker route-enable route-enable route-enable route contract "
+        "identity matches current: yes"
+        in runbook
+    )
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_cutover_lineage(out_dir / "cutover_config.json")
+    public_fields = cutover_lineage_fields(lineage)
+    aggregate_prefix = (
+        "runtime_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    public_prefix = f"cutover_{aggregate_prefix}"
+    assert lineage["gate_passed"]
+    assert lineage[f"{aggregate_prefix}active"]
+    assert lineage[
+        (
+            "current_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == identity_sha256
+    assert lineage[f"{aggregate_prefix}matches_current"]
+    assert public_fields[f"{public_prefix}active"]
+    assert public_fields[
+        (
+            "cutover_current_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == identity_sha256
+    assert public_fields[f"{public_prefix}matches_current"]
+    assert public_fields["cutover_lineage_gate_passed"]
+
+
+def test_cutover_blocks_remanifested_runtime_route_enable_route_enable_route_enable_forgery(
+    tmp_path,
+    route_enable_route_enable_route_enable_route_contract_identity_cutover_inputs,
+):
+    (
+        scaleup,
+        broker,
+        runtime_source,
+        review_path,
+        _,
+    ) = (
+        route_enable_route_enable_route_enable_route_contract_identity_cutover_inputs
+    )
+    runtime = runtime_source.parent / "rf"
+    shutil.copytree(runtime_source, runtime)
+    forged_sha256 = "b" * 64
+    current_sha256 = (
+        _forge_runtime_route_enable_route_enable_route_enable_route_contract_identity(
+            runtime,
+            forged_sha256,
+        )
+    )
+    assert verify_experiment_manifest(
+        runtime / "manifest.json",
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
+    session_lineage = load_runtime_session_lineage(
+        runtime / "runtime_session_summary.csv",
+        scaleup / "scaleup_config.json",
+        expected_broker_readiness_config_path=(
+            broker / "broker_readiness_config.json"
+        ),
+    )
+    identity_prefix = (
+        "broker_readiness_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    assert session_lineage["manifest_current"]
+    assert session_lineage["contract_consistent"]
+    assert session_lineage[f"{identity_prefix}active"]
+    assert session_lineage[
+        (
+            "current_broker_readiness_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not session_lineage[f"{identity_prefix}matches_current"]
+    assert not session_lineage["broker_readiness_matches_current"]
+    assert not session_lineage["gate_passed"]
+
+    out_dir = tmp_path / "cutover"
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=out_dir,
+    )
+
+    runtime_field = (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_sha256"
+    )
+    runtime_current_check = (
+        "runtime_telemetry_current_broker_readiness_route_enable_"
+        "route_enable_route_enable_"
+        "route_contract_identity_sha256_matches_current"
+    )
+    lineage_current_field = (
+        "runtime_lineage_current_broker_readiness_route_enable_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    )
+    lineage_verdict_field = (
+        "runtime_lineage_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_matches_current"
+    )
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not report.ready
+    assert "runtime_session_manifest_current" not in failed
+    assert "runtime_lineage_contract_consistent" not in failed
+    assert {
+        f"{runtime_field}_matches_current",
+        runtime_current_check,
+        lineage_verdict_field,
+        "runtime_lineage_broker_readiness_matches_current",
+        "runtime_lineage_gate_passed",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary[runtime_field] == forged_sha256
+    assert summary[lineage_current_field] == current_sha256
+    assert not summary[lineage_verdict_field]
+    action = report.action_queue.loc[
+        report.action_queue["check"] == lineage_verdict_field
+    ].iloc[0]
+    assert action["component"] == "broker_readiness"
+    assert action["next_gate"] == "review-broker-readiness"
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+
+    lineage = load_cutover_lineage(out_dir / "cutover_config.json")
+    public_fields = cutover_lineage_fields(lineage)
+    aggregate_prefix = (
+        "runtime_route_enable_route_enable_route_enable_"
+        "route_contract_identity_"
+    )
+    public_prefix = f"cutover_{aggregate_prefix}"
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage[f"{aggregate_prefix}active"]
+    assert lineage[
+        (
+            "current_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        )
+    ] == current_sha256
+    assert not lineage["runtime_lineage_matches_current"]
+    assert not lineage[f"{aggregate_prefix}matches_current"]
+    assert not lineage["gate_passed"]
+    assert public_fields[f"{public_prefix}active"]
+    assert not public_fields[f"{public_prefix}matches_current"]
+    assert not public_fields["cutover_lineage_gate_passed"]
 
 
 def test_cutover_blocks_remanifested_runtime_contract_identity_forgery(

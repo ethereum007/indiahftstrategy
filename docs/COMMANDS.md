@@ -5919,6 +5919,20 @@ and
 `cutover_runtime_route_enable_route_enable_route_contract_identity_matches_current`.
 A structurally consistent, freshly re-manifested runtime packet with forged
 terminal digests remains blocked and queues `review-broker-readiness`.
+The terminal route-enable route-enable route-enable identity follows a fifth
+independent cutover contract. Cutover emits `13` dedicated checks across the
+scale-up carried/current pair, runtime-telemetry carried/current pair, and
+runtime-session lineage active state, recovered current digest, and
+current-source verdict. Authorization, summary, nested config, manifest
+metadata, and the runbook preserve that proof. Reloadable cutover lineage
+reopens the current runtime session and recursively bound broker-readiness
+source, compares all seven session identity fields, and publishes
+`cutover_runtime_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`cutover_current_runtime_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`cutover_runtime_route_enable_route_enable_route_enable_route_contract_identity_matches_current`.
+A copied session whose visible terminal digests are rewritten and whose
+manifest is resealed remains blocked and queues `review-broker-readiness`.
 
 `cutover_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so schedulers can route the first

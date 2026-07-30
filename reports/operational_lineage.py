@@ -161,6 +161,36 @@ RUNTIME_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
         "route_contract_identity_matches_current"
     ),
 )
+RUNTIME_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS = (
+    (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_active"
+    ),
+    (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_sha256"
+    ),
+    (
+        "runtime_telemetry_current_broker_readiness_route_enable_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    ),
+    (
+        "runtime_telemetry_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_matches_current"
+    ),
+    (
+        "runtime_lineage_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_active"
+    ),
+    (
+        "runtime_lineage_current_broker_readiness_route_enable_"
+        "route_enable_route_enable_route_contract_identity_sha256"
+    ),
+    (
+        "runtime_lineage_broker_readiness_route_enable_route_enable_"
+        "route_enable_route_contract_identity_matches_current"
+    ),
+)
 CUTOVER_CONTRACT_IDENTITY_FIELDS = (
     "cutover_runtime_contract_identity_active",
     "cutover_current_runtime_contract_identity_sha256",
@@ -2332,6 +2362,18 @@ def empty_cutover_lineage(*, required: bool = False) -> dict[str, Any]:
             "runtime_route_enable_route_enable_"
             "route_contract_identity_matches_current"
         ): not required,
+        (
+            "runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): False,
+        (
+            "current_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): "",
+        (
+            "runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): not required,
         "broker_readiness_source_matches_scaleup": not required,
         "current_broker_readiness_manifest_sha256": "",
         "broker_readiness_matches_current": not required,
@@ -2490,6 +2532,12 @@ def load_cutover_lineage(cutover_config_path: str | Path) -> dict[str, Any]:
                 "route_contract_identity_matches_current"
             )
         ]
+        and state[
+            (
+                "runtime_route_enable_route_enable_route_enable_"
+                "route_contract_identity_matches_current"
+            )
+        ]
         and state["broker_readiness_source_matches_scaleup"]
         and state["broker_readiness_matches_current"]
         and state["scaleup_source_bound"]
@@ -2613,6 +2661,42 @@ def cutover_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
             lineage.get(
                 (
                     "runtime_route_enable_route_enable_"
+                    "route_contract_identity_matches_current"
+                ),
+                False,
+            )
+        ),
+        (
+            "cutover_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): _bool(
+            lineage.get(
+                (
+                    "runtime_route_enable_route_enable_route_enable_"
+                    "route_contract_identity_active"
+                ),
+                False,
+            )
+        ),
+        (
+            "cutover_current_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): _text(
+            lineage.get(
+                (
+                    "current_runtime_route_enable_route_enable_route_enable_"
+                    "route_contract_identity_sha256"
+                ),
+                "",
+            )
+        ),
+        (
+            "cutover_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): _bool(
+            lineage.get(
+                (
+                    "runtime_route_enable_route_enable_route_enable_"
                     "route_contract_identity_matches_current"
                 ),
                 False,
@@ -2744,6 +2828,18 @@ def _cutover_current_runtime_lineage_state(
             ): "",
             (
                 "runtime_route_enable_route_enable_"
+                "route_contract_identity_matches_current"
+            ): True,
+            (
+                "runtime_route_enable_route_enable_route_enable_"
+                "route_contract_identity_active"
+            ): False,
+            (
+                "current_runtime_route_enable_route_enable_route_enable_"
+                "route_contract_identity_sha256"
+            ): "",
+            (
+                "runtime_route_enable_route_enable_route_enable_"
                 "route_contract_identity_matches_current"
             ): True,
             "broker_readiness_source_matches_scaleup": True,
@@ -3285,6 +3381,146 @@ def _cutover_current_runtime_lineage_state(
             )
         )
     )
+    current_route_enable_route_enable_route_enable_contract_identity_active = bool(
+        _bool(
+            current_fields.get(
+                (
+                    "runtime_lineage_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _bool(
+            current_fields.get(
+                (
+                    "runtime_telemetry_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _text(
+            current_fields.get(
+                (
+                    "runtime_telemetry_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            current_fields.get(
+                (
+                    "runtime_telemetry_current_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            current_fields.get(
+                (
+                    "runtime_lineage_current_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+    )
+    carried_route_enable_route_enable_route_enable_contract_identity_active = bool(
+        _bool(
+            lineage.get(
+                (
+                    "runtime_lineage_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _bool(
+            lineage.get(
+                (
+                    "runtime_telemetry_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_active"
+                ),
+                False,
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_telemetry_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_telemetry_current_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+        or _text(
+            lineage.get(
+                (
+                    "runtime_lineage_current_broker_readiness_route_enable_"
+                    "route_enable_route_enable_route_contract_identity_sha256"
+                ),
+                "",
+            )
+        )
+    )
+    route_enable_route_enable_route_enable_contract_identity_active = bool(
+        current_route_enable_route_enable_route_enable_contract_identity_active
+        or carried_route_enable_route_enable_route_enable_contract_identity_active
+    )
+    current_route_enable_route_enable_route_enable_contract_identity_sha256 = _text(
+        current_fields.get(
+            (
+                "runtime_lineage_current_broker_readiness_route_enable_"
+                "route_enable_route_enable_route_contract_identity_sha256"
+            ),
+            "",
+        )
+        or current_fields.get(
+            (
+                "runtime_telemetry_current_broker_readiness_route_enable_"
+                "route_enable_route_enable_route_contract_identity_sha256"
+            ),
+            "",
+        )
+        or current_fields.get(
+            (
+                "runtime_telemetry_broker_readiness_route_enable_"
+                "route_enable_route_enable_route_contract_identity_sha256"
+            ),
+            "",
+        )
+    )
+    route_enable_route_enable_route_enable_contract_identity_matches_current = bool(
+        not route_enable_route_enable_route_enable_contract_identity_active
+        or (
+            source_bound
+            and current.get("gate_passed", False)
+            and current_route_enable_route_enable_route_enable_contract_identity_active
+            and current_route_enable_route_enable_route_enable_contract_identity_sha256
+            and all(
+                _same(
+                    lineage.get(column),
+                    current_fields.get(column),
+                    column,
+                )
+                for column in (
+                    RUNTIME_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_ENABLE_ROUTE_CONTRACT_IDENTITY_FIELDS
+                )
+            )
+        )
+    )
     return {
         "broker_readiness_required": True,
         "runtime_lineage_source_bound": source_bound,
@@ -3331,6 +3567,18 @@ def _cutover_current_runtime_lineage_state(
             "runtime_route_enable_route_enable_"
             "route_contract_identity_matches_current"
         ): route_enable_route_enable_contract_identity_matches_current,
+        (
+            "runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_active"
+        ): route_enable_route_enable_route_enable_contract_identity_active,
+        (
+            "current_runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_sha256"
+        ): current_route_enable_route_enable_route_enable_contract_identity_sha256,
+        (
+            "runtime_route_enable_route_enable_route_enable_"
+            "route_contract_identity_matches_current"
+        ): route_enable_route_enable_route_enable_contract_identity_matches_current,
         "broker_readiness_source_matches_scaleup": bool(
             source_bound
             and current.get("broker_readiness_source_matches_scaleup", False)
