@@ -6470,6 +6470,26 @@ therefore leaves an internally consistent cutover that route enable still
 blocks and routes to broker-readiness review. Identity-inactive cutovers keep
 neutral compatibility behavior.
 
+For the newest broker-readiness route-enable route-enable route-enable
+route-contract identity, route enable applies a fifth independent cutover
+contract. Three dedicated checks require the cutover-carried digest to be
+present, equal the current digest recovered through the manifest-bound runtime,
+scale-up, and readiness sources, and retain a passing cutover current-source
+verdict. The packet, summary, nested `cutover_lineage` config, manifest
+metadata, and runbook preserve the active flag, carried digest, current digest,
+and verdict. Reloadable route-enable lineage reopens the current cutover,
+compares all `10` detailed identity fields, and exports the `13`-field proof
+through
+`route_enable_cutover_route_enable_route_enable_route_enable_route_contract_identity_active`,
+`route_enable_current_cutover_route_enable_route_enable_route_enable_route_contract_identity_sha256`,
+and
+`route_enable_cutover_route_enable_route_enable_route_enable_route_contract_identity_matches_current`
+for dispatch planning. A copied cutover with all three visible fifth-family
+digests rewritten remains manifest-valid and internally contract-consistent
+after its authorization, summary, config, and manifest are resealed, but route
+enable still blocks it against the unchanged broker-readiness source and
+routes remediation to broker-readiness review.
+
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
 proof/resume context, dispatch round-trip proof, and any cutover-carried vendor
