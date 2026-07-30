@@ -11199,3 +11199,55 @@ manifest.json
 Stress reports retain strategy and market identity from replay summaries,
 scenario keys, or replay manifests. A stress bundle that mixes provided
 strategy or market identities fails even when all numeric stress scenarios pass.
+
+## Imbalance Holdout Research Proof
+
+Replay one frozen, promoted imbalance candidate on chronologically later files
+that were not part of its manifested development lineage:
+
+```powershell
+python -m hft_cli prove-imbalance-holdout `
+  --candidate runs\imbalance_research\promotion `
+  --holdout-ticks data\holdout\day_01.csv data\holdout\day_02.csv data\holdout\day_03.csv `
+  --out runs\imbalance_holdout_proof `
+  --baseline-latency-us 300 `
+  --latency-us 100 300 500 1000 `
+  --cost-multiplier 1 1.25 1.5 2 `
+  --qty-multiplier 1 2 4 8 `
+  --fail-on-breach
+```
+
+The command reopens the promotion manifest and all current input
+fingerprints. If any holdout path appears in the candidate's recursive
+development lineage, the dossier blocks before running a replay.
+
+The grid varies one factor at a time around the declared baseline:
+
+- total latency is split into feed and order components with
+  `--feed-latency-fraction`;
+- the full cash cost returned by the Indian or generic cost model is scaled
+  exactly;
+- quantity is rounded to venue-valid lots and replayed against observed
+  displayed liquidity.
+
+Outputs:
+
+```text
+holdout_scenarios.csv
+latency_curve.csv
+cost_curve.csv
+capacity_curve.csv
+holdout_checks.csv
+holdout_summary.csv
+research_proof.json
+RESEARCH_PROOF.md
+manifest.json
+```
+
+Default checks require three holdout folds, at least two-thirds profitable
+baseline folds, non-negative aggregate PnL at the baseline and each maximum
+stress, at least one baseline fill, and no more than 25% liquidity shortfall at
+the maximum tested quantity. Every threshold is explicit on the CLI.
+
+The output is always marked `non_authorizing=true`. A pass advances the
+candidate only to shadow review; it does not enable order routing.

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+from typing import Any
 
 from engine.hft_backtest import Instrument
 
@@ -35,6 +37,34 @@ class GenericCostModel:
         )
 
     def round_trip_bps(self, price: float, inst: Instrument) -> float:
+        qty = inst.lot_size
+        total = self.cost(+1, price, qty, inst) + self.cost(-1, price, qty, inst)
+        notional = price * qty * inst.multiplier
+        return 1e4 * total / max(notional, 1e-12)
+
+
+@dataclass(frozen=True)
+class ScaledCostModel:
+    """Apply an exact multiplier to another cost model's cash charges."""
+
+    base: Any
+    multiplier: float = 1.0
+
+    def __post_init__(self) -> None:
+        value = float(self.multiplier)
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("multiplier must be finite and non-negative")
+        if not callable(getattr(self.base, "cost", None)):
+            raise TypeError("base cost model must define cost")
+        object.__setattr__(self, "multiplier", value)
+
+    def cost(self, side: int, price: float, qty: int, inst: Instrument) -> float:
+        return self.multiplier * float(self.base.cost(side, price, qty, inst))
+
+    def round_trip_bps(self, price: float, inst: Instrument) -> float:
+        method = getattr(self.base, "round_trip_bps", None)
+        if callable(method):
+            return self.multiplier * float(method(price, inst))
         qty = inst.lot_size
         total = self.cost(+1, price, qty, inst) + self.cost(-1, price, qty, inst)
         notional = price * qty * inst.multiplier

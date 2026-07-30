@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from data.loaders import load_tick_csv
-from engine.costs import GenericCostModel
+from engine.costs import GenericCostModel, ScaledCostModel
 from engine.hft_backtest import IndianCostModel, Instrument, Kind, LatencyModel
 from engine.multi_engine import InstrumentConfig, MultiBacktestResult, MultiInstrumentEngine, VenueConfig
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
@@ -58,6 +58,7 @@ def run_imbalance_replay(
     generic_per_unit_fee: float = 0.0,
     generic_per_contract_fee: float = 0.0,
     generic_per_order_fee: float = 0.0,
+    cost_multiplier: float = 1.0,
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
 ) -> ImbalanceReplayResult:
@@ -103,6 +104,7 @@ def run_imbalance_replay(
                     generic_per_unit_fee=generic_per_unit_fee,
                     generic_per_contract_fee=generic_per_contract_fee,
                     generic_per_order_fee=generic_per_order_fee,
+                    cost_multiplier=cost_multiplier,
                 ),
                 max_position_lots=max_position_lots,
             )
@@ -179,6 +181,7 @@ def run_imbalance_replay(
                     "per_contract_fee": generic_per_contract_fee,
                     "per_order_fee": generic_per_order_fee,
                 },
+                "cost_multiplier": cost_multiplier,
                 "max_position_lots": max_position_lots,
                 "markout_horizons_ns": markout_horizons_ns or [100_000_000, 1_000_000_000],
             },
@@ -210,18 +213,26 @@ def _costs(
     generic_per_unit_fee: float,
     generic_per_contract_fee: float,
     generic_per_order_fee: float,
+    cost_multiplier: float,
 ):
+    if not np.isfinite(cost_multiplier) or cost_multiplier < 0:
+        raise ValueError("cost_multiplier must be finite and non-negative")
     if market != INDIA_NSE_INDEX_DERIVATIVES.name:
-        return GenericCostModel(
-            buy_notional_rate=generic_buy_notional_rate,
-            sell_notional_rate=generic_sell_notional_rate,
-            per_unit_fee=generic_per_unit_fee,
-            per_contract_fee=generic_per_contract_fee,
-            per_order_fee=generic_per_order_fee,
+        return ScaledCostModel(
+            GenericCostModel(
+                buy_notional_rate=generic_buy_notional_rate,
+                sell_notional_rate=generic_sell_notional_rate,
+                per_unit_fee=generic_per_unit_fee,
+                per_contract_fee=generic_per_contract_fee,
+                per_order_fee=generic_per_order_fee,
+            ),
+            cost_multiplier,
         )
     if kind == Kind.FUT:
-        return IndianCostModel.nse_index_futures()
-    return IndianCostModel.nse_index_options()
+        base = IndianCostModel.nse_index_futures()
+    else:
+        base = IndianCostModel.nse_index_options()
+    return ScaledCostModel(base, cost_multiplier)
 
 
 def _venue(market: str) -> str:
@@ -255,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--generic-per-unit-fee", type=float, default=0.0)
     parser.add_argument("--generic-per-contract-fee", type=float, default=0.0)
     parser.add_argument("--generic-per-order-fee", type=float, default=0.0)
+    parser.add_argument("--cost-multiplier", type=float, default=1.0)
     args = parser.parse_args(argv)
     replay = run_imbalance_replay(
         ticks_path=args.ticks,
@@ -282,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         generic_per_unit_fee=args.generic_per_unit_fee,
         generic_per_contract_fee=args.generic_per_contract_fee,
         generic_per_order_fee=args.generic_per_order_fee,
+        cost_multiplier=args.cost_multiplier,
     )
     print(replay.summary.to_string(index=False))
     return 0

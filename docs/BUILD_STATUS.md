@@ -8697,15 +8697,28 @@ checks, and collection succeed. Repository collection is healthy at
 `2868 tests` across `169` files. The full suite was not rerun because the
 production-chain pair alone takes about 159 minutes on the shared drive.
 
+Latest selection-isolated imbalance holdout proof: a frozen promoted imbalance
+candidate can now be replayed on holdout tick files only after its promotion
+manifest and recursive input fingerprints verify and no holdout path appears
+in development lineage. The dossier runs one-factor-at-a-time latency, complete
+cash-cost, and venue-valid quantity sensitivity, then writes fold scenarios,
+latency/cost/capacity curves, explicit checks, a machine-readable JSON proof, a
+human-readable Markdown verdict, and a root manifest. Cost stress scales the
+exact cash charge returned by either the Indian statutory model or a generic
+market model. Capacity replays larger lots against observed displayed
+liquidity, exposing PnL efficiency, marginal PnL, residual inventory, and
+liquidity shortfalls instead of assuming linear scalability. Every dossier is
+non-authorizing; a pass advances only to shadow review. Focused dossier,
+CLI, overlap, cost-model, replay, sweep, and imbalance-pipeline tests pass.
+
 ## Next Build Targets
 
-1. Carry the newly verified route-enable broker-readiness route-enable
-   route-enable route-enable route-contract digest and current-source verdict
-   into broker-dispatch lineage, and block a re-manifested route-enable packet
-   before dispatch planning can pass.
-2. Run the first real Arrow.money/iRage H1 export through the authority-bound
+1. Run the first real Arrow.money/iRage H1 export through the authority-bound
    calendar, declared contract-expiry cycle, declared index lot size, and
    broker-vendor readiness pipeline once a sample is available.
+2. Reserve chronologically later real sessions and run the first promoted
+   imbalance candidate through the selection-isolated latency, cost, and
+   capacity dossier.
 3. Add data adapters for the first real vendor export once files are available.
 4. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.

@@ -108,6 +108,10 @@ from reports.imbalance_candidate_promotion import (
     ImbalanceCandidatePromotionThresholds,
     write_imbalance_candidate_promotion,
 )
+from reports.imbalance_holdout_dossier import (
+    ImbalanceHoldoutThresholds,
+    write_imbalance_holdout_dossier,
+)
 from reports.imbalance_edge import ImbalanceEdgeThresholds, write_imbalance_edge_audit
 from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds, write_imbalance_edge_selection
 from reports.imbalance_edge_sweep import ImbalanceEdgeSweepThresholds, write_imbalance_edge_sweep
@@ -1054,6 +1058,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay.add_argument("--cooloff-ns", type=int, default=0)
     imbalance_replay.add_argument("--feed-latency-us", type=float, default=0.0)
     imbalance_replay.add_argument("--order-latency-us", type=float, default=0.0)
+    imbalance_replay.add_argument("--cost-multiplier", type=float, default=1.0)
     imbalance_replay.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
     imbalance_replay.add_argument("--candidate-config", default=None)
     imbalance_replay.add_argument("--fill-model", default=None)
@@ -1222,6 +1227,96 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_pipeline.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_pipeline.add_argument("--fail-on-breach", action="store_true")
     _add_generic_cost_args(imbalance_pipeline)
+
+    imbalance_holdout = sub.add_parser(
+        "prove-imbalance-holdout",
+        help="Replay a frozen promoted imbalance candidate on isolated holdouts and build latency, cost, and capacity curves.",
+    )
+    imbalance_holdout.add_argument("--candidate", required=True)
+    imbalance_holdout.add_argument("--holdout-ticks", nargs="+", required=True)
+    imbalance_holdout.add_argument("--out", required=True)
+    imbalance_holdout.add_argument("--label", action="append", dest="labels")
+    imbalance_holdout.add_argument(
+        "--timestamp-unit",
+        default="ns",
+        choices=["ns", "us", "ms", "s", "datetime"],
+    )
+    imbalance_holdout.add_argument("--timestamp-tz", default=None)
+    imbalance_holdout.add_argument("--no-filter-session", action="store_true")
+    imbalance_holdout.add_argument(
+        "--baseline-latency-us",
+        type=float,
+        default=300.0,
+    )
+    imbalance_holdout.add_argument(
+        "--latency-us",
+        nargs="+",
+        type=float,
+        default=[100.0, 300.0, 500.0, 1_000.0],
+    )
+    imbalance_holdout.add_argument(
+        "--feed-latency-fraction",
+        type=float,
+        default=0.2,
+    )
+    imbalance_holdout.add_argument(
+        "--cost-multiplier",
+        nargs="+",
+        type=float,
+        default=[1.0, 1.25, 1.5, 2.0],
+    )
+    imbalance_holdout.add_argument(
+        "--qty-multiplier",
+        nargs="+",
+        type=float,
+        default=[1.0, 2.0, 4.0, 8.0],
+    )
+    imbalance_holdout.add_argument(
+        "--max-position-lots",
+        type=int,
+        default=20,
+    )
+    imbalance_holdout.add_argument(
+        "--min-holdout-folds",
+        type=int,
+        default=3,
+    )
+    imbalance_holdout.add_argument(
+        "--min-baseline-profitable-fold-rate",
+        type=float,
+        default=2.0 / 3.0,
+    )
+    imbalance_holdout.add_argument(
+        "--min-baseline-total-net-pnl",
+        type=float,
+        default=0.0,
+    )
+    imbalance_holdout.add_argument(
+        "--min-baseline-total-fills",
+        type=int,
+        default=1,
+    )
+    imbalance_holdout.add_argument(
+        "--min-max-latency-total-net-pnl",
+        type=float,
+        default=0.0,
+    )
+    imbalance_holdout.add_argument(
+        "--min-max-cost-total-net-pnl",
+        type=float,
+        default=0.0,
+    )
+    imbalance_holdout.add_argument(
+        "--min-max-qty-total-net-pnl",
+        type=float,
+        default=0.0,
+    )
+    imbalance_holdout.add_argument(
+        "--max-max-qty-liquidity-shortfall-rate",
+        type=float,
+        default=0.25,
+    )
+    imbalance_holdout.add_argument("--fail-on-breach", action="store_true")
 
     settlement = sub.add_parser("audit-settlement-convergence", help="Audit expiry settlement-window option convergence opportunities.")
     settlement.add_argument("--index-ticks", required=True)
@@ -6102,6 +6197,7 @@ def main(argv: list[str] | None = None) -> int:
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
             **_generic_cost_kwargs(args, candidate_defaults),
+            cost_multiplier=args.cost_multiplier,
             markout_horizons_ns=markout_horizons_ns,
         )
         print(result.summary.to_string(index=False))
@@ -6225,6 +6321,46 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "prove-imbalance-holdout":
+        result = write_imbalance_holdout_dossier(
+            args.candidate,
+            args.holdout_ticks,
+            output_dir=args.out,
+            labels=args.labels,
+            timestamp_unit=args.timestamp_unit,
+            timestamp_tz=args.timestamp_tz,
+            filter_session=not args.no_filter_session,
+            baseline_latency_us=args.baseline_latency_us,
+            latency_us_values=args.latency_us,
+            feed_latency_fraction=args.feed_latency_fraction,
+            cost_multipliers=args.cost_multiplier,
+            qty_multipliers=args.qty_multiplier,
+            max_position_lots=args.max_position_lots,
+            thresholds=ImbalanceHoldoutThresholds(
+                min_holdout_folds=args.min_holdout_folds,
+                min_baseline_profitable_fold_rate=(
+                    args.min_baseline_profitable_fold_rate
+                ),
+                min_baseline_total_net_pnl=(
+                    args.min_baseline_total_net_pnl
+                ),
+                min_baseline_total_fills=args.min_baseline_total_fills,
+                min_max_latency_total_net_pnl=(
+                    args.min_max_latency_total_net_pnl
+                ),
+                min_max_cost_total_net_pnl=(
+                    args.min_max_cost_total_net_pnl
+                ),
+                min_max_qty_total_net_pnl=(
+                    args.min_max_qty_total_net_pnl
+                ),
+                max_max_qty_liquidity_shortfall_rate=(
+                    args.max_max_qty_liquidity_shortfall_rate
+                ),
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "pipeline-imbalance-research":
         fold_count = len(args.ticks)
         result = write_imbalance_research_pipeline(
