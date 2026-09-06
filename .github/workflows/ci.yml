@@ -27,6 +27,7 @@ jobs:
           tests/test_production_contracts.py
           tests/test_arrow_auth_config.py
           tests/test_arrow_binary.py
+          tests/test_arrow_callback_app.py
           tests/test_arrow_fault_injection.py
           tests/test_arrow_http_faults.py
           tests/test_arrow_instruments.py

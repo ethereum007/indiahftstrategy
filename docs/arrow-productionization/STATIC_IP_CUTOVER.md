@@ -20,6 +20,10 @@ git-ignored.
 Record the Arrow ticket/dashboard confirmation that the same IP is attached to the intended app
 and account. Do not continue to authenticated certification if the preflight says `ready: false`.
 
+For a Linux VPS, the reviewed Docker/Caddy service is in `deploy/arrow-callback`. It serves the
+two registered URLs, obtains HTTPS certificates, pins the expected Arrow user ID, and keeps all
+order routing disabled. Follow its `README.md` only after confirming the VPS provider and login.
+
 1. Register and independently verify the approved static egress IP using the preflight above.
 2. Inject secrets through the approved secret provider; do not create a populated `.env` artifact.
 3. Validate configuration/redaction, then authenticate.

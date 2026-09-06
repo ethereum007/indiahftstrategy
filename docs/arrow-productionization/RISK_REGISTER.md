@@ -4,6 +4,9 @@
 | --- | --- | --- |
 | Accidental live order | Arrow order service defaults disabled and fails closed; shadow has no broker reference | Controlled |
 | Wrong egress IP supplied to Arrow | Public-IP validation, observed/configured exact match, and TLS endpoint evidence | Tooling tested; acquired IP not yet certified |
+| Request token leaked through web logs | Callback access logging disabled; browser response and errors never echo tokens | Tested/configured |
+| Callback authenticates wrong account | Mandatory operator-pinned Arrow user ID checked before accepting token | Tested |
+| Untrusted postback mutates trading state | Postback only writes size-limited hash-chained evidence and has no routing/OMS reference | Tested; live schema/authenticity BLOCKED_EXTERNAL |
 | Secret exposure | Environment/secret-provider input, empty example, structured redaction, CI secret scan | Controlled |
 | Duplicate submission after timeout/restart | Durable client ID and append-only submission reservation | Tested |
 | Stale/disconnected feed | Feed-age risk limit plus stale timeout, close-before-backoff, bounded reconnect, subscription restoration, and halt callbacks | Tested synthetically |

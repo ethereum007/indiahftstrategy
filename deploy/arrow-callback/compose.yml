@@ -1,0 +1,38 @@
+services:
+  callback:
+    build:
+      context: ../..
+      dockerfile: deploy/arrow-callback/Dockerfile
+    restart: unless-stopped
+    environment:
+      ARROW_APP_ID: ${ARROW_APP_ID:?set ARROW_APP_ID in the shell}
+      ARROW_APP_SECRET: ${ARROW_APP_SECRET:?set ARROW_APP_SECRET in the shell}
+      ARROW_EXPECTED_USER_ID: ${ARROW_EXPECTED_USER_ID:?set ARROW_EXPECTED_USER_ID in the shell}
+      ARROW_POSTBACK_JOURNAL: /var/lib/arrow-callback/postbacks.jsonl
+    volumes:
+      - arrow-evidence:/var/lib/arrow-callback
+    networks: [internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [internal]
+    security_opt: [no-new-privileges:true]
+
+networks:
+  internal:
+
+volumes:
+  arrow-evidence:
+  caddy_data:
+  caddy_config:

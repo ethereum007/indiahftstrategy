@@ -18,13 +18,15 @@ Decision: **NO-GO for live routing; READY for static-IP connectivity certificati
 - [x] Named, versioned NIFTY/custom universe selection
 - [x] Configurable rate-limit architecture
 - [x] Credential-free static-IP match and Arrow endpoint preflight tooling
-- [x] Production boundary: 62 passed, 0 failed, 89% coverage
+- [x] VPS callback/postback deployment bundle with routing disabled
+- [x] Production boundary: 69 passed, 0 failed, 89% coverage
 - [x] Lint, format, type, static-security, and dependency-audit gates
-- [ ] `INCOMPLETE_INTERNAL` Full 2,934-test legacy regression aggregate (local clean run was interrupted after 96%; GitHub's six-hour lane timed out)
+- [ ] `INCOMPLETE_INTERNAL` Full 2,941-test legacy regression aggregate (local clean run was interrupted after 96%; GitHub's six-hour lane timed out)
 
 ## External gates
 
 - [ ] `AVAILABLE_UNVERIFIED` Acquired static IP matches observed egress and is approved by Arrow
+- [ ] `AVAILABLE_UNVERIFIED` VPS callback bundle deployed and both registered HTTPS routes verified
 - [ ] `BLOCKED_EXTERNAL` Authentication and account identity certified
 - [ ] `BLOCKED_EXTERNAL` Live instrument master certified
 - [ ] `BLOCKED_EXTERNAL` Market and order streams captured and validated

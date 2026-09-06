@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "Research and backtesting platform for Indian index-derivatives HFT strategies."
 requires-python = ">=3.11"
 dependencies = [
+    "fastapi>=0.116,<1",
     "numpy",
     "pandas",
+    "uvicorn>=0.35,<1",
 ]
 
 [project.scripts]
@@ -20,6 +22,7 @@ dev = [
     "pip-audit",
     "pytest",
     "pytest-cov",
+    "httpx>=0.28,<1",
     "ruff",
 ]
 

@@ -14,8 +14,8 @@ Live routing remains fail-closed. No Arrow credentials are required by tests or 
 - Feature branch: `feat/arrow-productionization`.
 - Existing CI: none.
 - Existing editable install: failed because setuptools package discovery was not configured; fixed in this branch.
-- Baseline collection: 2,872 preserved tests. Current collection: 2,934 tests (62 added).
-- Deterministic production boundary: 62 passed, 0 failed, 89% statement coverage.
+- Baseline collection: 2,872 preserved tests. Current collection: 2,941 tests (69 added).
+- Deterministic production boundary: 69 passed, 0 failed, 89% statement coverage.
 - Full legacy run: not completed locally. The first attempt ended with 80 failed, 2,061 passed,
   and 757 errors caused predominantly by a full system temporary drive; that result is invalid.
   A clean rerun on a secondary drive progressed beyond 96% without infrastructure errors but
@@ -39,6 +39,10 @@ Live routing remains fail-closed. No Arrow credentials are required by tests or 
 - Proactive authentication refresh with token-expiry tracking and rotation hooks.
 - Credential-free static-IP preflight verifies a public configured address against observed egress,
   probes TLS reachability for all Arrow endpoints, and writes secret-free JSON evidence.
+- VPS-ready FastAPI/Caddy/Docker callback boundary implements the registered authentication and
+  order-postback URLs, server-side token exchange, callback checksum/replay validation, mandatory
+  account-ID pinning, request-size limits, private hash-chained postback capture, and disabled
+  request-token access logging. Postbacks are evidence only and cannot route orders.
 - SHA-256-bound instrument-master snapshots, schema/identity validation, and token-level diffs.
 - Independent pre-trade limits, non-auto-resuming kill switch, and a unified safety coordinator
   requiring healthy authentication, market data, order stream, and approved risk.
@@ -61,12 +65,12 @@ Live routing remains fail-closed. No Arrow credentials are required by tests or 
 
 ## Verification
 
-- `pytest` production boundary: **62 passed, 0 failed**.
-- Coverage over production packages: **89%** (1,990 statements; 214 missed).
+- `pytest` production boundary: **69 passed, 0 failed**.
+- Coverage over production packages: **89%** (2,147 statements; 237 missed).
 - Ruff lint: passed. Ruff format check: passed after formatting.
 - Mypy: passed across 37 production source files.
 - Bandit: passed. Pip-audit: no known vulnerabilities; the local package is not on PyPI.
-- Full 2,934-test result: **INCOMPLETE_INTERNAL**. The GitHub legacy lane timed out at six hours
+- Full 2,941-test result: **INCOMPLETE_INTERNAL**. The GitHub legacy lane timed out at six hours
   without an aggregate; production and quality/security lanes passed.
 
 ## BLOCKED_EXTERNAL
