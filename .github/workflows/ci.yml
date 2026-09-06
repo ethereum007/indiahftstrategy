@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  production-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Production tests and coverage
+        run: >-
+          python -m pytest
+          tests/test_production_contracts.py
+          tests/test_arrow_auth_config.py
+          tests/test_arrow_binary.py
+          tests/test_arrow_fault_injection.py
+          tests/test_arrow_http_faults.py
+          tests/test_arrow_instruments.py
+          tests/test_arrow_order_stream.py
+          tests/test_arrow_portfolio_reconciliation.py
+          tests/test_arrow_rate_limiter.py
+          tests/test_execution_features_universe.py
+          tests/test_execution_os.py
+          tests/test_production_recorder.py
+          tests/test_shadow_runtime.py
+          --cov=brokers.arrow --cov=trading --cov=execution
+          --cov=observability --cov=data.production_recorder
+          --cov-report=term-missing
+
+  legacy-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Complete preserved regression suite
+        run: python -m pytest
+
+  quality-and-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Lint production boundary
+        run: ruff check brokers trading execution observability data/production_recorder.py
+      - name: Formatting verification
+        run: ruff format --check brokers trading execution observability data/production_recorder.py
+      - name: Type checking
+        run: mypy brokers trading execution observability data/production_recorder.py
+      - name: Dependency audit
+        run: pip-audit
+      - name: Static security audit
+        run: bandit -q -r brokers trading execution observability data/production_recorder.py
+      - name: Secret scanning
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -14,9 +14,34 @@ provider-adapter = "provider_adapter:main"
 
 [project.optional-dependencies]
 dev = [
+    "bandit",
+    "mypy",
+    "pip-audit",
     "pytest",
+    "pytest-cov",
+    "ruff",
 ]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["hft_cli", "provider_adapter", "provider_connectivity", "market_data_observation_simulator", "shadow_calibration_stability", "shadow_markout_calibration", "shadow_microprice_evaluator"]
+
+[tool.setuptools.packages.find]
+include = ["adapters*", "brokers*", "data*", "engine*", "execution*", "markets*", "observability*", "reports*", "research*", "risk*", "scanners*", "strategies*", "trading*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true

@@ -136,6 +136,12 @@ Detailed command reference and cumulative build history are retained in
 [`docs/COMMANDS.md`](docs/COMMANDS.md) and
 [`docs/BUILD_STATUS.md`](docs/BUILD_STATUS.md).
 
+The credential-free Arrow production boundary and static-IP certification
+runbook are documented in
+[`docs/arrow-productionization/STATUS.md`](docs/arrow-productionization/STATUS.md).
+Arrow order routing is disabled by default; passing its tests does not
+authorize live submission.
+
 ## Safety
 
 This software is for research. Backtests can be wrong because of feed gaps,
