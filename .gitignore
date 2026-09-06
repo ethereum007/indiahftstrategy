@@ -6,3 +6,4 @@ venv/
 .env
 *.egg-info/
 .coverage
+.local-evidence/

@@ -55,6 +55,8 @@ class LatencyObservatory:
                 event.instrument is None or event.instrument.identity.segment != dimensions["segment"]
             ):
                 continue
+            if dimensions.get("hour") and f"{event.start_ts.hour:02d}" != dimensions["hour"]:
+                continue
             values.append(event.duration_ms)
         return LatencySummary(
             len(values),
@@ -66,3 +68,24 @@ class LatencyObservatory:
             max(values, default=0.0),
             pstdev(values) if len(values) > 1 else 0.0,
         )
+
+    def group_by(self, *dimensions: str) -> dict[tuple[str, ...], LatencySummary]:
+        supported = {"stage", "endpoint", "strategy", "symbol", "segment", "hour"}
+        if not dimensions or any(name not in supported for name in dimensions):
+            raise ValueError("unsupported latency grouping")
+        keys = {tuple(self._value(event, name) for name in dimensions) for event in self.events}
+        return {key: self.summarize(**dict(zip(dimensions, key))) for key in sorted(keys)}
+
+    @staticmethod
+    def _value(event: LatencyEvent, dimension: str) -> str:
+        if dimension == "stage":
+            return event.stage
+        if dimension == "endpoint":
+            return event.endpoint
+        if dimension == "strategy":
+            return event.trace.strategy_id
+        if dimension == "hour":
+            return f"{event.start_ts.hour:02d}"
+        if event.instrument is None:
+            return ""
+        return event.instrument.identity.symbol if dimension == "symbol" else event.instrument.identity.segment

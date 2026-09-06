@@ -41,6 +41,11 @@ class KillSwitch:
             raise ValueError("unsupported halt reason")
         return self._move(KillSwitchState.HALTING if self.state != KillSwitchState.HALTED else self.state, reason)
 
+    def degrade(self, reason: str) -> KillSwitchTransition:
+        if self.state != KillSwitchState.RUNNING:
+            raise RuntimeError("only a running system can enter DEGRADED")
+        return self._move(KillSwitchState.DEGRADED, reason)
+
     def complete_halt(self) -> KillSwitchTransition:
         return self._move(KillSwitchState.HALTED, "orders_cancelled_and_routes_disabled")
 

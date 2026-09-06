@@ -2,7 +2,25 @@
 
 This is a certification run, not a live-trading launch. Production order routing remains disabled throughout.
 
-1. Register and independently verify the approved static egress IP.
+## Run the credential-free preflight
+
+From PowerShell in the repository, replace the example with the static public IP supplied by
+your ISP/VPS. This value is infrastructure-sensitive, so keep the generated evidence private.
+
+```powershell
+$env:ARROW_STATIC_IP = "YOUR.STATIC.PUBLIC.IP"
+.\.venv\Scripts\python.exe -m brokers.arrow.preflight --output .local-evidence\arrow-static-ip.json
+```
+
+The command exits `0` only when the observed public egress IP exactly matches the configured IP
+and the Arrow REST, market-data, and order-update TLS endpoints are reachable. It exits `2` for a
+safe NO-GO result. It does not load or print Arrow credentials. The `.local-evidence` directory is
+git-ignored.
+
+Record the Arrow ticket/dashboard confirmation that the same IP is attached to the intended app
+and account. Do not continue to authenticated certification if the preflight says `ready: false`.
+
+1. Register and independently verify the approved static egress IP using the preflight above.
 2. Inject secrets through the approved secret provider; do not create a populated `.env` artifact.
 3. Validate configuration/redaction, then authenticate.
 4. Call the profile/account endpoint and verify user/account identity against an operator-controlled value.

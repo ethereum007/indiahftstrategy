@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -12,6 +12,7 @@ from typing import Protocol
 from brokers.arrow.errors import ArrowProtocolError
 from brokers.arrow.instruments import InstrumentResolver
 from brokers.arrow.market_data_binary import ArrowDataStreamV1Decoder
+from brokers.arrow.reconnect import ReconnectPolicy
 from trading.contracts import DepthLevel, DepthSnapshot, EventTimes, MarketEvent, Quote, TradePrint
 
 
@@ -77,6 +78,9 @@ class MarketDataGateway:
         await self.transport.connect(self.url)
         for message in self.registry.messages():
             await self.transport.send(message)
+
+    async def disconnect(self) -> None:
+        await self.transport.close()
 
     async def subscribe(self, mode: str, tokens: Sequence[int]) -> None:
         self.registry.subscribe(mode, tokens)
@@ -150,3 +154,68 @@ class MarketDataGateway:
             self._out_of_order,
             self._malformed,
         )
+
+
+class MarketDataSupervisor:
+    """Owns feed lifecycle while keeping socket callbacks away from consumers."""
+
+    def __init__(
+        self,
+        gateway: MarketDataGateway,
+        *,
+        reconnect: ReconnectPolicy | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        halt: Callable[[str], object] | None = None,
+    ) -> None:
+        self.gateway = gateway
+        self.reconnect = reconnect or ReconnectPolicy()
+        self.sleep = sleep
+        self.halt = halt
+        self.reconnect_count = 0
+
+    async def run(self, stop: asyncio.Event) -> None:
+        attempt = 0
+        while not stop.is_set():
+            connected = False
+            try:
+                await self.gateway.connect()
+                connected = True
+                while not stop.is_set():
+                    await asyncio.wait_for(
+                        self.gateway.receive_once(),
+                        timeout=self.gateway.stale_after_seconds,
+                    )
+                    attempt = 0
+            except TimeoutError:
+                self._halt("stale_feed")
+                if connected:
+                    await self.gateway.disconnect()
+                    connected = False
+                attempt = await self._backoff(attempt)
+            except (ConnectionError, OSError):
+                self._halt("market_data_disconnect")
+                if connected:
+                    await self.gateway.disconnect()
+                    connected = False
+                attempt = await self._backoff(attempt)
+            except ArrowProtocolError:
+                self._halt("market_data_disconnect")
+                if connected:
+                    await self.gateway.disconnect()
+                    connected = False
+                attempt = await self._backoff(attempt)
+            finally:
+                if connected:
+                    await self.gateway.disconnect()
+
+    async def _backoff(self, attempt: int) -> int:
+        next_attempt = attempt + 1
+        if next_attempt >= self.reconnect.max_attempts:
+            raise ConnectionError("market-data reconnect budget exhausted")
+        self.reconnect_count += 1
+        await self.sleep(self.reconnect.delay(next_attempt - 1))
+        return next_attempt
+
+    def _halt(self, reason: str) -> None:
+        if self.halt is not None:
+            self.halt(reason)

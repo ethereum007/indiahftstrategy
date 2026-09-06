@@ -33,9 +33,12 @@ jobs:
           tests/test_arrow_order_stream.py
           tests/test_arrow_portfolio_reconciliation.py
           tests/test_arrow_rate_limiter.py
+          tests/test_arrow_static_ip_preflight.py
           tests/test_execution_features_universe.py
           tests/test_execution_os.py
+          tests/test_execution_safety.py
           tests/test_production_recorder.py
+          tests/test_shadow_session_recorder.py
           tests/test_shadow_runtime.py
           --cov=brokers.arrow --cov=trading --cov=execution
           --cov=observability --cov=data.production_recorder

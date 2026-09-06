@@ -152,10 +152,10 @@ class ArrowOrderStreamGateway:
             heartbeat_task: asyncio.Task[None] | None = None
             try:
                 await self.connect()
-                attempt = 0
                 heartbeat_task = asyncio.create_task(self._heartbeat_loop(stop))
                 while not stop.is_set():
                     await self.receive_once()
+                    attempt = 0
             except (ConnectionError, OSError, TimeoutError, ArrowProtocolError):
                 attempt += 1
                 if attempt >= self.reconnect.max_attempts:

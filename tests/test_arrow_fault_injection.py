@@ -6,7 +6,7 @@ import pytest
 
 from brokers.arrow.errors import ArrowExternalValidationRequired, ArrowProtocolError
 from brokers.arrow.instruments import InstrumentResolver
-from brokers.arrow.market_data import MarketDataGateway
+from brokers.arrow.market_data import MarketDataGateway, MarketDataSupervisor
 from brokers.arrow.orders import ArrowOrderService
 from brokers.arrow.reconnect import ReconnectPolicy
 from trading.contracts import Instrument, InstrumentIdentity
@@ -35,6 +35,16 @@ class FakeWebSocket:
 class FakeRest:
     async def request(self, method, path, *, headers, json=None):
         return {"method": method, "path": path}
+
+
+class DisconnectingWebSocket(FakeWebSocket):
+    async def receive(self):
+        raise ConnectionError("fixture disconnect")
+
+
+class StalledWebSocket(FakeWebSocket):
+    async def receive(self):
+        await asyncio.Event().wait()
 
 
 def _instrument():
@@ -116,5 +126,51 @@ def test_feed_diagnostics_count_duplicate_out_of_order_and_malformed_messages():
         assert diagnostics.out_of_order == 1
         assert diagnostics.duplicates == 1
         assert diagnostics.malformed == 1
+
+    asyncio.run(scenario())
+
+
+def test_market_data_supervisor_bounds_flapping_reconnects_and_signals_halt():
+    async def scenario():
+        ws = DisconnectingWebSocket()
+        gateway = MarketDataGateway("wss://example", ws, InstrumentResolver([_instrument()], today=date(2026, 1, 1)))
+        reasons = []
+
+        async def no_sleep(_):
+            return None
+
+        supervisor = MarketDataSupervisor(
+            gateway,
+            reconnect=ReconnectPolicy(max_attempts=3, jitter_fraction=0),
+            sleep=no_sleep,
+            halt=reasons.append,
+        )
+        with pytest.raises(ConnectionError, match="budget exhausted"):
+            await supervisor.run(asyncio.Event())
+        assert len(ws.urls) == 3
+        assert supervisor.reconnect_count == 2
+        assert reasons == ["market_data_disconnect"] * 3
+
+    asyncio.run(scenario())
+
+
+def test_market_data_supervisor_detects_stale_feed():
+    async def scenario():
+        ws = StalledWebSocket()
+        gateway = MarketDataGateway(
+            "wss://example",
+            ws,
+            InstrumentResolver([_instrument()], today=date(2026, 1, 1)),
+            stale_after_seconds=0.001,
+        )
+        reasons = []
+        supervisor = MarketDataSupervisor(
+            gateway,
+            reconnect=ReconnectPolicy(max_attempts=1),
+            halt=reasons.append,
+        )
+        with pytest.raises(ConnectionError, match="budget exhausted"):
+            await supervisor.run(asyncio.Event())
+        assert reasons == ["stale_feed"]
 
     asyncio.run(scenario())

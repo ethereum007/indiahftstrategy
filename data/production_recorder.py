@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, is_dataclass
-from datetime import date, datetime
+from dataclasses import asdict, dataclass, is_dataclass
+from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 
 def _json(value: Any) -> Any:
@@ -66,8 +67,25 @@ class AppendOnlyRecorder:
         return path
 
 
+@dataclass(frozen=True, slots=True)
+class DataQualityPolicy:
+    max_gap_seconds: float
+    stale_after_seconds: float
+    session_start: time = time(9, 15)
+    session_end: time = time(15, 30)
+    timezone: str = "Asia/Kolkata"
+
+    def __post_init__(self) -> None:
+        if self.max_gap_seconds <= 0 or self.stale_after_seconds <= 0:
+            raise ValueError("gap and stale thresholds must be positive")
+        if self.session_start >= self.session_end:
+            raise ValueError("session_start must precede session_end")
+        ZoneInfo(self.timezone)
+
+
 class DataQualityMonitor:
-    def __init__(self) -> None:
+    def __init__(self, policy: DataQualityPolicy | None = None) -> None:
+        self.policy = policy
         self.seen: set[str] = set()
         self.last_ts: dict[str, datetime] = {}
         self.counts: dict[str, int] = {}
@@ -80,10 +98,21 @@ class DataQualityMonitor:
         if fingerprint in self.seen:
             issues.append("duplicate_event")
         self.seen.add(fingerprint)
-        if ts and key in self.last_ts and ts < self.last_ts[key]:
-            issues.append("timestamp_regression")
+        if ts and key in self.last_ts:
+            delta = (ts - self.last_ts[key]).total_seconds()
+            if delta < 0:
+                issues.append("timestamp_regression")
+            elif self.policy is not None:
+                if delta > self.policy.max_gap_seconds:
+                    issues.append("data_gap")
+                if delta > self.policy.stale_after_seconds:
+                    issues.append("stale_period")
         if ts:
             self.last_ts[key] = ts
+            if self.policy is not None:
+                local_time = ts.astimezone(ZoneInfo(self.policy.timezone)).time().replace(tzinfo=None)
+                if not self.policy.session_start <= local_time <= self.policy.session_end:
+                    issues.append("session_violation")
         if hasattr(event, "bids") and hasattr(event, "asks"):
             if not event.bids or not event.asks:
                 issues.append("zero_depth")

@@ -1,11 +1,34 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from brokers.arrow.errors import ArrowInstrumentError
 from trading.contracts import Instrument, InstrumentIdentity
+
+REQUIRED_COLUMNS = frozenset(
+    {"Id", "LotSize", "TickSize", "Segment", "Exchange", "Expiry", "Name", "Strike", "SecurityType"}
+)
+SUPPORTED_MARKETS = frozenset({("NSE", "CM"), ("NSE", "NFO"), ("BSE", "CM"), ("BSE", "BFO")})
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentMasterSnapshot:
+    instruments: tuple[Instrument, ...]
+    sha256: str
+    row_count: int
+    loaded_ts: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentMasterDiff:
+    added_tokens: tuple[str, ...]
+    removed_tokens: tuple[str, ...]
+    changed_tokens: tuple[str, ...]
 
 
 def instrument_from_arrow(row: Mapping[str, object]) -> Instrument:
@@ -31,6 +54,65 @@ def instrument_from_arrow(row: Mapping[str, object]) -> Instrument:
         symbol,
         int(str(row.get("LotSize", 0))),
         Decimal(str(row.get("TickSize", "0"))),
+    )
+
+
+def load_instrument_master(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    raw_payload: bytes | None = None,
+    expected_sha256: str | None = None,
+    today: date | None = None,
+    loaded_ts: datetime | None = None,
+) -> InstrumentMasterSnapshot:
+    materialized = list(rows)
+    if not materialized:
+        raise ArrowInstrumentError("instrument master is empty")
+    for row in materialized:
+        missing = REQUIRED_COLUMNS - row.keys()
+        if missing:
+            raise ArrowInstrumentError("instrument master missing columns: " + ", ".join(sorted(missing)))
+    evidence = (
+        raw_payload
+        if raw_payload is not None
+        else json.dumps(materialized, sort_keys=True, default=str, separators=(",", ":")).encode()
+    )
+    digest = hashlib.sha256(evidence).hexdigest()
+    if expected_sha256 is not None and digest.lower() != expected_sha256.lower():
+        raise ArrowInstrumentError("instrument master checksum mismatch")
+    instruments = tuple(instrument_from_arrow(row) for row in materialized)
+    for instrument in instruments:
+        identity = instrument.identity
+        if (identity.exchange, identity.segment) not in SUPPORTED_MARKETS:
+            raise ArrowInstrumentError("unsupported exchange/segment")
+        if identity.segment == "CM" and (
+            identity.expiry is not None
+            or identity.strike is not None
+            or identity.option_type is not None
+            or instrument.lot_size != 1
+        ):
+            raise ArrowInstrumentError("invalid cash instrument identity")
+        if identity.segment in {"NFO", "BFO"} and identity.expiry is None:
+            raise ArrowInstrumentError("derivative expiry is required")
+        if identity.option_type is not None and (identity.strike is None or identity.strike <= 0):
+            raise ArrowInstrumentError("option strike is required")
+    InstrumentResolver(instruments, today=today)
+    stamp = loaded_ts or datetime.now(UTC)
+    if stamp.tzinfo is None:
+        raise ArrowInstrumentError("loaded_ts must be timezone-aware")
+    return InstrumentMasterSnapshot(instruments, digest, len(instruments), stamp)
+
+
+def compare_instrument_masters(
+    previous: InstrumentMasterSnapshot, current: InstrumentMasterSnapshot
+) -> InstrumentMasterDiff:
+    old = {item.instrument_token: item for item in previous.instruments}
+    new = {item.instrument_token: item for item in current.instruments}
+    common = old.keys() & new.keys()
+    return InstrumentMasterDiff(
+        tuple(sorted(new.keys() - old.keys())),
+        tuple(sorted(old.keys() - new.keys())),
+        tuple(sorted(token for token in common if old[token] != new[token])),
     )
 
 

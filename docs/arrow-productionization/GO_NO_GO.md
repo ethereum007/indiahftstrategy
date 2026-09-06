@@ -9,17 +9,22 @@ Decision: **NO-GO for live routing; READY for static-IP connectivity certificati
 - [x] Environment-only configuration and secret redaction
 - [x] Official Data Stream L1/L5/CAS decoder contract
 - [x] Exact instrument resolver
+- [x] Checksum-bound instrument-master lifecycle and diffing
+- [x] Supervised stale-feed/disconnect recovery with bounded reconnect
 - [x] Independent risk, kill switch, OMS recovery/idempotency
+- [x] Unified safety coordinator across risk, auth, market data, and order stream
 - [x] Recorder, data-quality checks, and latency observatory
-- [x] Shadow/live routing separation
+- [x] Shadow/live routing separation and tamper-evident session evidence
+- [x] Named, versioned NIFTY/custom universe selection
 - [x] Configurable rate-limit architecture
-- [x] Production boundary: 37 passed, 0 failed, 89% coverage
+- [x] Credential-free static-IP match and Arrow endpoint preflight tooling
+- [x] Production boundary: 62 passed, 0 failed, 89% coverage
 - [x] Lint, format, type, static-security, and dependency-audit gates
-- [ ] `INCOMPLETE_INTERNAL` Full 2,909-test legacy regression aggregate (local clean run was interrupted after 96%)
+- [ ] `INCOMPLETE_INTERNAL` Full 2,934-test legacy regression aggregate (local clean run was interrupted after 96%; GitHub's six-hour lane timed out)
 
 ## External gates
 
-- [ ] `BLOCKED_EXTERNAL` Static IP approved and verified
+- [ ] `AVAILABLE_UNVERIFIED` Acquired static IP matches observed egress and is approved by Arrow
 - [ ] `BLOCKED_EXTERNAL` Authentication and account identity certified
 - [ ] `BLOCKED_EXTERNAL` Live instrument master certified
 - [ ] `BLOCKED_EXTERNAL` Market and order streams captured and validated

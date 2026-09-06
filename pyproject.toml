@@ -11,6 +11,7 @@ dependencies = [
 [project.scripts]
 hft = "hft_cli:main"
 provider-adapter = "provider_adapter:main"
+arrow-static-ip-preflight = "brokers.arrow.preflight:main"
 
 [project.optional-dependencies]
 dev = [
